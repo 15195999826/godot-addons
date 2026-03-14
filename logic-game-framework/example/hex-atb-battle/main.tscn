@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://hex_atb_battle_main"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/main.gd" id="1_main"]
+
+[node name="HexAtbBattle" type="Node"]
+script = ExtResource("1_main")

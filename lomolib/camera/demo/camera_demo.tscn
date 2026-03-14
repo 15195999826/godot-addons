@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://br3viny3hxrhu"]
+
+[ext_resource type="Script" uid="uid://kgpf85cqgqsd" path="res://addons/lomolib/camera/demo/camera_demo.gd" id="1_script"]
+
+[node name="CameraDemo" type="Node3D" unique_id=542529888]
+script = ExtResource("1_script")

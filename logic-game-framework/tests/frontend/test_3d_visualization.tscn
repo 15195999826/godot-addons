@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://test_3d_visualization"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/tests/frontend/test_3d_visualization.gd" id="1_test"]
+
+[node name="Test3DVisualization" type="Node3D"]
+script = ExtResource("1_test")

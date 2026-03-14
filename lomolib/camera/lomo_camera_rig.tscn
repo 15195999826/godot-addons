@@ -1,0 +1,27 @@
+[gd_scene format=3 uid="uid://css21hv7mws4y"]
+
+[ext_resource type="Script" path="res://addons/lomolib/camera/lomo_camera_rig.gd" id="1_script"]
+
+[node name="LomoCameraRig" type="Node3D"]
+script = ExtResource("1_script")
+default_arm_length = 15.0
+min_zoom = 5.0
+max_zoom = 50.0
+zoom_step = 2.0
+zoom_lerp_speed = 10.0
+default_pitch = -50.0
+default_yaw = 0.0
+rotate_speed = 90.0
+move_speed = 20.0
+move_lerp_speed = 5.0
+follow_offset = Vector3(0, 0, 0)
+follow_lerp_speed = 3.0
+smooth_follow = true
+
+[node name="SpringArm3D" type="SpringArm3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.642788, 0.766044, 0, -0.766044, 0.642788, 0, 0, 0)
+collision_mask = 0
+spring_length = 15.0
+
+[node name="Camera3D" type="Camera3D" parent="SpringArm3D"]
+fov = 50.0

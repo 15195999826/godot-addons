@@ -1,0 +1,128 @@
+[gd_scene format=3 uid="uid://c8xqvqvqvqvqv"]
+
+[ext_resource type="Script" uid="uid://bpcbv87pg0xld" path="res://addons/logic-game-framework/example/hex-atb-battle-frontend/main.gd" id="1_main"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_origin"]
+albedo_color = Color(1, 0, 0, 1)
+emission_enabled = true
+emission = Color(1, 0, 0, 1)
+emission_energy_multiplier = 2.0
+
+[node name="Main" type="Node" unique_id=804951426]
+script = ExtResource("1_main")
+
+[node name="WorldOriginMarker" type="Node3D" parent="." unique_id=887638880]
+
+[node name="Sphere" type="CSGSphere3D" parent="WorldOriginMarker" unique_id=196510487]
+material_override = SubResource("StandardMaterial3D_origin")
+
+[node name="ConfigUI" type="CanvasLayer" parent="." unique_id=853834288]
+layer = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ConfigUI" unique_id=2092343822]
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 220.0
+offset_bottom = 400.0
+
+[node name="TitleLabel" type="Label" parent="ConfigUI/VBoxContainer" unique_id=55436369]
+layout_mode = 2
+text = "=== Map Config ==="
+
+[node name="Separator0" type="HSeparator" parent="ConfigUI/VBoxContainer" unique_id=631990429]
+layout_mode = 2
+
+[node name="DrawModeLabel" type="Label" parent="ConfigUI/VBoxContainer" unique_id=24958470]
+layout_mode = 2
+text = "Draw Mode:"
+
+[node name="DrawModeOption" type="OptionButton" parent="ConfigUI/VBoxContainer" unique_id=164331691]
+layout_mode = 2
+
+[node name="Separator1" type="HSeparator" parent="ConfigUI/VBoxContainer" unique_id=1244889961]
+layout_mode = 2
+
+[node name="RowsContainer" type="HBoxContainer" parent="ConfigUI/VBoxContainer" unique_id=1193465563]
+layout_mode = 2
+
+[node name="RowsLabel" type="Label" parent="ConfigUI/VBoxContainer/RowsContainer" unique_id=1704228295]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Rows:"
+
+[node name="RowsInput" type="SpinBox" parent="ConfigUI/VBoxContainer/RowsContainer" unique_id=1129174083]
+layout_mode = 2
+min_value = 1.0
+max_value = 50.0
+value = 9.0
+
+[node name="ColumnsContainer" type="HBoxContainer" parent="ConfigUI/VBoxContainer" unique_id=301288593]
+layout_mode = 2
+
+[node name="ColumnsLabel" type="Label" parent="ConfigUI/VBoxContainer/ColumnsContainer" unique_id=1037386485]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Columns:"
+
+[node name="ColumnsInput" type="SpinBox" parent="ConfigUI/VBoxContainer/ColumnsContainer" unique_id=574566046]
+layout_mode = 2
+min_value = 1.0
+max_value = 50.0
+value = 9.0
+
+[node name="RadiusContainer" type="HBoxContainer" parent="ConfigUI/VBoxContainer" unique_id=1757136579]
+visible = false
+layout_mode = 2
+
+[node name="RadiusLabel" type="Label" parent="ConfigUI/VBoxContainer/RadiusContainer" unique_id=1405344145]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Radius:"
+
+[node name="RadiusInput" type="SpinBox" parent="ConfigUI/VBoxContainer/RadiusContainer" unique_id=487135895]
+layout_mode = 2
+min_value = 1.0
+max_value = 20.0
+value = 4.0
+
+[node name="HexSizeContainer" type="HBoxContainer" parent="ConfigUI/VBoxContainer" unique_id=273319952]
+layout_mode = 2
+
+[node name="HexSizeLabel" type="Label" parent="ConfigUI/VBoxContainer/HexSizeContainer" unique_id=237323699]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Hex Size:"
+
+[node name="HexSizeInput" type="SpinBox" parent="ConfigUI/VBoxContainer/HexSizeContainer" unique_id=287626234]
+layout_mode = 2
+min_value = 1.0
+max_value = 200.0
+value = 1.0
+
+[node name="OrientationLabel" type="Label" parent="ConfigUI/VBoxContainer" unique_id=174747696]
+layout_mode = 2
+text = "Orientation:"
+
+[node name="OrientationOption" type="OptionButton" parent="ConfigUI/VBoxContainer" unique_id=350666949]
+layout_mode = 2
+
+[node name="Separator2" type="HSeparator" parent="ConfigUI/VBoxContainer" unique_id=102536206]
+layout_mode = 2
+
+[node name="StartBattleButton" type="Button" parent="ConfigUI/VBoxContainer" unique_id=1915254620]
+layout_mode = 2
+text = "🎮 Start Battle Simulation"
+
+[node name="Separator3" type="HSeparator" parent="ConfigUI/VBoxContainer" unique_id=482384659]
+layout_mode = 2
+
+[node name="StatusLabel" type="Label" parent="ConfigUI/VBoxContainer" unique_id=463457839]
+layout_mode = 2
+text = "Status: Ready"
+
+[connection signal="item_selected" from="ConfigUI/VBoxContainer/DrawModeOption" to="." method="_on_draw_mode_option_item_selected"]
+[connection signal="value_changed" from="ConfigUI/VBoxContainer/RowsContainer/RowsInput" to="." method="_on_rows_input_value_changed"]
+[connection signal="value_changed" from="ConfigUI/VBoxContainer/ColumnsContainer/ColumnsInput" to="." method="_on_columns_input_value_changed"]
+[connection signal="value_changed" from="ConfigUI/VBoxContainer/RadiusContainer/RadiusInput" to="." method="_on_radius_input_value_changed"]
+[connection signal="value_changed" from="ConfigUI/VBoxContainer/HexSizeContainer/HexSizeInput" to="." method="_on_hex_size_input_value_changed"]
+[connection signal="pressed" from="ConfigUI/VBoxContainer/StartBattleButton" to="." method="_on_start_battle_button_pressed"]

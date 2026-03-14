@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://test_compilation"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/tests/frontend/test_compilation.gd" id="1_test"]
+
+[node name="TestCompilation" type="Node"]
+script = ExtResource("1_test")
