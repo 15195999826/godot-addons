@@ -45,6 +45,20 @@ func get_owner_gameplay_instance() -> GameplayInstance:
 	return GameWorld.get_instance_by_id(_instance_id)
 
 
+## 是否响应 PreEvent handler 分发
+##
+## 由于 PreEvent handler 注册在 EventProcessor 全局表，事件触发时框架
+## 会自动遍历所有已注册 handler。此函数给子类一个机会说"我此刻不响应"，
+## 避免状态异常的 actor（如死亡、沉默、眩晕）意外触发被动。
+##
+## 其它触发路径（POST event / tick / receive_event）由项目层自行决定
+## 何时调用、传哪些 actor，不受此函数影响。
+##
+## 默认返回 true。子类按游戏规则覆盖。
+func is_pre_event_responsive() -> bool:
+	return true
+
+
 func get_team() -> String:
 	return _team
 

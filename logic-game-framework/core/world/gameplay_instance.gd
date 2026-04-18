@@ -61,6 +61,22 @@ func end() -> void:
 		actor.on_despawn()
 	for system in _systems:
 		system.on_unregister()
+	_cleanup_pre_event_handlers()
+
+
+## 清理所有 actor 注册在 EventProcessor 的 PreEvent handler。
+##
+## 不 revoke ability（保留 `_abilities` 数组以支持复活等语义），只清 handler
+## 注册表中的 PreHandlerRegistration，防止跨战斗 handler 孤儿化累积。
+##
+## handler 的重新注册应在 actor 重新"激活"时由项目层负责（例如：新战斗开始、
+## 复活动画播完等）。本框架不假设何时重新激活。
+func _cleanup_pre_event_handlers() -> void:
+	var processor := GameWorld.event_processor
+	if processor == null:
+		return
+	for actor in _actors:
+		processor.remove_handlers_by_owner_id(actor.get_id())
 
 func on_start() -> void:
 	pass

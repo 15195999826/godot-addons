@@ -188,6 +188,12 @@ func is_dead() -> bool:
 	return _is_dead
 
 
+## 覆盖框架虚函数：死亡的角色不再响应 PreEvent handler
+## 例如：反伤 passive 在死后不再触发；复活后自动恢复响应（无需重新注册 handler）
+func is_pre_event_responsive() -> bool:
+	return not _is_dead
+
+
 # ========== 录像支持（覆盖 Actor 基类方法） ==========
 
 ## 获取配置 ID（覆盖基类）

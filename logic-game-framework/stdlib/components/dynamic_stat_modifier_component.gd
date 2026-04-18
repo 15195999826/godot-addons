@@ -28,9 +28,6 @@ var config: DynamicStatModifierConfig
 ## 当前 modifier 的 ID
 var _modifier_id: String = ""
 
-## 生命周期上下文（用于 on_remove）
-var _context: AbilityLifecycleContext = null
-
 
 func _init(p_config: DynamicStatModifierConfig) -> void:
 	config = p_config
@@ -38,7 +35,6 @@ func _init(p_config: DynamicStatModifierConfig) -> void:
 
 
 func on_apply(context: AbilityLifecycleContext) -> void:
-	_context = context
 	_modifier_id = IdGenerator.generate_id("dynmod")
 
 	var raw := context.attribute_set.get_raw()
@@ -69,4 +65,3 @@ func on_remove(context: AbilityLifecycleContext) -> void:
 	# 先取消动态依赖注册，再移除 modifier
 	raw.unregister_dynamic_dep(_modifier_id)
 	raw.remove_modifier(_modifier_id)
-	_context = null

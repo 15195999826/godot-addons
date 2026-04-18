@@ -20,7 +20,9 @@ var metadata: Dictionary = {}
 var _state: String = STATE_PENDING
 var _expire_reason: String = ""
 var _components: Array[AbilityComponent] = []
-var _lifecycle_context: AbilityLifecycleContext = null
+## remove_effects 幂等哨兵：apply_effects 后为 true，remove_effects 后 false。
+## 原设计靠 `_lifecycle_context == null` 判定，现不缓存 context 改用独立布尔标志。
+var _effects_active: bool = false
 var _execution_instances: Array[AbilityExecutionInstance] = []
 var _on_triggered_callbacks: Array[Callable] = []
 var _on_execution_callbacks: Array[Callable] = []
@@ -136,18 +138,40 @@ func apply_effects(context: AbilityLifecycleContext) -> void:
 		Log.warning("Ability", "Ability already granted: %s" % id)
 		return
 	_state = STATE_GRANTED
-	_lifecycle_context = context
+	_effects_active = true
 	for component in _components:
 		component.on_apply(context)
 
 func remove_effects() -> void:
-	if _lifecycle_context == null:
+	if not _effects_active:
 		return
+	_effects_active = false
+	var context := _build_remove_context()
 	for component in _components:
-		component.on_remove(_lifecycle_context)
-	_lifecycle_context = null
+		component.on_remove(context)
 	_on_triggered_callbacks.clear()
 	_on_execution_callbacks.clear()
+
+
+## 构造 on_remove 阶段专用的精简 context。
+##
+## on_remove 实际只读取 context.ability / context.attribute_set / context.ability_set 三字段，
+## 因此通过 GameWorld.get_actor(owner_actor_id) 查到 actor 并取其 attribute_set / ability_set 即可；
+## 其它字段（owner_actor_id / event_processor）on_remove 路径上无消费者，传 null 安全。
+##
+## 若 actor 未注册到 GameWorld（如隔离单元测试），attribute_set / ability_set 为 null —
+## 对 no-op 的 on_remove（如 PreEventComponent / TestComponent）完全不影响；
+## 对会读取这些字段的 component（StatModifier / Tag / DynamicStatModifier），测试须注册 mock actor。
+func _build_remove_context() -> AbilityLifecycleContext:
+	var attr_set: BaseGeneratedAttributeSet = null
+	var ab_set: AbilitySet = null
+	var actor := GameWorld.get_actor(owner_actor_id)
+	if actor != null:
+		if "attribute_set" in actor:
+			attr_set = actor.get("attribute_set")
+		if "ability_set" in actor:
+			ab_set = actor.get("ability_set")
+	return AbilityLifecycleContext.new(owner_actor_id, attr_set, self, ab_set, null)
 
 func expire(reason: String) -> void:
 	if _state == STATE_EXPIRED:
