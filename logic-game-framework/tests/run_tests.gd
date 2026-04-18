@@ -23,6 +23,8 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/abilities/activate_instance_component_test.gd",
 	"res://addons/logic-game-framework/tests/core/actions/tag_action_test.gd",
 	"res://addons/logic-game-framework/tests/core/resolvers/resolvers_test.gd",
+	"res://addons/logic-game-framework/tests/core/timeline/timeline_test.gd",
+	"res://addons/logic-game-framework/tests/core/timeline/timeline_loop_test.gd",
 ]
 
 # 测试框架实例

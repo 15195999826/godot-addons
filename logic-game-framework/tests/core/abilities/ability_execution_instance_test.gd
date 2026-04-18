@@ -13,7 +13,7 @@ class TestAction:
 		return ActionResult.create_success_result([])
 
 func _init() -> void:
-	TestFramework.register_test("AbilityExecutionInstance triggers tags", _test_trigger_tags)
+	TestFramework.register_test("AbilityExecutionInstance fires sync + async actions", _test_trigger_tags)
 	TestFramework.register_test("AbilityExecutionInstance matches wildcard", _test_wildcard)
 	TestFramework.register_test("AbilityExecutionInstance completes and cancels", _test_complete_cancel)
 
@@ -23,33 +23,35 @@ func _test_trigger_tags() -> void:
 		"t-tags",
 		1.0,
 		{
-			"start": 0.0,
 			"impact": 0.5,
 		}
 	))
 	GameWorld.init()
 
-	var action := TestAction.new()
+	var sync_action := TestAction.new()
+	var async_action := TestAction.new()
+	var sync_list: Array[Action.BaseAction] = [sync_action]
+	var end_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
 		"t-tags",
-		[
-			TagActionsEntry.new("start", [action]),
-			TagActionsEntry.new("impact", [action]),
-		],
+		[TagActionsEntry.new("impact", [async_action])],
+		sync_list,
+		end_list,
 		{},
 		null,
 		AbilityRef.new("a1", "c1")
 	)
 
-	var triggered := instance.tick(0.0)
-	TestFramework.assert_equal(1, triggered.size())
-	TestFramework.assert_equal("start", triggered[0])
-	TestFramework.assert_equal(1, action.calls.size())
+	# 模拟 ability.activate_new_execution_instance 的同步触发
+	instance.fire_sync_actions(sync_list, "__timeline_start__")
+	TestFramework.assert_equal(1, sync_action.calls.size())
+	TestFramework.assert_equal(0, async_action.calls.size())
 
-	triggered = instance.tick(0.5)
+	# 异步 tag：tick 到 0.5 时触发 impact
+	var triggered := instance.tick(0.5)
 	TestFramework.assert_equal(1, triggered.size())
 	TestFramework.assert_equal("impact", triggered[0])
-	TestFramework.assert_equal(2, action.calls.size())
+	TestFramework.assert_equal(1, async_action.calls.size())
 
 func _test_wildcard() -> void:
 	TimelineRegistry.reset()
@@ -63,9 +65,12 @@ func _test_wildcard() -> void:
 	GameWorld.init()
 
 	var action := TestAction.new()
+	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
 		"t-wild",
 		[TagActionsEntry.new("hit*", [action])],
+		empty_list,
+		empty_list,
 		{},
 		null,
 		AbilityRef.new("a2", "c2")
@@ -84,8 +89,9 @@ func _test_complete_cancel() -> void:
 		{}
 	))
 
+	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-complete", [], {}, null, AbilityRef.new()
+		"t-complete", [], empty_list, empty_list, {}, null, AbilityRef.new()
 	)
 
 	TestFramework.assert_true(instance.is_executing())
@@ -100,7 +106,7 @@ func _test_complete_cancel() -> void:
 	))
 
 	var cancelled := AbilityExecutionInstance.new(
-		"t-cancel", [], {}, null, AbilityRef.new()
+		"t-cancel", [], empty_list, empty_list, {}, null, AbilityRef.new()
 	)
 	cancelled.cancel()
 	TestFramework.assert_true(cancelled.is_cancelled())
