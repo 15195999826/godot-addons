@@ -50,16 +50,15 @@ func _test_max_loops() -> void:
 		empty_list,
 		empty_list,
 		{},
-		null,
 		AbilityRef.new("a", "c")
 	)
 
 	# 跑 3 轮：每轮 100ms
-	instance.tick(100.0)  # 轮 1 结束
+	instance.tick(100.0, null)  # 轮 1 结束
 	TestFramework.assert_true(instance.is_executing())
-	instance.tick(100.0)  # 轮 2 结束
+	instance.tick(100.0, null)  # 轮 2 结束
 	TestFramework.assert_true(instance.is_executing())
-	instance.tick(100.0)  # 轮 3 结束 → COMPLETED
+	instance.tick(100.0, null)  # 轮 3 结束 → COMPLETED
 	TestFramework.assert_true(instance.is_completed())
 	TestFramework.assert_equal(3, action.calls)
 
@@ -79,13 +78,12 @@ func _test_infinite_loop() -> void:
 		empty_list,
 		empty_list,
 		{},
-		null,
 		AbilityRef.new("a", "c")
 	)
 
 	# 跑 10 轮仍然 executing
 	for i in 10:
-		instance.tick(100.0)
+		instance.tick(100.0, null)
 	TestFramework.assert_true(instance.is_executing())
 	TestFramework.assert_equal(10, action.calls)
 
@@ -104,16 +102,15 @@ func _test_sync_actions_non_loop() -> void:
 		start_list,
 		end_list,
 		{},
-		null,
 		AbilityRef.new("a", "c")
 	)
 
 	# 模拟 activate: fire_sync_actions(start)
-	instance.fire_sync_actions(start_list, "__timeline_start__")
+	instance.fire_sync_actions(start_list, "__timeline_start__", null)
 	TestFramework.assert_equal(1, start_action.calls)
 
 	# tick 完成 → 触发 end，不再触发 start（非 loop，直接 COMPLETED）
-	instance.tick(100.0)
+	instance.tick(100.0, null)
 	TestFramework.assert_true(instance.is_completed())
 	TestFramework.assert_equal(1, start_action.calls)  # 未重复触发
 	TestFramework.assert_equal(1, end_action.calls)    # 触发 1 次
@@ -136,27 +133,26 @@ func _test_sync_actions_loop() -> void:
 		start_list,
 		end_list,
 		{},
-		null,
 		AbilityRef.new("a", "c")
 	)
 
 	# 模拟 activate：start 触发一次（轮 1 开始）
-	instance.fire_sync_actions(start_list, "__timeline_start__")
+	instance.fire_sync_actions(start_list, "__timeline_start__", null)
 	TestFramework.assert_equal(1, start_action.calls)
 	TestFramework.assert_equal(0, end_action.calls)
 
 	# 轮 1 结束：end 触发 → 进入轮 2：start 触发
-	instance.tick(100.0)
+	instance.tick(100.0, null)
 	TestFramework.assert_equal(2, start_action.calls)
 	TestFramework.assert_equal(1, end_action.calls)
 
 	# 轮 2 结束：end 触发 → 进入轮 3：start 触发
-	instance.tick(100.0)
+	instance.tick(100.0, null)
 	TestFramework.assert_equal(3, start_action.calls)
 	TestFramework.assert_equal(2, end_action.calls)
 
 	# 轮 3 结束：end 触发 → max_loops 达到 → COMPLETED，不再 start
-	instance.tick(100.0)
+	instance.tick(100.0, null)
 	TestFramework.assert_true(instance.is_completed())
 	TestFramework.assert_equal(3, start_action.calls)
 	TestFramework.assert_equal(3, end_action.calls)
@@ -171,11 +167,11 @@ func _test_serialize_loops() -> void:
 
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-ser", [], empty_list, empty_list, {}, null, AbilityRef.new("a", "c")
+		"t-ser", [], empty_list, empty_list, {}, AbilityRef.new("a", "c")
 	)
 
-	instance.tick(100.0)
-	instance.tick(100.0)
+	instance.tick(100.0, null)
+	instance.tick(100.0, null)
 
 	var s := instance.serialize()
 	TestFramework.assert_true(s.has("loopsCompleted"))

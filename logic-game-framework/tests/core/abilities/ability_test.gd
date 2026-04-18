@@ -98,5 +98,5 @@ func _test_execution_instances() -> void:
 	ability.activate_new_execution_instance("t-ability", [], empty_actions, empty_actions, {}, null)
 
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
-	ability.tick_executions(1.0)
+	ability.tick_executions(1.0, null)
 	TestFramework.assert_equal(0, ability.get_executing_instances().size())

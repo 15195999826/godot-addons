@@ -7,13 +7,18 @@ extends RefCounted
 
 var type: String = "AbilityComponent"
 var _state: String = "active"
-var _ability: Ability = null
+## 所属 Ability 的弱引用。
+##
+## 持强引用会与 Ability._components 形成循环引用（GDScript RefCounted 无循环 GC），
+## 导致 Ability 及其全部 component 在 GameWorld.shutdown 后仍被锁住无法释放。
+## 弱引用让 Ability 的销毁仅由 AbilitySet / GameWorld 层级决定，component 只是附属。
+var _ability_ref: WeakRef = null
 
 func get_state() -> String:
 	return _state
 
 func initialize(ability: Ability) -> void:
-	_ability = ability
+	_ability_ref = weakref(ability) if ability != null else null
 	_state = "active"
 
 func is_active() -> bool:
@@ -25,8 +30,11 @@ func mark_expired() -> void:
 func is_expired() -> bool:
 	return _state == "expired"
 
+## 返回所属 Ability；若 Ability 已被销毁则返回 null，调用方需短路。
 func get_ability() -> Ability:
-	return _ability
+	if _ability_ref == null:
+		return null
+	return _ability_ref.get_ref() as Ability
 
 ## 每帧 tick（可选覆盖）
 func on_tick(_dt: float) -> void:

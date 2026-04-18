@@ -340,7 +340,7 @@ func tick(dt: float) -> void:
 		actor.ability_set.tick(dt, _logic_time)
 		
 		if _is_actor_executing(actor):
-			actor.ability_set.tick_executions(dt)
+			actor.ability_set.tick_executions(dt, self)
 		else:
 			actor.accumulate_atb(dt)
 			

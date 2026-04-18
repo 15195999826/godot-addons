@@ -123,11 +123,12 @@ func _mark_for_removal(projectile: ProjectileActor) -> void:
 func _process_pending_removal(_actors: Array[Actor]) -> void:
 	if pending_removal.is_empty():
 		return
-	if _instance == null:
+	var instance := get_instance()
+	if instance == null:
 		pending_removal.clear()
 		return
 	for actor_id in pending_removal:
-		_instance.remove_actor(actor_id)
+		instance.remove_actor(actor_id)
 	pending_removal.clear()
 
 func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_position: Vector3) -> void:

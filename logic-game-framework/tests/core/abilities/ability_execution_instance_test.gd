@@ -38,17 +38,16 @@ func _test_trigger_tags() -> void:
 		sync_list,
 		end_list,
 		{},
-		null,
 		AbilityRef.new("a1", "c1")
 	)
 
 	# 模拟 ability.activate_new_execution_instance 的同步触发
-	instance.fire_sync_actions(sync_list, "__timeline_start__")
+	instance.fire_sync_actions(sync_list, "__timeline_start__", null)
 	TestFramework.assert_equal(1, sync_action.calls.size())
 	TestFramework.assert_equal(0, async_action.calls.size())
 
 	# 异步 tag：tick 到 0.5 时触发 impact
-	var triggered := instance.tick(0.5)
+	var triggered := instance.tick(0.5, null)
 	TestFramework.assert_equal(1, triggered.size())
 	TestFramework.assert_equal("impact", triggered[0])
 	TestFramework.assert_equal(1, async_action.calls.size())
@@ -72,11 +71,10 @@ func _test_wildcard() -> void:
 		empty_list,
 		empty_list,
 		{},
-		null,
 		AbilityRef.new("a2", "c2")
 	)
 
-	var triggered := instance.tick(0.2)
+	var triggered := instance.tick(0.2, null)
 	TestFramework.assert_equal(1, triggered.size())
 	TestFramework.assert_equal("hit-1", triggered[0])
 	TestFramework.assert_equal(1, action.calls.size())
@@ -91,11 +89,11 @@ func _test_complete_cancel() -> void:
 
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-complete", [], empty_list, empty_list, {}, null, AbilityRef.new()
+		"t-complete", [], empty_list, empty_list, {}, AbilityRef.new()
 	)
 
 	TestFramework.assert_true(instance.is_executing())
-	instance.tick(0.1)
+	instance.tick(0.1, null)
 	TestFramework.assert_true(instance.is_completed())
 
 	TimelineRegistry.reset()
@@ -106,7 +104,7 @@ func _test_complete_cancel() -> void:
 	))
 
 	var cancelled := AbilityExecutionInstance.new(
-		"t-cancel", [], empty_list, empty_list, {}, null, AbilityRef.new()
+		"t-cancel", [], empty_list, empty_list, {}, AbilityRef.new()
 	)
 	cancelled.cancel()
 	TestFramework.assert_true(cancelled.is_cancelled())

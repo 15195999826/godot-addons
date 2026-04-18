@@ -107,10 +107,10 @@ func tick(dt: float, logic_time: float = -1.0) -> void:
 		ability.tick(dt)
 	)
 
-func tick_executions(dt: float) -> Array[String]:
+func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 	var all_triggered: Array[String] = []
 	_process_abilities(func(ability: Ability):
-		var triggered := ability.tick_executions(dt)
+		var triggered := ability.tick_executions(dt, game_state_provider)
 		all_triggered.append_array(triggered)
 	)
 	return all_triggered

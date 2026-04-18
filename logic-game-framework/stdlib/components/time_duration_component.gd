@@ -21,8 +21,9 @@ func on_tick(dt: float) -> void:
 
 func _trigger_expiration() -> void:
 	mark_expired()
-	if _ability:
-		_ability.expire(EXPIRE_REASON_TIME_DURATION)
+	var ability := get_ability()
+	if ability != null:
+		ability.expire(EXPIRE_REASON_TIME_DURATION)
 
 func get_remaining() -> float:
 	return maxf(0.0, remaining)

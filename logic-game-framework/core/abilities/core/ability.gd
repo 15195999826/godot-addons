@@ -65,16 +65,18 @@ func tick(dt: float) -> void:
 		if component.is_active():
 			component.on_tick(dt)
 
-func tick_executions(dt: float) -> Array[String]:
+func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 	if _state == STATE_EXPIRED:
 		return []
 	var all_triggered: Array[String] = []
 	for instance in _execution_instances:
 		if _is_executing_instance(instance):
-			all_triggered.append_array(instance.tick(dt))
+			all_triggered.append_array(instance.tick(dt, game_state_provider))
 	_execution_instances = _execution_instances.filter(_is_executing_instance)
 	return all_triggered
 
+## p_game_state_provider 只用于激活瞬间 fire_sync_actions(__timeline_start__)；
+## 不存入 AbilityExecutionInstance 字段，避免 battle ↔ exec_instance 循环强引用。
 func activate_new_execution_instance(
 	p_timeline_id: String,
 	p_tag_actions: Array[TagActionsEntry],
@@ -90,7 +92,6 @@ func activate_new_execution_instance(
 		p_on_timeline_start_actions,
 		p_on_timeline_end_actions,
 		p_trigger_event_dict,
-		p_game_state_provider,
 		ability_ref
 	)
 	_execution_instances.append(instance)
@@ -98,7 +99,7 @@ func activate_new_execution_instance(
 		if callback.is_valid():
 			callback.call(instance)
 	# 激活瞬间同步触发 on_timeline_start（如 StageCueAction / reserve_tile）
-	instance.fire_sync_actions(p_on_timeline_start_actions, "__timeline_start__")
+	instance.fire_sync_actions(p_on_timeline_start_actions, "__timeline_start__", p_game_state_provider)
 	return instance
 
 func get_executing_instances() -> Array[AbilityExecutionInstance]:
