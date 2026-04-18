@@ -33,7 +33,6 @@ static var FIREBALL_HIT_TIMELINE := TimelineData.new(
 	TIMELINE_ID_HIT,
 	100.0,
 	{
-		TimelineTags.HIT: 0.0,
 		TimelineTags.END: 100.0,
 	}
 )
@@ -78,7 +77,7 @@ static var ABILITY := (
 			HexBattleSkillHelpers.projectile_hit_filter
 		))
 		.timeline_id(TIMELINE_ID_HIT)
-		.on_tag(TimelineTags.HIT, [HexBattleDamageAction.new(
+		.on_timeline_start([HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
 			Resolvers.float_val(80.0),
 			BattleEvents.DamageType.MAGICAL
