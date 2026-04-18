@@ -20,7 +20,7 @@ static var ABILITY := (
 		.trigger(TriggerConfig.new("death", _deathrattle_filter()))
 		.action(HexBattleDamageAction.new(
 			HexBattleTargetSelectors.all_enemies(),
-			AOE_DAMAGE,
+			Resolvers.float_val(AOE_DAMAGE),
 			BattleEvents.DamageType.PURE
 		))
 		.build()

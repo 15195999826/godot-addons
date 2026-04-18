@@ -38,7 +38,7 @@ class_name HexBattleDamageAction
 extends Action.BaseAction
 
 
-var _damage: float
+var _damage_resolver: FloatResolver
 var _damage_type: BattleEvents.DamageType
 
 # 回调列表
@@ -47,14 +47,16 @@ var _on_critical_callbacks: Array[Action.BaseAction] = []
 var _on_kill_callbacks: Array[Action.BaseAction] = []
 
 
+## damage_resolver 在 execute() 中按 ctx 解析一次。
+## 固定伤害用 Resolvers.float_val(X)；随施法者属性缩放用 Resolvers.float_fn。
 func _init(
 	target_selector: TargetSelector,
-	damage: float,
+	damage_resolver: FloatResolver,
 	damage_type: BattleEvents.DamageType = BattleEvents.DamageType.PHYSICAL
 ) -> void:
 	super._init(target_selector)
 	type = "damage"
-	_damage = damage
+	_damage_resolver = damage_resolver
 	_damage_type = damage_type
 
 
@@ -102,37 +104,39 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var event_processor := GameWorld.event_processor
 	var all_events: Array[Dictionary] = []
 	var alive_actor_ids := battle.get_alive_actor_ids()
-	
+	# 每次 execute 解析一次 base damage（同一次施法对所有目标使用同一数值）
+	var base_damage := _damage_resolver.resolve(ctx)
+
 	for target_id in targets:
 		# ========== Pre 阶段 ==========
 		var pre_event := HexBattlePreEvents.PreDamageEvent.create(
 			source_actor_id,
 			target_id,
-			_damage,
+			base_damage,
 			BattleEvents._damage_type_to_string(_damage_type)
 		)
-		
+
 		var mutable: MutableEvent = event_processor.process_pre_event(pre_event.to_dict(), battle)
-		
+
 		if mutable.cancelled:
 			var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
 			print("  [DamageAction] %s 的伤害被取消" % target_name)
 			continue
-		
+
 		var final_damage: float = mutable.get_current_value("damage")
 		var is_critical := randf() < 0.1
 		if is_critical:
 			final_damage *= 1.5
-		
+
 		var source_name := HexBattleGameStateUtils.get_actor_display_name(source_actor_id, battle)
 		var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
 		var damage_type_str := BattleEvents._damage_type_to_string(_damage_type)
 		var crit_text := " (暴击!)" if is_critical else ""
-		if final_damage != _damage:
-			print("  [DamageAction] %s 对 %s 造成 %.0f %s 伤害%s (原始: %.0f)" % [source_name, target_name, final_damage, damage_type_str, crit_text, _damage])
+		if final_damage != base_damage:
+			print("  [DamageAction] %s 对 %s 造成 %.0f %s 伤害%s (原始: %.0f)" % [source_name, target_name, final_damage, damage_type_str, crit_text, base_damage])
 		else:
 			print("  [DamageAction] %s 对 %s 造成 %.0f %s 伤害%s" % [source_name, target_name, final_damage, damage_type_str, crit_text])
-		
+
 		# ========== 应用伤害 + 死亡处理 ==========
 		var event := BattleEvents.DamageEvent.create(
 			target_id, final_damage, _damage_type, source_actor_id, is_critical, false
@@ -141,17 +145,17 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			event, alive_actor_ids, ctx, battle,
 		)
 		all_events.append_array(damage_result.all_events)
-		
+
 		# ========== 回调处理（在 post damage 广播之前） ==========
 		var callback_events := _process_callbacks(damage_result.damage_event_dict, is_critical, ctx)
 		all_events.append_array(callback_events)
-		
+
 		# ========== Post damage 广播 ==========
 		HexBattleDamageUtils.broadcast_post_damage(
 			damage_result.damage_event_dict, alive_actor_ids, battle,
 		)
-	
-	return ActionResult.create_success_result(all_events, { "damage": _damage })
+
+	return ActionResult.create_success_result(all_events, { "damage": base_damage })
 
 
 # ============================================================

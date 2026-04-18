@@ -81,7 +81,7 @@ static var ABILITY := (
 		.timeline_id(TIMELINE_ID_HIT)
 		.on_tag(TimelineTags.HIT, [HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
-			45.0,
+			Resolvers.float_val(45.0),
 			BattleEvents.DamageType.PHYSICAL
 		)])
 		.build()

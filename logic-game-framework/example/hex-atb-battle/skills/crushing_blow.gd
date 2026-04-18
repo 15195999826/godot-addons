@@ -37,7 +37,7 @@ static var ABILITY := (
 		)])
 		.on_tag(TimelineTags.HIT, [HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
-			90.0,
+			Resolvers.float_val(90.0),
 			BattleEvents.DamageType.PHYSICAL
 		)])
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())

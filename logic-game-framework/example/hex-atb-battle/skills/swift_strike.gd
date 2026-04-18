@@ -39,17 +39,17 @@ static var ABILITY := (
 		)])
 		.on_tag(TimelineTags.HIT1, [HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
-			10.0,
+			Resolvers.float_val(10.0),
 			BattleEvents.DamageType.PHYSICAL
 		)])
 		.on_tag(TimelineTags.HIT2, [HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
-			10.0,
+			Resolvers.float_val(10.0),
 			BattleEvents.DamageType.PHYSICAL
 		)])
 		.on_tag(TimelineTags.HIT3, [HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
-			10.0,
+			Resolvers.float_val(10.0),
 			BattleEvents.DamageType.PHYSICAL
 		)])
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
