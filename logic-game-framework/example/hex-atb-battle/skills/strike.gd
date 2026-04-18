@@ -19,7 +19,6 @@ static var STRIKE_TIMELINE := TimelineData.new(
 	TIMELINE_ID,
 	500.0,
 	{
-		TimelineTags.START: 0.0,
 		TimelineTags.HIT: 300.0,
 		TimelineTags.END: 500.0,
 	}
@@ -48,7 +47,7 @@ static var ABILITY := (
 	.active_use(
 		ActiveUseConfig.builder()
 		.timeline_id(TIMELINE_ID)
-		.on_tag(TimelineTags.START, [StageCueAction.new(
+		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
 			Resolvers.str_val("melee_slash")
 		)])

@@ -16,7 +16,6 @@ static var HOLY_HEAL_TIMELINE := TimelineData.new(
 	TIMELINE_ID,
 	600.0,
 	{
-		TimelineTags.START: 0.0,
 		TimelineTags.HEAL: 400.0,
 		TimelineTags.END: 600.0,
 	}
@@ -35,7 +34,7 @@ static var ABILITY := (
 	.active_use(
 		ActiveUseConfig.builder()
 		.timeline_id(TIMELINE_ID)
-		.on_tag(TimelineTags.START, [StageCueAction.new(
+		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
 			Resolvers.str_val("magic_heal")
 		)])

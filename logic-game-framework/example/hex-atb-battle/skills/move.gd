@@ -15,7 +15,6 @@ static var MOVE_TIMELINE := TimelineData.new(
 	TIMELINE_ID,
 	200.0,
 	{
-		TimelineTags.START: 0.0,
 		TimelineTags.EXECUTE: 100.0,
 		TimelineTags.END: 200.0,
 	}
@@ -35,7 +34,7 @@ static var ABILITY := (
 			HexBattleSkillHelpers.ability_activate_filter
 		))
 		.timeline_id(TIMELINE_ID)
-		.on_tag(TimelineTags.START, [HexBattleStartMoveAction.new(
+		.on_timeline_start([HexBattleStartMoveAction.new(
 			HexBattleTargetSelectors.ability_owner(),
 			HexBattleSkillHelpers.target_coord_from_event()
 		)])

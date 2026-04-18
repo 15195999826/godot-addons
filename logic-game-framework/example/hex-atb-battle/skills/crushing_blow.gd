@@ -13,7 +13,6 @@ static var CRUSHING_BLOW_TIMELINE := TimelineData.new(
 	TIMELINE_ID,
 	1000.0,
 	{
-		TimelineTags.START: 0.0,
 		TimelineTags.WINDUP: 300.0,
 		TimelineTags.HIT: 600.0,
 		TimelineTags.END: 1000.0,
@@ -31,7 +30,7 @@ static var ABILITY := (
 	.active_use(
 		ActiveUseConfig.builder()
 		.timeline_id(TIMELINE_ID)
-		.on_tag(TimelineTags.START, [StageCueAction.new(
+		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
 			Resolvers.str_val("melee_heavy")
 		)])
