@@ -1,18 +1,8 @@
-# Logic Game Framework - Architecture Overview
+# Logic Game Framework — Architecture Overview
 
-> **Coding conventions** and **full API reference** are in the `lgf` skill.
-> Use `load_skills=["lgf"]` when delegating tasks that involve this framework.
->
-> **Quick navigation** (`.opencode/skill/lgf/`):
-> - `SKILL.md` — Conventions (attribute access, actor creation, statelessness, resolvers, pre-events)
-> - `reference/conventions-detail.md` — Full examples, reference chain diagrams, architecture
-> - `reference/entity.md` — Actor, System, GameWorld, GameplayInstance
-> - `reference/abilities.md` — Ability, AbilitySet, AbilityConfig, Components, Builder API
-> - `reference/actions.md` — Action, ExecutionContext, TargetSelector, Resolvers
-> - `reference/events.md` — EventProcessor, MutableEvent, Intent, Modification
-> - `reference/attributes.md` — RawAttributeSet, AttributeModifier, Calculator, TagContainer
-> - `reference/stdlib.md` — StatModifier, TimeDuration, Stack, Projectile, Replay, Timeline
-> - `reference/example-app.md` — Three-layer example app (Core Events → Game Logic → Presentation)
+Godot 回合制 / ATB 战斗框架的核心模块依赖与数据流总览。
+
+此文档聚焦**架构级视图**（模块依赖、关键数据流）；单个系统的 API 细节请参考对应源码头部注释与 `docs/` 目录。
 
 ---
 
