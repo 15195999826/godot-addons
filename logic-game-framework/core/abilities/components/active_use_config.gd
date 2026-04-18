@@ -15,24 +15,24 @@
 ## 建议按照 "何时触发 → 执行什么 → 怎么执行 → 前置条件" 的语义顺序：
 ## [codeblock]
 ## var config := ActiveUseConfig.builder() \
-##     .trigger(...)                                    # 1. 何时触发（可选，有默认值）
-##     .timeline_id(TIMELINE_ID.SLASH)                  # 2. 使用哪个时间线
-##     .on_tag(TimelineTags.START, [StageCueAction...]) # 3. 时间线各阶段做什么
-##     .on_tag(TimelineTags.HIT, [DamageAction...])     #
-##     .condition(CooldownCondition.new())              # 4. 前置条件
-##     .cost(TimedCooldownCost.new(2000.0))             # 5. 消耗
+##     .trigger(...)                                      # 1. 何时触发（可选，有默认值）
+##     .timeline_id(TIMELINE_ID.SLASH)                    # 2. 使用哪个时间线
+##     .on_timeline_start([StageCueAction...])            # 3a. 同步：每轮 timeline 开始
+##     .on_tag(TimelineTags.HIT, [DamageAction...])       # 3b. 异步：timeline 时间点
+##     .on_timeline_end([...])                            # 3c. 同步：每轮 timeline 结束（可选）
+##     .condition(CooldownCondition.new())                # 4. 前置条件
+##     .cost(TimedCooldownCost.new(2000.0))               # 5. 消耗
 ##     .build()
 ## [/codeblock]
 ##
-## [b]简化示例（使用默认触发器）[/b]
-## [codeblock]
-## var config := ActiveUseConfig.builder() \
-##     .timeline_id(TIMELINE_ID.SLASH) \
-##     .on_tag(TimelineTags.HIT, [DamageAction.new(...)]) \
-##     .condition(CooldownCondition.new()) \
-##     .cost(TimedCooldownCost.new(2000.0)) \
-##     .build()
-## [/codeblock]
+## [b]on_timeline_start / on_timeline_end 与 on_tag 的区别[/b]
+##
+## - on_timeline_start/end：同步执行（在 activate 调用链 / tick 调用链里立即跑），
+##   用于需要原子保证的操作（如 grid.reserve_tile、StageCueAction 发送动画提示）
+## - on_tag：异步执行（按 timeline tag_time 在对应 tick 里触发），
+##   用于可以延迟的时间点事件（如 DamageAction 在 HIT tag 时造成伤害）
+##
+## loop 模式下：每轮 timeline 开始/结束都会触发 on_timeline_start/end。
 class_name ActiveUseConfig
 extends AbilityComponentConfig
 
@@ -40,8 +40,14 @@ extends AbilityComponentConfig
 ## Timeline ID
 var timeline_id: String
 
-## Tag → Actions 映射列表
+## Tag → Actions 映射列表（异步，按 timeline tag_time 触发）
 var tag_actions: Array[TagActionsEntry]
+
+## Timeline 开始时同步触发的 actions（activate 瞬间 / loop 每轮开始）
+var on_timeline_start_actions: Array[Action.BaseAction]
+
+## Timeline 结束时同步触发的 actions（timeline 完成 / loop 每轮结束）
+var on_timeline_end_actions: Array[Action.BaseAction]
 
 ## 触发器列表（可选，默认监听 AbilityActivateEvent）
 var triggers: Array[TriggerConfig]
@@ -62,7 +68,9 @@ func _init(
 	conditions: Array[Condition] = [],
 	costs: Array[Cost] = [],
 	triggers: Array[TriggerConfig] = [],
-	trigger_mode: String = "any"
+	trigger_mode: String = "any",
+	on_timeline_start_actions: Array[Action.BaseAction] = [],
+	on_timeline_end_actions: Array[Action.BaseAction] = []
 ) -> void:
 	self.timeline_id = timeline_id
 	self.tag_actions = tag_actions
@@ -70,6 +78,8 @@ func _init(
 	self.costs.assign(costs)
 	self.triggers = triggers
 	self.trigger_mode = trigger_mode
+	self.on_timeline_start_actions = on_timeline_start_actions
+	self.on_timeline_end_actions = on_timeline_end_actions
 
 
 ## 创建对应的 ActiveUseComponent 实例
@@ -90,13 +100,15 @@ static func builder() -> ActiveUseConfigBuilder:
 ## 推荐调用顺序：trigger → timeline_id → on_tag → condition → cost
 class ActiveUseConfigBuilder:
 	extends RefCounted
-	
+
 	var _timeline_id: String = ""
 	var _tag_actions: Array[TagActionsEntry] = []
 	var _triggers: Array[TriggerConfig] = []
 	var _trigger_mode: String = "any"
 	var _conditions: Array[Condition] = []
 	var _costs: Array[Cost] = []
+	var _on_timeline_start_actions: Array[Action.BaseAction] = []
+	var _on_timeline_end_actions: Array[Action.BaseAction] = []
 	
 	# ========== 1. 触发配置 ==========
 	
@@ -122,26 +134,35 @@ class ActiveUseConfigBuilder:
 		_timeline_id = value
 		return self
 	
-	## 添加 Tag -> Actions 映射
-	## 定义时间线各阶段（如 START, HIT, END）执行的动作
+	## 添加 Tag -> Actions 映射（异步，按 timeline tag_time 触发）
 	func on_tag(tag: String, actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
 		_tag_actions.append(TagActionsEntry.new(tag, actions))
 		return self
-	
+
+	## 配置 timeline 开始时同步触发的 actions（激活瞬间 / loop 每轮开始）
+	func on_timeline_start(actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
+		_on_timeline_start_actions.append_array(actions)
+		return self
+
+	## 配置 timeline 结束时同步触发的 actions（timeline 完成 / loop 每轮结束）
+	func on_timeline_end(actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
+		_on_timeline_end_actions.append_array(actions)
+		return self
+
 	# ========== 3. 条件和消耗 ==========
-	
+
 	## 添加前置条件（可选）
 	## 所有条件满足才能激活技能
 	func condition(cond: Condition) -> ActiveUseConfigBuilder:
 		_conditions.append(cond)
 		return self
-	
+
 	## 添加消耗（可选）
 	## 激活技能时扣除的资源
 	func cost(c: Cost) -> ActiveUseConfigBuilder:
 		_costs.append(c)
 		return self
-	
+
 	## 构建 ActiveUseConfig
 	## 验证必填字段，缺失时触发断言错误
 	func build() -> ActiveUseConfig:
@@ -152,5 +173,7 @@ class ActiveUseConfigBuilder:
 			_conditions,
 			_costs,
 			_triggers,
-			_trigger_mode
+			_trigger_mode,
+			_on_timeline_start_actions,
+			_on_timeline_end_actions
 		)

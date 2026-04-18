@@ -24,7 +24,9 @@ func _init(config: ActiveUseConfig):
 		config.timeline_id,
 		config.tag_actions,
 		triggers_to_use,
-		config.trigger_mode
+		config.trigger_mode,
+		config.on_timeline_start_actions,
+		config.on_timeline_end_actions
 	)
 	super._init(parent_config)
 	type = COMPONENT_TYPE

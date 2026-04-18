@@ -9,11 +9,26 @@ var id: String
 var total_duration: float
 var tags: Dictionary  # String -> float
 
+## 循环配置：loop=true 表示 timeline 跑完后重启；max_loops 限制总轮数（-1 = 无限）
+var loop: bool = false
+var max_loops: int = -1
+
 
 func _init(p_id: String, p_total_duration: float, p_tags: Dictionary = {}) -> void:
 	id = p_id
 	total_duration = p_total_duration
 	tags = p_tags
+
+
+## 创建周期性 Timeline（用于 DOT/HOT 等每 N ms 触发一次的场景）
+##
+## 产出：total_duration=interval_ms, tags={tick_tag: 0.0}, loop=true。
+## 注意：tag_time=0.0 的 keyframe 是 timeline "异步时间点" 概念里的 0ms 位置；
+## 真正的同步触发用 on_timeline_start/end，不走 tag 机制。
+static func periodic(p_id: String, p_interval_ms: float, p_tick_tag: String = "tick") -> TimelineData:
+	var t := TimelineData.new(p_id, p_interval_ms, {p_tick_tag: 0.0})
+	t.loop = true
+	return t
 
 
 ## 获取 tag 时间，未找到返回 -1.0
@@ -65,14 +80,19 @@ func to_dict() -> Dictionary:
 	return {
 		"id": id,
 		"totalDuration": total_duration,
-		"tags": tags
+		"tags": tags,
+		"loop": loop,
+		"maxLoops": max_loops,
 	}
 
 
 ## 从 Dictionary 反序列化（用于加载）
 static func from_dict(data: Dictionary) -> TimelineData:
-	return TimelineData.new(
+	var t := TimelineData.new(
 		data.get("id", ""),
 		data.get("totalDuration", 0.0),
 		data.get("tags", {})
 	)
+	t.loop = data.get("loop", false)
+	t.max_loops = data.get("maxLoops", -1)
+	return t

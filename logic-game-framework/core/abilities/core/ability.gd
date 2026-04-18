@@ -76,6 +76,8 @@ func tick_executions(dt: float) -> Array[String]:
 func activate_new_execution_instance(
 	p_timeline_id: String,
 	p_tag_actions: Array[TagActionsEntry],
+	p_on_timeline_start_actions: Array[Action.BaseAction],
+	p_on_timeline_end_actions: Array[Action.BaseAction],
 	p_trigger_event_dict: Dictionary,
 	p_game_state_provider: Variant
 ) -> AbilityExecutionInstance:
@@ -83,6 +85,8 @@ func activate_new_execution_instance(
 	var instance := AbilityExecutionInstance.new(
 		p_timeline_id,
 		p_tag_actions,
+		p_on_timeline_start_actions,
+		p_on_timeline_end_actions,
 		p_trigger_event_dict,
 		p_game_state_provider,
 		ability_ref
@@ -91,7 +95,8 @@ func activate_new_execution_instance(
 	for callback in _on_execution_callbacks:
 		if callback.is_valid():
 			callback.call(instance)
-	instance.tick(0)
+	# 激活瞬间同步触发 on_timeline_start（如 StageCueAction / reserve_tile）
+	instance.fire_sync_actions(p_on_timeline_start_actions, "__timeline_start__")
 	return instance
 
 func get_executing_instances() -> Array[AbilityExecutionInstance]:

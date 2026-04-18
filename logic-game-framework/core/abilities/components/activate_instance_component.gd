@@ -7,11 +7,15 @@ var _triggers: Array[Dictionary] = []
 var _trigger_mode: String = "any"
 var _timeline_id: String = ""
 var _tag_actions: Array[TagActionsEntry] = []
+var _on_timeline_start_actions: Array[Action.BaseAction] = []
+var _on_timeline_end_actions: Array[Action.BaseAction] = []
 
 func _init(config: ActivateInstanceConfig):
 	type = TYPE
 	_timeline_id = config.timeline_id
 	_tag_actions = config.tag_actions
+	_on_timeline_start_actions = config.on_timeline_start_actions
+	_on_timeline_end_actions = config.on_timeline_end_actions
 	_trigger_mode = config.trigger_mode
 	_triggers = AbilityComponent.convert_triggers(config.triggers)
 	# Debug: 冻结所有 Action，检测无状态约束
@@ -33,6 +37,8 @@ func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContex
 	ability.activate_new_execution_instance(
 		_timeline_id,
 		_tag_actions,
+		_on_timeline_start_actions,
+		_on_timeline_end_actions,
 		event_dict,
 		game_state_provider
 	)
@@ -50,3 +56,7 @@ func serialize() -> Dictionary:
 func _freeze_all_actions() -> void:
 	for entry in _tag_actions:
 		entry.freeze_actions()
+	for action in _on_timeline_start_actions:
+		action._freeze()
+	for action in _on_timeline_end_actions:
+		action._freeze()

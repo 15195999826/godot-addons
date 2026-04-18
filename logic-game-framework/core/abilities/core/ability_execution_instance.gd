@@ -9,16 +9,21 @@ var id: String
 var timeline_id: String
 var _timeline: TimelineData = null
 var _tag_actions: Array[TagActionsEntry] = []
+var _on_timeline_start_actions: Array[Action.BaseAction] = []
+var _on_timeline_end_actions: Array[Action.BaseAction] = []
 var _trigger_event_dict: Dictionary = {}
 var _game_state_provider: Variant = null
 var _ability_ref: AbilityRef = null
 var _elapsed: float = 0.0
+var _loops_completed: int = 0
 var _state: String = STATE_EXECUTING
 var _triggered_tags: Dictionary = {}
 
 func _init(
 	p_timeline_id: String,
 	p_tag_actions: Array[TagActionsEntry],
+	p_on_timeline_start_actions: Array[Action.BaseAction],
+	p_on_timeline_end_actions: Array[Action.BaseAction],
 	p_trigger_event_dict: Dictionary,
 	p_game_state_provider: Variant,
 	p_ability_ref: AbilityRef
@@ -27,6 +32,8 @@ func _init(
 	timeline_id = p_timeline_id
 	_timeline = TimelineRegistry.get_timeline(timeline_id)
 	_tag_actions = p_tag_actions
+	_on_timeline_start_actions = p_on_timeline_start_actions
+	_on_timeline_end_actions = p_on_timeline_end_actions
 	_trigger_event_dict = p_trigger_event_dict
 	_game_state_provider = p_game_state_provider
 	_ability_ref = p_ability_ref
@@ -51,12 +58,34 @@ func is_cancelled() -> bool:
 func get_trigger_event() -> Dictionary:
 	return _trigger_event_dict
 
+## 同步触发 timeline 生命周期 action（on_timeline_start 在 activate / loop 重启时调；
+## on_timeline_end 在 timeline 完成本轮时调）。
+## current_tag 用于构建 ExecutionContext 的 current_tag 字段，外部传入描述性标识。
+func fire_sync_actions(actions: Array[Action.BaseAction], current_tag: String) -> void:
+	if actions.is_empty():
+		return
+	var exec_context := _build_execution_context(current_tag)
+	for action in actions:
+		if action != null:
+			action.execute(exec_context)
+			action._verify_unchanged()
+		else:
+			Log.warning("AbilityExecutionInstance", "sync action entry is null")
+
 func tick(dt: float) -> Array[String]:
 	if _state != STATE_EXECUTING:
 		return []
 	if _timeline == null:
 		_state = STATE_COMPLETED
 		return []
+
+	# loop 模式下要求 dt <= total_duration，否则单次 tick 会跨越整个周期导致漏 tick
+	if _timeline.loop:
+		Log.assert_crash(
+			dt <= _timeline.total_duration,
+			"AbilityExecutionInstance",
+			"Loop timeline requires dt <= total_duration (dt=%f, total=%f, timeline=%s)" % [dt, _timeline.total_duration, timeline_id]
+		)
 
 	var previous_elapsed := _elapsed
 	_elapsed += dt
@@ -87,8 +116,17 @@ func tick(dt: float) -> Array[String]:
 		triggered_tags.append(tag_name)
 
 	if _elapsed >= _timeline.total_duration:
-		_state = STATE_COMPLETED
-		Log.debug("AbilityExecutionInstance", "执行完成")
+		# 本轮结束：先跑 on_timeline_end
+		fire_sync_actions(_on_timeline_end_actions, "__timeline_end__")
+		if _timeline.loop and (_timeline.max_loops <= 0 or _loops_completed + 1 < _timeline.max_loops):
+			# 进入下一轮：重置计时器 + 已触发 tags，跑 on_timeline_start
+			_loops_completed += 1
+			_elapsed = 0.0
+			_triggered_tags.clear()
+			fire_sync_actions(_on_timeline_start_actions, "__timeline_start__")
+		else:
+			_state = STATE_COMPLETED
+			Log.debug("AbilityExecutionInstance", "执行完成")
 
 	return triggered_tags
 
@@ -97,10 +135,8 @@ func cancel() -> void:
 		_state = STATE_CANCELLED
 		Log.debug("AbilityExecutionInstance", "执行取消")
 
-## 判断 tag 是否应在当前 tick 触发
+## 判断 tag 是否应在当前 tick 触发（纯数学区间判断：previous < tag_time <= current）
 func _should_trigger(previous_elapsed: float, tag_time: float) -> bool:
-	if tag_time == 0.0:
-		return previous_elapsed == 0.0 and _elapsed >= 0.0
 	return previous_elapsed < tag_time and _elapsed >= tag_time
 
 func _execute_actions_for_tag(tag_name: String, actions: Array[Action.BaseAction]) -> void:
@@ -141,6 +177,7 @@ func serialize() -> Dictionary:
 		"id": id,
 		"timelineId": timeline_id,
 		"elapsed": _elapsed,
+		"loopsCompleted": _loops_completed,
 		"state": _state,
 		"triggeredTags": _triggered_tags.keys(),
 	}
