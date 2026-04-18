@@ -81,12 +81,11 @@ func _on_id_assigned() -> void:
 
 ## 装备技能（在 HexBattle 初始化时调用）
 func equip_abilities() -> void:
-	var move_ability := Ability.new(HexBattleSkillAbilities.MOVE_ABILITY, get_id())
+	var move_ability := Ability.new(HexBattleMove.ABILITY, get_id())
 	ability_set.grant_ability(move_ability)
 	_move_ability_id = move_ability.id
 	
-	var skill_type := HexBattleSkillConfig.get_class_skill(character_class)
-	var skill_config := HexBattleSkillAbilities.get_skill_ability(skill_type)
+	var skill_config := HexBattleSkillConfig.get_class_skill(character_class)
 	var skill_ability := Ability.new(skill_config, get_id())
 	ability_set.grant_ability(skill_ability)
 	_skill_ability_id = skill_ability.id
@@ -97,20 +96,20 @@ func equip_abilities() -> void:
 func _grant_class_passives() -> void:
 	# 战士：荆棘反伤
 	if character_class == HexBattleClassConfig.CharacterClass.WARRIOR:
-		var thorn_passive := Ability.new(HexBattlePassiveAbilities.THORN_PASSIVE, get_id())
+		var thorn_passive := Ability.new(HexBattleThorn.ABILITY, get_id())
 		ability_set.grant_ability(thorn_passive)
 
 	# 狂战士：死亡爆发（亡语 - 死亡时对所有敌方造成 20 点纯粹伤害）
 	if character_class == HexBattleClassConfig.CharacterClass.BERSERKER:
-		var deathrattle := Ability.new(HexBattlePassiveAbilities.DEATHRATTLE_AOE, get_id())
+		var deathrattle := Ability.new(HexBattleDeathrattleAoe.ABILITY, get_id())
 		ability_set.grant_ability(deathrattle)
 
 	# 法师：生命力 + 活力（互相依赖的被动，用于验证收敛机制）
 	# 生命力：atk += max_hp * 0.01
 	# 活力：max_hp += atk * 0.1
 	if character_class == HexBattleClassConfig.CharacterClass.MAGE:
-		var vitality_passive := Ability.new(HexBattlePassiveAbilities.VITALITY_PASSIVE, get_id())
-		var vigor_passive := Ability.new(HexBattlePassiveAbilities.VIGOR_PASSIVE, get_id())
+		var vitality_passive := Ability.new(HexBattleVitality.ABILITY, get_id())
+		var vigor_passive := Ability.new(HexBattleVigor.ABILITY, get_id())
 		ability_set.grant_ability(vitality_passive)
 		ability_set.grant_ability(vigor_passive)
 		Log.debug("CharacterActor", "[收敛验证] 法师装备了互相依赖的被动：生命力 + 活力")

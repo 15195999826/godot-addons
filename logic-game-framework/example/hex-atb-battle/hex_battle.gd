@@ -231,8 +231,7 @@ func _apply_inspire_buff_to_all() -> void:
 
 
 func _register_timelines() -> void:
-	for timeline in HexBattleSkillTimelines.get_all_timelines():
-		TimelineRegistry.register(timeline)
+	HexBattleAllSkills.register_all_timelines()
 
 
 func _print_battle_info() -> void:
