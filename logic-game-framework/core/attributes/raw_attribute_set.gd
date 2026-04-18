@@ -386,6 +386,9 @@ func register_dynamic_dep(
 		"modifier_type": modifier_type,
 		"coefficient": coefficient,
 	})
+	# 立即求解：否则新增的 dep 要等到下一次 add/remove/update modifier 才会生效，
+	# 典型场景（先 add_modifier 再 register_dynamic_dep 再 get_current_value）会读到未求解的 0 值。
+	_solve_dynamic_deps()
 
 
 ## 取消注册动态依赖

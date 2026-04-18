@@ -103,24 +103,27 @@ func run() -> int:
 	return _fail_count
 
 func _run_suite(suite_name: String) -> void:
+	# 注意：suite 字典里的数组是 untyped Array（describe/register_test 创建时未声明类型），
+	# 直接 "as Array[Dictionary]" 对 untyped Array 会返回 null。这里改用 untyped Array
+	# + per-item 断言，兼容 describe() BDD 风格和 register_test() legacy 风格两条注册路径。
 	var suite: Dictionary = _suites[suite_name]
-	var tests: Array[Dictionary] = suite["tests"] as Array[Dictionary]
-	var before_each_list: Array[Callable] = suite["beforeEach"] as Array[Callable]
-	var after_each_list: Array[Callable] = suite["afterEach"] as Array[Callable]
+	var tests: Array = suite["tests"]
+	var before_each_list: Array = suite["beforeEach"]
+	var after_each_list: Array = suite["afterEach"]
 
 	print("📦 %s" % suite_name)
 	print("-".repeat(60))
 
 	_current_suite_name = suite_name
 	_before_each_callbacks.clear()
-	for callback: Callable in before_each_list:
-		_before_each_callbacks.append(callback)
+	for callback in before_each_list:
+		_before_each_callbacks.append(callback as Callable)
 	_after_each_callbacks.clear()
-	for callback: Callable in after_each_list:
-		_after_each_callbacks.append(callback)
+	for callback in after_each_list:
+		_after_each_callbacks.append(callback as Callable)
 
-	for test_data: Dictionary in tests:
-		_run_test(suite_name, test_data)
+	for test_data in tests:
+		_run_test(suite_name, test_data as Dictionary)
 
 	print("")
 
