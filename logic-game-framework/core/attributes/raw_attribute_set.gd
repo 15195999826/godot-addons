@@ -78,16 +78,15 @@ var _dirty_set: Dictionary = {}
 var _computing_set: Dictionary = {}
 var _constraints: Dictionary = {}
 var _listeners: Array[Callable] = []
-## 跨属性 clamp 注册表（取代旧的 _pre_change_callback）
+## 跨属性 clamp 注册表
 ##
 ## 每项: { "target": String, "bound": "max"|"min", "source": String }
 ## 语义: target 的 current value 上/下界 = source 的 current value。
 ##
 ## 典型用例: hp ≤ max_hp → register_cross_attr_clamp("hp", "max", "max_hp")
 ##
-## 相比旧 _pre_change_callback 的 Callable 方案：
-## - 声明式，不持 Callable → 无闭包捕获 self 风险
-## - 循环依赖保护复用 _computing_set 现有机制
+## 循环依赖保护复用 _computing_set 现有机制：读取 source 时若递归回 target，
+## 命中 _computing_set 自动 fallback 到缓存/基础值。
 var _cross_attr_clamps: Array[Dictionary] = []
 ## 动态依赖注册表
 ## 每项: { modifier_id: String, source_attribute: String, target_attribute: String,
@@ -353,9 +352,8 @@ func remove_all_change_listeners() -> void:
 ##
 ## 循环依赖保护：读取 source 时走 get_breakdown()，命中 _computing_set 自动 fallback。
 ##
-## 设计缘由：取代旧 set_pre_change(Callable) —— Callable 存储在 attr_set 里但
-## 闭包捕获外部 self（如 Actor）会形成 actor ↔ attr_set ↔ Callable 循环强引用，
-## 在 RefCounted 下泄漏。声明式 API 只存 String，无此风险。
+## API 只存 String，不存 Callable —— 避免外部注入的 lambda 捕获 self 形成
+## actor ↔ attr_set ↔ Callable 循环强引用在 RefCounted 下泄漏。
 func register_cross_attr_clamp(target: String, bound: String, source: String) -> void:
 	Log.assert_crash(
 		bound == "max" or bound == "min",
@@ -614,7 +612,10 @@ func _solve_dynamic_deps() -> void:
 	_mark_all_dynamic_dirty(dep_modifiers)
 
 
-## 内部辅助：计算属性的 currentValue（不触发通知，不走 pre_change 回调）
+## 内部辅助：计算属性的 currentValue（只做静态 clamp，不走跨属性 clamp，不触发通知）
+##
+## 用于动态依赖求解器的两轮快照：需要快速算出纯静态视角的值，不能因为跨属性
+## clamp 再递归调 get_breakdown 形成求解器内的二次递归。
 func _compute_current_value(attr_name: String) -> float:
 	var base_value := float(_base_values.get(attr_name, 0.0))
 	var mods := _get_modifiers_typed(attr_name)

@@ -49,8 +49,8 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 	
 	attribute_set = HexBattleCharacterAttributeSet.new(get_id())
 	var stats := class_config.stats
-	# max_hp 必须在 hp 之前设置，否则 pre_change 约束（hp ≤ max_hp）
-	# 会用默认的 max_hp=100 来 clamp hp，导致 hp > 100 的角色初始不满血
+	# max_hp 必须在 hp 之前设置：跨属性 clamp (hp ≤ max_hp) 会在 set_hp_base 时
+	# 用当前 max_hp 做 clamp，若 max_hp 还是默认 100，hp > 100 的角色会被截到 100。
 	attribute_set.set_max_hp_base(stats["max_hp"])
 	attribute_set.set_hp_base(stats["hp"])
 	attribute_set.set_atk_base(stats["atk"])
