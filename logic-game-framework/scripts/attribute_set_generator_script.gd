@@ -106,8 +106,28 @@ func _generate_set(set_name: String, attr_defs: Dictionary, output_dir: String) 
 		lines.append(line)
 
 	lines.append("\t})")
+
+	# 跨属性 clamp：maxRef/minRef 字段驱动
+	# 遍历顺序与 apply_config 保持一致（按属性名排序）；validate source 必须在同 set 里
+	var clamp_lines: Array[String] = []
+	for attr_name in base_attr_names:
+		var cfg: Dictionary = base_attrs[attr_name]
+		for field_name in ["maxRef", "minRef"]:
+			if not cfg.has(field_name) or cfg[field_name] == null:
+				continue
+			var source_attr: String = str(cfg[field_name])
+			if not base_attrs.has(source_attr) and not derived_attrs.has(source_attr):
+				push_error("Attribute '%s' in set '%s' references %s='%s' but source attribute not defined" % [
+					attr_name, set_name, field_name, source_attr
+				])
+				continue
+			var bound := "max" if field_name == "maxRef" else "min"
+			clamp_lines.append("\t_raw.register_cross_attr_clamp(\"%s\", \"%s\", \"%s\")" % [attr_name, bound, source_attr])
+
+	for clamp_line in clamp_lines:
+		lines.append(clamp_line)
 	lines.append("")
-	
+
 	# 生成基础属性的访问器
 	for attr_name in base_attr_names:
 		var attr_key := attr_name

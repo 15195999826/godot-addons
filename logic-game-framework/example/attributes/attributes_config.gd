@@ -12,7 +12,7 @@ const SETS := {
 	},
 	# HexBattle 角色属性集
 	"HexBattleCharacter": {
-		"hp": { "baseValue": 100.0, "minValue": 0.0 },
+		"hp": { "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" },
 		"max_hp": { "baseValue": 100.0, "minValue": 1.0 },
 		"atk": { "baseValue": 50.0 },
 		"def": { "baseValue": 30.0 },

@@ -39,15 +39,13 @@ func get_raw() -> RawAttributeSet:
 	return _raw
 
 
-## 设置 current 值变化前的回调（用于跨属性约束，如 hp ≤ max_hp）
-## 签名: func(attr_name: String, inout_value: Dictionary) -> void
-## inout_value = { "value": float }，可直接修改 inout_value["value"] 来调整最终值
+## 注册跨属性 clamp（用于动态边界约束，如 hp ≤ max_hp）
+## 详见 RawAttributeSet.register_cross_attr_clamp
 ##
 ## 示例：
-##   attribute_set.set_pre_change(func(attr_name: String, inout_value: Dictionary) -> void:
-##       if attr_name == "hp":
-##           if inout_value["value"] > attribute_set.max_hp:
-##               inout_value["value"] = attribute_set.max_hp
-##   )
-func set_pre_change(callback: Callable) -> void:
-	_raw.set_pre_change(callback)
+##   attribute_set.register_cross_attr_clamp("hp", "max", "max_hp")
+##
+## 通常由 AttributeSetGeneratorScript 根据 config 的 maxRef/minRef 字段自动生成调用；
+## 手动注册仅用于框架外的自定义 AttributeSet 子类。
+func register_cross_attr_clamp(target: String, bound: String, source: String) -> void:
+	_raw.register_cross_attr_clamp(target, bound, source)

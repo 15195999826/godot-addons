@@ -78,9 +78,17 @@ var _dirty_set: Dictionary = {}
 var _computing_set: Dictionary = {}
 var _constraints: Dictionary = {}
 var _listeners: Array[Callable] = []
-## current 值变化前的回调，签名: func(attr_name: String, inout_value: Dictionary) -> void
-## inout_value = { "value": float }，可直接修改 inout_value["value"] 来调整最终值
-var _pre_change_callback: Callable = Callable()
+## 跨属性 clamp 注册表（取代旧的 _pre_change_callback）
+##
+## 每项: { "target": String, "bound": "max"|"min", "source": String }
+## 语义: target 的 current value 上/下界 = source 的 current value。
+##
+## 典型用例: hp ≤ max_hp → register_cross_attr_clamp("hp", "max", "max_hp")
+##
+## 相比旧 _pre_change_callback 的 Callable 方案：
+## - 声明式，不持 Callable → 无闭包捕获 self 风险
+## - 循环依赖保护复用 _computing_set 现有机制
+var _cross_attr_clamps: Array[Dictionary] = []
 ## 动态依赖注册表
 ## 每项: { modifier_id: String, source_attribute: String, target_attribute: String,
 ##         modifier_type: AttributeModifier.Type, coefficient: float }
@@ -147,9 +155,9 @@ func get_current_value(attr_name: String) -> float:
 ## _computing_set 记录当前正在计算的属性。如果在计算 A 的过程中又要计算 A，说明形成了循环。
 ##
 ## 动态属性依赖通过 register_dynamic_dep + 两轮快照求解器处理，不会触发循环。
-## 此处的循环检测用于防御 pre_change_callback 等外部回调导致的意外循环。
+## 此处的循环检测用于防御 cross_attr_clamp 读取 source 属性时递归回自己的意外循环。
 ##
-## 示例：pre_change_callback 中 hp ≤ max_hp 约束，计算 hp 时读取 max_hp，
+## 示例：hp ≤ max_hp 跨属性 clamp，计算 hp 时读取 max_hp，
 ## 若 max_hp 的计算又回到 hp → 触发循环检测。
 ##
 ## 循环触发后：有缓存返回缓存值，无缓存返回 base 值（并输出警告日志）。
@@ -173,18 +181,15 @@ func get_breakdown(attr_name: String) -> AttributeBreakdown:
 	var mods := _get_modifiers_typed(attr_name)
 	var breakdown := AttributeCalculator.calculate(base_value, mods)
 
-	# 1. 先应用 minValue/maxValue 约束
+	# 1. 先应用 minValue/maxValue 约束（静态）
 	var clamped_current := _clamp_value(attr_name, breakdown.current_value)
 	if clamped_current != breakdown.current_value:
 		breakdown = breakdown.with_clamped_value(clamped_current)
 
-	# 2. 再调用 pre_change 回调（允许跨属性约束，如 hp ≤ max_hp）
-	if _pre_change_callback.is_valid():
-		var inout_value := { "value": breakdown.current_value }
-		_pre_change_callback.call(attr_name, inout_value)
-		var callback_value: float = inout_value["value"]
-		if callback_value != breakdown.current_value:
-			breakdown = breakdown.with_clamped_value(callback_value)
+	# 2. 再应用跨属性 clamp（动态，如 hp ≤ max_hp）
+	var cross_clamped := _apply_cross_attr_clamps(attr_name, breakdown.current_value)
+	if cross_clamped != breakdown.current_value:
+		breakdown = breakdown.with_clamped_value(cross_clamped)
 
 	_computing_set.erase(attr_name)
 
@@ -330,23 +335,71 @@ func remove_all_change_listeners() -> void:
 	_listeners.clear()
 
 
-## 设置 current 值变化前的回调
-## 签名: func(attr_name: String, inout_value: Dictionary) -> void
-## inout_value = { "value": float }，可直接修改 inout_value["value"] 来调整最终值
+## 注册跨属性 clamp：target 属性的 bound 边界动态等于 source 属性的 current value
 ##
-## 示例：hp 不超过 max_hp
-##   attr_set.set_pre_change(func(attr_name: String, inout_value: Dictionary) -> void:
-##       if attr_name == "hp":
-##           var max_hp := attr_set.get_current_value("max_hp")
-##           if inout_value["value"] > max_hp:
-##               inout_value["value"] = max_hp
-##   )
-func set_pre_change(callback: Callable) -> void:
-	_pre_change_callback = callback
+## 语义：计算 target 的 current value 时，在静态 min/max 约束之后，
+##       额外用 source 当前值做 bound 方向的 clamp。
+##
+## 参数：
+##   target — 被 clamp 的属性名（如 "hp"）
+##   bound  — "max" 或 "min"
+##   source — 参考的属性名（如 "max_hp"）
+##
+## 典型用例（hp ≤ max_hp，治疗溢出或 max_hp debuff 后 hp 卡上限）：
+##   attr_set.register_cross_attr_clamp("hp", "max", "max_hp")
+##
+## 与静态 minValue/maxValue 的组合：两者并存时顺序生效（先静态再跨属性），
+## 取更严的边界；同向多条注册按注册顺序依次应用。
+##
+## 循环依赖保护：读取 source 时走 get_breakdown()，命中 _computing_set 自动 fallback。
+##
+## 设计缘由：取代旧 set_pre_change(Callable) —— Callable 存储在 attr_set 里但
+## 闭包捕获外部 self（如 Actor）会形成 actor ↔ attr_set ↔ Callable 循环强引用，
+## 在 RefCounted 下泄漏。声明式 API 只存 String，无此风险。
+func register_cross_attr_clamp(target: String, bound: String, source: String) -> void:
+	Log.assert_crash(
+		bound == "max" or bound == "min",
+		"AttributeSet",
+		"register_cross_attr_clamp: bound must be 'max' or 'min', got '%s'" % bound
+	)
+	Log.assert_crash(
+		has_attribute(target),
+		"AttributeSet",
+		"register_cross_attr_clamp: target attribute '%s' not defined" % target
+	)
+	Log.assert_crash(
+		has_attribute(source),
+		"AttributeSet",
+		"register_cross_attr_clamp: source attribute '%s' not defined" % source
+	)
+	_cross_attr_clamps.append({"target": target, "bound": bound, "source": source})
+	# 新注册的 clamp 可能改变 target 的 current 值，标记 dirty
+	_dirty_set[target] = true
+	_cache.erase(target)
 
 
-func clear_pre_change() -> void:
-	_pre_change_callback = Callable()
+func clear_cross_attr_clamps() -> void:
+	_cross_attr_clamps.clear()
+	for attr_name in _base_values.keys():
+		_dirty_set[attr_name] = true
+	_cache.clear()
+
+
+## 应用所有匹配 attr_name 的跨属性 clamp，返回 clamp 后的值。
+## 被 get_breakdown 调用。读取 source 时走 get_breakdown → 复用 _computing_set 循环检测。
+func _apply_cross_attr_clamps(attr_name: String, value: float) -> float:
+	var result := value
+	for clamp_cfg in _cross_attr_clamps:
+		if clamp_cfg["target"] != attr_name:
+			continue
+		var source_attr: String = clamp_cfg["source"]
+		var bound: String = clamp_cfg["bound"]
+		var ref_value := get_breakdown(source_attr).current_value
+		if bound == "max" and result > ref_value:
+			result = ref_value
+		elif bound == "min" and result < ref_value:
+			result = ref_value
+	return result
 
 
 func apply_config(config: Dictionary) -> void:

@@ -15,8 +15,8 @@ func _init() -> void:
 	TestFramework.register_test("RawAttributeSet - should remove change listener", _test_remove_listener)
 	TestFramework.register_test("RawAttributeSet - should clamp value to min constraint", _test_min_constraint)
 	TestFramework.register_test("RawAttributeSet - should clamp value to max constraint", _test_max_constraint)
-	TestFramework.register_test("RawAttributeSet - pre_change callback clamps hp to max_hp", _test_pre_change_callback_clamps_hp_to_max_hp)
-	TestFramework.register_test("RawAttributeSet - pre_change callback not called when not set", _test_pre_change_callback_not_called_when_not_set)
+	TestFramework.register_test("RawAttributeSet - cross_attr_clamp clamps hp to max_hp", _test_cross_attr_clamp_clamps_hp_to_max_hp)
+	TestFramework.register_test("RawAttributeSet - without cross_attr_clamp hp can exceed max_hp", _test_without_cross_attr_clamp_hp_unclamped)
 	TestFramework.register_test("RawAttributeSet - dynamic circular dependency converges", _test_dynamic_circular_dependency_converges)
 	TestFramework.register_test("RawAttributeSet - dynamic dependency is reversible", _test_dynamic_dependency_reversible)
 
@@ -204,20 +204,14 @@ func _test_max_constraint() -> void:
 	TestFramework.assert_equal(100, constrained_set.get_base("mp"))
 
 
-func _test_pre_change_callback_clamps_hp_to_max_hp() -> void:
-	# 场景：hp 的 current 值不能超过 max_hp
+func _test_cross_attr_clamp_clamps_hp_to_max_hp() -> void:
+	# 场景：hp 的 current 值不能超过 max_hp（声明式跨属性 clamp）
 	var attr_set := RawAttributeSet.new([
 		{"name": "hp", "baseValue": 80},
 		{"name": "max_hp", "baseValue": 100},
 	])
 
-	# 设置约束：hp ≤ max_hp
-	attr_set.set_pre_change(func(attr_name: String, inout_value: Dictionary) -> void:
-		if attr_name == "hp":
-			var max_hp := attr_set.get_current_value("max_hp")
-			if inout_value["value"] > max_hp:
-				inout_value["value"] = max_hp
-	)
+	attr_set.register_cross_attr_clamp("hp", "max", "max_hp")
 
 	# 测试 1：添加修改器使 hp 超过 max_hp，应被 clamp
 	# hp = 80 + 50 = 130，但 max_hp = 100，所以 hp 应该是 100
@@ -236,14 +230,13 @@ func _test_pre_change_callback_clamps_hp_to_max_hp() -> void:
 	TestFramework.assert_near(130, attr_set.get_current_value("hp"))
 
 
-func _test_pre_change_callback_not_called_when_not_set() -> void:
-	# 未设置回调时，不应影响正常计算
+func _test_without_cross_attr_clamp_hp_unclamped() -> void:
+	# 未注册 cross_attr_clamp 时，hp 可以自由超过 max_hp
 	var attr_set := RawAttributeSet.new([
 		{"name": "hp", "baseValue": 80},
 		{"name": "max_hp", "baseValue": 100},
 	])
 
-	# 不设置 pre_change，hp 可以超过 max_hp
 	attr_set.add_modifier(AttributeModifier.create_add_base("heal", "hp", 50, "buff"))
 	TestFramework.assert_near(130, attr_set.get_current_value("hp"))
 

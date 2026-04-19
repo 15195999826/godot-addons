@@ -57,3 +57,47 @@
 ### 待处理
 - **smoke_strike 剩余 38 泄漏的根源**：shutdown 时 battle 在 `_end_all_instances` + `_instances.clear()` 后仍有 1 个真实外部强引用。不是循环 C/D/E。可能的候选：Action 里某个 Callable / event 字典持对象引用 / `UGridMap.place_occupant` 缓存的 occupant 路径。独立问题，需要新一轮 probe 定位。
 - 本轮本该带来的数字下降受到此残余循环压制，因此循环 D 的实际收益被低估了（frontend 降 11 是循环 D 的真实体现，smoke_strike 未能暴露）。
+
+## [Unreleased] — 2026-04-19 第三轮：pre_change 闭包循环根治（config 驱动跨属性 clamp）
+
+承接上一轮「smoke_strike 剩余 38 泄漏」待处理项。PREDELETE probe 定位到：
+```
+CharacterActor.attribute_set → HexBattleCharacterAttributeSet
+HexBattleCharacterAttributeSet._pre_change_callback → Callable
+Callable → (闭包捕获 self) → CharacterActor   ← 循环
+```
+即 `CharacterActor._setup_attribute_constraints` 注册的 lambda 在访问 `attribute_set.max_hp` 时隐式捕获 `self`，形成 actor ↔ attribute_set ↔ Callable 三角强引用。属于循环 C/D/E 同族（子对象存的 Callable 捕获 owner），但表层是「闭包捕获」而非「字段缓存」。
+
+### 架构决策：pre_change callback → 声明式 config 驱动的 cross-attr clamp
+`_pre_change_callback` 的实际能力只能改 `inout_value["value"]`（clamp），无法触发副作用 —— **唯一用例**是跨属性 clamp（hp ≤ max_hp）。收敛为声明式 API 后 Callable 彻底消失。
+
+### Added
+- `RawAttributeSet.register_cross_attr_clamp(target, bound, source)` + `clear_cross_attr_clamps()`。`bound` 取 `"max"` / `"min"`，`source` 属性的 current value 作为 target 的动态边界。构建期 assert target/source 必须在同 set 里定义。
+- `BaseGeneratedAttributeSet.register_cross_attr_clamp` 转发。
+- Attribute config schema 新增 `maxRef` / `minRef` 字段，值为同 set 内的属性名。生成器在 `_init()` 末尾自动产出 `_raw.register_cross_attr_clamp(...)` 调用，并在生成期 validate source 存在；缺失时 `push_error`。
+- `example/attributes/attributes_config.gd` 的 `HexBattleCharacter.hp` 加 `"maxRef": "max_hp"`，生成文件同步重建。
+
+### Removed
+- `RawAttributeSet._pre_change_callback` 字段 + `set_pre_change(callback)` + `clear_pre_change()`。
+- `BaseGeneratedAttributeSet.set_pre_change(callback)` 转发。
+- `CharacterActor._setup_attribute_constraints()` 函数 + `_init()` 里的调用（约束语义已完全下沉到 config）。
+
+### Changed
+- `RawAttributeSet.get_breakdown()` 计算流程「步骤 2」从「调 `_pre_change_callback`」改为「遍历 `_cross_attr_clamps` 并走 `get_breakdown(source)`」。读 source 时复用已有 `_computing_set` 循环检测机制，语义一对一。
+- `tests/core/attributes/attribute_set_test.gd` 两个 pre_change 测试改名为 `cross_attr_clamp_*`，API 切换为 `register_cross_attr_clamp("hp", "max", "max_hp")`，断言不变。
+
+### 主仓库同步
+- `character_actor.gd` 删 `_setup_attribute_constraints` 调用。项目级 `logic-game-framework-config/attributes/attributes_config.gd`（`Hero`/`Tower`）因不含 hp 属性，无需改动。
+
+### 验证（基线 → 本轮后）
+| 测试 | Before | After |
+|---|---|---|
+| LGF 单元测试 (59/59) | 33 leaked / 14 resources | **24 leaked / 11 resources** |
+| `smoke_strike.tscn` | 112 leaked / 38 resources | **0 / 0** 🎯 |
+| `smoke_frontend_main.tscn` | 46 resources | **0 / 0** 🎯 |
+
+→ [design-notes/2026-04-19-attribute-cross-clamp-config-driven.md](docs/design-notes/2026-04-19-attribute-cross-clamp-config-driven.md)
+
+### 待处理
+- LGF 单元测试 24 leaked / 11 resources 是**测试框架层面**的泄漏（testframework 保留每个 `*_test.gd` 的 GDScript 引用），与生产代码无关，独立问题。
+- `_listeners: Array[Callable]` 仍是潜在风险点：若业务代码向 `attribute_set.add_change_listener` 传入捕获 actor 的 lambda，会形成 actor ↔ attribute_set ↔ listener 循环。生成器产出的 wrapper 只捕获 `actor_id` String 和用户 Callable，自身安全；但用户侧 Callable 的闭包捕获需要审计（后续同类风险扫描）。

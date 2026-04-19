@@ -48,7 +48,6 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 	_display_name = class_config.name
 	
 	attribute_set = HexBattleCharacterAttributeSet.new(get_id())
-	_setup_attribute_constraints()
 	var stats := class_config.stats
 	# max_hp 必须在 hp 之前设置，否则 pre_change 约束（hp ≤ max_hp）
 	# 会用默认的 max_hp=100 来 clamp hp，导致 hp > 100 的角色初始不满血
@@ -59,18 +58,6 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 	attribute_set.set_speed_base(stats["speed"])
 	ability_set = BattleAbilitySet.create_battle_ability_set(get_id(), attribute_set)
 	ai_strategy = AIStrategyFactory.get_strategy(character_class)
-
-
-## 设置属性约束
-func _setup_attribute_constraints() -> void:
-	# hp 的 current 值不超过 max_hp
-	# 注意：hp base ≥ 0 已通过 minValue 配置实现
-	attribute_set.set_pre_change(func(attr_name: String, inout_value: Dictionary) -> void:
-		if attr_name == "hp":
-			var max_hp := attribute_set.max_hp
-			if inout_value["value"] > max_hp:
-				inout_value["value"] = max_hp
-	)
 
 
 ## ID 被 add_actor 分配后，同步 ability_set 和 attribute_set 的 owner 引用

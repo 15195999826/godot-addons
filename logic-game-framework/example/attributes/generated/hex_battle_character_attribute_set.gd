@@ -14,6 +14,7 @@ func _init(p_actor_id: String = "") -> void:
 		"max_hp": { "baseValue": 100.0, "minValue": 1.0 },
 		"speed": { "baseValue": 100.0 },
 	})
+	_raw.register_cross_attr_clamp("hp", "max", "max_hp")
 
 
 var atk: float:
