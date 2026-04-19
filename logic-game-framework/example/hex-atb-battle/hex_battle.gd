@@ -243,10 +243,6 @@ func _apply_inspire_buff_to_all() -> void:
 		])
 
 
-func _register_timelines() -> void:
-	HexBattleAllSkills.register_all_timelines()
-
-
 func _print_battle_info() -> void:
 	print("\n角色信息:")
 	print("-".repeat(70))
