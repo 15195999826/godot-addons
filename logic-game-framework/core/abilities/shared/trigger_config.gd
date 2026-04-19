@@ -21,6 +21,27 @@ static var ABILITY_ACTIVATE := TriggerConfig.new(
 )
 
 
+## "自己被 grant 到 owner 身上时激活" 触发器。
+##
+## 典型用途：buff 挂一个 ActivateInstanceConfig + 此 trigger + loop timeline，
+## grant 瞬间 AbilitySet 广播 ABILITY_GRANTED_EVENT，本 buff 响应后启动自己的 loop（如 DOT）。
+##
+## 匹配条件：事件的 actor_id == owner_id 且 ability.id == 自己的 instance id（严格同实例）。
+## 用 instance id 而非 config_id 避免同 actor 上多个同 config 实例互相激活对方。
+static var GRANTED_SELF := TriggerConfig.new(
+	GameEvent.ABILITY_GRANTED_EVENT,
+	func(event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
+		var ability_ref: Ability = ctx.ability
+		var owner_id: String = ctx.owner_actor_id
+		if ability_ref == null or owner_id == "":
+			return false
+		var event := GameEvent.AbilityGranted.from_dict(event_dict)
+		if event.actor_id != owner_id:
+			return false
+		return str(event.ability.get("id", "")) == ability_ref.id
+)
+
+
 ## 事件类型（如 GameEvent.ABILITY_ACTIVATE_EVENT）
 var event_kind: String
 

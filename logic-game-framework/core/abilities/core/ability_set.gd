@@ -54,7 +54,12 @@ func has_loose_tag(tag: String) -> bool:
 func get_loose_tag_stacks(tag: String) -> int:
 	return tag_container.get_loose_tag_stacks(tag)
 
-func grant_ability(ability: Ability) -> void:
+## grant 新 ability。传入 game_state_provider 后 grant 会同步广播 ABILITY_GRANTED_EVENT
+## 给本 ability_set 的所有 ability，让 TriggerConfig.GRANTED_SELF 等 trigger 能响应
+## （典型用途：挂上就自动 tick 的 buff 通过 ActivateInstanceConfig 自激活 loop timeline）。
+##
+## 广播限本人 ability_set，不走 event_processor 全局 post —— 跨 actor 监听由业务层自行广播。
+func grant_ability(ability: Ability, game_state_provider: Variant = null) -> void:
 	for existing in _abilities:
 		if existing.id == ability.id:
 			Log.warning("AbilitySet", "Ability already granted: %s" % ability.id)
@@ -64,6 +69,10 @@ func grant_ability(ability: Ability) -> void:
 	ability.apply_effects(context)
 	Log.debug("AbilitySet", "获得能力")
 	_notify_granted(ability)
+
+	if game_state_provider != null:
+		var event_dict := GameEvent.AbilityGranted.create(owner_actor_id, ability.serialize()).to_dict()
+		receive_event(event_dict, game_state_provider)
 
 func revoke_ability(ability_id: String, reason: String = REVOKE_REASON_MANUAL, expire_reason: String = "") -> bool:
 	var index := -1

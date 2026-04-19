@@ -12,9 +12,30 @@
 
 ---
 
-## [Unreleased]
+## [Unreleased] — 2026-04-19 后续：Ability 叠层一级化 + grant 事件化
+
+围绕 Poison（DOT）技能实装,对外暴露两个 framework 缺口并一次性补齐:
+(1) 叠层数据之前挂在 `StackComponent` 里,action 必须遍历 components 找它;
+(2) `grant_ability` 只跑 local callback,buff 无法"挂上就自动 tick"。
 
 ### Added
+- `Ability.stacks / max_stacks / overflow_policy` 提升为一级属性,配套 API `get_stacks() / is_stacks_full() / add_stacks(count) / remove_stacks(count) / set_stacks(count)`。溢出策略常量 `Ability.OVERFLOW_CAP / OVERFLOW_REFRESH / OVERFLOW_REJECT`。REFRESH 策略在叠层同时调用本 ability 上 `TimeDurationComponent.refresh()`(之前的 TODO 随一级化变成 3 行实现)。归 0 不自动 expire —— 清理由调用方决定(stacks 做纯计数器,与项目约定一致)。
+- `AbilityConfig` 加 `initial_stacks / max_stacks / overflow_policy` 配置字段,`AbilityConfigBuilder.stacks(initial, max_val, policy)` 一级 API。不调默认 1/1/CAP(不可叠加 ability 调 add_stacks 一直 CAP 在 1,语义安全)。
+- `AbilitySet.grant_ability(ability, game_state_provider = null)` 新增第二参数。传入后,grant 内部构造 `ABILITY_GRANTED_EVENT` 并同步调 `receive_event(event_dict, provider)` 广播给本 actor 的所有 ability。限本人 ability_set 广播,不走 event_processor 全局 post —— 跨 actor 监听由业务层自行决定。未传 provider(默认)则仅跑 local callback,保持与旧调用点兼容。
+- `TriggerConfig.GRANTED_SELF` 静态 factory:匹配 `ABILITY_GRANTED_EVENT` 且 `event.actor_id == owner_id` 且 `event.ability.id == ctx.ability.id`(严格 instance id,同 actor 上多个同 config 实例不互激活)。典型用途:buff 挂 `ActivateInstanceConfig + GRANTED_SELF + loop timeline` 实现"挂上就自动 tick"(DOT/HOT/持续光环)。
+
+### Removed
+- `stdlib/components/stack_component.gd` 删除(对应 `stacks / max_stacks / overflow_policy` 已上移到 Ability 一级)。StackComponent 原本"组件化"但实际没有 hook/callback 也没有组件间交互接口,只是"一堆方法 + 状态"伪装成 component。外部 action 必须遍历 components 按 type 字符串找它才能读写层数,违反 component 封装。上移后:
+  - Poison DOT 的 tick action 直接 `ctx.ability_ref.get_ability().get_stacks()`,零胶水
+  - `Ability` 成为 stacks 的 facade(类比 `attribute_set.atk` / `actor.faction`),AbilityConfig 一级 API `.stacks(...)` 声明可叠加 ability
+
+### Changed
+- `Ability.serialize()` 增加 `stacks / maxStacks / overflowPolicy` 字段(replay/snapshot 携带层数信息)。
+
+### 外部调用点同步
+本次 addon 改动对现有业务代码**零调用点变更**:grant_ability 新参数默认 null;stacks 字段在所有未调 `.stacks(...)` 的 config 下默认 1/1/CAP,add/remove 对它们是 no-op。
+
+### Added(上轮累积,保留)
 - `Actor.is_pre_event_responsive() -> bool`（默认 true）虚函数。项目层子类覆盖以表达"此刻不响应 PreEvent 分发"的状态（如死亡、沉默、眩晕）。框架在 `PreEventComponent` handler 触发时查询，返回 false 则 handler 自动降级为 `pass_intent()`。  
   → [design-notes/2026-04-19-ability-lifecycle-decoupling.md](docs/design-notes/2026-04-19-ability-lifecycle-decoupling.md)
 - `GameplayInstance.end()` 末尾自动调 `EventProcessor.remove_handlers_by_owner_id(actor.get_id())` 清理所有 actor 的 PreEvent handler 注册，避免跨战斗累积孤儿。不 revoke ability，保留 `_abilities` 数组以支持复活等语义。

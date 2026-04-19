@@ -5,6 +5,15 @@ const STATE_PENDING := "pending"
 const STATE_GRANTED := "granted"
 const STATE_EXPIRED := "expired"
 
+## Ability 层数的溢出策略
+##
+## - CAP：超过 max 截断到 max
+## - REFRESH：达到 CAP 的同时调用所在 Ability 上 TimeDurationComponent.refresh()
+## - REJECT：超过 max 时拒绝本次叠加（stacks 不变）
+const OVERFLOW_CAP := 0
+const OVERFLOW_REFRESH := 1
+const OVERFLOW_REJECT := 2
+
 var id: String
 var config_id: String
 var source_actor_id: String
@@ -16,6 +25,14 @@ var ability_tags: Array[String] = []
 
 ## 自定义元数据（从 AbilityConfig 复制）
 var metadata: Dictionary = {}
+
+## 叠层数（Ability 一级属性）。
+##
+## 默认 1/1/CAP：对不可叠加 ability 调 add_stacks 一直 CAP 在 1，语义安全。
+## 归 0 不自动触发 expire —— 清理由调用方（Action / 业务代码）决定。
+var stacks: int = 1
+var max_stacks: int = 1
+var overflow_policy: int = OVERFLOW_CAP
 
 var _state: String = STATE_PENDING
 var _expire_reason: String = ""
@@ -37,6 +54,9 @@ func _init(config: AbilityConfig, owner_actor_id_value: String, source_actor_id_
 	icon = config.icon
 	ability_tags = config.ability_tags
 	metadata = config.metadata
+	stacks = config.initial_stacks
+	max_stacks = config.max_stacks
+	overflow_policy = config.overflow_policy
 
 	_components = _resolve_components(config.active_use_components, config.components)
 
@@ -185,6 +205,55 @@ func has_ability_tag(tag: String) -> bool:
 	return ability_tags.has(tag)
 
 
+func get_stacks() -> int:
+	return stacks
+
+
+func is_stacks_full() -> bool:
+	return stacks >= max_stacks
+
+
+## 按溢出策略叠加层数，返回实际增加量。
+##
+## REFRESH 策略在叠层的同时顺手调用同 ability 上 TimeDurationComponent.refresh()，
+## 让"刷新层数 + 刷新持续时间"成为原子语义。
+func add_stacks(count: int) -> int:
+	if count <= 0:
+		return 0
+	var before := stacks
+	var new_value := stacks + count
+	match overflow_policy:
+		OVERFLOW_CAP:
+			stacks = mini(new_value, max_stacks)
+		OVERFLOW_REFRESH:
+			stacks = mini(new_value, max_stacks)
+			_refresh_time_duration_components()
+		OVERFLOW_REJECT:
+			if new_value <= max_stacks:
+				stacks = new_value
+	return stacks - before
+
+
+## 减少层数（不归零自动过期；归零后的清理由调用方决定），返回实际减少量。
+func remove_stacks(count: int) -> int:
+	if count <= 0:
+		return 0
+	var before := stacks
+	stacks = maxi(0, stacks - count)
+	return before - stacks
+
+
+## 强制设置层数（clamp 到 [0, max_stacks]；不自动过期）。
+func set_stacks(count: int) -> void:
+	stacks = clampi(count, 0, max_stacks)
+
+
+func _refresh_time_duration_components() -> void:
+	for component in _components:
+		if component.has_method("refresh") and component.type == "TimeDurationComponent":
+			component.refresh()
+
+
 ## 获取 int 类型的元数据
 func get_meta_int(key: String, default: int = 0) -> int:
 	return metadata.get(key, default) as int
@@ -209,6 +278,9 @@ func serialize() -> Dictionary:
 		"displayName": display_name,
 		"abilityTags": ability_tags,
 		"metadata": metadata,
+		"stacks": stacks,
+		"maxStacks": max_stacks,
+		"overflowPolicy": overflow_policy,
 		"components": serialized_components,
 		"executionInstances": serialized_instances,
 	}

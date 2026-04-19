@@ -42,6 +42,15 @@ var components: Array[AbilityComponentConfig]
 ## 自定义元数据（游戏层可自由附加，如施法距离、伤害类型等）
 var metadata: Dictionary = {}
 
+## 初始层数（默认 1）
+var initial_stacks: int = 1
+
+## 最大层数（默认 1 = 不可叠加）
+var max_stacks: int = 1
+
+## 溢出策略，取值为 Ability.OVERFLOW_CAP / OVERFLOW_REFRESH / OVERFLOW_REJECT
+var overflow_policy: int = 0
+
 
 func _init(
 	config_id: String = "",
@@ -51,7 +60,10 @@ func _init(
 	ability_tags: Array[String] = [],
 	active_use_components: Array[ActiveUseConfig] = [],
 	components: Array[AbilityComponentConfig] = [],
-	metadata: Dictionary = {}
+	metadata: Dictionary = {},
+	initial_stacks: int = 1,
+	max_stacks: int = 1,
+	overflow_policy: int = 0
 ) -> void:
 	self.config_id = config_id
 	self.display_name = display_name
@@ -61,6 +73,9 @@ func _init(
 	self.active_use_components = active_use_components
 	self.components = components
 	self.metadata = metadata
+	self.initial_stacks = initial_stacks
+	self.max_stacks = max_stacks
+	self.overflow_policy = overflow_policy
 
 
 ## 创建 Builder
@@ -83,6 +98,9 @@ class AbilityConfigBuilder:
 	var _active_use_components: Array[ActiveUseConfig] = []
 	var _components: Array[AbilityComponentConfig] = []
 	var _metadata: Dictionary = {}
+	var _initial_stacks: int = 1
+	var _max_stacks: int = 1
+	var _overflow_policy: int = 0
 	
 	## 设置配置 ID（必填）
 	## @required
@@ -124,7 +142,17 @@ class AbilityConfigBuilder:
 	func meta(key: String, value: Variant) -> AbilityConfigBuilder:
 		_metadata[key] = value
 		return self
-	
+
+	## 声明为可叠层 Ability，配置初始层数 / 上限 / 溢出策略。
+	##
+	## 不调用本方法 → 默认 1/1/CAP（调 add_stacks 一直 CAP 在 1，对不可叠加 ability 语义安全）。
+	## policy 传 Ability.OVERFLOW_CAP / OVERFLOW_REFRESH / OVERFLOW_REJECT。
+	func stacks(initial: int, max_val: int, policy: int = Ability.OVERFLOW_CAP) -> AbilityConfigBuilder:
+		_initial_stacks = initial
+		_max_stacks = max_val
+		_overflow_policy = policy
+		return self
+
 	## 构建 AbilityConfig
 	## 验证必填字段，缺失时触发断言错误
 	func build() -> AbilityConfig:
@@ -137,5 +165,8 @@ class AbilityConfigBuilder:
 			_ability_tags,
 			_active_use_components,
 			_components,
-			_metadata
+			_metadata,
+			_initial_stacks,
+			_max_stacks,
+			_overflow_policy
 		)
