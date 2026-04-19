@@ -29,8 +29,6 @@ var _unit_views: Dictionary = {}            # actor_id -> FrontendUnitView
 var _attack_vfx_views: Dictionary = {}      # vfx_id -> FrontendAttackVFXView
 var _projectile_views: Dictionary = {}      # projectile_id -> FrontendProjectileView
 
-var _playing: bool = false
-
 
 # ========== 生命周期 ==========
 
@@ -45,7 +43,6 @@ func _ready() -> void:
 
 	_director.actor_state_changed.connect(_on_actor_state_changed)
 	_director.floating_text_created.connect(_on_floating_text_created)
-	_director.actor_died.connect(_on_actor_died)
 	_director.attack_vfx_created.connect(_on_attack_vfx_created)
 	_director.attack_vfx_updated.connect(_on_attack_vfx_updated)
 	_director.attack_vfx_removed.connect(_on_attack_vfx_removed)
@@ -56,11 +53,11 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if not _playing:
+	if _director == null or not _director.is_playing():
 		return
 	# 移动动画期间单位位置平滑更新 —— 沿袭 FrontendBattleReplayScene 对 Director
 	# 提供的 get_actor_world_position 的拉取模式。
-	for actor_id in _unit_views.keys():
+	for actor_id in _unit_views:
 		var view: FrontendUnitView = _unit_views[actor_id]
 		if is_instance_valid(view):
 			view.set_world_position(_director.get_actor_world_position(actor_id))
@@ -79,14 +76,12 @@ func play(record_data: Dictionary, unit_views: Dictionary) -> void:
 	var record := ReplayData.BattleRecord.from_dict(record_data)
 	_director.load_replay(record)
 	_director.play()
-	_playing = true
 	playback_started.emit()
 
 
 func stop() -> void:
 	if _director != null:
 		_director.pause()
-	_playing = false
 
 
 func set_speed(speed: float) -> void:
@@ -95,11 +90,7 @@ func set_speed(speed: float) -> void:
 
 
 func is_playing() -> bool:
-	return _playing and _director != null and _director.is_playing()
-
-
-func get_director() -> FrontendBattleDirector:
-	return _director
+	return _director != null and _director.is_playing()
 
 
 # ========== Director signal → 外部 unit view ==========
@@ -114,14 +105,7 @@ func _on_actor_state_changed(actor_id: String, state: FrontendActorRenderState) 
 	view.set_world_position(_director.get_actor_world_position(actor_id))
 
 
-func _on_actor_died(actor_id: String) -> void:
-	# Director 已把 is_alive=false 推给 unit view, view 自播死亡动画。
-	# 这里不做 queue_free —— 生命周期归 WorldView（由 world.remove_actor 驱动）。
-	pass
-
-
 func _on_playback_ended() -> void:
-	_playing = false
 	playback_ended.emit()
 
 

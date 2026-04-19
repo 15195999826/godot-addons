@@ -11,14 +11,6 @@ class_name FrontendWorldView
 extends Node3D
 
 
-# ========== 信号 ==========
-
-## 首次 hydrate + 后续 actor_added 都会触发；供上层（如 BattleAnimator）
-## 抓取 unit view 引用。
-signal unit_view_spawned(actor_id: String, view: FrontendUnitView)
-signal unit_view_removed(actor_id: String)
-
-
 # ========== 节点引用 ==========
 
 var _units_root: Node3D
@@ -73,20 +65,14 @@ func bind_world(world: WorldGameplayInstance) -> void:
 func unbind_world() -> void:
 	var world := _get_world()
 	if world != null:
-		if world.actor_added.is_connected(_on_actor_added):
-			world.actor_added.disconnect(_on_actor_added)
-		if world.actor_removed.is_connected(_on_actor_removed):
-			world.actor_removed.disconnect(_on_actor_removed)
-		if world.actor_position_changed.is_connected(_on_actor_position_changed):
-			world.actor_position_changed.disconnect(_on_actor_position_changed)
-		if world.grid_configured.is_connected(_on_grid_configured):
-			world.grid_configured.disconnect(_on_grid_configured)
-		if world.grid_cell_changed.is_connected(_on_grid_cell_changed):
-			world.grid_cell_changed.disconnect(_on_grid_cell_changed)
+		world.actor_added.disconnect(_on_actor_added)
+		world.actor_removed.disconnect(_on_actor_removed)
+		world.actor_position_changed.disconnect(_on_actor_position_changed)
+		world.grid_configured.disconnect(_on_grid_configured)
+		world.grid_cell_changed.disconnect(_on_grid_cell_changed)
 	_world_ref = null
 
-	for id in _unit_views.keys():
-		var view: FrontendUnitView = _unit_views[id]
+	for view in _unit_views.values():
 		if is_instance_valid(view):
 			view.queue_free()
 	_unit_views.clear()
@@ -119,7 +105,6 @@ func _on_actor_removed(actor_id: String) -> void:
 	if is_instance_valid(view):
 		view.queue_free()
 	_unit_views.erase(actor_id)
-	unit_view_removed.emit(actor_id)
 
 
 func _on_actor_position_changed(actor_id: String, _old_coord: HexCoord, new_coord: HexCoord) -> void:
@@ -166,7 +151,6 @@ func _spawn_unit_view(actor_id: String) -> void:
 	_unit_views[actor_id] = view
 
 	_hydrate_from_actor(view, actor)
-	unit_view_spawned.emit(actor_id, view)
 
 
 func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
