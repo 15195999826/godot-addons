@@ -30,9 +30,9 @@ func configure_grid(config: GridMapConfig) -> void:
 ## 覆盖父类: 移除 Actor 时清理格子占用与预订。
 ## 框架层 remove_actor 不感知格子系统, 此处补充 hex 特化清理。
 func remove_actor(actor_id: String) -> bool:
-	var actor: Actor = super.get_actor(actor_id)
+	var actor := super.get_actor(actor_id)
 	if actor != null and actor is CharacterActor:
-		var char_actor: CharacterActor = actor as CharacterActor
+		var char_actor := actor as CharacterActor
 		if grid != null and char_actor.hex_position != null and char_actor.hex_position.is_valid():
 			grid.remove_occupant(char_actor.hex_position)
 			for coord in _find_reservations_by(actor_id):

@@ -225,7 +225,7 @@ func _place_team_randomly(team: Array[CharacterActor], range_config: Dictionary)
 				available_coords.append(coord)
 	available_coords.shuffle()
 	for i in range(mini(team.size(), available_coords.size())):
-		var coord: HexCoord = available_coords[i]
+		var coord := available_coords[i]
 		grid.place_occupant(coord, team[i])
 		team[i].hex_position = coord.duplicate()
 

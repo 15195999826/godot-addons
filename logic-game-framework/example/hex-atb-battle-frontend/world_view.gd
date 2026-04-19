@@ -155,15 +155,13 @@ func _spawn_unit_view(actor_id: String) -> void:
 
 func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 	var team := 0
-	if actor.has_method("get_team_id"):
-		team = actor.call("get_team_id")
-
 	var max_hp := 100.0
 	var cur_hp := 100.0
 	var hex_pos: HexCoord = null
 
 	if actor is CharacterActor:
 		var cchar := actor as CharacterActor
+		team = cchar.get_team_id()
 		if cchar.attribute_set != null:
 			max_hp = cchar.attribute_set.max_hp
 			cur_hp = cchar.attribute_set.hp
@@ -189,7 +187,7 @@ func _hex_to_world(coord: HexCoord) -> Vector3:
 	var world := _get_world()
 	if world == null or world.grid == null:
 		return Vector3(coord.q, 0.0, coord.r)
-	var pixel: Vector2 = world.grid.coord_to_world(coord)
+	var pixel := world.grid.coord_to_world(coord)
 	return Vector3(pixel.x, 0.0, pixel.y)
 
 

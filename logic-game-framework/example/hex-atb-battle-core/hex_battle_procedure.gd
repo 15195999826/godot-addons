@@ -222,9 +222,9 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 		var target_actor: CharacterActor = null
 		if world != null:
 			target_actor = world.get_actor(target_id)
-		var target_name: String = target_actor.get_display_name() if target_actor != null else "未知"
+		var target_name := target_actor.get_display_name() if target_actor != null else "未知"
 		var skill := actor.get_skill_ability()
-		var skill_name: String = skill.display_name if skill != null else "技能"
+		var skill_name := skill.display_name if skill != null else "技能"
 		decision_text = "%s -> %s" % [skill_name, target_name]
 
 	print("  AI 决策: %s" % decision_text)
