@@ -12,6 +12,42 @@
 
 ---
 
+## [Unreleased] — 2026-04-20 阶段 1：WorldGameplayInstance + BattleProcedure 核心拆分
+
+"世界 owns 战斗"架构第一步。把 HexBattle 身上的 instance(actor registry / grid / systems)与 procedure(ATB loop / teams / recorder)两条职责拆开,为后续 frontend 响应式 view + skill_preview 无缝展开战斗 + replay 格式 v3 奠基。阶段 1 只改 core / hex-atb-battle-core 层,调用端(`SkillPreviewBattle` / `main.tscn` / `scenes/Simulation.tscn` / scenario runner)通过 `HexBattle` 兼容门面不动一行。  
+→ [design-notes/2026-04-19-world-as-single-instance.md](docs/design-notes/2026-04-19-world-as-single-instance.md)
+
+### Added
+- `WorldGameplayInstance extends GameplayInstance`(`core/entity/world_gameplay_instance.gd`):显式 mutation API `add_actor` / `remove_actor` / `configure_grid`,每个 emit 对应 signal(`actor_added` / `actor_removed` / `actor_position_changed` / `grid_configured` / `grid_cell_changed` / `battle_finished`);`start_battle(participants, ability_configs)` 入口配合工厂钩子 `_create_battle_procedure`,`tick(dt)` 战斗优先,分帧吞吐由常数 `BATTLE_TICKS_PER_WORLD_FRAME`(默认 INT_MAX,一帧跑完)控制。Signal 只由显式 mutation 触发,战斗期间 actor 属性/tag 直接改内存,不发 signal(view 由 BattleAnimator 消费 event_timeline 回放)。
+- `BattleProcedure extends RefCounted`(`core/entity/battle_procedure.gd`):抽象骨架。Public API `start` / `tick_once` / `should_end` / `finish`(被 WorldGI.tick 调用,不加下划线)。生命周期管理 in_combat tag(`_mark_in_combat` 虚钩子,基类 no-op,子类按 tag 容器实现)+ recorder(`_start_recorder` 虚钩子,默认走 events-only,子类可 override 回退旧版 `start_recording(actors,...)`)。
+- `BattleRecorder.start_recording_events_only()`(`stdlib/replay/battle_recorder.gd`):仅记录 event timeline,不带 initial_actors / map_config。为新架构下"world 已常驻持有状态,录像只记过程事件"服务;旧版 `start_recording()` 保留未动,向后兼容。
+- `HexBattleProcedure extends BattleProcedure`(`example/hex-atb-battle-core/hex_battle_procedure.gd`):hex 特化。承接原 `HexBattle.tick` 里的 ATB 累积、AI 决策、技能施放、投射物事件广播、MAX_TICKS 安全上限、胜负判定(某方全灭 → `mark_finished` + `_result` 设置为 `left_win / right_win / timeout`)。`_start_recorder` override 走旧版 `start_recording(actors, configs, map_config)` 路径,保留 initial_actors snapshot,阶段 1 不破坏 FrontendBattleReplayScene。
+- `HexWorldGameplayInstance extends WorldGameplayInstance`(`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`):actor registry + grid(UGridMap autoload 后端)+ system 管理。`configure_grid` 转发到 `UGridMap.configure`,保持 `grid` 字段指向 `UGridMap.model`。`remove_actor` 覆盖清理格子 occupant / reservation。`get_actor` 类型收窄 CharacterActor。提供 `get_alive_actor_ids` / `get_ability_set_for_actor` / `can_use_skill_on`。
+
+### Changed
+- `HexBattle extends HexWorldGameplayInstance`(`example/hex-atb-battle/hex_battle.gd`)从具体 instance 转为 thin 兼容门面。`start(config)` 走新架构:`configure_grid()` + 6 个 `add_actor()` + 队伍装备 + buff + timeline 注册 + `start_battle(...)` 创建 HexBattleProcedure。`tick(dt)` 委托父类 `WorldGI.tick`,由其驱动 procedure;每 tick 从 procedure 镜像 `tick_count`。战斗结束通过 `battle_finished` signal 回 `_on_battle_finished`,保留字段 `left_team / right_team / recorder / logger / _ended / _final_replay_data / MAX_TICKS`(= 10000)兼容旧调用。  
+  原 HexBattle 上的 ATB loop / projectile 广播 / AI 决策 / `_check_battle_end` / `_start_actor_action` / `_create_action_use_event` 等全部迁至 HexBattleProcedure,不再在 HexBattle 里保留。
+
+### 外部调用点兼容性
+- `HexBattle.new().start(config)` / `battle.tick(dt)` / `battle.tick_count` / `battle.left_team` / `battle.right_team` / `battle.recorder` / `battle.logger` / `battle.get_replay_data()` / `battle.get_log_dir()` / `HexBattle.MAX_TICKS` / `battle.can_use_skill_on(...)` 全部保留;`main.tscn` / `SimulationManager` / `SkillPreviewBattle` / scenario runner / Web 桥接均未调整。
+- 录像格式暂未变化(仍走旧版 `start_recording(actors, ...)` 保留 initial_actors),FrontendBattleReplayScene 不受影响。格式 v3(split `world_snapshot` + `event_timeline`)在阶段 4 再落地。
+
+### 待处理(下一阶段)
+- 阶段 2:`WorldView` 订阅 WorldGI signal 维护 unit view,`BattleAnimator` 消费 event_timeline 叠加飘字/特效。
+- 阶段 3:`skill_preview` 切换到常驻 `SkillPreviewWorldGI` + `world.start_battle`,验证无缝展开战斗。
+- 阶段 4:`BattleRecord` v3 格式落地 + `ReplayPlayer`(临时 WorldGI + WorldView)。
+- 阶段 5:正式游戏场景(`main.tscn` / `Simulation.tscn` / Web 桥)切换到 WorldGI 承载。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_frontend_main.tscn` | PASS(Logic battle completed in 139 ticks) |
+| `tests/smoke_skill_scenarios.tscn` | 9/9 ✅ (CrushingBlow / DeathrattleAoe / Fireball / HolyHeal / Poison / PreciseShot / Strike / SwiftStrike / Thorn) |
+
+---
+
 ## [Unreleased] — 2026-04-19 后续：Ability 叠层一级化 + grant 事件化
 
 围绕 Poison（DOT）技能实装,对外暴露两个 framework 缺口并一次性补齐:

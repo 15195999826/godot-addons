@@ -54,7 +54,7 @@ func start_recording(actors: Array, configs_value: Dictionary = {}, map_config_v
 	_meta.recorded_at = Time.get_unix_time_from_system()
 	current_frame = 0
 	pending_events.clear()
-	
+
 	_record = ReplayData.BattleRecord.new()
 	_record.meta = _meta
 	_record.configs = configs_value
@@ -65,6 +65,34 @@ func start_recording(actors: Array, configs_value: Dictionary = {}, map_config_v
 	for actor in actors:
 		_record.initial_actors.append(ReplayData.ActorInitData.create(actor))
 		_subscribe_actor(actor)
+
+
+## 仅记录 event timeline, 不含 initial_actors snapshot。
+##
+## 用于"世界 owns 战斗"新架构: WorldGameplayInstance 已常驻持有 actor/grid,
+## 战斗 procedure 无须再快照世界状态 —— 录像只需记录战斗期间的事件流。
+## 录像回放时由 ReplayPlayer 从独立的 world_snapshot 字段恢复世界(或复用现有 world)。
+##
+## 与 start_recording() 的差别:
+## - 不写 initial_actors
+## - 不写 map_config(world_snapshot 承载)
+## - 不订阅 actor 的属性/tag/ability 变化回调(这些由 event_collector 的事件承载)
+func start_recording_events_only() -> void:
+	if is_recording:
+		push_error("[BattleRecorder] Already recording")
+		return
+
+	is_recording = true
+	_meta.recorded_at = Time.get_unix_time_from_system()
+	current_frame = 0
+	pending_events.clear()
+
+	_record = ReplayData.BattleRecord.new()
+	_record.meta = _meta
+	_record.configs = {}
+	_record.map_config = {}
+	_record.initial_actors = []
+	_record.timeline = []
 
 func record_frame(frame: int, events: Array[Dictionary]) -> void:
 	if not is_recording:
