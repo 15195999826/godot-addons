@@ -1,10 +1,16 @@
-## BattleReplayScene - 战斗回放主场景
+## BattleReplayScene - 战斗回放主场景（录像回放专用路径）
 ##
 ## 管理整个战斗回放的 3D 场景，包含：
 ## - BattleDirector（回放控制）
 ## - 单位管理
 ## - 相机控制
 ## - UI 控制
+##
+## @deprecated 阶段 2（2026-04-20）引入 WorldView + BattleAnimator 后，本类收缩为
+## "录像回放专用"路径：load_replay(record) 仍然从录像 dict 重建整个视觉世界。
+## 实时战斗应走 WorldView.bind_world(world) + WorldGI.start_battle + BattleAnimator.play
+## 的响应式路径，不再经过 destructive 的 load_replay。阶段 4 录像格式 v3 落地后
+## 考虑用 ReplayPlayer + 临时 WorldGI 替换本类，彻底去掉 destructive API。
 class_name FrontendBattleReplayScene
 extends Node3D
 

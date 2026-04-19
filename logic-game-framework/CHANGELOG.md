@@ -12,6 +12,34 @@
 
 ---
 
+## [Unreleased] — 2026-04-20 阶段 2:Frontend 订阅器(WorldView + BattleAnimator)
+
+阶段 1 把 core 拆成"World 持久 + Procedure 短命"两层后,frontend 仍停留在"被动消费录像 dict"范式。阶段 2 新增响应式订阅层:`WorldView` 订阅 WorldGI 的显式 mutation signal 维护 unit view 生命周期(非战斗期);`BattleAnimator` 复用 `FrontendBattleDirector` 消费 event_timeline,在 WorldView 提供的已有 view 上叠加 VFX / 飘字 / 死亡动画,不拥有 view。录像格式 / `FrontendBattleReplayScene` / `main.tscn` / scenario runner / Web 桥接全部未动 —— 阶段 2 纯加 API,现有路径继续走 HexBattle 门面 + replay scene。  
+→ [design-notes/2026-04-20-world-view.md](docs/design-notes/2026-04-20-world-view.md)
+
+### Added
+- `FrontendWorldView extends Node3D`(`example/hex-atb-battle-frontend/world_view.gd`):`bind_world(world)` hydrate 当前 actor + 订阅 `actor_added` / `actor_removed` / `actor_position_changed` / `grid_configured` / `grid_cell_changed` signal。view 生命周期完全由 signal 驱动(reactive projection);没有 destructive `load_replay` 等价物。内部挂 `UnitsRoot` + `GridMapRenderer3D`,暴露 `unit_view_spawned(id, view)` / `unit_view_removed(id)` 让上层抓取 view 引用。只为 `CharacterActor` 建 view,ProjectileActor 等非可视单位由 BattleAnimator 自行管 VFX 节点。
+- `FrontendBattleAnimator extends Node3D`(`example/hex-atb-battle-frontend/battle_animator.gd`):`play(record_dict, unit_views)` 复用 `FrontendBattleDirector` 的 timeline 解码 / `FrontendActionScheduler` / `FrontendVisualizerRegistry`,把 Director 的状态变更 signal(`actor_state_changed` / `actor_died` / `floating_text_created` / `attack_vfx_*` / `projectile_*`)转发到外部传入的 unit view 字典;自己只承载 VFX / 投射物 / 飘字节点(挂在内部 `EffectsRoot`)。`playback_ended` signal + `set_speed()` 兼容现有测试加速需求。
+- `tests/smoke_world_view.tscn/gd`:阶段 2 主验证 —— bind 前 0 view → HexBattle.start 触发 signal 把 view 补齐 → WorldGI.tick 推进战斗 → BattleAnimator 消费 timeline 到 `playback_ended` → 显式 `world.remove_actor` 让剩余 view 响应式减少。
+
+### Deprecated
+- `FrontendBattleReplayScene`(`example/hex-atb-battle-frontend/scene/battle_replay_scene.gd`)收缩为"录像回放专用"路径 —— 仍由 `main.tscn` / Web 桥接使用,但不再是新战斗场景的视觉入口。阶段 4 录像格式 v3 落地后考虑用 `ReplayPlayer`(临时 WorldGI + WorldView)替换,彻底去掉 destructive `load_replay`。
+
+### 外部调用点兼容性
+- `main.tscn` / `SkillPreviewBattle` / scenario runner / Web 桥接均未调整,继续走 `HexBattle` 门面 + `FrontendBattleReplayScene.load_replay(record)` 老路径。WorldView / BattleAnimator 是"可选接入",需要响应式更新的场景才用。
+- WorldGI 的 `actor_position_changed` / `grid_cell_changed` signal 已由 WorldView 订阅但 core 层尚未 emit 任何调用点 —— 预留钩子,后续移动动画 / 地形破坏技能按需补 emit。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_frontend_main.tscn` | PASS |
+| `tests/smoke_skill_scenarios.tscn` | 9/9 ✅ |
+| `tests/smoke_world_view.tscn` | PASS(bind + signal spawn + timeline 动画 + remove_actor) |
+
+---
+
 ## [Unreleased] — 2026-04-20 阶段 1：WorldGameplayInstance + BattleProcedure 核心拆分
 
 "世界 owns 战斗"架构第一步。把 HexBattle 身上的 instance(actor registry / grid / systems)与 procedure(ATB loop / teams / recorder)两条职责拆开,为后续 frontend 响应式 view + skill_preview 无缝展开战斗 + replay 格式 v3 奠基。阶段 1 只改 core / hex-atb-battle-core 层,调用端(`SkillPreviewBattle` / `main.tscn` / `scenes/Simulation.tscn` / scenario runner)通过 `HexBattle` 兼容门面不动一行。  
