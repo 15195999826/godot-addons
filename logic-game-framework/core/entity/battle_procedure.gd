@@ -18,7 +18,6 @@ const DEFAULT_TICK_INTERVAL: float = 100.0
 
 var _world: WeakRef = null
 var _participant_ids: Array[String] = []
-var _ability_configs: Array = []
 var _recorder: BattleRecorder = null
 var _current_tick: int = 0
 var _finished: bool = false
@@ -27,13 +26,12 @@ var _tick_interval: float = DEFAULT_TICK_INTERVAL
 
 # ========== 初始化 ==========
 
-func _init(world: WorldGameplayInstance, participants: Array[Actor], ability_configs: Array = []) -> void:
+func _init(world: WorldGameplayInstance, participants: Array[Actor]) -> void:
 	if world != null:
 		_world = weakref(world)
 	for actor in participants:
 		if actor != null:
 			_participant_ids.append(actor.get_id())
-	_ability_configs = ability_configs
 
 
 # ========== 生命周期 ==========

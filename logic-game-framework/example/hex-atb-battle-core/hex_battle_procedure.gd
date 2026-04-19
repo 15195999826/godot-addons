@@ -42,7 +42,7 @@ func _init(
 		all_actors.append(a)
 	for a in right:
 		all_actors.append(a)
-	super._init(world, all_actors, [])
+	super._init(world, all_actors)
 	_world_instance = world
 	left_team = left
 	right_team = right
@@ -64,8 +64,8 @@ func start() -> void:
 			logger.register_actor(actor.get_id(), actor.get_display_name())
 
 
-## Stage 1 过渡: 沿用带 initial_actors 的旧录像格式(兼容 FrontendBattleReplayScene / WebBridge)。
-## Stage 4 录像格式 v3 落地时再切到 start_recording_events_only。
+## 沿用带 initial_actors 的旧录像格式以兼容 FrontendBattleReplayScene / WebBridge;
+## 录像格式 v3(split world_snapshot + event_timeline) 落地时再切到 start_recording_events_only。
 func _start_recorder() -> void:
 	if not _recording_enabled or _recorder == null:
 		return
@@ -94,7 +94,7 @@ func tick_once() -> void:
 	if _logging_enabled and logger != null:
 		logger.tick(_current_tick, cur_logic_time)
 
-	_process_projectile_events()
+	_broadcast_projectile_events(world)
 
 	# ATB 与技能执行互斥: 施法期间 ATB 冻结, 不继续充能(经典 ATB 模式)。
 	for actor in get_alive_characters():
@@ -112,8 +112,8 @@ func tick_once() -> void:
 		print("\n战斗结束(达到安全上限 %d 帧, 可能存在死循环)" % MAX_TICKS)
 		_result = "timeout"
 		mark_finished()
-	elif _check_battle_end():
-		pass  # _result 已在 _check_battle_end 内部 set
+	else:
+		_check_battle_end()
 
 
 func finish(result: String = "") -> Dictionary:
@@ -171,16 +171,16 @@ func _is_actor_executing(actor: CharacterActor) -> bool:
 	return false
 
 
-## 处理投射物事件(命中/未命中), 广播给所有存活 Actor 的 Ability 系统。
-## 投射物事件由 ProjectileSystem.tick 产生, 不走 EventCollector.flush 的"主动事件"路径,
-## 需单独读 collect() 取副本并通过 EventProcessor.process_post_event 广播。
-func _process_projectile_events() -> void:
-	var world := _world_instance
+## 将 ProjectileSystem.tick 产生的投射物事件广播给所有存活 Actor。
+## 这些事件进 event_collector 但需额外走 process_post_event 才触发被动 handler;
+## 结束不 flush, 剩余事件(含广播期间产生的新事件)由 tick_once 末尾 record 写入录像。
+func _broadcast_projectile_events(world: HexWorldGameplayInstance) -> void:
 	if world == null:
 		return
 	var events := GameWorld.event_collector.collect()
+	if events.is_empty():
+		return
 	var alive_actor_ids := world.get_alive_actor_ids()
-
 	for event in events:
 		var kind: String = event.get("kind", "")
 		if kind == ProjectileEvents.PROJECTILE_HIT_EVENT:

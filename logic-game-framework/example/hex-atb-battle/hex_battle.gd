@@ -1,61 +1,42 @@
 ## HexBattle - 六边形战斗兼容门面
 ##
 ## 在"世界 owns 战斗"架构下(见 docs/design-notes/2026-04-19-world-as-single-instance.md),
-## HexBattle 已被拆为:
-##   - HexWorldGameplayInstance (hex-atb-battle-core): actor registry / grid / systems
-##   - HexBattleProcedure       (hex-atb-battle-core): ATB loop / teams / projectile broadcast
-##
-## 本类保留为 thin 兼容子类, 对外维持旧 API (`start(config)` / `tick(dt)` /
-## `left_team` / `right_team` / `tick_count` / `recorder` / `logger` / `MAX_TICKS`),
-## 内部通过 start_battle 起 HexBattleProcedure, 由 WorldGameplayInstance.tick 推进。
+## World(registry/grid/systems) 与 Procedure(ATB/teams/recorder) 分居两个类。
+## HexBattle 做 thin 门面, 对外维持 start(config)/tick(dt) 一把入口语义,
+## 内部通过 WorldGI.start_battle 起 HexBattleProcedure 推进。
 class_name HexBattle
 extends HexWorldGameplayInstance
 
-# ========== 常量 ==========
-
-## 安全上限, 与 HexBattleProcedure.MAX_TICKS 保持一致。保留常量供外部引用
-## (例如 `for i in HexBattle.MAX_TICKS`)。改动需两边同步。
+## 安全上限, 与 HexBattleProcedure.MAX_TICKS 保持一致; 改动需两边同步。
 const MAX_TICKS := 10000
 
-
-# ========== 兼容字段(镜像 procedure 状态) ==========
-
-## 当前 tick 计数。战斗期间每 tick 从 procedure 同步, 战斗结束后保留终值。
 var tick_count: int = 0
-
-## 左/右队伍。HexBattle.start 建完 actor 后填充, 外部直接读写。
-## _PreviewInstance 也直接赋值。procedure 从这里取 participants。
 var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
-
-## 日志 / 录像。HexBattle.start 运行后从 procedure 同步; _PreviewInstance
-## 走自己的 recorder 初始化路径, 也直接赋值到这两个字段。
 var logger: HexBattleLogger = null
 var recorder: BattleRecorder = null
 
-## 战斗是否结束(外部通过 is_running() 亦可判断, 保留此字段兼容老代码)。
+## 战斗是否结束。外部调用端 (`example/hex-atb-battle/main.gd`) 直接读此字段,
+## 保留以避免调用点修改; `is_running()` 同样可判断。
 var _ended: bool = false
 
-## 最终录像数据, 战斗结束后存在此处; get_replay_data() 优先返回。
+## 战斗结束后缓存录像, 供 get_replay_data() 复用 —— recorder.stop_recording()
+## 只能调一次, 调方拿到后可能隔几帧再读, 这里是"读过一次仍可再读"的兜底。
 var _final_replay_data: Dictionary = {}
 
 var _logging_enabled: bool = true
 var _recording_enabled: bool = true
 
-## 强引用本场战斗的 procedure。_active_battle 在 WorldGI.tick 结束时被清空,
-## 但 _on_battle_finished 仍需访问 procedure 最终状态(tick_count / result),
-## 用此字段延长生命周期。
+## Procedure 强引用。WorldGI.tick 结束时清空 _active_battle, 但 _on_battle_finished
+## 还要访问 procedure 最终状态(tick_count / result), 由本字段延命到 handler 结束。
 var _hex_procedure: HexBattleProcedure = null
 
-
-# ========== 初始化 ==========
 
 func _init() -> void:
 	super._init(IdGenerator.generate("battle"))
 	type = "hex_battle"
+	battle_finished.connect(_on_battle_finished)
 
-
-# ========== 对外: 启动与推进 ==========
 
 ## 启动战斗。config 键:
 ##   - logging: bool        启用日志 (默认 true)
@@ -70,18 +51,15 @@ func start(config: Dictionary = {}) -> void:
 	_logging_enabled = config.get("logging", true)
 	_recording_enabled = config.get("recording", true)
 
-	# Grid
 	var grid_config := config.get("map_config", null) as GridMapConfig
 	if grid_config == null:
 		grid_config = _build_default_grid_config()
 	configure_grid(grid_config)
 
-	# Projectile system (挂在 world 上, 由 world.base_tick 驱动)
 	var collision_detector := MobaCollisionDetector.new()
 	var projectile_system := ProjectileSystem.new(collision_detector, GameWorld.event_collector, false)
 	add_system(projectile_system)
 
-	# Actors
 	left_team = [
 		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.PRIEST)) as CharacterActor,
 		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)) as CharacterActor,
@@ -104,36 +82,28 @@ func start(config: Dictionary = {}) -> void:
 	_place_team_randomly(right_team, placement_ranges["right"])
 
 	_apply_inspire_buff_to_all()
-	_register_timelines()
+	HexBattleAllSkills.register_all_timelines()
 
 	print("战斗开始")
 	_print_battle_info()
 
-	# 战斗结束信号 → 同步 _ended + 保存录像
-	battle_finished.connect(_on_battle_finished)
-
-	# 通过 WorldGI 新入口启动战斗(内部创建 HexBattleProcedure)
 	var participants_as_actors: Array[Actor] = []
 	for actor in get_all_actors():
 		participants_as_actors.append(actor)
-	start_battle(participants_as_actors, [])
+	start_battle(participants_as_actors)
 
-	# 同步 procedure 的 recorder / logger 到门面字段
-	var proc := get_active_battle() as HexBattleProcedure
-	if proc != null:
-		recorder = proc.get_recorder()
-		logger = proc.logger
+	if _hex_procedure != null:
+		recorder = _hex_procedure.get_recorder()
+		logger = _hex_procedure.logger
 
 
-## 推进一帧。委托给 WorldGI.tick, 内部驱动 procedure。每帧同步 tick_count。
 func tick(dt: float) -> void:
 	super.tick(dt)
 	if _hex_procedure != null:
 		tick_count = _hex_procedure.get_current_tick()
 
 
-## 覆盖基类工厂: 返回 HexBattleProcedure 并缓存强引用。
-func _create_battle_procedure(_participants: Array[Actor], _ability_configs: Array) -> BattleProcedure:
+func _create_battle_procedure(_participants: Array[Actor]) -> BattleProcedure:
 	_hex_procedure = HexBattleProcedure.new(self, left_team, right_team, {
 		"logging": _logging_enabled,
 		"recording": _recording_enabled,
@@ -157,12 +127,8 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 		print("结果: %s" % proc_result)
 	end()
 	_save_replay(_final_replay_data)
+	_hex_procedure = null
 
-
-# ========== Grid / actor 查询(兼容旧 API) ==========
-
-## 覆盖 HexWorldGameplayInstance.get_actor, 类型收窄保持不变。
-## (此处显式 override 是为了让现存代码 `battle.get_actor(...)` 返回 CharacterActor 更清晰可见)
 
 func get_all_actors() -> Array[CharacterActor]:
 	var result: Array[CharacterActor] = []

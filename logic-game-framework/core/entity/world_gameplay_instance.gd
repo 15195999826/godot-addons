@@ -74,16 +74,16 @@ func configure_grid(config: GridMapConfig) -> void:
 
 ## 开启一场战斗。procedure 由子类工厂 _create_battle_procedure 返回。
 ## 调方监听 battle_finished signal 获取最终 timeline。
-func start_battle(participants: Array[Actor], ability_configs: Array) -> BattleProcedure:
+func start_battle(participants: Array[Actor]) -> BattleProcedure:
 	Log.assert_crash(_active_battle == null, "WorldGameplayInstance", "MVP: 同时只允许一场战斗")
-	_active_battle = _create_battle_procedure(participants, ability_configs)
+	_active_battle = _create_battle_procedure(participants)
 	_active_battle.start()
 	return _active_battle
 
 
 ## 工厂钩子:子类覆盖以返回具体的 BattleProcedure 子类(如 HexBattleProcedure)。
-func _create_battle_procedure(participants: Array[Actor], ability_configs: Array) -> BattleProcedure:
-	return BattleProcedure.new(self, participants, ability_configs)
+func _create_battle_procedure(participants: Array[Actor]) -> BattleProcedure:
+	return BattleProcedure.new(self, participants)
 
 
 func has_active_battle() -> bool:
@@ -98,17 +98,17 @@ func get_active_battle() -> BattleProcedure:
 
 ## 世界 tick。有未完成战斗时本帧独占给战斗(不跑世界 system);
 ## 无战斗时走 base_tick 跑 systems。分帧吞吐由 BATTLE_TICKS_PER_WORLD_FRAME 控制。
+## emit 之前先 null 掉 _active_battle, 让 handler 里再 start_battle() 的重入安全通过 assert。
 func tick(dt: float) -> void:
-	if _active_battle != null:
-		var remaining := BATTLE_TICKS_PER_WORLD_FRAME
-		while remaining > 0:
-			_active_battle.tick_once()
-			if _active_battle.should_end():
-				break
-			remaining -= 1
+	if _active_battle == null:
+		base_tick(dt)
+		return
+	var remaining := BATTLE_TICKS_PER_WORLD_FRAME
+	while remaining > 0:
+		_active_battle.tick_once()
 		if _active_battle.should_end():
 			var timeline := _active_battle.finish()
 			_active_battle = null
 			battle_finished.emit(timeline)
-		return
-	base_tick(dt)
+			return
+		remaining -= 1
