@@ -12,9 +12,9 @@ class_name HexBattleGameStateUtils
 
 ## 获取角色显示名称
 ## @param actor_id: 角色 ID
-## @param game_state_provider: HexBattle 实例
+## @param game_state_provider: HexWorldGameplayInstance 实例(或其子类如 HexBattle/SkillPreviewWorldGI)
 ## @return: 角色显示名称，如果无法获取则返回 actor_id 或 "???"
-static func get_actor_display_name(actor_id: String, game_state_provider: HexBattle) -> String:
+static func get_actor_display_name(actor_id: String, game_state_provider: HexWorldGameplayInstance) -> String:
 	if actor_id == "":
 		return "???"
 	if game_state_provider != null:
@@ -26,9 +26,9 @@ static func get_actor_display_name(actor_id: String, game_state_provider: HexBat
 
 ## 检查角色是否已死亡
 ## @param actor_id: 角色 ID
-## @param game_state_provider: HexBattle 实例
+## @param game_state_provider: HexWorldGameplayInstance 实例(或其子类如 HexBattle/SkillPreviewWorldGI)
 ## @return: 角色是否已死亡，如果无法获取角色则返回 false
-static func is_actor_dead(actor_id: String, game_state_provider: HexBattle) -> bool:
+static func is_actor_dead(actor_id: String, game_state_provider: HexWorldGameplayInstance) -> bool:
 	if game_state_provider == null:
 		return false
 	var actor := game_state_provider.get_actor(actor_id)

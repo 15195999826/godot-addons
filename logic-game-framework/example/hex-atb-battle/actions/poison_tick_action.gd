@@ -33,7 +33,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		ability.expire("poison_exhausted")
 		return ActionResult.create_success_result([], {})
 
-	var battle: HexBattle = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	if battle == null:
 		return ActionResult.create_success_result([], {})
 

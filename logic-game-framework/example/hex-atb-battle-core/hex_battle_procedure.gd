@@ -94,7 +94,8 @@ func tick_once() -> void:
 	if _logging_enabled and logger != null:
 		logger.tick(_current_tick, cur_logic_time)
 
-	_broadcast_projectile_events(world)
+	if world != null:
+		world.broadcast_projectile_events()
 
 	# ATB 与技能执行互斥: 施法期间 ATB 冻结, 不继续充能(经典 ATB 模式)。
 	for actor in get_alive_characters():
@@ -169,32 +170,6 @@ func _is_actor_executing(actor: CharacterActor) -> bool:
 		if ability.get_executing_instances().size() > 0:
 			return true
 	return false
-
-
-## 将 ProjectileSystem.tick 产生的投射物事件广播给所有存活 Actor。
-## 这些事件进 event_collector 但需额外走 process_post_event 才触发被动 handler;
-## 结束不 flush, 剩余事件(含广播期间产生的新事件)由 tick_once 末尾 record 写入录像。
-func _broadcast_projectile_events(world: HexWorldGameplayInstance) -> void:
-	if world == null:
-		return
-	var events := GameWorld.event_collector.collect()
-	if events.is_empty():
-		return
-	var alive_actor_ids := world.get_alive_actor_ids()
-	for event in events:
-		var kind: String = event.get("kind", "")
-		if kind == ProjectileEvents.PROJECTILE_HIT_EVENT:
-			print("  [投射物] 命中事件: %s -> %s" % [
-				event.get("source_actor_id", "unknown"),
-				event.get("target_actor_id", "unknown"),
-			])
-			GameWorld.event_processor.process_post_event(event, alive_actor_ids, world)
-		elif kind == ProjectileEvents.PROJECTILE_MISS_EVENT:
-			print("  [投射物] 未命中事件: %s (原因: %s)" % [
-				event.get("source_actor_id", "unknown"),
-				event.get("reason", "unknown"),
-			])
-			GameWorld.event_processor.process_post_event(event, alive_actor_ids, world)
 
 
 func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:

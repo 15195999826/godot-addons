@@ -13,8 +13,8 @@ const MAX_TICKS := 10000
 var tick_count: int = 0
 var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
-var logger: HexBattleLogger = null
 var recorder: BattleRecorder = null
+# logger 在父类 HexWorldGameplayInstance 上 (阶段 3 下沉)
 
 ## 战斗是否结束。外部调用端 (`example/hex-atb-battle/main.gd`) 直接读此字段,
 ## 保留以避免调用点修改; `is_running()` 同样可判断。

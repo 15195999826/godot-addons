@@ -100,7 +100,7 @@ func on_kill(action: Action.BaseAction) -> HexBattleDamageAction:
 func execute(ctx: ExecutionContext) -> ActionResult:
 	var source_actor_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 	var targets := get_targets(ctx)
-	var battle: HexBattle = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	var event_processor := GameWorld.event_processor
 	var all_events: Array[Dictionary] = []
 	var alive_actor_ids := battle.get_alive_actor_ids()

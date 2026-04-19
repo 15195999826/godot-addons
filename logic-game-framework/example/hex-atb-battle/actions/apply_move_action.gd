@@ -30,7 +30,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		return ActionResult.create_success_result([])
 	
 	var target_coord := HexCoord.from_dict(target_coord_dict)
-	var battle: HexBattle = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	
 	var all_events: Array[Dictionary] = []
 	for target_id in targets:

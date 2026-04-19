@@ -81,7 +81,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	print("  [HealAction] %s 对 [%s] 治疗 %.0f HP" % [source_id_for_log, ", ".join(target_ids), heal_amount])
 	
 	var all_events: Array[Dictionary] = []
-	var battle: HexBattle = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	var event_processor := GameWorld.event_processor
 	var alive_actor_ids := battle.get_alive_actor_ids()
 	
@@ -154,7 +154,7 @@ func _calculate_overheal(target_actor_id: String, heal_amount: float, ctx: Execu
 	if ctx.game_state_provider == null:
 		return 0.0
 	
-	var battle: HexBattle = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	var target_actor := battle.get_actor(target_actor_id)
 	if target_actor != null:
 		var current_hp: float = target_actor.attribute_set.hp

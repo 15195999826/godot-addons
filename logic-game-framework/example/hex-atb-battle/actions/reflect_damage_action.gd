@@ -51,7 +51,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	
 	var attacker_id := targets[0]
 	var owner_actor_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-	var battle: HexBattle = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	var alive_actor_ids := battle.get_alive_actor_ids()
 	
 	var owner_name := HexBattleGameStateUtils.get_actor_display_name(owner_actor_id, battle)

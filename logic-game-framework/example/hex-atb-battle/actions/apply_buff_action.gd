@@ -19,7 +19,7 @@ func _init(target_selector: TargetSelector, buff_config: AbilityConfig) -> void:
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-	var battle: HexBattle = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	if battle == null:
 		return ActionResult.create_success_result([], {})
 

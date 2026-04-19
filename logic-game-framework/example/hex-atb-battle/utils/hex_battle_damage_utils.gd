@@ -41,7 +41,7 @@ static func apply_damage(
 	damage_event: BattleEvents.DamageEvent,
 	alive_actor_ids: Array[String],
 	ctx: ExecutionContext,
-	battle: HexBattle,
+	battle: HexWorldGameplayInstance,
 ) -> DamageResult:
 	var result := DamageResult.new()
 	var event_processor := GameWorld.event_processor
@@ -99,7 +99,7 @@ static func apply_damage(
 static func broadcast_post_damage(
 	damage_event_dict: Dictionary,
 	alive_actor_ids: Array[String],
-	battle: HexBattle,
+	battle: HexWorldGameplayInstance,
 ) -> void:
 	if alive_actor_ids.size() > 0:
 		GameWorld.event_processor.process_post_event(damage_event_dict, alive_actor_ids, battle)

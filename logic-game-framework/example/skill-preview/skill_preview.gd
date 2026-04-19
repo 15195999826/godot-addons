@@ -2,8 +2,19 @@
 ##
 ## 打开 skill_preview.tscn F6:
 ## - 左侧面板: Preset / Map / Skill / Actors (unified) / Target / Controls
-## - 3D viewport: 编辑模式下渲染当前 actors 摆位, 右键点格子 / actor 弹 PopupMenu
-## - 点 START: 调 SkillPreviewBattle.run_with_config -> 播放 replay, console 打印事件
+## - 3D viewport: 编辑模式下 WorldView 响应式渲染 actors 摆位, 右键点格子 /
+##   actor 弹 PopupMenu
+## - 点 START: world.queue_preview + world.start_battle -> SkillPreviewProcedure
+##   -> battle_finished -> FrontendBattleAnimator.play 在已有 unit view 上叠加
+##   VFX / 飘字 / 死亡动画
+##
+## 响应式架构 (阶段 3):
+##   - 一个 skill_preview session 一个常驻 SkillPreviewWorldGI
+##   - 一个常驻 FrontendWorldView bind 到 world, 订阅 mutation signal 管 view 生命周期
+##   - 一个常驻 FrontendBattleAnimator 播放 battle_finished 产出的 timeline
+##   - 编辑态增删 actor 走 world.add_actor / remove_actor, WorldView 自动刷新
+##   - 战斗期间 damage_utils 会 remove_actor 死者, 对应 view 被 WorldView 响应式回收
+##     (死亡动画缺憾留给阶段 4/5 的 ReplayPlayer 方案根治)
 ##
 ## 数据模型:
 ##   actors: Array[Dictionary] —— 每条 {role: "caster"|"dummy", team: "A"|"B",
@@ -25,6 +36,8 @@ const CLASS_NAMES: Array[String] = [
 const TARGET_MODE_NAMES: Array[String] = [
 	"auto", "enemy_index", "ally_index", "fixed_pos",
 ]
+
+const TICK_INTERVAL_MS := 100
 
 
 # ========== Scene 节点 (unique names) ==========
@@ -66,13 +79,15 @@ const TARGET_MODE_NAMES: Array[String] = [
 ## 数据模型: caster 永远在 [0] 位置,其后跟随 dummies
 var _actors: Array[Dictionary] = []
 
-var _replay_scene: FrontendBattleReplayScene
-var _director: FrontendBattleDirector
+## 常驻响应式栈
+var _world: SkillPreviewWorldGI
+var _world_view: FrontendWorldView
+var _animator: FrontendBattleAnimator
+var _camera_rig: LomoCameraRig
 var _player_controller: LomoPlayerController
 
+## true: 战斗 procedure 运行中 / animator 播放中, 禁止编辑 UI 修改 world
 var _is_playing: bool = false
-var _replay_events_by_frame: Dictionary = {}
-var _last_logged_frame: int = -1
 
 ## Passive 被动 Checkbox 缓存,顺序对齐 HexBattleSkillIndex.passives()
 var _passive_checks: Array[CheckBox] = []
@@ -81,36 +96,61 @@ var _passive_checks: Array[CheckBox] = []
 var _popup_hex: HexCoord = null
 var _popup_actor_idx: int = -1
 
+## 约定字段 -> actor_id 映射: 编辑态按数据模型 idx 分配稳定 id(caster / ally_N / enemy_N)。
+## 每次 _rebuild_world_from_model 重新生成并写入 add_actor 前的 _display_name 提示;
+## 真实 actor id 由 WorldGI.add_actor 分配(形如 world_N:Character_M), 通过
+## display_name 反查的 _role_id_to_actor_id 维护供 queue_preview 使用。
+var _role_id_to_actor_id: Dictionary[String, String] = {}
+
+## 最近一次战斗的总帧数, 从 timeline.meta.totalFrames 缓存。
+## 不能从 _world.get_active_battle() 读 —— battle_finished emit 之前
+## _active_battle 已经被 null 掉了 (见 world_gameplay_instance.gd:103-113)。
+var _last_battle_frames: int = 0
+
 
 # ========== 生命周期 ==========
 
 func _ready() -> void:
 	_apply_clay_theme()
-	_init_replay_scene()
+	GameWorld.init()
+	_init_world_stack()
 	_init_player_controller()
 	_init_ui_static_options()
 	_init_signals()
 	_init_default_actors()
 	_refresh_preset_list()
-	_apply_map_to_ugridmap()
-	_rebuild_editor_preview()
+	_rebuild_world_from_model()
 	_set_status("Ready — 右键点格子编辑摆位")
 	_log_welcome()
 
 
-func _init_replay_scene() -> void:
-	_replay_scene = FrontendBattleReplayScene.new()
-	_replay_scene.name = "BattleReplayScene"
-	add_child(_replay_scene)
-	_director = _replay_scene.get_director()
-	_director.frame_changed.connect(_on_frame_changed)
-	_director.playback_ended.connect(_on_playback_ended)
+func _exit_tree() -> void:
+	GameWorld.destroy()
+
+
+func _init_world_stack() -> void:
+	_world = SkillPreviewWorldGI.new()
+	GameWorld.create_instance(func() -> GameplayInstance: return _world)
+	_world.start()
+	_world.battle_finished.connect(_on_battle_finished)
+
+	_setup_camera_and_env()
+
+	_world_view = FrontendWorldView.new()
+	_world_view.name = "WorldView"
+	add_child(_world_view)
+	_world_view.bind_world(_world)
+
+	_animator = FrontendBattleAnimator.new()
+	_animator.name = "BattleAnimator"
+	add_child(_animator)
+	_animator.playback_ended.connect(_on_playback_ended)
+
 	_add_pick_ground()
 
 
-## 加一个 invisible StaticBody3D 覆盖 Y≈0 平面, 让 LomoPlayerController 的
-## raycast 能命中 "ground"。frontend 的 hex 渲染没自带 collision, 没这个 pad
-## ground_clicked 永远不 fire。collision_layer=1 对齐 ground_collision_mask。
+## LomoPlayerController 的 raycast 需要 Y≈0 平面有 collider 才能命中 "ground"。
+## frontend 的 hex 渲染没自带 collision, 没这个 pad ground_clicked 永远不 fire。
 func _add_pick_ground() -> void:
 	var body := StaticBody3D.new()
 	body.name = "PickGround"
@@ -122,21 +162,50 @@ func _add_pick_ground() -> void:
 	col.shape = shape
 	col.position = Vector3(0.0, -0.05, 0.0)
 	body.add_child(col)
-	_replay_scene.add_child(body)
+	add_child(body)
+
+
+## 相机 / 光 / 环境 —— 原先委托 FrontendBattleReplayScene 做, 切到 WorldView 后
+## 自己承担。参数沿袭 replay_scene._setup_camera/_setup_lighting 保证视觉一致。
+func _setup_camera_and_env() -> void:
+	var camera_scene := preload("res://addons/lomolib/camera/lomo_camera_rig.tscn")
+	_camera_rig = camera_scene.instantiate() as LomoCameraRig
+	_camera_rig.name = "CameraRig"
+	_camera_rig.default_arm_length = 20.0
+	_camera_rig.min_zoom = 8.0
+	_camera_rig.max_zoom = 40.0
+	_camera_rig.default_pitch = -50.0
+	_camera_rig.move_speed = 15.0
+	add_child(_camera_rig)
+	_camera_rig.make_current()
+
+	var dir_light := DirectionalLight3D.new()
+	dir_light.name = "DirectionalLight"
+	dir_light.position = Vector3(5, 10, 5)
+	dir_light.rotation_degrees = Vector3(-45, 45, 0)
+	dir_light.light_energy = 1.0
+	dir_light.shadow_enabled = true
+	add_child(dir_light)
+
+	var world_env := WorldEnvironment.new()
+	world_env.name = "WorldEnvironment"
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.2, 0.2, 0.3)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.4, 0.4, 0.5)
+	env.ambient_light_energy = 0.5
+	world_env.environment = env
+	add_child(world_env)
 
 
 func _init_player_controller() -> void:
 	_player_controller = LomoPlayerController.new()
 	_player_controller.name = "PlayerController"
 	add_child(_player_controller)
-	var rig: LomoCameraRig = _replay_scene.get_camera_rig()
-	if rig != null:
-		_player_controller.use_camera_rig(rig)
-		var cam := rig.get_camera()
-		if cam != null:
-			cam.make_current()
-	# 不依赖 LomoPlayerController 的 click emission (它 _is_over_ui 判定过敏, 任意
-	# Control 获得焦点就 skip 所有右键) —— 走自己的 _unhandled_input 直接处理。
+	if _camera_rig != null:
+		_player_controller.use_camera_rig(_camera_rig)
+	# 右键交互走自己的 _input, 不依赖 LomoPlayerController 的 click emission。
 
 
 func _init_ui_static_options() -> void:
@@ -185,9 +254,9 @@ func _init_signals() -> void:
 	_preset_save_button.pressed.connect(_on_preset_save_pressed)
 	_preset_load_option.item_selected.connect(_on_preset_load_selected)
 	_speed_input.value_changed.connect(_on_speed_changed)
-	_map_radius_input.value_changed.connect(func(_v: float) -> void: _on_map_changed())
-	_map_orientation_option.item_selected.connect(func(_i: int) -> void: _on_map_changed())
-	_map_hex_size_input.value_changed.connect(func(_v: float) -> void: _on_map_changed())
+	_map_radius_input.value_changed.connect(func(_v: float) -> void: _rebuild_world_from_model())
+	_map_orientation_option.item_selected.connect(func(_i: int) -> void: _rebuild_world_from_model())
+	_map_hex_size_input.value_changed.connect(func(_v: float) -> void: _rebuild_world_from_model())
 	_hex_popup.id_pressed.connect(_on_popup_id_pressed)
 
 
@@ -207,7 +276,7 @@ func _add_actor(role: String, team: String, cls: String, q: int, r: int) -> void
 		"pos": [q, r], "hp": 100.0, "atk": 0.0,
 	})
 	_rebuild_actors_ui()
-	_rebuild_editor_preview()
+	_rebuild_world_from_model()
 
 
 func _remove_actor_at(idx: int) -> void:
@@ -215,7 +284,7 @@ func _remove_actor_at(idx: int) -> void:
 		return  # caster (idx 0) 不可删
 	_actors.remove_at(idx)
 	_rebuild_actors_ui()
-	_rebuild_editor_preview()
+	_rebuild_world_from_model()
 
 
 func _find_actor_idx_at(q: int, r: int) -> int:
@@ -229,7 +298,7 @@ func _find_actor_idx_at(q: int, r: int) -> int:
 func _move_caster_to(q: int, r: int) -> void:
 	_actors[0]["pos"] = [q, r]
 	_rebuild_actors_ui()
-	_rebuild_editor_preview()
+	_rebuild_world_from_model()
 
 
 # ========== UI: Actors 表 ==========
@@ -266,7 +335,7 @@ func _build_actor_row(idx: int) -> HBoxContainer:
 	class_opt.custom_minimum_size = Vector2(90, 0)
 	class_opt.item_selected.connect(func(i: int) -> void:
 		_actors[idx]["class"] = CLASS_NAMES[i]
-		_rebuild_editor_preview()
+		_rebuild_world_from_model()
 	)
 	row.add_child(class_opt)
 
@@ -299,19 +368,74 @@ func _make_actor_spin(
 			"q": _actors[actor_idx]["pos"][0] = int(v)
 			"r": _actors[actor_idx]["pos"][1] = int(v)
 			"hp": _actors[actor_idx]["hp"] = v
-		_rebuild_editor_preview()
+		_rebuild_world_from_model()
 	)
 	return s
 
 
-# ========== Map / Editor preview ==========
+# ========== World 重建（响应式通路） ==========
 
-func _on_map_changed() -> void:
-	_apply_map_to_ugridmap()
-	_rebuild_editor_preview()
+## 按数据模型重建 world: reset → configure_grid → add_actor × N + place_occupant。
+## 每一步都走 WorldGI 的显式 mutation API, 触发 signal -> FrontendWorldView 自动
+## 维护 unit view 生命周期 (无 destructive load_replay 或 _spawn_units 调用)。
+##
+## 战斗播放期间 (_is_playing=true) 不重建, 避免打断正在播的 animator。
+## START 路径(_on_start_pressed)内部即使 _is_playing 已翻 true 也需要先重建一次,
+## 走 _do_rebuild_world_unguarded 绕过 guard。
+func _rebuild_world_from_model() -> void:
+	if _is_playing:
+		return
+	_do_rebuild_world_unguarded()
 
 
-func _apply_map_to_ugridmap() -> void:
+func _do_rebuild_world_unguarded() -> void:
+	_world.reset()
+	_role_id_to_actor_id.clear()
+
+	_world.configure_grid(_build_grid_config())
+	var collision_detector := MobaCollisionDetector.new()
+	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
+	HexBattleAllSkills.register_all_timelines()
+
+	for i in _actors.size():
+		var a: Dictionary = _actors[i]
+		var role_id := _role_id_for(i)
+		var team_int: int = 0 if a["team"] == "A" else 1
+		var max_hp: float = 100.0 if a["hp"] <= 0.0 else a["hp"]
+
+		var cchar := CharacterActor.new(HexBattleClassConfig.string_to_class(a["class"] as String))
+		cchar._display_name = role_id
+		_world.add_actor(cchar)
+		cchar.set_team_id(team_int)
+		cchar.attribute_set.set_max_hp_base(max_hp)
+		cchar.attribute_set.set_hp_base(max_hp)
+		if a.get("atk", 0.0) > 0.0:
+			cchar.attribute_set.set_atk_base(float(a["atk"]))
+
+		var pos: Array = a["pos"]
+		var coord := HexCoord.new(int(pos[0]), int(pos[1]))
+		if _world.grid != null and _world.grid.has_tile(coord):
+			_world.grid.place_occupant(coord, cchar)
+		cchar.hex_position = coord.duplicate()
+
+		_role_id_to_actor_id[role_id] = cchar.get_id()
+
+
+## 数据模型 idx → 逻辑 role id (caster / ally_N / enemy_N)。
+## role id 用于 target 解析和 queue_preview 的 caster_id / target_id。
+func _role_id_for(idx: int) -> String:
+	var a: Dictionary = _actors[idx]
+	if a["role"] == "caster":
+		return "caster"
+	var n := 0
+	for j in idx:
+		var aj: Dictionary = _actors[j]
+		if aj["role"] == "dummy" and aj["team"] == a["team"]:
+			n += 1
+	return ("ally_%d" if a["team"] == "A" else "enemy_%d") % n
+
+
+func _build_grid_config() -> GridMapConfig:
 	var cfg := GridMapConfig.new()
 	cfg.grid_type = GridMapConfig.GridType.HEX
 	cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
@@ -320,91 +444,7 @@ func _apply_map_to_ugridmap() -> void:
 		if _map_orientation_option.selected == 1
 		else GridMapConfig.Orientation.POINTY)
 	cfg.size = _map_hex_size_input.value
-	UGridMap.configure(cfg)
-
-
-## 编辑模式下构造一个只有 initial actors / 空 timeline 的 minimal replay,
-## 塞进 _replay_scene,让 3D viewport 显示当前摆位。
-## 手动 typed 构造 BattleRecord,跳过 from_dict 以避开可能的类型 coerce 问题。
-func _rebuild_editor_preview() -> void:
-	if _is_playing:
-		return
-	var record := ReplayData.BattleRecord.new()
-	var meta := ReplayData.BattleMeta.new()
-	meta.battle_id = "skill_preview_edit"
-	meta.recorded_at = Time.get_unix_time_from_system()
-	meta.tick_interval = int(SkillPreviewBattle.TICK_INTERVAL)
-	meta.total_frames = 1
-	meta.result = "edit"
-	record.meta = meta
-	record.configs = {"positionFormats": {"Character": "hex"}}
-	record.map_config = _map_config_dict()
-	for i in _actors.size():
-		var a: Dictionary = _actors[i]
-		var pos: Array = a["pos"]
-		var team_int: int = 0 if a["team"] == "A" else 1
-		var max_hp: float = 100.0 if a["hp"] <= 0.0 else a["hp"]
-		var actor_id: String
-		if a["role"] == "caster":
-			actor_id = "caster"
-		else:
-			actor_id = ("ally_%d" if a["team"] == "A" else "enemy_%d") % _count_dummies_before(i, a["team"])
-		var init_data := ReplayData.ActorInitData.new()
-		init_data.id = actor_id
-		init_data.type = "Character"
-		init_data.config_id = (a["class"] as String).to_lower()
-		init_data.display_name = actor_id
-		init_data.team = team_int
-		init_data.position = [int(pos[0]), int(pos[1]), 0]
-		init_data.attributes = {"hp": max_hp, "maxHp": max_hp}
-		init_data.abilities = []
-		init_data.tags = {}
-		record.initial_actors.append(init_data)
-	_replay_scene.load_replay(record)
-
-
-func _count_dummies_before(upto_idx: int, team: String) -> int:
-	var n := 0
-	for j in upto_idx:
-		var a: Dictionary = _actors[j]
-		if a["role"] == "dummy" and a["team"] == team:
-			n += 1
-	return n
-
-
-func _build_minimal_replay(initial_actors: Array) -> Dictionary:
-	return {
-		"version": "2.0",
-		"meta": {
-			"battleId": "skill_preview_edit",
-			"recordedAt": Time.get_unix_time_from_system(),
-			"tickInterval": int(SkillPreviewBattle.TICK_INTERVAL),
-			"totalFrames": 1,
-			"result": "edit",
-		},
-		"configs": {
-			"positionFormats": {"Character": "hex"},
-			"mapConfig": _map_config_dict(),
-		},
-		"initialActors": initial_actors,
-		"timeline": [],
-	}
-
-
-func _map_config_dict() -> Dictionary:
-	# UI: 0=pointy, 1=flat; enum: FLAT=0, POINTY=1 —— 必须按 enum 编码,否则
-	# load_replay 会把 UI index 当成 enum 值解析,编辑态和播放态视觉不一致。
-	var orientation_enum: int = (
-		GridMapConfig.Orientation.FLAT if _map_orientation_option.selected == 1
-		else GridMapConfig.Orientation.POINTY
-	)
-	return {
-		"grid_type": GridMapConfig.GridType.HEX,
-		"draw_mode": GridMapConfig.DrawMode.RADIUS,
-		"radius": int(_map_radius_input.value),
-		"orientation": orientation_enum,
-		"size": float(_map_hex_size_input.value),
-	}
+	return cfg
 
 
 # ========== 3D 右键交互 ==========
@@ -421,11 +461,12 @@ func _input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb.button_index != MOUSE_BUTTON_RIGHT or not mb.pressed:
 		return
-	# popup 已开: 先收起旧的, 然后按新位置重新 raycast + 弹出
 	if _hex_popup.visible:
 		_hex_popup.hide()
-	var rig: LomoCameraRig = _replay_scene.get_camera_rig() if _replay_scene != null else null
-	var cam: Camera3D = rig.get_camera() if rig != null else null
+	if _camera_rig == null:
+		_log("[color=red]no camera — cannot raycast[/color]")
+		return
+	var cam := _camera_rig.get_camera()
 	if cam == null:
 		_log("[color=red]no camera — cannot raycast[/color]")
 		return
@@ -438,14 +479,14 @@ func _input(event: InputEvent) -> void:
 		PhysicsRayQueryParameters3D.create(from, to, 1)
 	)
 	if ground_result.is_empty():
-		return  # 点空了, 静默
+		return
 	var world_pos: Vector3 = ground_result["position"]
 	if UGridMap.model == null:
 		_log("[color=red]UGridMap.model null — map not configured[/color]")
 		return
 	var coord := UGridMap.world_to_coord(Vector2(world_pos.x, world_pos.z))
 	if not UGridMap.model.has_tile(coord):
-		return  # 点在格子外, 静默
+		return
 	_popup_hex = coord
 	_popup_actor_idx = _find_actor_idx_at(coord.q, coord.r)
 	_show_hex_popup()
@@ -468,8 +509,6 @@ func _show_hex_popup() -> void:
 		_hex_popup.add_item("🎯 移动 caster 到此", 3)
 	_hex_popup.add_separator()
 	_hex_popup.add_item("📍 设为 target (fixed_pos)", 20)
-	# popup_on_parent 用相对父 viewport 坐标; embedded/非 embedded 都一致。
-	# (DisplayServer.mouse_get_position 是桌面全屏坐标,窗口不在 0,0 会漂)
 	var local_mouse := Vector2i(get_viewport().get_mouse_position())
 	_hex_popup.popup_on_parent(Rect2i(local_mouse, Vector2i(1, 1)))
 
@@ -517,8 +556,8 @@ func _update_target_visibility() -> void:
 
 
 func _on_speed_changed(v: float) -> void:
-	if _director != null:
-		_director.set_speed(v)
+	if _animator != null:
+		_animator.set_speed(v)
 
 
 # ========== START / Simulate ==========
@@ -528,38 +567,38 @@ func _on_start_pressed() -> void:
 	_is_playing = true
 	_set_status("Running...")
 	_console_log.clear()
-	_replay_events_by_frame.clear()
-	_last_logged_frame = -1
 
 	var ability_cfg := _get_selected_active_ability()
 	if ability_cfg == null:
 		_finish_with_status("No active skill selected")
 		return
 
-	var scene_cfg := _collect_scene_config()
-	var max_ticks: int = int(_max_ticks_input.value)
+	# 战斗前做一次最终 world 重建, 把 UI 数据模型状态 commit 进 world
+	# (走 unguarded 变种绕过 _is_playing 自保 guard)。
+	_do_rebuild_world_unguarded()
 
-	_log_battle_start(ability_cfg, max_ticks)
-
-	var result: Dictionary = SkillPreviewBattle.run_with_config(ability_cfg, scene_cfg, max_ticks)
-	if not result.success:
-		for err in result.errors:
-			_log("[color=#FF6B6B][b]✘ ERROR[/b][/color]  %s" % err)
-		_finish_with_status("Simulation failed")
+	var caster_id: String = _role_id_to_actor_id.get("caster", "")
+	if caster_id == "":
+		_finish_with_status("No caster in world")
 		return
 
-	var replay_dict: Dictionary = result.replay
-	if replay_dict.is_empty():
-		_finish_with_status("Empty replay")
-		return
+	var target_id := _resolve_target_actor_id()
+	var passives := _collect_selected_passives()
 
-	_index_replay_events(replay_dict)
-	var record := ReplayData.BattleRecord.from_dict(replay_dict)
-	_replay_scene.load_replay(record)
-	_director.set_speed(float(_speed_input.value))
-	_replay_scene.play()
-	_set_status("Playing — %d frames" % record.meta.total_frames)
-	_log_battle_header(record.meta.total_frames, result.caster_id)
+	_log_battle_start(ability_cfg, int(_max_ticks_input.value))
+	_log_battle_header_params(caster_id, target_id)
+
+	_world.queue_preview(caster_id, ability_cfg, target_id, passives)
+
+	var participants: Array[Actor] = []
+	for actor in _world.get_actors():
+		participants.append(actor)
+
+	_world.start_battle(participants)
+
+	# BATTLE_TICKS_PER_WORLD_FRAME=INT_MAX 默认下, 单次 tick 会把战斗一口气跑完,
+	# 同步 emit battle_finished -> _on_battle_finished 里喂给 animator。
+	_world.tick(float(TICK_INTERVAL_MS))
 
 
 func _finish_with_status(s: String) -> void:
@@ -576,86 +615,98 @@ func _get_selected_active_ability() -> AbilityConfig:
 	return actives[idx] if idx < actives.size() else null
 
 
-## 拆 _actors → run_with_config 的 caster/allies/enemies 三段格式
-func _collect_scene_config() -> Dictionary:
-	var caster_data: Dictionary = _actors[0]
-	var caster: Dictionary = {
-		"class": caster_data["class"],
-		"pos": caster_data["pos"].duplicate(),
-	}
-	if caster_data["hp"] > 0:
-		caster["hp"] = caster_data["hp"]
-	if caster_data["atk"] > 0:
-		caster["atk"] = caster_data["atk"]
-
-	var allies: Array = []
-	var enemies: Array = []
-	for i in range(1, _actors.size()):
-		var a: Dictionary = _actors[i]
-		var entry: Dictionary = {
-			"class": a["class"],
-			"pos": a["pos"].duplicate(),
-		}
-		if a["hp"] > 0:
-			entry["hp"] = a["hp"]
-		(allies if a["team"] == "A" else enemies).append(entry)
-
+func _collect_selected_passives() -> Array[AbilityConfig]:
 	var passives: Array[AbilityConfig] = []
 	var passive_pool := HexBattleSkillIndex.passives()
 	for i in _passive_checks.size():
 		if _passive_checks[i].button_pressed and i < passive_pool.size():
 			passives.append(passive_pool[i])
+	return passives
 
-	var target_mode: String = TARGET_MODE_NAMES[_target_mode_option.selected]
-	var target_cfg: Dictionary = {"mode": target_mode}
-	match target_mode:
-		"enemy_index", "ally_index":
-			target_cfg["index"] = int(_target_index_input.value)
+
+## 按 target UI 模式解析到 world 里实际的 actor id。
+func _resolve_target_actor_id() -> String:
+	var mode: String = TARGET_MODE_NAMES[_target_mode_option.selected]
+	match mode:
+		"enemy_index":
+			return _role_id_to_actor_id.get("enemy_%d" % int(_target_index_input.value), "")
+		"ally_index":
+			return _role_id_to_actor_id.get("ally_%d" % int(_target_index_input.value), "")
 		"fixed_pos":
-			target_cfg["pos"] = [int(_target_q_input.value), int(_target_r_input.value)]
-
-	return {
-		"map": {
-			"radius": int(_map_radius_input.value),
-			"orientation": "flat" if _map_orientation_option.selected == 1 else "pointy",
-			# key 必须是 "size" 而非 "hex_size" —— SkillPreviewBattle._build_preview_config
-			# 只读 map.size,读不到会 fallback 到默认 10.0,导致播放态场景尺寸膨胀 10 倍
-			"size": float(_map_hex_size_input.value),
-		},
-		"caster": caster,
-		"caster_passives": passives,
-		"allies": allies,
-		"enemies": enemies,
-		"target": target_cfg,
-	}
+			var coord := HexCoord.new(int(_target_q_input.value), int(_target_r_input.value))
+			var nearest := _find_nearest_character(coord, func(_c: CharacterActor) -> bool: return true)
+			return nearest.get_id() if nearest != null else ""
+		_:
+			var caster: CharacterActor = _world.get_actor(_role_id_to_actor_id.get("caster", "")) as CharacterActor
+			if caster == null:
+				return ""
+			var nearest := _find_nearest_character(
+				caster.hex_position,
+				func(c: CharacterActor) -> bool: return c.get_team_id() != caster.get_team_id(),
+			)
+			return nearest.get_id() if nearest != null else ""
 
 
-# ========== Replay events → console ==========
+## 遍历 world.get_actors() 找离 origin 最近的 CharacterActor, filter 决定候选集合。
+func _find_nearest_character(origin: HexCoord, filter: Callable) -> CharacterActor:
+	var best: CharacterActor = null
+	var best_dist := 0x7FFFFFFF
+	for actor in _world.get_actors():
+		if not (actor is CharacterActor):
+			continue
+		var cchar := actor as CharacterActor
+		if not filter.call(cchar):
+			continue
+		var d := cchar.hex_position.distance_to(origin)
+		if d < best_dist:
+			best_dist = d
+			best = cchar
+	return best
 
-func _index_replay_events(replay: Dictionary) -> void:
-	_replay_events_by_frame.clear()
-	for entry_variant in replay.get("timeline", []):
-		var entry := entry_variant as Dictionary
-		_replay_events_by_frame[int(entry.get("frame", 0))] = entry.get("events", [])
 
+# ========== Battle 结果 / 动画 ==========
 
-func _on_frame_changed(current_frame: int, _total: int) -> void:
-	if not _is_playing or current_frame <= _last_logged_frame:
+func _on_battle_finished(timeline: Dictionary) -> void:
+	if timeline.is_empty():
+		_last_battle_frames = 0
+		_log_battle_end(0)
+		_finish_with_status("Empty timeline")
 		return
-	for f in range(_last_logged_frame + 1, current_frame + 1):
-		if _replay_events_by_frame.has(f):
-			for ev_variant in _replay_events_by_frame[f]:
-				_log_event(f, ev_variant as Dictionary)
-	_last_logged_frame = current_frame
+
+	_dump_timeline_events(timeline)
+	_last_battle_frames = _read_total_frames(timeline)
+	_set_status("Playing — %d frames" % _last_battle_frames)
+
+	_animator.set_speed(float(_speed_input.value))
+	_animator.play(timeline, _world_view.get_unit_views())
 
 
 func _on_playback_ended() -> void:
+	_log_battle_end(_last_battle_frames)
 	_set_status("Playback ended")
-	_log_battle_end(_last_logged_frame)
 	_is_playing = false
 	_start_button.disabled = false
-	# 回到编辑态
-	_rebuild_editor_preview()
+	_do_rebuild_world_unguarded()
+
+
+func _read_total_frames(timeline: Dictionary) -> int:
+	if timeline.has("meta") and timeline["meta"] is Dictionary:
+		return int((timeline["meta"] as Dictionary).get("totalFrames", 0))
+	return 0
+
+
+# ========== Timeline → console (一次性 dump) ==========
+#
+# 切到 Animator 后不再有 per-frame signal 转发到 skill_preview, console log 变成
+# "战斗结束时一次性 dump 所有事件"。视觉动画仍按 speed 播, 文字日志不追帧对齐。
+# 视觉层面 UX 略退化, 阶段 4 录像 v3 + ReplayPlayer 再评估是否需要 frame signal。
+
+func _dump_timeline_events(timeline: Dictionary) -> void:
+	for entry_variant in timeline.get("timeline", []):
+		var entry := entry_variant as Dictionary
+		var frame := int(entry.get("frame", 0))
+		for ev_variant in entry.get("events", []):
+			_log_event(frame, ev_variant as Dictionary)
 
 
 # ========== Console UX formatters ==========
@@ -684,23 +735,23 @@ func _log_battle_start(ability_cfg: AbilityConfig, max_ticks: int) -> void:
 	_log(EVENT_DIVIDER)
 
 
-func _log_battle_header(total_frames: int, caster_id: String) -> void:
-	_log("  [color=#A89580]caster=[/color][b]%s[/b]  [color=#A89580]frames=[/color]%d" % [
-		caster_id, total_frames,
+func _log_battle_header_params(caster_id: String, target_id: String) -> void:
+	_log("  [color=#A89580]caster=[/color][b]%s[/b]  [color=#A89580]target=[/color]%s" % [
+		caster_id, target_id if target_id != "" else "(none)",
 	])
 
 
 func _log_battle_end(last_frame: int) -> void:
 	_log(EVENT_DIVIDER)
 	_log("  [color=#7FB56B][b]■ ENDED[/b][/color]  [color=#6B4F3E](%d frames · %d ms)[/color]" % [
-		last_frame, last_frame * int(SkillPreviewBattle.TICK_INTERVAL),
+		last_frame, last_frame * TICK_INTERVAL_MS,
 	])
 	_log(EVENT_DIVIDER)
 
 
 func _log_event(frame: int, ev: Dictionary) -> void:
 	var kind: String = ev.get("kind", "?")
-	var ms := frame * int(SkillPreviewBattle.TICK_INTERVAL)
+	var ms := frame * TICK_INTERVAL_MS
 	var ts := "[color=#6B4F3E]%5dms[/color]" % ms
 	var line := ""
 	match kind:
@@ -918,8 +969,7 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 	_max_ticks_input.value = ctrl.get("max_ticks", 500)
 	_speed_input.value = ctrl.get("speed", 1.0)
 
-	_apply_map_to_ugridmap()
-	_rebuild_editor_preview()
+	_rebuild_world_from_model()
 
 
 # ========== 工具 ==========
@@ -1119,7 +1169,7 @@ func _style_start_button() -> void:
 func _on_passive_toggled(pressed: bool, cb: CheckBox) -> void:
 	_apply_passive_style(cb, pressed)
 	if pressed:
-		_rebuild_editor_preview()
+		_rebuild_world_from_model()
 
 
 func _apply_passive_style(cb: CheckBox, selected: bool) -> void:

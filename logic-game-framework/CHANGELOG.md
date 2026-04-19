@@ -12,6 +12,50 @@
 
 ---
 
+## [Unreleased] — 2026-04-20 阶段 3:skill_preview 响应式切换
+
+阶段 1/2 把 core/frontend 拆到 "World 持久 + Procedure 短命 + WorldView/Animator 叠加层" 后, 阶段 3 让 skill_preview 这个编辑器工具吃到这套新架构: 常驻一个 `SkillPreviewWorldGI` + 常驻 `FrontendWorldView` + 常驻 `FrontendBattleAnimator`, 编辑态增删 actor 走 `world.add_actor/remove_actor` 触发 signal → view 响应式刷新(不再 destructive 重建场景)。START 走 `world.queue_preview + start_battle` → 新增的 `SkillPreviewProcedure` 承接 grant+activate+tick-until-done 语义, 战斗结束后 `battle_finished` signal 把 timeline 喂给 Animator 叠加 VFX/飘字/死亡动画。
+→ [design-notes/2026-04-20-skill-preview-reactive.md](docs/design-notes/2026-04-20-skill-preview-reactive.md)
+
+### Added
+- `SkillPreviewProcedure extends BattleProcedure`(`example/skill-preview/skill_preview_procedure.gd`):skill_preview 特化的战斗过程。不跑 ATB/AI/胜负判定, 只承接"caster 施放指定 ability, tick 到所有技能无 executing instance + 无飞行投射物 + POST_EXECUTION_TICKS 缓冲"这条终止链。`tick_once` 合并 ability tick 与 "executing 探测" 同一循环(省掉一次全量 actor 扫描); `_any_projectile_flying` 单独扫投射物。`_start_recorder` override 走旧版 `start_recording(actors, configs, map_config)` 保留 initial_actors, 供 Animator `ReplayData.BattleRecord.from_dict` 消费。`MAX_TICKS=500 / POST_EXECUTION_TICKS=10` 与旧版一致; passives 构造时 `duplicate()` 防御调方数组外部 mutate。
+- `SkillPreviewWorldGI extends HexWorldGameplayInstance`(`example/skill-preview/skill_preview_world.gd`):编辑器常驻 WorldGI。`reset()` 清空 `_actors / _actor_id_2_actor_dic / _systems / grid / _logic_time`, emit `actor_removed` 让 `FrontendWorldView` 响应式回收 unit view。`queue_preview(caster_id, ability_config, target_id, passives)` 预存下一次 start_battle 的 preview 参数(passives `duplicate()` 防御), `_create_battle_procedure` override 消费参数构造 `SkillPreviewProcedure`(消费后清空防止跨场误用, 加 `Log.assert_crash(ability_config != null)` 防 "忘 queue_preview 直接 start_battle" 静默 null)。
+- `HexWorldGameplayInstance.broadcast_projectile_events()`(`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`):把 projectile HIT/MISS 事件的 collect+match+process_post_event 下沉为 world 公共 method。`HexBattleProcedure` / `SkillPreviewProcedure` 的 tick_once 都调这一方法, 消除同段逻辑两处内联。
+- `tests/smoke_skill_preview_reactive.tscn/gd`(主仓库):连续跑 3 场战斗断言 WorldView/Animator 节点引用复用(直接比较 Node 引用, 不靠 instance_id) + reset 归 0 + battle_finished 产出非空 timeline + animator 跑到 playback_ended。
+
+### Changed
+- `skill_preview.gd`(`example/skill-preview/skill_preview.gd`)从 "每次 START 调 `SkillPreviewBattle.run_with_config` destructive 重建临时 instance + `FrontendBattleReplayScene.load_replay`" 切到响应式栈:`_ready` 里 `GameWorld.init()` + 常驻 `SkillPreviewWorldGI` + `FrontendWorldView.bind_world` + `FrontendBattleAnimator`。编辑态的 `_rebuild_editor_preview`(旧)替换为 `_rebuild_world_from_model`(新)走 `world.reset() / configure_grid / add_actor / place_occupant` 的显式 mutation API, `FrontendBattleReplayScene / FrontendBattleDirector / _replay_events_by_frame / _last_logged_frame` 等字段全部删除。相机 / 光照 / 环境从原先委托 replay_scene 改为场景自己搭(`_setup_camera_and_env` 沿袭原参数)。console event log 退化为 `battle_finished` 后从 timeline 一次性 dump(不再按 frame 同步推进, UX 遗留记在 handoff)。
+- `HexWorldGameplayInstance.logger: HexBattleLogger = null`(`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`):把原先仅存在于 `HexBattle` 上的 `logger` 字段下沉到父类, 默认 null。动机 —— `damage_utils / heal_action` 用 `if battle.logger != null` 判空访问, 当 `game_state_provider` 是 `SkillPreviewWorldGI` 等 HexBattle 的姊妹子类时触发 `Invalid access to property 'logger'` 报错。下沉后任何 `HexWorldGameplayInstance` 子类都合法共享字段, HexBattle 上原有声明删除以避免 shadowing。
+- `HexBattle` 在 `hex_battle.gd` 上的 `var logger: HexBattleLogger = null` 声明移除(下沉到 HexWorldGameplayInstance, 见上), `_on_battle_finished` 里 `logger = _hex_procedure.logger` 语义不变。
+- `HexBattleProcedure._broadcast_projectile_events` 下沉并删除本地 method, `tick_once` 改调 `world.broadcast_projectile_events()`; 顺带移除原实现里的 `print("  [投射物] ...")` debug 行(调试 print 不属于框架职责, 要 log 走 HexBattleLogger)。
+- 所有 `var battle: HexBattle = ctx.game_state_provider` 的静态类型标注改为 `var battle: HexWorldGameplayInstance = ctx.game_state_provider`:`actions/apply_move_action.gd` / `actions/apply_buff_action.gd` / `actions/damage_action.gd` / `actions/poison_tick_action.gd` / `actions/heal_action.gd` (×2) / `actions/reflect_damage_action.gd` / `actions/start_move_action.gd` / `target_selectors.gd`, 以及 `utils/hex_battle_damage_utils.gd` (×2) / `utils/hex_battle_game_state_utils.gd` (×2)。  
+  动机 —— 这些 action 访问的字段(`get_actor / get_alive_actor_ids / grid / remove_actor / get_actors / logger`)阶段 1 已全部下沉到 HexWorldGameplayInstance, 标注成具体子类 HexBattle 是历史残留, 且会让 SkillPreviewWorldGI / 未来其它姊妹子类触发"Trying to assign value of type X to a variable of type hex_battle.gd"。AI 目录(`ai/*.gd` 5 文件)的 `battle: HexBattle` 暂未改 —— SkillPreviewProcedure 不走 AI 路径, 且 HexBattle 跑 HexBattleProcedure 时 AI 签名仍兼容, 改动留给未来"WorldGI 直接驱动 AI"场景。
+
+### 外部调用点兼容性
+- `SkillPreviewBattle`(`scripts/SkillPreviewBattle.gd`)未动 —— `tests/skill_scenarios/` scenario runner 继续走 headless `run_with_config/actions` 路径(`GameWorld.init → 临时 _PreviewInstance(HexBattle) → tick → GameWorld.destroy`), 未切到 SkillPreviewWorldGI。动机:scenario runner 的"每场独立 GameWorld 生命周期"断言简单且已稳; skill_preview UI 需要常驻 world 才能做到"无缝展开战斗", 二者的需求不同, 一条路径优化给一种场景更克制。
+- `main.tscn` / `Simulation.tscn` / Web 桥接继续走 `HexBattle` 门面 + `FrontendBattleReplayScene.load_replay(record)` 老路径, 未动。
+- `BattleRecord` 录像格式未变化(阶段 4 落地 v3), `FrontendBattleReplayScene` 未动。
+
+### 待处理(下一阶段)
+- 阶段 4:`BattleRecord` v3(split `world_snapshot` + `event_timeline`) + `ReplayPlayer`(临时 WorldGI + WorldView)。录像路径切到 ReplayPlayer 后 skill_preview 战斗期死亡动画问题可根治 —— 届时 skill_preview 可以 bind 到 ReplayPlayer 构造的临时 world 看完整死亡动画, 或继续走本阶段常驻 world(死者 view 响应式消失, 死亡动画 skip)的方案。
+- 阶段 5:`main.tscn` / `Simulation.tscn` / Web 桥接切到 WorldGI 承载。
+- AI 目录 `battle: HexBattle` 类型标注收束(等 "WorldGI 直接驱动 AI" 需求落地再改, 当前 `HexBattleProcedure._decide_action` 传 `_world_instance: HexWorldGameplayInstance` 进去,AI 静态类型虽偏窄但传入的 HexBattle 实例 IS-A 兼容,不报错)。
+- skill_preview 战斗期 console event log 同步推进(现在 `battle_finished` 后一次性 dump, 不追帧)。需要 `FrontendBattleAnimator` 转发 director `frame_changed` signal 才能做同步, 阶段 3 不加以免扩 scope。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_frontend_main.tscn` | PASS(Logic battle completed in 156 ticks) |
+| `tests/smoke_skill_scenarios.tscn` | 9/9 ✅ |
+| `tests/smoke_world_view.tscn` | PASS(views 1 → 0) |
+| `tests/smoke_skill_preview_reactive.tscn` | PASS(3 场连续, view/animator 实例复用 + reset 归 0) |
+
+编辑器手动验证(skill_preview UI 的"无缝展开战斗"视觉)由用户接手, 不在 headless 覆盖面内。
+
+---
+
 ## [Unreleased] — 2026-04-20 阶段 2:Frontend 订阅器(WorldView + BattleAnimator)
 
 阶段 1 把 core 拆成"World 持久 + Procedure 短命"两层后,frontend 仍停留在"被动消费录像 dict"范式。阶段 2 新增响应式订阅层:`WorldView` 订阅 WorldGI 的显式 mutation signal 维护 unit view 生命周期(非战斗期);`BattleAnimator` 复用 `FrontendBattleDirector` 消费 event_timeline,在 WorldView 提供的已有 view 上叠加 VFX / 飘字 / 死亡动画,不拥有 view。录像格式 / `FrontendBattleReplayScene` / `main.tscn` / scenario runner / Web 桥接全部未动 —— 阶段 2 纯加 API,现有路径继续走 HexBattle 门面 + replay scene。  
