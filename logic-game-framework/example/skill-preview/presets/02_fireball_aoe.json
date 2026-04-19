@@ -1,0 +1,12 @@
+{
+  "map": {"radius": 6, "orientation": "flat", "hex_size": 1.0},
+  "skill": {"active_id": "skill_fireball", "passive_ids": []},
+  "actors": [
+    {"role": "caster", "team": "A", "class": "MAGE",    "pos": [0, 0],  "hp": 0.0, "atk": 0.0},
+    {"role": "dummy",  "team": "B", "class": "WARRIOR", "pos": [3, 0],  "hp": 200.0, "atk": 0.0},
+    {"role": "dummy",  "team": "B", "class": "WARRIOR", "pos": [3, 1],  "hp": 200.0, "atk": 0.0},
+    {"role": "dummy",  "team": "B", "class": "WARRIOR", "pos": [3, -1], "hp": 200.0, "atk": 0.0}
+  ],
+  "target":   {"mode": "enemy_index", "index": 0, "q": 0, "r": 0},
+  "controls": {"max_ticks": 500, "speed": 1.0}
+}

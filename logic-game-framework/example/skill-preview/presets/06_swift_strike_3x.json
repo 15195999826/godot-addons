@@ -1,0 +1,10 @@
+{
+  "map": {"radius": 5, "orientation": "flat", "hex_size": 1.0},
+  "skill": {"active_id": "skill_swift_strike", "passive_ids": []},
+  "actors": [
+    {"role": "caster", "team": "A", "class": "ASSASSIN", "pos": [0, 0], "hp": 0.0, "atk": 0.0},
+    {"role": "dummy",  "team": "B", "class": "WARRIOR",  "pos": [1, 0], "hp": 100.0, "atk": 0.0}
+  ],
+  "target":   {"mode": "auto", "index": 0, "q": 0, "r": 0},
+  "controls": {"max_ticks": 500, "speed": 1.0}
+}

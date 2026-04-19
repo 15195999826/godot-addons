@@ -1,0 +1,279 @@
+[gd_scene load_steps=2 format=3 uid="uid://bskillpreview0001"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/skill-preview/skill_preview.gd" id="1_skill_preview"]
+
+[node name="SkillPreview" type="Node"]
+script = ExtResource("1_skill_preview")
+
+[node name="ConfigUI" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="Root" type="Control" parent="ConfigUI"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LeftPanel" type="PanelContainer" parent="ConfigUI/Root"]
+anchor_bottom = 1.0
+offset_right = 440.0
+grow_vertical = 2
+
+[node name="Scroll" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel"]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+; =============== Preset ===============
+[node name="TitlePreset" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "— Preset —"
+
+[node name="PresetRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="PresetLoadOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PresetSaveButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Save"
+
+[node name="Sep1" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+; =============== Map ===============
+[node name="TitleMap" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "— Map —"
+
+[node name="MapRadiusRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapRadiusRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "radius"
+
+[node name="MapRadiusInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapRadiusRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 20.0
+value = 5.0
+
+[node name="MapOrientationRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapOrientationRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "orientation"
+
+[node name="MapOrientationOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapOrientationRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MapHexSizeRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapHexSizeRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "hex size"
+
+[node name="MapHexSizeInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapHexSizeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.5
+max_value = 200.0
+step = 0.5
+value = 1.0
+
+[node name="Sep2" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+; =============== Skill ===============
+[node name="TitleSkill" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "— Skill —"
+
+[node name="SkillActiveLabel" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "Active:"
+
+[node name="SkillActiveOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SkillPassivesLabel" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "Passives (multi):"
+
+[node name="PassivesContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Sep3" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+; =============== Actors ===============
+[node name="TitleActors" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "— Actors (右键点格子也可编辑) —"
+
+[node name="ActorAddRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="ActorAddEnemyButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/ActorAddRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "+ enemy"
+
+[node name="ActorAddAllyButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/ActorAddRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "+ ally"
+
+[node name="ActorsContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Sep4" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+; =============== Target ===============
+[node name="TitleTarget" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "— Target —"
+
+[node name="TargetModeOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="TargetIndexRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetIndexRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(50, 0)
+text = "index"
+
+[node name="TargetIndexInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetIndexRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 20.0
+
+[node name="TargetPosRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="Lq" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(50, 0)
+text = "q"
+
+[node name="TargetQInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -20.0
+max_value = 20.0
+
+[node name="Lr" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
+layout_mode = 2
+text = "r"
+
+[node name="TargetRInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -20.0
+max_value = 20.0
+
+[node name="Sep5" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+; =============== Controls ===============
+[node name="TitleCtrl" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+text = "— Controls —"
+
+[node name="TicksRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TicksRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "max ticks"
+
+[node name="MaxTicksInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TicksRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 10.0
+max_value = 5000.0
+value = 500.0
+
+[node name="SpeedRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/SpeedRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "speed"
+
+[node name="SpeedInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/SpeedRow"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.1
+max_value = 10.0
+step = 0.1
+value = 1.0
+
+[node name="Sep6" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+layout_mode = 2
+
+[node name="StartButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "▶  START"
+
+[node name="StatusLabel" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Status: --"
+autowrap_mode = 2
+
+; =============== Console (bottom) ===============
+[node name="BottomPanel" type="PanelContainer" parent="ConfigUI/Root"]
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 440.0
+offset_top = -180.0
+
+[node name="ConsoleLog" type="RichTextLabel" parent="ConfigUI/Root/BottomPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+bbcode_enabled = true
+scroll_following = true
+
+; =============== Popup (hex context menu) ===============
+[node name="HexPopupMenu" type="PopupMenu" parent="ConfigUI"]
+unique_name_in_owner = true
