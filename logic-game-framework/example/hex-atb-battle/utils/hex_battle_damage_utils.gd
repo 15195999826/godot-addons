@@ -170,7 +170,7 @@ static func _process_broken_shields(
 		var broken_dict: Dictionary = ctx.event_collector.push(broken_event.to_dict())
 		result.all_events.append(broken_dict)
 
-		# 2. 调用 on_break 回调（用户自行 push 新事件）
+		# 2. 调用 on_break 回调（用户可在内部 push 新事件，并返回事件 dict 数组以并入本次 ActionResult）
 		var ability := ability_set.find_ability_by_id(shield_ability_id)
 		if ability != null:
 			var shield_component: HexBattleShieldComponent = null
@@ -179,7 +179,11 @@ static func _process_broken_shields(
 					shield_component = component as HexBattleShieldComponent
 					break
 			if shield_component != null and shield_component.on_break.is_valid():
-				shield_component.on_break.call(record, ctx, battle)
+				var callback_return: Variant = shield_component.on_break.call(record, ctx, battle)
+				if callback_return is Array:
+					for ev in (callback_return as Array):
+						if ev is Dictionary:
+							result.all_events.append(ev as Dictionary)
 			# 3. expire 该 ability（让 AbilitySet 在下次 _process_abilities 时 revoke）
 			if not ability.is_expired():
 				ability.expire(HexBattleShieldComponent.EXPIRE_REASON_BROKEN)

@@ -21,52 +21,66 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	
 	var e := BattleEvents.DamageEvent.from_dict(event)
 	var target_id := e.target_actor_id
-	var damage := e.damage
+	var actual_life_damage := e.actual_life_damage
+	var shield_absorbed := e.shield_absorbed
 	var is_critical := e.is_critical
 	var is_reflected := e.is_reflected
-	
+
 	var target_position := context.get_actor_position(target_id)
 	var current_hp := context.get_actor_hp(target_id)
-	
+
 	var actions: Array[FrontendVisualAction] = []
-	
-	# 1. 伤害飘字
-	var text := "-%d" % roundi(damage)
-	if is_reflected:
-		text = "反伤 " + text
-	
-	var style := FrontendFloatingTextAction.FloatingTextStyle.CRITICAL if is_critical else FrontendFloatingTextAction.FloatingTextStyle.NORMAL
-	var color := _get_damage_color(is_critical, is_reflected)
-	
-	var floating_text := FrontendFloatingTextAction.new(
-		target_id,
-		text,
-		color,
-		target_position,
-		style,
-		config.damage_floating_text_duration
-	)
-	actions.append(floating_text)
-	
-	# 2. 受击闪白
-	var hit_flash := FrontendProceduralVFXAction.new(
-		FrontendProceduralVFXAction.EffectType.HIT_FLASH,
-		config.damage_hit_vfx_duration,
-		target_id
-	)
-	actions.append(hit_flash)
-	
-	# 3. 血条更新（带延迟，等待受击特效）
-	var new_hp := maxf(0.0, current_hp - damage)
-	var update_hp := FrontendUpdateHPAction.new(
-		target_id,
-		current_hp,
-		new_hp,
-		config.damage_hp_bar_duration,
-		config.damage_hp_bar_delay
-	)
-	actions.append(update_hp)
-	
+
+	# 1. 伤害飘字（按 actual_life_damage 显示；shield_absorbed 单独飘字）
+	if actual_life_damage > 0.0:
+		var text := "-%d" % roundi(actual_life_damage)
+		if is_reflected:
+			text = "反伤 " + text
+		var style := FrontendFloatingTextAction.FloatingTextStyle.CRITICAL if is_critical else FrontendFloatingTextAction.FloatingTextStyle.NORMAL
+		var color := _get_damage_color(is_critical, is_reflected)
+		var floating_text := FrontendFloatingTextAction.new(
+			target_id,
+			text,
+			color,
+			target_position,
+			style,
+			config.damage_floating_text_duration
+		)
+		actions.append(floating_text)
+
+	if shield_absorbed > 0.0:
+		var absorb_text := "护盾 -%d" % roundi(shield_absorbed)
+		var absorb_floating := FrontendFloatingTextAction.new(
+			target_id,
+			absorb_text,
+			Color(0.4, 0.8, 1.0),  # 浅蓝
+			target_position,
+			FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
+			config.damage_floating_text_duration
+		)
+		actions.append(absorb_floating)
+
+	# 2. 受击闪白（仅当真打到肉，全吸收时不闪）
+	if actual_life_damage > 0.0:
+		var hit_flash := FrontendProceduralVFXAction.new(
+			FrontendProceduralVFXAction.EffectType.HIT_FLASH,
+			config.damage_hit_vfx_duration,
+			target_id
+		)
+		actions.append(hit_flash)
+
+	# 3. 血条更新（按 actual_life_damage 扣血；全吸收时血条不动）
+	if actual_life_damage > 0.0:
+		var new_hp := maxf(0.0, current_hp - actual_life_damage)
+		var update_hp := FrontendUpdateHPAction.new(
+			target_id,
+			current_hp,
+			new_hp,
+			config.damage_hp_bar_duration,
+			config.damage_hp_bar_delay
+		)
+		actions.append(update_hp)
+
 	return actions
 
 
