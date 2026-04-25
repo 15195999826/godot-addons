@@ -226,10 +226,11 @@ func _apply_update_hp_action(action: FrontendUpdateHPAction, progress: float) ->
 	# 线性插值 HP
 	actor.visual_hp = action.get_interpolated_hp(progress)
 	
-	# 动画完成时确保精确值
+	# 动画完成时确保精确值。is_alive 走 _set_actor_alive 收口,保证 hp→0 那帧
+	# emit actor_died(transition-only)。
 	if progress >= 1.0:
 		actor.visual_hp = action.to_hp
-		actor.is_alive = action.to_hp > 0
+		_set_actor_alive(actor, action.to_hp > 0)
 		print("[Frontend:RenderWorld] HP更新完成: actor=%s hp=%.0f->%.0f alive=%s" % [
 			action.actor_id, action.from_hp, action.to_hp, actor.is_alive
 		])
