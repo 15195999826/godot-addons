@@ -5,10 +5,6 @@
 ## 死亡动画。不拥有 unit view 生命周期 —— 战斗结束时 WorldGI 里 actor 已是
 ## 终态，animator 只负责让视觉追上该终态。
 ##
-## 实现上是 FrontendBattleDirector 的薄包装：复用 timeline 解码 /
-## ActionScheduler / visualizer registry，把 director 发出的状态变更信号
-## 转发到外部传入的 unit view 字典，并自己承载 VFX / 投射物 / 飘字节点。
-##
 ## 详见 docs/design-notes/2026-04-20-world-view.md
 class_name FrontendBattleAnimator
 extends Node3D
@@ -18,9 +14,9 @@ extends Node3D
 
 signal playback_started
 signal playback_ended
-## 播放 / 暂停切换;转发自 _director.playback_state_changed,供外部 UI 同步按钮态。
+## 播放 / 暂停切换,供外部 UI 同步按钮态。
 signal playback_state_changed(is_playing: bool)
-## 当前帧推进;转发自 _director.frame_changed,供外部 UI 显示进度。
+## 当前帧推进,供外部 UI 显示进度。
 signal frame_changed(current_frame: int, total_frames: int)
 
 
@@ -61,8 +57,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if _director == null or not _director.is_playing():
 		return
-	# 移动动画期间单位位置平滑更新 —— 沿袭 FrontendBattleReplayScene 对 Director
-	# 提供的 get_actor_world_position 的拉取模式。
+	# 移动动画期间单位位置平滑更新:逻辑层 hex_position 跳跃,视觉层每帧 lerp 到目标。
 	for actor_id in _unit_views:
 		var view: FrontendUnitView = _unit_views[actor_id]
 		if is_instance_valid(view):
@@ -131,8 +126,7 @@ func get_current_frame() -> int:
 	return _director.get_current_frame()
 
 
-## 转发自 director,供测试 / UI 拉取当前所有 actor 的视觉态(visual_hp / max_hp /
-## position / is_dead 等)。
+## 当前所有 actor 的视觉态(visual_hp / max_hp / position / is_dead 等),供测试 / UI 拉取。
 func get_actors_snapshot() -> Dictionary:
 	if _director == null:
 		return {}

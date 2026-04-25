@@ -5,9 +5,6 @@
 ##   2. WorldView.bind_world(battle) -> battle.start 时 add_actor signal 触发 view spawn
 ##   3. tick 同步跑完战斗 -> battle_finished signal
 ##   4. _on_battle_finished -> animator.play(timeline, view.get_unit_views()) 叠加 VFX/飘字
-##
-## 参考 example/skill-preview/skill_preview.gd::_init_world_stack 的常驻 World+View+Animator
-## 三件套样板。本文件不再使用 destructive FrontendBattleReplayScene.load_replay 路径。
 extends Node
 
 
@@ -114,8 +111,6 @@ func _get_map_config() -> GridMapConfig:
 
 # ========== 响应式栈初始化 ==========
 
-## 相机 / 光 / 环境 —— 沿袭旧 FrontendBattleReplayScene._setup_camera/_setup_lighting
-## 的参数,确保切到响应式后视觉一致(同 skill_preview._setup_camera_and_env 形态)。
 func _setup_camera_and_env() -> void:
 	var camera_scene := preload("res://addons/lomolib/camera/lomo_camera_rig.tscn")
 	_camera_rig = camera_scene.instantiate() as LomoCameraRig
@@ -198,25 +193,6 @@ func _on_draw_mode_option_item_selected(_index: int) -> void:
 	_update_input_visibility()
 
 
-## 配置 SpinBox 的 value_changed 信号在 main.tscn 已 wire,但当前不需要做任何事
-## (按 Start Battle 时 _get_map_config 才读最终值)。占位空方法避免 Godot 信号
-## 派发警告。
-func _on_rows_input_value_changed(_v: float) -> void:
-	pass
-
-
-func _on_columns_input_value_changed(_v: float) -> void:
-	pass
-
-
-func _on_radius_input_value_changed(_v: float) -> void:
-	pass
-
-
-func _on_hex_size_input_value_changed(_v: float) -> void:
-	pass
-
-
 func _on_ground_clicked(pos: Vector3, button: MouseButton) -> void:
 	print("[Main] Ground clicked at: %s (button: %d)" % [pos, button])
 
@@ -231,9 +207,11 @@ func _on_start_battle_button_pressed() -> void:
 	_update_status("Running battle simulation...")
 	_start_battle_button.disabled = true
 
-	# 上一场战斗的 world 解绑(view 自动回收 unit views)。HexBattle 是一次性实例,
-	# 跑完一场需要新建,GameWorld 在内部按 instance id 持有,这里替换不复用旧实例。
+	# HexBattle 一次性实例,跑完留在 GameWorld._instances 不会自清,显式 destroy
+	# 防止多次 Start Battle 累积。
 	_world_view.unbind_world()
+	if _battle != null:
+		GameWorld.destroy_instance(_battle.id)
 	_battle = null
 
 	var map_config := _get_map_config()
@@ -255,10 +233,9 @@ func _on_start_battle_button_pressed() -> void:
 		"map_config": map_config,
 	})
 
-	# 同步 tick 跑完战斗(每帧 100ms)。BATTLE_TICKS_PER_WORLD_FRAME=INT_MAX 默认下,
-	# 单次 tick 会一口气把战斗跑完;循环兜底防极端配置不收敛。
+	# 循环兜底:防极端配置(BATTLE_TICKS_PER_WORLD_FRAME 设有限值)不在单 tick 内收敛。
 	var dt := 100.0
-	for i in range(HexBattle.MAX_TICKS):
+	for _i in range(HexBattle.MAX_TICKS):
 		GameWorld.tick_all(dt)
 		if not GameWorld.has_running_instances():
 			break
@@ -278,7 +255,6 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 	var total_frames: int = meta.get("totalFrames", 0)
 	_update_status("Playing - %d frames" % total_frames)
 
-	_animator.set_speed(1.0)
 	_animator.play(timeline, _world_view.get_unit_views())
 
 

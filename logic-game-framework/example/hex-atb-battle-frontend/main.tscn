@@ -121,8 +121,4 @@ layout_mode = 2
 text = "Status: Ready"
 
 [connection signal="item_selected" from="ConfigUI/VBoxContainer/DrawModeOption" to="." method="_on_draw_mode_option_item_selected"]
-[connection signal="value_changed" from="ConfigUI/VBoxContainer/RowsContainer/RowsInput" to="." method="_on_rows_input_value_changed"]
-[connection signal="value_changed" from="ConfigUI/VBoxContainer/ColumnsContainer/ColumnsInput" to="." method="_on_columns_input_value_changed"]
-[connection signal="value_changed" from="ConfigUI/VBoxContainer/RadiusContainer/RadiusInput" to="." method="_on_radius_input_value_changed"]
-[connection signal="value_changed" from="ConfigUI/VBoxContainer/HexSizeContainer/HexSizeInput" to="." method="_on_hex_size_input_value_changed"]
 [connection signal="pressed" from="ConfigUI/VBoxContainer/StartBattleButton" to="." method="_on_start_battle_button_pressed"]
