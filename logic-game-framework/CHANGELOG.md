@@ -12,6 +12,47 @@
 
 ---
 
+## [Unreleased] — 2026-04-26 死亡不再 remove_actor(阶段 3 D5 收尾)
+
+阶段 3 遗留的 D5"skill_preview 战斗期死亡角色 view 立刻消失,死亡动画来不及播"问题。回归阶段 0 design note (2026-04-19-world-as-single-instance.md line 247) 原则:**死亡是行为禁止,不是 actor 离开 world**。`damage_utils.apply_damage` 在 hp ≤ 0 时不再调 `world.remove_actor`,改为只清 grid 占用 / 预订;actor 留在 registry 里 `is_dead()=true`,WorldView 不回收 view,后续 `actor_state_changed(is_alive=false)` signal 能找到 view 触发死亡 tween(缩小 + 下沉 + visible=false)。
+→ [design-notes/2026-04-26-death-keeps-actor-in-world.md](docs/design-notes/2026-04-26-death-keeps-actor-in-world.md)
+
+### Changed
+- `HexBattleDamageUtils.apply_damage`(`example/hex-atb-battle/utils/hex_battle_damage_utils.gd`):死亡分支删除 `battle.remove_actor(target_id)` 调用,新增私有静态方法 `_clear_grid_footprint(battle, dead_actor)` 单独清掉死者的 grid occupant + reservation。语义切分:**死亡 = 行为禁止 + 清格子 + 留 view + 留逻辑实例**;**离开 world = 玩家编辑删除 / 重启战斗 / 投射物完成**。
+  
+  正交性已查证:`get_alive_actor_ids` / `_check_battle_end` / AI 候选 / `process_post_event` 广播范围全部走 `actor.is_dead()`(基于 `_is_dead` flag, hp 一次性 ≤ 0 翻),不依赖 `world.has_actor()`,留尸体不污染战斗逻辑。`apply_move_action` 的 `grid.move_occupant` 由 `_clear_grid_footprint` 兜底防止活人撞死尸格触发 UNEXPECTED `push_error`。
+  
+  当前剩余的 `world.remove_actor` 运行时调用点:`stdlib/systems/projectile_system.gd:131`(投射物离场)、`example/skill-preview/skill_preview.gd:315/562`(编辑态删 / 切 class),`SkillPreviewWorldGI.reset()` 走 `_actors.clear()` + emit。四条都是"actor 永久离开 world"正当语义,与"死亡留尸体"原则不冲突。
+
+### 命名约定(本轮对齐)
+- **"录像播放"** = 表演层视觉播放(A 层):`FrontendBattleReplayScene` / `FrontendBattleAnimator` 当前做的事 —— 从录像 dict 读 actor 配置和事件流, spawn 一组视觉 view, 按 frame 推动画 / 飘字 / VFX, **不重建逻辑 actor**。
+- **"回放"** = 逻辑层重新跑一遍战斗(B 层, 未来可能做):反序列化真 Actor / AbilitySet / AttributeSet, 按 timeline 命令重计算战斗状态。**当前不做, 没规划**。
+- 后续文档 / 讨论里出现 Replay / 回放 词时, **默认指 A 层"录像播放"**;要做 B 层时单独立项,不复用现有 `Replay*` 类名。
+- 阶段 0 design note 草拟的"ReplayPlayer hydrate 真 Actor"路径(形态 B)字面像 B 层但实际只是 A 层包装, **该方向作废** —— 未来在 A 层做"清掉 FrontendBattleReplayScene 老 destructive 路径"的工作时, 新入口名字另议。
+
+### 外部调用点兼容性
+- 录像格式未变化(仍是 ReplayData v2 平铺 `{mapConfig, initialActors, timeline}`)。
+- `FrontendBattleReplayScene` / `BattleAnimator` / `Director.load_replay` 全部未动。
+- `main.tscn` / Web 桥接 / scenario runner 路径全部未动。
+
+### 待处理
+- A 层老路径整合:`FrontendBattleReplayScene.load_replay` destructive 路径未来一轮独立工作清理, 换成 `WorldView + BattleAnimator` 直接 bind(用户表示"接下来一定会做")。
+- 死者 view 期间(0.5s 死亡 tween) 活人 move 到死尸格的视觉穿过感:本期不修, 视觉违和明显时再说。
+- AI 走位 / 寻路目前不感知 view 还在(逻辑层 grid 已清),无影响 —— 视觉残留是 view 层的事。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_skill_preview_reactive.tscn` | PASS(3 场连续) |
+| `tests/smoke_frontend_main.tscn` | PASS |
+| `tests/smoke_skill_scenarios.tscn` | 12/12 ✅ |
+
+skill_preview F6 编辑器手动验证(死亡 tween 视觉)由用户接手。
+
+---
+
 ## [Unreleased] — 2026-04-20 阶段 3:skill_preview 响应式切换
 
 阶段 1/2 把 core/frontend 拆到 "World 持久 + Procedure 短命 + WorldView/Animator 叠加层" 后, 阶段 3 让 skill_preview 这个编辑器工具吃到这套新架构: 常驻一个 `SkillPreviewWorldGI` + 常驻 `FrontendWorldView` + 常驻 `FrontendBattleAnimator`, 编辑态增删 actor 走 `world.add_actor/remove_actor` 触发 signal → view 响应式刷新(不再 destructive 重建场景)。START 走 `world.queue_preview + start_battle` → 新增的 `SkillPreviewProcedure` 承接 grant+activate+tick-until-done 语义, 战斗结束后 `battle_finished` signal 把 timeline 喂给 Animator 叠加 VFX/飘字/死亡动画。

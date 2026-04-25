@@ -111,6 +111,15 @@ static func apply_damage(
 			)
 
 		# ========== 死亡检测 ==========
+		# 死者留在 world 里(actor.is_dead() 仍为 true), 不调 world.remove_actor:
+		# - WorldView 的 unit view 不被回收, BattleAnimator 后续 actor_state_changed
+		#   (is_alive=false) signal 能找到 view 触发 _play_death_animation 死亡 tween。
+		# - "死亡" != "离开 world"。死亡只是行为禁止(不行动/不被选作目标/不占格),
+		#   离开 world 是重启战斗 / 永久退场时的另外动作。
+		# - 存活判定(get_alive_actor_ids / _check_battle_end / AI 候选)全走 is_dead(),
+		#   不依赖 world.has_actor, 留尸体不污染战斗逻辑。
+		# - grid 占用仍要清: 否则活人 move_occupant 到尸体格会触发 apply_move_action
+		#   的 UNEXPECTED 兜底 push_error。
 		if target_actor.check_death():
 			print("  [死亡] %s 已阵亡" % target_name)
 
@@ -125,9 +134,22 @@ static func apply_damage(
 			if alive_actor_ids.size() > 0:
 				event_processor.process_post_event(death_dict, alive_actor_ids, battle)
 
-			battle.remove_actor(target_id)
+			_clear_grid_footprint(battle, target_actor)
 
 	return result
+
+
+## 死亡后清掉死者在 grid 上的占用 / 预订, 让活人可以走到尸体格上。
+## 不动 actor 本身, 不动 world registry —— 这是 "死了但还在 world" 的中间态。
+static func _clear_grid_footprint(battle: HexWorldGameplayInstance, dead_actor: CharacterActor) -> void:
+	if battle == null or battle.grid == null or dead_actor == null:
+		return
+	var pos := dead_actor.hex_position
+	if pos != null and pos.is_valid():
+		battle.grid.remove_occupant(pos)
+	for coord in battle.grid.get_all_coords():
+		if battle.grid.get_reservation(coord) == dead_actor.get_id():
+			battle.grid.cancel_reservation(coord)
 
 
 ## 对每个 broken=true 的消耗记录：push shield_broken event → 调 on_break 回调 → expire ability
