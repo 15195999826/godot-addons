@@ -42,6 +42,7 @@ func _ready() -> void:
 	add_child(_director)
 
 	_director.actor_state_changed.connect(_on_actor_state_changed)
+	_director.actor_died.connect(_on_actor_died)
 	_director.floating_text_created.connect(_on_floating_text_created)
 	_director.attack_vfx_created.connect(_on_attack_vfx_created)
 	_director.attack_vfx_updated.connect(_on_attack_vfx_updated)
@@ -104,12 +105,15 @@ func resume() -> void:
 		_director.play()
 
 
-## 重置到 frame 0,清空特效;调方仍持有的 unit views 会在下一次 _process 被
-## director 拉回 frame 0 状态。播放状态转为暂停。
+## 重置到 frame 0,清空特效,复活所有 view。Reset 是 playback session control
+## 不是战斗内事件,不走 Director signal — 直接遍历 view 调 revive() 拉回视觉态。
 func reset() -> void:
 	if _director != null:
 		_director.reset()
 	_clear_effects()
+	for view in _unit_views.values():
+		if is_instance_valid(view):
+			view.revive()
 
 
 func set_speed(speed: float) -> void:
@@ -154,6 +158,16 @@ func _on_actor_state_changed(actor_id: String, state: FrontendActorRenderState) 
 		return
 	view.update_state(state)
 	view.set_world_position(_director.get_actor_world_position(actor_id))
+
+
+## actor_died 是 transition-only event(RenderWorld 在 alive 真翻 false 那帧 emit
+## 一次)。view 自己负责 once 语义,这里不做幂等。
+func _on_actor_died(actor_id: String) -> void:
+	if not _unit_views.has(actor_id):
+		return
+	var view: FrontendUnitView = _unit_views[actor_id]
+	if is_instance_valid(view):
+		view.play_death()
 
 
 func _on_playback_ended() -> void:

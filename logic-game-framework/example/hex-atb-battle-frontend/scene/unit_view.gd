@@ -43,10 +43,9 @@ var _is_alive: bool = true
 var _flash_progress: float = 0.0
 var _base_material: StandardMaterial3D
 var _target_position: Vector3 = Vector3.ZERO
-var _death_tween: Tween  # 死亡动画 Tween (修复 C3)
-## 死亡动画是否已起播。Tween.is_running() 在边界态(刚创建未跑 / 完成未 kill)
-## 不可靠;同一 dead 单位被多次伤害(普攻 + 亡语等)时会重复进 _play_death_animation
-## 分支,本 flag 解耦 tween 状态做幂等。复活时(_revive_visual_state)清回 false。
+var _death_tween: Tween
+## 死亡动画 once 策略 flag。play_death() 是 transition event 入口,但同一战斗内
+## 的非战斗事件(动画系统重入 / debug 重 wire)仍可能触发多次,view 自己挡 once。
 var _death_played: bool = false
 
 
@@ -141,9 +140,9 @@ func get_actor_id() -> String:
 	return _actor_id
 
 
-## 更新状态
+## 同步可覆盖 state(hp / flash / tint)。一次性动画(死亡 / 复活)走 play_death /
+## revive 公共方法,不在这里推断 transition。
 func update_state(new_state: FrontendActorRenderState) -> void:
-	var was_dead := not _is_alive
 	_current_hp = new_state.visual_hp
 	_is_alive = new_state.is_alive
 	_flash_progress = new_state.flash_progress
@@ -151,14 +150,6 @@ func update_state(new_state: FrontendActorRenderState) -> void:
 	_update_hp_bar()
 	_update_flash_effect(new_state.flash_progress)
 	_update_tint_color(new_state.tint_color)
-
-	if not _is_alive:
-		if not _death_played:
-			_death_played = true
-			_play_death_animation()
-	elif was_dead:
-		# dead → alive 复活(reset / 重新播放):取消死亡 tween,恢复 visible/scale。
-		_revive_visual_state()
 
 
 ## 设置世界位置
@@ -209,27 +200,32 @@ func _update_tint_color(tint_color: Color) -> void:
 		_base_material.albedo_color = _base_material.albedo_color.blend(tint_color)
 
 
-## 播放死亡动画。调方在 update_state 里用 _death_played flag 做幂等保护,
-## 这里不再依赖 tween 状态做 guard。
-func _play_death_animation() -> void:
+## 播放死亡动画(once 策略)。已播过则忽略 — 用于 transition event 入口,调方
+## (BattleAnimator._on_actor_died)不需要做幂等。
+func play_death() -> void:
+	if _death_played:
+		return
+	_death_played = true
 	_death_tween = create_tween()
 	_death_tween.tween_property(self, "scale", Vector3(0.1, 0.1, 0.1), 0.5)
 	_death_tween.parallel().tween_property(self, "position:y", position.y - 0.5, 0.5)
 	_death_tween.tween_callback(_on_death_animation_finished)
 
 
-func _on_death_animation_finished() -> void:
-	death_animation_finished.emit(_actor_id)
-	visible = false
-
-
-## dead → alive 复活:取消死亡 tween,恢复 visible 和 scale 到初始态。
-func _revive_visual_state() -> void:
+## 复活:取消死亡 tween,恢复 visible/scale,清 once flag 让下次 play_death 可再起播。
+## 由 Animator.reset() 在 playback session control 路径上遍历 view 调用,
+## 不通过 Director event(reset 是 session 控制,不是战斗内复活)。
+func revive() -> void:
 	if _death_tween != null and _death_tween.is_valid():
 		_death_tween.kill()
 	visible = true
 	scale = Vector3.ONE
 	_death_played = false
+
+
+func _on_death_animation_finished() -> void:
+	death_animation_finished.emit(_actor_id)
+	visible = false
 
 
 func _exit_tree() -> void:

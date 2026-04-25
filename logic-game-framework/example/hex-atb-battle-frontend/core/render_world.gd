@@ -308,14 +308,13 @@ func _apply_death_action(action: FrontendDeathAction, progress: float) -> void:
 		print("[Frontend:RenderWorld] ⚠️ Death 找不到 actor: %s" % action.actor_id)
 		return
 	
-	actor.is_alive = false
+	_set_actor_alive(actor, false)
 	actor.visual_hp = 0.0
 	actor.death_progress = progress
-	
+
 	if progress >= 1.0:
 		print("[Frontend:RenderWorld] 死亡动画完成: actor=%s" % action.actor_id)
-		actor_died.emit(action.actor_id)
-	
+
 	actor_state_changed.emit(action.actor_id, actor)
 
 
@@ -502,7 +501,7 @@ func set_actor_hp(actor_id: String, hp: float) -> void:
 	var actor: FrontendActorRenderState = _actors.get(actor_id)
 	if actor != null:
 		actor.visual_hp = hp
-		actor.is_alive = hp > 0
+		_set_actor_alive(actor, hp > 0)
 		actor_state_changed.emit(actor_id, actor)
 
 
@@ -519,7 +518,16 @@ func set_actor_position(actor_id: String, hex: HexCoord) -> void:
 func set_actor_dead(actor_id: String) -> void:
 	var actor: FrontendActorRenderState = _actors.get(actor_id)
 	if actor != null:
-		actor.is_alive = false
+		_set_actor_alive(actor, false)
 		actor.visual_hp = 0.0
 		actor_state_changed.emit(actor_id, actor)
-		actor_died.emit(actor_id)
+
+
+## 收口所有 is_alive 写入,在 alive 真正 true→false 那一刻 emit 一次 actor_died。
+## 重复设 false / 设回 true 不会再触发 — actor_died 是 transition-only event。
+## 战斗内复活语义未来落地时再加 actor_revived(同样 transition-only)。
+func _set_actor_alive(actor: FrontendActorRenderState, alive: bool) -> void:
+	var was_alive := actor.is_alive
+	actor.is_alive = alive
+	if was_alive and not alive:
+		actor_died.emit(actor.id)

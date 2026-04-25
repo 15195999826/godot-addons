@@ -12,6 +12,45 @@
 
 ---
 
+## [Unreleased] — 2026-04-26 表演层 Event vs State 边界
+
+用户实测 bug:单位被普攻打死后亡语紧接命中,死亡动画并行播了两次。第一/二轮 patch(`Tween.is_running()` guard / `_death_played` flag) 都只解决死亡这一个 case。跟 Codex 讨论后定下表演层根边界:**State 是可覆盖事实(snapshot 同步无害),Event 是一次性命令(必须 transition-only)**。死亡动画从 snapshot 推断改成 event 触发。
+→ [design-notes/2026-04-26-presentation-event-vs-state.md](docs/design-notes/2026-04-26-presentation-event-vs-state.md)
+
+### Changed
+
+- **`RenderWorld.actor_died`** (`example/hex-atb-battle-frontend/core/render_world.gd`) emit 语义收紧为 transition-only:新增私有 helper `_set_actor_alive(actor, alive)` 收口所有 `is_alive` 写入,只在 `was_alive && not alive` 那帧 emit 一次。`_apply_death_action`(progress >= 1.0)/ `set_actor_dead` 直接 emit 删除,`set_actor_hp`(hp ≤ 0)走同一 helper。重复设 false / 设回 true 不再触发。
+- **`FrontendBattleAnimator`** wire `_director.actor_died` → `_unit_views[id].play_death()`(event-driven),不再依赖 `actor_state_changed` snapshot 推断死亡。`reset()` 内遍历 view 调 `revive()` — Reset 是 playback session control,不走 Director event。
+- **`FrontendUnitView`** 拆 API:`update_state` 删死亡 / 复活分支,只管 hp / flash / tint state sync;新增公共方法 `play_death()`(once 策略,内部 `_death_played` flag 挡重入)和 `revive()`(清 flag + visible/scale 恢复)。删私有 `_play_death_animation` / `_revive_visual_state`。
+
+### 触发策略约定(写进 design note,长期遵守)
+
+每个一次性动画 view 公共方法显式声明触发策略:
+- **once**:已播过就忽略(死亡 / 复活)
+- **retrigger**:已在播也强制 kill 旧 tween 从头播(未来:受击抖 / 闪白 / 暴击大字)
+- **queue**:排队顺序播完(暂未需要)
+
+Animator 一律 wire event signal,**不关心策略**;策略写在 view 方法体内。
+
+### 未来扩展(本期不做)
+
+- `actor_revived(id)`:战斗内复活技能落地时再加,同样 transition-only
+- `actor_damaged(id, amount, source_id, is_critical)`:受击表现需要时落地,view 端 retrigger 策略
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_skill_preview_reactive.tscn` | PASS(3 场连续 + reset 归 0) |
+| `tests/smoke_frontend_main.tscn` | PASS(139 frames, 6 views) |
+| `tests/smoke_world_view.tscn` | PASS |
+| `tests/smoke_skill_scenarios.tscn` | 12/12 ✅ |
+
+用户场景:F6 main.tscn → 普攻 + 亡语双击致死 → 死亡动画只播一次 ✅;Reset → 死掉的棋子回到初始态 ✅。
+
+---
+
 ## [Unreleased] — 2026-04-26 A 层"录像播放"老路径下线
 
 阶段 2/3 引入响应式 `WorldView + BattleAnimator` 后, destructive `FrontendBattleReplayScene.load_replay` 老路径只剩 `main.tscn` 一个生产调用方 + `tests/smoke_frontend_main` 一个 smoke 间接依赖。本轮一次性下线: `main.gd` 切到 `HexBattle (WorldGameplayInstance) + WorldView.bind_world + BattleAnimator.play(timeline, view.get_unit_views())` 响应式 wire(参考 skill_preview 同形态), smoke 节点路径同步换, 删 ReplayScene + 3 个孤儿 frontend 测试, ReplayControls 顺手改名 PlaybackControls 对齐命名约定。
