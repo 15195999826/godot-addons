@@ -60,20 +60,19 @@ func start(config: Dictionary = {}) -> void:
 	var projectile_system := ProjectileSystem.new(collision_detector, GameWorld.event_collector, false)
 	add_system(projectile_system)
 
+	# team_id 必须在 add_actor 之前设置:add_actor emit actor_added signal,
+	# WorldView 收到后立刻 _hydrate_from_actor 读 team_id 决定颜色;晚设会让
+	# view 一律按默认 team=0 染色。
 	left_team = [
-		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.PRIEST)) as CharacterActor,
-		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)) as CharacterActor,
-		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.ARCHER)) as CharacterActor,
+		_create_team_actor(HexBattleClassConfig.CharacterClass.PRIEST, 0),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.WARRIOR, 0),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.ARCHER, 0),
 	]
 	right_team = [
-		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.MAGE)) as CharacterActor,
-		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.BERSERKER)) as CharacterActor,
-		add_actor(CharacterActor.new(HexBattleClassConfig.CharacterClass.ASSASSIN)) as CharacterActor,
+		_create_team_actor(HexBattleClassConfig.CharacterClass.MAGE, 1),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.BERSERKER, 1),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.ASSASSIN, 1),
 	]
-	for actor in left_team:
-		actor.set_team_id(0)
-	for actor in right_team:
-		actor.set_team_id(1)
 	for actor in get_all_actors():
 		actor.equip_abilities()
 
@@ -101,6 +100,12 @@ func tick(dt: float) -> void:
 	super.tick(dt)
 	if _hex_procedure != null:
 		tick_count = _hex_procedure.get_current_tick()
+
+
+func _create_team_actor(cls: HexBattleClassConfig.CharacterClass, team_id: int) -> CharacterActor:
+	var actor := CharacterActor.new(cls)
+	actor.set_team_id(team_id)
+	return add_actor(actor) as CharacterActor
 
 
 func _create_battle_procedure(_participants: Array[Actor]) -> BattleProcedure:

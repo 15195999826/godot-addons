@@ -139,17 +139,20 @@ func get_actor_id() -> String:
 
 ## 更新状态
 func update_state(new_state: FrontendActorRenderState) -> void:
+	var was_dead := not _is_alive
 	_current_hp = new_state.visual_hp
 	_is_alive = new_state.is_alive
 	_flash_progress = new_state.flash_progress
-	
+
 	_update_hp_bar()
 	_update_flash_effect(new_state.flash_progress)
 	_update_tint_color(new_state.tint_color)
-	
-	# 处理死亡
+
 	if not _is_alive:
 		_play_death_animation()
+	elif was_dead:
+		# dead → alive 复活(reset / 重新播放):取消死亡 tween,恢复 visible/scale。
+		_revive_visual_state()
 
 
 ## 设置世界位置
@@ -215,6 +218,14 @@ func _play_death_animation() -> void:
 func _on_death_animation_finished() -> void:
 	death_animation_finished.emit(_actor_id)
 	visible = false
+
+
+## dead → alive 复活:取消死亡 tween,恢复 visible 和 scale 到初始态。
+func _revive_visual_state() -> void:
+	if _death_tween != null and _death_tween.is_valid():
+		_death_tween.kill()
+	visible = true
+	scale = Vector3.ONE
 
 
 func _exit_tree() -> void:
