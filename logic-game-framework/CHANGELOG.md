@@ -60,11 +60,20 @@
 |---|---|
 | `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
 | `tests/smoke_frontend_main.tscn` | PASS(Logic battle completed in 156 ticks) |
-| `tests/smoke_skill_scenarios.tscn` | 9/9 ✅ |
+| `tests/smoke_skill_scenarios.tscn` | 12/12 ✅ (含 Shield + Thorn 系统并入) |
 | `tests/smoke_world_view.tscn` | PASS(views 1 → 0) |
 | `tests/smoke_skill_preview_reactive.tscn` | PASS(3 场连续, view/animator 实例复用 + reset 归 0) |
 
 编辑器手动验证(skill_preview UI 的"无缝展开战斗"视觉)由用户接手, 不在 headless 覆盖面内。
+
+### 阶段 3 收尾确认 (2026-04-26)
+
+用户 F6 编辑器实测通过, 以下行为全部符合预期:
+- 增删 actor / 拖 q/r/hp / class 切换 → 只动目标棋子的 view, 已有棋子不抖
+- 拖 map radius / orientation / hex_size → 拖动期不抖, 松手后 150ms 平滑过渡(actor 跟新 hex_size 重算位置, 不是从 (0,0) 滑回)
+- 战斗 START → 回放 → 状态保留 → 用户主动按 RESET 才回战前态
+- popup visible 时右键另一个 hex → 旧 popup 关闭, 新 hex 重弹 popup; 点菜单项 / ESC / 左键关闭都不会误触发"反弹"
+- 触发"reset 全部从 (0,0) 滑回"的入口已收敛到 3 处明确意图的合法路径(`_ready` / `_on_reset_pressed` / `_on_preset_load_selected`)
 
 ---
 
