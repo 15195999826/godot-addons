@@ -67,6 +67,7 @@ const TICK_INTERVAL_MS := 100
 @onready var _speed_input: SpinBox = %SpeedInput
 
 @onready var _start_button: Button = %StartButton
+@onready var _reset_button: Button = %ResetButton
 @onready var _status_label: Label = %StatusLabel
 
 @onready var _console_log: RichTextLabel = %ConsoleLog
@@ -97,15 +98,25 @@ var _popup_hex: HexCoord = null
 var _popup_actor_idx: int = -1
 
 ## 约定字段 -> actor_id 映射: 编辑态按数据模型 idx 分配稳定 id(caster / ally_N / enemy_N)。
-## 每次 _rebuild_world_from_model 重新生成并写入 add_actor 前的 _display_name 提示;
+## 每次 _reset_world_to_model 重新生成并写入 add_actor 前的 _display_name 提示;
 ## 真实 actor id 由 WorldGI.add_actor 分配(形如 world_N:Character_M), 通过
 ## display_name 反查的 _role_id_to_actor_id 维护供 queue_preview 使用。
+##
+## 增量编辑路径(_remove_actor_at / class 切换)需要从 _actors[idx] 反查 actor_id,
+## 但 _role_id_for(idx) 在 idx 变化后会重新编号(删 enemy_2 后 enemy_3 → enemy_2),
+## 用 role_id 反查会拿到错位的 actor。因此并行维护 _actor_ids: Array[String] 与
+## _actors 同 idx 对齐, 保存每条数据模型项当前对应的 world actor_id。
+## 插入/删除走数组同步操作,_role_id_to_actor_id 在每次结构变化后整体重建。
 var _role_id_to_actor_id: Dictionary[String, String] = {}
+var _actor_ids: Array[String] = []
 
 ## 最近一次战斗的总帧数, 从 timeline.meta.totalFrames 缓存。
 ## 不能从 _world.get_active_battle() 读 —— battle_finished emit 之前
 ## _active_battle 已经被 null 掉了 (见 world_gameplay_instance.gd:103-113)。
 var _last_battle_frames: int = 0
+
+## Map spinbox value_changed debounce —— 拖动时合并多次 rebuild。
+var _map_change_timer: Timer = null
 
 
 # ========== 生命周期 ==========
@@ -119,7 +130,7 @@ func _ready() -> void:
 	_init_signals()
 	_init_default_actors()
 	_refresh_preset_list()
-	_rebuild_world_from_model()
+	_reset_world_to_model()
 	_set_status("Ready — 右键点格子编辑摆位")
 	_log_welcome()
 
@@ -248,15 +259,24 @@ func _init_ui_static_options() -> void:
 
 func _init_signals() -> void:
 	_start_button.pressed.connect(_on_start_pressed)
+	_reset_button.pressed.connect(_on_reset_pressed)
 	_actor_add_enemy_button.pressed.connect(func() -> void: _add_actor("dummy", "B", "WARRIOR", 2, 0))
 	_actor_add_ally_button.pressed.connect(func() -> void: _add_actor("dummy", "A", "WARRIOR", -1, 0))
 	_target_mode_option.item_selected.connect(_on_target_mode_changed)
 	_preset_save_button.pressed.connect(_on_preset_save_pressed)
 	_preset_load_option.item_selected.connect(_on_preset_load_selected)
 	_speed_input.value_changed.connect(_on_speed_changed)
-	_map_radius_input.value_changed.connect(func(_v: float) -> void: _rebuild_world_from_model())
-	_map_orientation_option.item_selected.connect(func(_i: int) -> void: _rebuild_world_from_model())
-	_map_hex_size_input.value_changed.connect(func(_v: float) -> void: _rebuild_world_from_model())
+	# Map spinbox 走增量 grid mutation: configure_grid emit grid_configured -> view
+	# 重渲网格 + 遍历 actor emit actor_position_changed 让 unit view 按新 hex_size
+	# 平滑滑到新位置。拖动时每 0.1 step 触发一次会抖, 150ms debounce 合并成松手一次。
+	_map_change_timer = Timer.new()
+	_map_change_timer.one_shot = true
+	_map_change_timer.wait_time = 0.15
+	_map_change_timer.timeout.connect(_apply_grid_change)
+	add_child(_map_change_timer)
+	_map_radius_input.value_changed.connect(func(_v: float) -> void: _map_change_timer.start())
+	_map_orientation_option.item_selected.connect(func(_i: int) -> void: _map_change_timer.start())
+	_map_hex_size_input.value_changed.connect(func(_v: float) -> void: _map_change_timer.start())
 	_hex_popup.id_pressed.connect(_on_popup_id_pressed)
 
 
@@ -276,15 +296,26 @@ func _add_actor(role: String, team: String, cls: String, q: int, r: int) -> void
 		"pos": [q, r], "hp": 100.0, "atk": 0.0,
 	})
 	_rebuild_actors_ui()
-	_rebuild_world_from_model()
+	if _is_playing:
+		return
+	# 增量 spawn: 不动其它 actor view,新 view 直接落在 _actors 末尾。
+	_spawn_one_actor(_actors.size() - 1)
 
 
 func _remove_actor_at(idx: int) -> void:
 	if idx <= 0 or idx >= _actors.size():
 		return  # caster (idx 0) 不可删
+
+	if not _is_playing and idx < _actor_ids.size():
+		# 增量 remove: HexWorldGameplayInstance.remove_actor 内部会处理 grid occupant
+		# 清理并 emit actor_removed → WorldView 销毁对应 unit view。其它 view 不动。
+		var actor_id := _actor_ids[idx]
+		if actor_id != "":
+			_world.remove_actor(actor_id)
+		_actor_ids.remove_at(idx)
 	_actors.remove_at(idx)
+	_rebuild_role_id_mapping()
 	_rebuild_actors_ui()
-	_rebuild_world_from_model()
 
 
 func _find_actor_idx_at(q: int, r: int) -> int:
@@ -298,7 +329,9 @@ func _find_actor_idx_at(q: int, r: int) -> int:
 func _move_caster_to(q: int, r: int) -> void:
 	_actors[0]["pos"] = [q, r]
 	_rebuild_actors_ui()
-	_rebuild_world_from_model()
+	if _is_playing:
+		return
+	_apply_actor_position_change(0, q, r)
 
 
 # ========== UI: Actors 表 ==========
@@ -335,7 +368,9 @@ func _build_actor_row(idx: int) -> HBoxContainer:
 	class_opt.custom_minimum_size = Vector2(90, 0)
 	class_opt.item_selected.connect(func(i: int) -> void:
 		_actors[idx]["class"] = CLASS_NAMES[i]
-		_rebuild_world_from_model()
+		if _is_playing:
+			return
+		_apply_actor_class_change(idx)
 	)
 	row.add_child(class_opt)
 
@@ -368,29 +403,51 @@ func _make_actor_spin(
 			"q": _actors[actor_idx]["pos"][0] = int(v)
 			"r": _actors[actor_idx]["pos"][1] = int(v)
 			"hp": _actors[actor_idx]["hp"] = v
-		_rebuild_world_from_model()
+		if _is_playing:
+			return
+		match field:
+			"q", "r":
+				var pos: Array = _actors[actor_idx]["pos"]
+				_apply_actor_position_change(actor_idx, int(pos[0]), int(pos[1]))
+			"hp":
+				_apply_actor_hp_change(actor_idx, v)
 	)
 	return s
 
 
-# ========== World 重建（响应式通路） ==========
+# ========== World Reset (按数据模型重置到默认状态) ==========
 
-## 按数据模型重建 world: reset → configure_grid → add_actor × N + place_occupant。
-## 每一步都走 WorldGI 的显式 mutation API, 触发 signal -> FrontendWorldView 自动
-## 维护 unit view 生命周期 (无 destructive load_replay 或 _spawn_units 调用)。
+## 把 world 重置成 _actors 数据模型对应的初始状态: reset → configure_grid →
+## add_actor × N + place_occupant。每一步都走 WorldGI 的显式 mutation API,
+## 触发 signal -> FrontendWorldView 自动维护 unit view 生命周期
+## (无 destructive load_replay 或 _spawn_units 调用)。
 ##
-## 战斗播放期间 (_is_playing=true) 不重建, 避免打断正在播的 animator。
-## START 路径(_on_start_pressed)内部即使 _is_playing 已翻 true 也需要先重建一次,
-## 走 _do_rebuild_world_unguarded 绕过 guard。
-func _rebuild_world_from_model() -> void:
+## ⚠ 这是 destructive 操作, 仅用于"明确意图的场景重置", 合法调用点只有 3 处:
+##   1. _ready 初始化 (首次建立 world)
+##   2. _on_reset_pressed (用户主动按 RESET 按钮)
+##   3. _on_preset_load_selected (切换 preset = 切场景)
+##
+## 战斗回放结束 (_on_playback_ended) 不再自动 reset —— 用户可能想观察战斗结果或
+## 重播, 状态恢复改由 RESET 按钮主动触发。START 按钮在回放结束后保持 disabled
+## 强制走 RESET → START 流程, 避免基于残破状态再次战斗。
+##
+## 编辑期面板 / 右键 / spinbox 全部走 event→update 的增量 mutation
+## (_add_actor / _remove_actor_at / _apply_actor_position_change /
+## _apply_actor_hp_change / _apply_actor_class_change / _apply_grid_change),
+## 不走 reset。增量路径不重建已有 view, 避免"加一个 actor 所有棋子从 (0,0) 滑回"
+## 的视觉抖动。
+##
+## 战斗播放期间 (_is_playing=true) 不 reset, 避免打断正在播的 animator。
+func _reset_world_to_model() -> void:
 	if _is_playing:
 		return
-	_do_rebuild_world_unguarded()
+	_reset_world_to_model_unguarded()
 
 
-func _do_rebuild_world_unguarded() -> void:
+func _reset_world_to_model_unguarded() -> void:
 	_world.reset()
 	_role_id_to_actor_id.clear()
+	_actor_ids.clear()
 
 	_world.configure_grid(_build_grid_config())
 	var collision_detector := MobaCollisionDetector.new()
@@ -398,32 +455,139 @@ func _do_rebuild_world_unguarded() -> void:
 	HexBattleAllSkills.register_all_timelines()
 
 	for i in _actors.size():
-		var a: Dictionary = _actors[i]
+		_spawn_one_actor(i)
+
+
+## 把 _actors[idx] 这一条数据模型 commit 到 world: 创建 CharacterActor + hydrate 字段
+## + add_actor + place_occupant + 同步 _actor_ids/_role_id_to_actor_id 索引。
+##
+## 调用前 _world.grid 必须已 configure(_reset_world_to_model_unguarded 在循环前已 configure;
+## 增量 _add_actor 路径依赖 _ready 时跑过的初始 rebuild)。idx 必须等于 _actors.size()-1
+## 或 _actor_ids.size()(即 append 到末尾) —— 中间插入未支持(会破坏 _actor_ids 顺序)。
+func _spawn_one_actor(idx: int) -> void:
+	var a: Dictionary = _actors[idx]
+	var role_id := _role_id_for(idx)
+	var team_int: int = 0 if a["team"] == "A" else 1
+	var max_hp: float = 100.0 if a["hp"] <= 0.0 else a["hp"]
+
+	var cchar := CharacterActor.new(HexBattleClassConfig.string_to_class(a["class"] as String))
+	cchar._display_name = role_id
+	cchar.set_team_id(team_int)
+	cchar.attribute_set.set_max_hp_base(max_hp)
+	cchar.attribute_set.set_hp_base(max_hp)
+	if a.get("atk", 0.0) > 0.0:
+		cchar.attribute_set.set_atk_base(float(a["atk"]))
+
+	var pos: Array = a["pos"]
+	var coord := HexCoord.new(int(pos[0]), int(pos[1]))
+	# WorldView._hydrate_from_actor 在 actor_added 信号里一次性读 team / hp / hex_position,
+	# core 层尚未 emit actor_position_changed (见 CHANGELOG 待处理 / D5)。
+	# 因此所有可视字段必须在 add_actor 之前写入,否则 view 会停在默认 (team=0, pos=0,0)。
+	cchar.hex_position = coord.duplicate()
+
+	_world.add_actor(cchar)
+
+	if _world.grid != null and _world.grid.has_tile(coord):
+		_world.grid.place_occupant(coord, cchar)
+
+	_role_id_to_actor_id[role_id] = cchar.get_id()
+	if idx >= _actor_ids.size():
+		_actor_ids.resize(idx + 1)
+	_actor_ids[idx] = cchar.get_id()
+
+
+## 删 idx 后 enemy_3 → enemy_2 这种重编号会让 _role_id_to_actor_id 出现 stale entry,
+## 同时 class 切换走 remove + add 会复用同一 idx 但 actor_id 变。这里用 _actor_ids
+## 作真理来源整体重建 dict, 调方负责调用前先把 _actor_ids 维护好。
+func _rebuild_role_id_mapping() -> void:
+	_role_id_to_actor_id.clear()
+	for i in _actor_ids.size():
 		var role_id := _role_id_for(i)
-		var team_int: int = 0 if a["team"] == "A" else 1
-		var max_hp: float = 100.0 if a["hp"] <= 0.0 else a["hp"]
+		_role_id_to_actor_id[role_id] = _actor_ids[i]
 
-		var cchar := CharacterActor.new(HexBattleClassConfig.string_to_class(a["class"] as String))
-		cchar._display_name = role_id
-		cchar.set_team_id(team_int)
-		cchar.attribute_set.set_max_hp_base(max_hp)
-		cchar.attribute_set.set_hp_base(max_hp)
-		if a.get("atk", 0.0) > 0.0:
-			cchar.attribute_set.set_atk_base(float(a["atk"]))
 
-		var pos: Array = a["pos"]
-		var coord := HexCoord.new(int(pos[0]), int(pos[1]))
-		# WorldView._hydrate_from_actor 在 actor_added 信号里一次性读 team / hp / hex_position,
-		# core 层尚未 emit actor_position_changed (见 CHANGELOG 待处理 / D5)。
-		# 因此所有可视字段必须在 add_actor 之前写入,否则 view 会停在默认 (team=0, pos=0,0)。
-		cchar.hex_position = coord.duplicate()
+## 增量改 actor 坐标: 写 actor.hex_position + grid.move_occupant + 手动 emit
+## actor_position_changed 触发 WorldView._on_actor_position_changed → view.set_world_position。
+##
+## 手动 emit 是兜底 —— core 层 actor_position_changed 还没有 emit 调用点
+## (CHANGELOG 待处理 / D5 阶段 4 配移动动画一起补)。SkillPreview 编辑态绕过去,
+## 等 core emit 就位后这里删掉手动 emit 即可。
+func _apply_actor_position_change(idx: int, q: int, r: int) -> void:
+	if idx >= _actor_ids.size():
+		return
+	var actor_id := _actor_ids[idx]
+	var actor := _world.get_actor(actor_id) as CharacterActor
+	if actor == null:
+		return
+	var old_coord: HexCoord = actor.hex_position
+	var new_coord := HexCoord.new(q, r)
+	if old_coord != null and old_coord.is_valid() and old_coord.equals(new_coord):
+		return
+	actor.hex_position = new_coord.duplicate()
+	if _world.grid != null and _world.grid.has_tile(new_coord):
+		if old_coord != null and old_coord.is_valid() and _world.grid.has_tile(old_coord):
+			_world.grid.move_occupant(old_coord, new_coord)
+		else:
+			_world.grid.place_occupant(new_coord, actor)
+	_world.actor_position_changed.emit(actor_id, old_coord, new_coord)
 
-		_world.add_actor(cchar)
 
+## 增量改 actor max_hp / current_hp: 写 attribute_set + 重新 hydrate unit view。
+## view 没有专门的 update_max_hp API, 编辑态调 view.initialize 整体 reset 字段
+## (actor_id / display_name / team 不变, 等价于只刷 hp)。
+func _apply_actor_hp_change(idx: int, hp: float) -> void:
+	if idx >= _actor_ids.size():
+		return
+	var actor_id := _actor_ids[idx]
+	var actor := _world.get_actor(actor_id) as CharacterActor
+	if actor == null or actor.attribute_set == null:
+		return
+	actor.attribute_set.set_max_hp_base(hp)
+	actor.attribute_set.set_hp_base(hp)
+	var view := _world_view.get_unit_view(actor_id)
+	if view != null:
+		view.initialize(actor_id, actor.get_display_name(), actor.get_team_id(), hp, hp)
+
+
+## 增量改 actor class: CharacterActor class 是构造参数(影响 ability_set 默认 grant +
+## attribute 默认值), 不可动态切。删旧 actor + 重 spawn 同 idx, 让 _spawn_one_actor
+## 重新读 _actors[idx]["class"]。idx 不变 → role_id 不变, _spawn_one_actor 内部
+## 自会覆盖 _role_id_to_actor_id[role_id] 为新 actor_id, 无需额外重建映射。
+func _apply_actor_class_change(idx: int) -> void:
+	if idx >= _actor_ids.size():
+		return
+	var actor_id := _actor_ids[idx]
+	if actor_id != "":
+		_world.remove_actor(actor_id)
+	_actor_ids[idx] = ""
+	_spawn_one_actor(idx)
+
+
+## 增量改 grid 配置 (radius / orientation / hex_size): configure_grid 重建 model
+## (UGridMap.configure 创建新 GridMapModel, 旧 occupant 数据全丢) -> emit
+## grid_configured -> WorldView 重渲网格。然后遍历 _actor_ids 重新 place_occupant
+## + 用同坐标 emit actor_position_changed 让 view 按新 hex_size 重算 world_position
+## 平滑滑过去 —— actor 自身的 hex_position 不变, 只是世界投影改了。
+##
+## 边界: radius 改小后 actor coord 不在新网格内, 跳过 place_occupant 但仍 emit
+## position_changed (coord_to_world 是纯数学, 不依赖 has_tile, view 仍能算位置)。
+func _apply_grid_change() -> void:
+	if _is_playing:
+		return
+	_world.configure_grid(_build_grid_config())
+	for i in _actor_ids.size():
+		var actor_id := _actor_ids[i]
+		if actor_id == "":
+			continue
+		var actor := _world.get_actor(actor_id) as CharacterActor
+		if actor == null:
+			continue
+		var coord: HexCoord = actor.hex_position
+		if coord == null or not coord.is_valid():
+			continue
 		if _world.grid != null and _world.grid.has_tile(coord):
-			_world.grid.place_occupant(coord, cchar)
-
-		_role_id_to_actor_id[role_id] = cchar.get_id()
+			_world.grid.place_occupant(coord, actor)
+		_world.actor_position_changed.emit(actor_id, coord, coord)
 
 
 ## 数据模型 idx → 逻辑 role id (caster / ally_N / enemy_N)。
@@ -578,9 +742,8 @@ func _on_start_pressed() -> void:
 		_finish_with_status("No active skill selected")
 		return
 
-	# 战斗前做一次最终 world 重建, 把 UI 数据模型状态 commit 进 world
-	# (走 unguarded 变种绕过 _is_playing 自保 guard)。
-	_do_rebuild_world_unguarded()
+	# 编辑期所有面板/右键操作走 event→update 增量 mutation,
+	# world state 与 _actors 数据模型实时一致, 战斗前不需要再 commit。
 
 	var caster_id: String = _role_id_to_actor_id.get("caster", "")
 	if caster_id == "":
@@ -686,12 +849,27 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 	_animator.play(timeline, _world_view.get_unit_views())
 
 
+## 战斗回放结束后保留 world 当前状态(死者已 remove / 受伤者血条 < max), 让用户
+## 能观察结果或重播。状态恢复到"战前"由用户按 RESET 按钮触发, 不自动 reset。
+##
+## START 按钮在回放结束后保持 disabled —— 当前 world 是残破状态(死者已 remove,
+## hp 已损耗), 直接再 START 会基于残破状态战斗, 语义混乱。强制走 RESET → START
+## 流程, 让"再次战斗"始终从干净初始态开始。
 func _on_playback_ended() -> void:
 	_log_battle_end(_last_battle_frames)
-	_set_status("Playback ended")
+	_set_status("Playback ended — 按 RESET 恢复战前状态")
 	_is_playing = false
+
+
+## 用户主动重置: world 状态归零到 _actors 数据模型对应的"战前"。清 console log
+## (战斗记录已无对应 world 状态可对照, 留着易误读) + 重置 status + 启用 START。
+func _on_reset_pressed() -> void:
+	if _is_playing:
+		return
+	_reset_world_to_model_unguarded()
+	_console_log.clear()
+	_set_status("Ready — 已重置")
 	_start_button.disabled = false
-	_do_rebuild_world_unguarded()
 
 
 func _read_total_frames(timeline: Dictionary) -> int:
@@ -974,7 +1152,7 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 	_max_ticks_input.value = ctrl.get("max_ticks", 500)
 	_speed_input.value = ctrl.get("speed", 1.0)
 
-	_rebuild_world_from_model()
+	_reset_world_to_model()
 
 
 # ========== 工具 ==========
@@ -1020,6 +1198,7 @@ func _apply_clay_theme() -> void:
 	root.theme = _build_clay_theme()
 	_style_section_titles()
 	_style_start_button()
+	_style_reset_button()
 	_style_console()
 
 
@@ -1169,12 +1348,32 @@ func _style_start_button() -> void:
 	btn.add_theme_color_override("font_pressed_color", Color.WHITE)
 
 
+## ResetButton 视觉次于 START: 浅米底 + 深咖字, 阵仗低 —— 它不是常用主操作,
+## 只在战斗结束需要恢复战前状态时才用, 视觉应让位给 START。
+func _style_reset_button() -> void:
+	var btn := _reset_button
+	btn.add_theme_stylebox_override("normal",
+		_clay_sb(CLAY_SURFACE, 16, 16, 8, 2, 4))
+	btn.add_theme_stylebox_override("hover",
+		_clay_sb(CLAY_BG, 16, 16, 8, 3, 6))
+	btn.add_theme_stylebox_override("pressed",
+		_clay_sb(Color("E8DDC8"), 16, 16, 8, 1, 2))
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.add_theme_font_override("font", _clay_font_bold())
+	btn.add_theme_font_size_override("font_size", 14)
+	btn.add_theme_color_override("font_color", CLAY_TEXT)
+	btn.add_theme_color_override("font_hover_color", CLAY_TEXT)
+	btn.add_theme_color_override("font_pressed_color", CLAY_TEXT)
+
+
 ## Passive CheckBox 选中/未选中视觉: 选中 = 鲜珊瑚 + 白字(高对比),
 ## 未选中 = 淡米(低突出)。直接 override 每个状态 stylebox 让渲染顺序无歧义。
-func _on_passive_toggled(pressed: bool, cb: CheckBox) -> void:
-	_apply_passive_style(cb, pressed)
-	if pressed:
-		_rebuild_world_from_model()
+##
+## passive 选择只影响 _on_start_pressed 时 _collect_selected_passives() 传给
+## queue_preview, 编辑期 world 不感知 passive (passive 是战斗期 grant 给 caster),
+## 因此勾选/取消勾选不需要触发 world mutation。
+func _on_passive_toggled(_pressed: bool, cb: CheckBox) -> void:
+	_apply_passive_style(cb, _pressed)
 
 
 func _apply_passive_style(cb: CheckBox, selected: bool) -> void:

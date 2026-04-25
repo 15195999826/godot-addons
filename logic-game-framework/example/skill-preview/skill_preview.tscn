@@ -254,6 +254,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "▶  START"
 
+[node name="ResetButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "↻  RESET"
+
 [node name="StatusLabel" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
