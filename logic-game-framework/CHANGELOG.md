@@ -31,6 +31,9 @@
 - 所有 `var battle: HexBattle = ctx.game_state_provider` 的静态类型标注改为 `var battle: HexWorldGameplayInstance = ctx.game_state_provider`:`actions/apply_move_action.gd` / `actions/apply_buff_action.gd` / `actions/damage_action.gd` / `actions/poison_tick_action.gd` / `actions/heal_action.gd` (×2) / `actions/reflect_damage_action.gd` / `actions/start_move_action.gd` / `target_selectors.gd`, 以及 `utils/hex_battle_damage_utils.gd` (×2) / `utils/hex_battle_game_state_utils.gd` (×2)。  
   动机 —— 这些 action 访问的字段(`get_actor / get_alive_actor_ids / grid / remove_actor / get_actors / logger`)阶段 1 已全部下沉到 HexWorldGameplayInstance, 标注成具体子类 HexBattle 是历史残留, 且会让 SkillPreviewWorldGI / 未来其它姊妹子类触发"Trying to assign value of type X to a variable of type hex_battle.gd"。AI 目录(`ai/*.gd` 5 文件)的 `battle: HexBattle` 暂未改 —— SkillPreviewProcedure 不走 AI 路径, 且 HexBattle 跑 HexBattleProcedure 时 AI 签名仍兼容, 改动留给未来"WorldGI 直接驱动 AI"场景。
 
+### Fixed
+- `skill_preview.gd._do_rebuild_world_unguarded`:右键加 actor 后 view 永远落在 (0,0)。根因 —— `WorldView._hydrate_from_actor` 在 `actor_added` 信号里一次性读 actor 的 `team / hp / hex_position`, 但 core 层 `actor_position_changed` signal 尚未 emit(本段"外部调用点兼容性"已记录, D5 列为阶段 4 待办), 导致 add 之后再赋值的字段 view 收不到。修法把 `set_team_id / attribute_set.set_*_base / hex_position` 全部前置到 `_world.add_actor(cchar)` 之前, hydrate 时即可读到正确值; `place_occupant` 留在 add 之后(grid 占用登记必须等 actor 入 world)。属于 hydrate 时序兜底, 阶段 4 补 `actor_position_changed` emit 后可改回任意顺序。
+
 ### 外部调用点兼容性
 - `SkillPreviewBattle`(`scripts/SkillPreviewBattle.gd`)未动 —— `tests/skill_scenarios/` scenario runner 继续走 headless `run_with_config/actions` 路径(`GameWorld.init → 临时 _PreviewInstance(HexBattle) → tick → GameWorld.destroy`), 未切到 SkillPreviewWorldGI。动机:scenario runner 的"每场独立 GameWorld 生命周期"断言简单且已稳; skill_preview UI 需要常驻 world 才能做到"无缝展开战斗", 二者的需求不同, 一条路径优化给一种场景更克制。
 - `main.tscn` / `Simulation.tscn` / Web 桥接继续走 `HexBattle` 门面 + `FrontendBattleReplayScene.load_replay(record)` 老路径, 未动。

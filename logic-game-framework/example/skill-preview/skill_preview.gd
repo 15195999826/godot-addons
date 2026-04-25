@@ -405,7 +405,6 @@ func _do_rebuild_world_unguarded() -> void:
 
 		var cchar := CharacterActor.new(HexBattleClassConfig.string_to_class(a["class"] as String))
 		cchar._display_name = role_id
-		_world.add_actor(cchar)
 		cchar.set_team_id(team_int)
 		cchar.attribute_set.set_max_hp_base(max_hp)
 		cchar.attribute_set.set_hp_base(max_hp)
@@ -414,9 +413,15 @@ func _do_rebuild_world_unguarded() -> void:
 
 		var pos: Array = a["pos"]
 		var coord := HexCoord.new(int(pos[0]), int(pos[1]))
+		# WorldView._hydrate_from_actor 在 actor_added 信号里一次性读 team / hp / hex_position,
+		# core 层尚未 emit actor_position_changed (见 CHANGELOG 待处理 / D5)。
+		# 因此所有可视字段必须在 add_actor 之前写入,否则 view 会停在默认 (team=0, pos=0,0)。
+		cchar.hex_position = coord.duplicate()
+
+		_world.add_actor(cchar)
+
 		if _world.grid != null and _world.grid.has_tile(coord):
 			_world.grid.place_occupant(coord, cchar)
-		cchar.hex_position = coord.duplicate()
 
 		_role_id_to_actor_id[role_id] = cchar.get_id()
 
