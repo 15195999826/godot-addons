@@ -20,3 +20,4 @@ static func register_all_timelines() -> void:
 	TimelineRegistry.register(HexBattleHolyHeal.HOLY_HEAL_TIMELINE)
 	TimelineRegistry.register(HexBattlePoison.POISON_TIMELINE)
 	TimelineRegistry.register(HexBattlePoisonBuff.POISON_TICK_TIMELINE)
+	TimelineRegistry.register(HexBattleWard.WARD_TIMELINE)

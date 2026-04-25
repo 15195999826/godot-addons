@@ -18,16 +18,26 @@ enum DamageType { PHYSICAL, MAGICAL, PURE }
 # ========== DamageEvent ==========
 
 class DamageEvent extends GameEvent.Base:
+	## 该字段保留为「修正后总伤害」（pre 阶段易伤/减伤/暴击之后、护盾结算之前的值）。
+	## 为兼容现有 reflect / thorn 等逻辑保持原名 damage 不动。
 	var target_actor_id: String = ""
 	var damage: float = 0.0
 	var damage_type: DamageType = DamageType.PHYSICAL
 	var source_actor_id: String = ""
 	var is_critical: bool = false
 	var is_reflected: bool = false
-	
+	## 护盾系统填充：本次被护盾吸收的总量（>= 0）。无护盾参与时为 0
+	var shield_absorbed: float = 0.0
+	## 护盾系统填充：实际打到生命的伤害（= damage - shield_absorbed，>= 0）。
+	## on-damage-taken 类反应（反伤/吸血）默认应只对 actual_life_damage > 0 响应。
+	var actual_life_damage: float = 0.0
+	## 护盾系统填充：本次伤害消耗的护盾记录（按消耗顺序）
+	## 每条字段见 HexBattleShieldComponent.get_state_snapshot() + absorbed/broken/damage_type
+	var consumption_records: Array = []
+
 	func _init() -> void:
 		kind = "damage"
-	
+
 	static func create(
 		p_target_actor_id: String,
 		p_damage: float,
@@ -43,8 +53,9 @@ class DamageEvent extends GameEvent.Base:
 		e.source_actor_id = p_source_actor_id
 		e.is_critical = p_is_critical
 		e.is_reflected = p_is_reflected
+		e.actual_life_damage = p_damage  # 默认 = damage，apply_damage 在护盾结算后写真值
 		return e
-	
+
 	func to_dict() -> Dictionary:
 		var d := {
 			"kind": kind,
@@ -53,11 +64,14 @@ class DamageEvent extends GameEvent.Base:
 			"damage_type": BattleEvents._damage_type_to_string(damage_type),
 			"is_critical": is_critical,
 			"is_reflected": is_reflected,
+			"shield_absorbed": shield_absorbed,
+			"actual_life_damage": actual_life_damage,
+			"consumption_records": consumption_records.duplicate(true),
 		}
 		if source_actor_id != "":
 			d["source_actor_id"] = source_actor_id
 		return d
-	
+
 	static func from_dict(d: Dictionary) -> DamageEvent:
 		var e := DamageEvent.new()
 		e.target_actor_id = d.get("target_actor_id", "") as String
@@ -66,10 +80,74 @@ class DamageEvent extends GameEvent.Base:
 		e.source_actor_id = d.get("source_actor_id", "") as String
 		e.is_critical = d.get("is_critical", false) as bool
 		e.is_reflected = d.get("is_reflected", false) as bool
+		e.shield_absorbed = d.get("shield_absorbed", 0.0) as float
+		e.actual_life_damage = d.get("actual_life_damage", e.damage) as float
+		e.consumption_records = (d.get("consumption_records", []) as Array).duplicate(true)
 		return e
-	
+
 	static func is_match(d: Dictionary) -> bool:
 		return d.get("kind") == "damage"
+
+
+# ========== ShieldBrokenEvent ==========
+##
+## 护盾被本次伤害打破时由 apply_damage 触发的二次事件。
+## 单纯通报「这个护盾刚刚破了」，不携带伤害数值。on_break 回调要 push 的爆炸 / 治疗 / 反伤
+## 是另外的 damage / heal event，跟这条事件没有 1:1 关系。
+
+class ShieldBrokenEvent extends GameEvent.Base:
+	var target_actor_id: String = ""
+	var attacker_actor_id: String = ""
+	var shield_ability_id: String = ""
+	var shield_config_id: String = ""
+	var damage_type: String = ""
+	var absorbed_amount: float = 0.0
+
+	func _init() -> void:
+		kind = "shield_broken"
+
+	static func create(
+		p_target_actor_id: String,
+		p_attacker_actor_id: String,
+		p_shield_ability_id: String,
+		p_shield_config_id: String,
+		p_damage_type: String,
+		p_absorbed_amount: float
+	) -> ShieldBrokenEvent:
+		var e := ShieldBrokenEvent.new()
+		e.target_actor_id = p_target_actor_id
+		e.attacker_actor_id = p_attacker_actor_id
+		e.shield_ability_id = p_shield_ability_id
+		e.shield_config_id = p_shield_config_id
+		e.damage_type = p_damage_type
+		e.absorbed_amount = p_absorbed_amount
+		return e
+
+	func to_dict() -> Dictionary:
+		var d := {
+			"kind": kind,
+			"target_actor_id": target_actor_id,
+			"shield_ability_id": shield_ability_id,
+			"shield_config_id": shield_config_id,
+			"damage_type": damage_type,
+			"absorbed_amount": absorbed_amount,
+		}
+		if attacker_actor_id != "":
+			d["attacker_actor_id"] = attacker_actor_id
+		return d
+
+	static func from_dict(d: Dictionary) -> ShieldBrokenEvent:
+		var e := ShieldBrokenEvent.new()
+		e.target_actor_id = d.get("target_actor_id", "") as String
+		e.attacker_actor_id = d.get("attacker_actor_id", "") as String
+		e.shield_ability_id = d.get("shield_ability_id", "") as String
+		e.shield_config_id = d.get("shield_config_id", "") as String
+		e.damage_type = d.get("damage_type", "") as String
+		e.absorbed_amount = d.get("absorbed_amount", 0.0) as float
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == "shield_broken"
 
 
 # ========== HealEvent ==========
