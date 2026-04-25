@@ -114,12 +114,18 @@ skill_preview F6 编辑器手动验证（死亡 tween 缩小+下沉+visible=fals
 
 用户和 Claude 反复对齐"录像 / 回放"语义时确认：
 
-- **"录像播放"** = 表演层视觉播放（A 层）：`FrontendBattleReplayScene` / `FrontendBattleAnimator` 现在做的事 —— 从录像 dict 读 actor 配置和事件流，spawn 一组视觉 view，按 frame 推动画 / 飘字 / VFX。**不重建逻辑 actor**。
-- **"回放"** = 逻辑层重新跑一遍战斗（B 层，**未来可能做**）：从录像 dict 反序列化真 Actor / AbilitySet / AttributeSet，按 timeline 命令重计算战斗状态，支持时间轴拖动、撤销等。**当前不做，没规划**。
+| 中文 | 英文 | 含义 |
+|---|---|---|
+| **录像播放**（A 层，现状） | **Playback** | 表演层视觉播放：从录像 dict 读 actor 配置和事件流，spawn 一组视觉 view，按 frame 推动画 / 飘字 / VFX。**不重建逻辑 actor**。`FrontendBattleReplayScene` / `FrontendBattleAnimator` 现在做的事。 |
+| **回放**（B 层，未来可能做） | **Replay** | 逻辑层重新跑一遍战斗：从录像 dict 反序列化真 Actor / AbilitySet / AttributeSet，按 timeline 命令重计算战斗状态，支持时间轴拖动 / 撤销 / 跳到第 N 帧。**当前不做，没规划**。 |
 
-后续讨论或文档里如果出现 ReplayPlayer / replay 之类的词，**默认指 A 层"录像播放"**。要做 B 层时单独立项命名，不复用现有 Replay* 类名。
+英文层利用 **playback ≠ replay 的语感分层**钉死两个层：
+- `Playback` = "把已经录好的东西放给观众看"（DVR / 视频语境，被动、不计算）
+- `Replay` = "重新跑一遍"（War3 replay / Dota replay 语境，deterministic 重算）
 
-阶段 0 doc 草拟的 ReplayPlayer 字面写的是 hydrate 真 Actor（看起来很像 B 层），那个字段已被本次决策**作废**。未来要在 A 层做"清理掉 FrontendBattleReplayScene 老 destructive 路径，换 WorldView + Animator 直接 bind"工作时，新入口名字另议（不叫 ReplayPlayer）。
+未来 A 层老路径整合（清掉 `FrontendBattleReplayScene.load_replay`）那一轮工作中，把现有 `BattleRecorder` / `ReplayData` / `FrontendBattleReplayScene` / `FrontendBattleAnimator` 等 A 层类全部改名到 `Playback*`，腾出 `Replay` 给未来 B 层（如 `BattleReplayPlayer` / `BattleReplaySession`）。**本期不动**。
+
+阶段 0 doc 草拟的 "ReplayPlayer hydrate 真 Actor" 路径（字面看像 B 层但实际只是 A 层包装）**作废**。未来 A 层入口直接叫 Playback 系列。
 
 ## 当前剩余的 remove_actor 调用点（运行时，去掉文档/测试）
 

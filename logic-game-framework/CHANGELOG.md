@@ -25,10 +25,18 @@
   当前剩余的 `world.remove_actor` 运行时调用点:`stdlib/systems/projectile_system.gd:131`(投射物离场)、`example/skill-preview/skill_preview.gd:315/562`(编辑态删 / 切 class),`SkillPreviewWorldGI.reset()` 走 `_actors.clear()` + emit。四条都是"actor 永久离开 world"正当语义,与"死亡留尸体"原则不冲突。
 
 ### 命名约定(本轮对齐)
-- **"录像播放"** = 表演层视觉播放(A 层):`FrontendBattleReplayScene` / `FrontendBattleAnimator` 当前做的事 —— 从录像 dict 读 actor 配置和事件流, spawn 一组视觉 view, 按 frame 推动画 / 飘字 / VFX, **不重建逻辑 actor**。
-- **"回放"** = 逻辑层重新跑一遍战斗(B 层, 未来可能做):反序列化真 Actor / AbilitySet / AttributeSet, 按 timeline 命令重计算战斗状态。**当前不做, 没规划**。
-- 后续文档 / 讨论里出现 Replay / 回放 词时, **默认指 A 层"录像播放"**;要做 B 层时单独立项,不复用现有 `Replay*` 类名。
-- 阶段 0 design note 草拟的"ReplayPlayer hydrate 真 Actor"路径(形态 B)字面像 B 层但实际只是 A 层包装, **该方向作废** —— 未来在 A 层做"清掉 FrontendBattleReplayScene 老 destructive 路径"的工作时, 新入口名字另议。
+
+| 中文 | 英文 | 含义 |
+|---|---|---|
+| **录像播放**(A 层, 现状) | **Playback** | 表演层视觉播放:`FrontendBattleReplayScene` / `FrontendBattleAnimator` 当前做的事 —— 从录像 dict 读 actor 配置和事件流, spawn 一组视觉 view, 按 frame 推动画 / 飘字 / VFX, **不重建逻辑 actor**。 |
+| **回放**(B 层, 未来可能做) | **Replay** | 逻辑层重新跑一遍战斗: 反序列化真 Actor / AbilitySet / AttributeSet, 按 timeline 命令重计算战斗状态, 支持时间轴拖动 / 撤销 / 跳到第 N 帧。**当前不做, 没规划**。 |
+
+英文层借 playback ≠ replay 的语感分层(playback = DVR 预录播放, replay = War3/Dota 类 deterministic 重算)钉死两层。
+
+- 后续文档 / 讨论里出现"录像 / playback"词, **默认指 A 层**; "回放 / replay"词在 B 层落地前**避免使用**, 防止误读。
+- 当前代码里的 `BattleRecorder` / `ReplayData` / `FrontendBattleReplayScene` / `FrontendBattleAnimator` / `tests/frontend/test_replay_flow.gd` 等 A 层类**仍叫 Replay***, 重命名留到 A 层老路径整合那一轮工作一并做。
+- 未来 B 层入口预定: `BattleReplayPlayer` / `BattleReplaySession`。
+- 阶段 0 design note 草拟的"ReplayPlayer hydrate 真 Actor"路径(形态 B)字面像 B 层但实际只是 A 层包装, **该方向作废**。
 
 ### 外部调用点兼容性
 - 录像格式未变化(仍是 ReplayData v2 平铺 `{mapConfig, initialActors, timeline}`)。
