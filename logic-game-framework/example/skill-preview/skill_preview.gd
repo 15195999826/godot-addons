@@ -278,6 +278,7 @@ func _init_signals() -> void:
 	_map_orientation_option.item_selected.connect(func(_i: int) -> void: _map_change_timer.start())
 	_map_hex_size_input.value_changed.connect(func(_v: float) -> void: _map_change_timer.start())
 	_hex_popup.id_pressed.connect(_on_popup_id_pressed)
+	_hex_popup.window_input.connect(_on_hex_popup_window_input)
 
 
 func _init_default_actors() -> void:
@@ -680,6 +681,57 @@ func _show_hex_popup() -> void:
 	_hex_popup.add_item("📍 设为 target (fixed_pos)", 20)
 	var local_mouse := Vector2i(get_viewport().get_mouse_position())
 	_hex_popup.popup_on_parent(Rect2i(local_mouse, Vector2i(1, 1)))
+
+
+## PopupMenu 是 modal —— popup 已显示时用户右键另一个 hex, 该 InputEventMouseButton
+## 会被 popup 自身截获(主场景 _input 收不到), 表现为"右键另一个 hex 没反应, 要再
+## 点一次"。绕过办法: Window.window_input signal 把 popup 截获到的事件转发给我们,
+## 这里检测右键 → 关旧 popup → 在新 hex 重弹。
+##
+## 左键 / ESC / 点菜单项的关闭路径不走这里 (popup 自身原生关闭流程处理),
+## 因此不会引发"点菜单后误重弹"等副作用。
+func _on_hex_popup_window_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_RIGHT or not mb.pressed:
+		return
+	if _is_playing:
+		return
+	if _camera_rig == null:
+		return
+	var cam := _camera_rig.get_camera()
+	if cam == null:
+		return
+	if UGridMap.model == null:
+		return
+	# Window.window_input 转发的 mouse position 是 popup 内部坐标。直接查全局
+	# 鼠标位置 → 转主 viewport 坐标 → raycast 算 hex coord。
+	var main_vp := get_viewport()
+	var mouse_pos: Vector2 = main_vp.get_mouse_position()
+	var from := cam.project_ray_origin(mouse_pos)
+	var dir := cam.project_ray_normal(mouse_pos)
+	var to := from + dir * 1000.0
+	var space := cam.get_world_3d().direct_space_state
+	var ground_result := space.intersect_ray(
+		PhysicsRayQueryParameters3D.create(from, to, 1)
+	)
+	if ground_result.is_empty():
+		return
+	var world_pos: Vector3 = ground_result["position"]
+	var coord := UGridMap.world_to_coord(Vector2(world_pos.x, world_pos.z))
+	if not UGridMap.model.has_tile(coord):
+		return
+	# 同 hex 不重弹(用户右键当前 popup 所在 hex, 没意图)。
+	if _popup_hex != null and _popup_hex.is_valid() and _popup_hex.equals(coord):
+		_hex_popup.hide()
+		return
+	# 不同 hex: 关旧 popup, 在新 hex 重弹。
+	_hex_popup.hide()
+	_popup_hex = coord
+	_popup_actor_idx = _find_actor_idx_at(coord.q, coord.r)
+	# 等一帧让 hide 真正完成再 show, 避免 hide+show 同帧的潜在 race。
+	call_deferred("_show_hex_popup")
 
 
 func _on_popup_id_pressed(id: int) -> void:
