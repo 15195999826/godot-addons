@@ -1,7 +1,7 @@
-## ReplayControls - 回放控制 UI
+## PlaybackControls - 战斗播放控制 UI
 ##
-## 提供播放/暂停/重置/速度控制
-class_name FrontendReplayControls
+## 提供播放/暂停/重置/速度控制,信号转发给外部 BattleAnimator(或等价播放器)。
+class_name FrontendPlaybackControls
 extends Control
 
 

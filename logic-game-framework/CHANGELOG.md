@@ -12,6 +12,48 @@
 
 ---
 
+## [Unreleased] — 2026-04-26 A 层"录像播放"老路径下线
+
+阶段 2/3 引入响应式 `WorldView + BattleAnimator` 后, destructive `FrontendBattleReplayScene.load_replay` 老路径只剩 `main.tscn` 一个生产调用方 + `tests/smoke_frontend_main` 一个 smoke 间接依赖。本轮一次性下线: `main.gd` 切到 `HexBattle (WorldGameplayInstance) + WorldView.bind_world + BattleAnimator.play(timeline, view.get_unit_views())` 响应式 wire(参考 skill_preview 同形态), smoke 节点路径同步换, 删 ReplayScene + 3 个孤儿 frontend 测试, ReplayControls 顺手改名 PlaybackControls 对齐命名约定。
+→ [design-notes/2026-04-26-playback-old-path-retirement.md](docs/design-notes/2026-04-26-playback-old-path-retirement.md)
+
+### Removed
+
+- **`FrontendBattleReplayScene`** (`example/hex-atb-battle-frontend/scene/battle_replay_scene.gd`): destructive `load_replay(record)` 路径整体下线。视觉入口由 `main.gd` 自己 wire `WorldView + BattleAnimator` 替代。
+- **3 个孤儿 frontend 测试** (`tests/frontend/test_replay_flow.gd` / `test_3d_visualization.gd` / `test_compilation.gd`): 不在 `run_tests.gd::TEST_PATHS` 里, 没人跑过, 全部移除。`tests/frontend/` 目录一并清掉。
+
+### Changed
+
+- **`example/hex-atb-battle-frontend/main.gd`**: 完全重写为响应式 wire。流程: 用户按 Start Battle → 创建 `HexBattle` → `WorldView.bind_world(battle)` → `battle.start(config)` 触发 `add_actor` signal → view spawn → tick 跑完战斗 → `battle_finished(timeline)` signal → `animator.play(timeline, view.get_unit_views())`。camera / lighting / WorldEnvironment / player_controller 由 main.gd 自管(从被删的 ReplayScene 搬出来)。
+- **`tests/smoke_frontend_main.gd`** (主仓): 节点路径换成 `get_node("WorldView")` / `get_node("BattleAnimator")`。4 条 invariants 保持: `is_ended` / `current_frame == total_frames` / unit view count > 0 / `visual_hp ∈ [0, max_hp]`。
+- **`FrontendReplayControls` → `FrontendPlaybackControls`** (`example/hex-atb-battle-frontend/ui/replay_controls.gd` → `ui/playback_controls.gd`): 顺手对齐 Playback 命名约定。功能 / 信号 / 公共方法不变, 仅 class_name + 文件名 + 节点 name。
+- **`FrontendBattleAnimator`** API 增补(`example/hex-atb-battle-frontend/battle_animator.gd`): `pause()` / `resume()` / `reset()` / `get_total_frames()` / `get_current_frame()` / `get_actors_snapshot()` / `is_ended()` 全部转发到内部 `_director`; signal `playback_state_changed(is_playing)` / `frame_changed(current, total)` 转发自 director, 供 main.gd UI 同步进度 / 按钮态。
+
+### 外部调用点兼容性
+
+- 录像格式未变化(仍是 ReplayData v2 平铺 `{mapConfig, initialActors, timeline}`)。
+- `SimulationManager.gd` 的 Web 桥接 (`godot_run_battle` / `godot_preview_skill`) 不在范围内 — 它们只产出录像 JSON 给 JS 端, Godot 内部不渲染。
+- 主仓 `Simulation.tscn` (autoload SimulationManager) 不动。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_skill_preview_reactive.tscn` | PASS(3 场连续) |
+| `tests/smoke_frontend_main.tscn` | PASS(131 frames / 6 views) |
+| `tests/smoke_skill_scenarios.tscn` | 12/12 ✅ |
+
+`main.tscn` F6 编辑器手动验证由用户接手。
+
+### 遗留
+
+- B 层"回放(Replay)"逻辑重算未落地。命名占位 `BattleReplayPlayer` / `BattleReplaySession` 保留, 视未来需求再做。
+- AI 目录 `example/hex-atb-battle/ai/*.gd` 5 个文件 `battle: HexBattle` 类型偏窄但 IS-A 兼容当前不报错, 单独一笔做。
+- `stdlib/replay/` 目录命名暂未变。它持有 `BattleRecorder + ReplayData + ReplayLogPrinter` 都是录像数据生产/消费侧, 没有"录像播放表演"成分。如果 `Recording` 命名更合适, 留到那时一起做。
+
+---
+
 ## [Unreleased] — 2026-04-26 死亡不再 remove_actor(阶段 3 D5 收尾)
 
 阶段 3 遗留的 D5"skill_preview 战斗期死亡角色 view 立刻消失,死亡动画来不及播"问题。回归阶段 0 design note (2026-04-19-world-as-single-instance.md line 247) 原则:**死亡是行为禁止,不是 actor 离开 world**。`damage_utils.apply_damage` 在 hp ≤ 0 时不再调 `world.remove_actor`,改为只清 grid 占用 / 预订;actor 留在 registry 里 `is_dead()=true`,WorldView 不回收 view,后续 `actor_state_changed(is_alive=false)` signal 能找到 view 触发死亡 tween(缩小 + 下沉 + visible=false)。

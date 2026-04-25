@@ -1,5 +1,34 @@
 # Hex ATB Battle Frontend (表演层)
 
+> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `main.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/skill-preview/skill_preview.gd::_init_world_stack`。本 README 中"使用方法 / 主调用流程"段落保留作历史参考,API 已不存在;按下面"现状响应式 wire"段为准。详见 [docs/design-notes/2026-04-26-playback-old-path-retirement.md](../../docs/design-notes/2026-04-26-playback-old-path-retirement.md)。
+
+## 现状响应式 wire(2026-04-26 起)
+
+```gdscript
+# main.gd 简化版,完整版见 main.gd 源码
+GameWorld.init()
+
+_world_view = FrontendWorldView.new()
+add_child(_world_view)
+
+_animator = FrontendBattleAnimator.new()
+add_child(_animator)
+_animator.playback_ended.connect(_on_playback_ended)
+
+# 用户按 Start Battle:
+_battle = HexBattle.new()
+GameWorld.create_instance(func() -> GameplayInstance: return _battle)
+_battle.battle_finished.connect(func(timeline: Dictionary) -> void:
+    _animator.play(timeline, _world_view.get_unit_views())
+)
+_world_view.bind_world(_battle)               # 先 bind, add_actor signal 触发 view spawn
+_battle.start({"map_config": map_config, "recording": true})
+while GameWorld.has_running_instances():
+    GameWorld.tick_all(100.0)                 # 同步跑完 → battle_finished → animator.play
+```
+
+UI 控件 `FrontendPlaybackControls` 提供 play/pause/reset/speed,信号转发到 `_animator.resume() / pause() / reset() / set_speed()`。
+
 ## 项目背景
 
 本项目是 **inkmon** 战斗系统的 **Godot 3D 表演层**实现，用于将逻辑层产生的战斗事件可视化为 3D 动画。
@@ -369,16 +398,19 @@ hex-atb-battle-frontend/
 │   └── default_registry.gd   # 默认注册表工厂
 │
 ├── scene/                    # 3D 场景组件
-│   ├── battle_replay_scene.gd # 主场景管理
 │   ├── unit_view.gd          # 单位视图
-│   └── floating_text_view.gd # 飘字视图
+│   ├── floating_text_view.gd # 飘字视图
+│   ├── attack_vfx_view.gd    # 攻击特效
+│   └── projectile_view.gd    # 投射物
+│
+├── world_view.gd             # 响应式 World 视图(订阅 mutation signal 管 unit view 生命周期)
+├── battle_animator.gd        # 战斗动画播放器(消费 timeline, 在已有 view 上叠加 VFX/飘字)
+├── main.gd / main.tscn       # F6 入口,响应式 wire 样板
 │
 ├── grid/                     # 坐标系统
 │
-├── ui/                       # UI 组件
-│   └── replay_controls.gd    # 播放控制面板
-│
-└── test_*.gd/tscn            # 测试脚本/场景
+└── ui/                       # UI 组件
+    └── playback_controls.gd  # 播放控制面板(原 replay_controls.gd, 2026-04-26 改名)
 ```
 
 ---

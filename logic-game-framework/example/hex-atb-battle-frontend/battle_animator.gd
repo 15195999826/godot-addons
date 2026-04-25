@@ -18,6 +18,10 @@ extends Node3D
 
 signal playback_started
 signal playback_ended
+## 播放 / 暂停切换;转发自 _director.playback_state_changed,供外部 UI 同步按钮态。
+signal playback_state_changed(is_playing: bool)
+## 当前帧推进;转发自 _director.frame_changed,供外部 UI 显示进度。
+signal frame_changed(current_frame: int, total_frames: int)
 
 
 # ========== 内部组件 ==========
@@ -50,6 +54,8 @@ func _ready() -> void:
 	_director.projectile_updated.connect(_on_projectile_updated)
 	_director.projectile_removed.connect(_on_projectile_removed)
 	_director.playback_ended.connect(_on_playback_ended)
+	_director.playback_state_changed.connect(func(p: bool) -> void: playback_state_changed.emit(p))
+	_director.frame_changed.connect(func(c: int, t: int) -> void: frame_changed.emit(c, t))
 
 
 func _process(_delta: float) -> void:
@@ -84,6 +90,26 @@ func stop() -> void:
 		_director.pause()
 
 
+## 暂停当前播放(可恢复);若已暂停或未启动,no-op。
+func pause() -> void:
+	if _director != null:
+		_director.pause()
+
+
+## 从暂停恢复播放;若已在播放或未启动,no-op。
+func resume() -> void:
+	if _director != null:
+		_director.play()
+
+
+## 重置到 frame 0,清空特效;调方仍持有的 unit views 会在下一次 _process 被
+## director 拉回 frame 0 状态。播放状态转为暂停。
+func reset() -> void:
+	if _director != null:
+		_director.reset()
+	_clear_effects()
+
+
 func set_speed(speed: float) -> void:
 	if _director != null:
 		_director.set_speed(speed)
@@ -91,6 +117,30 @@ func set_speed(speed: float) -> void:
 
 func is_playing() -> bool:
 	return _director != null and _director.is_playing()
+
+
+func get_total_frames() -> int:
+	if _director == null:
+		return 0
+	return _director.get_total_frames()
+
+
+func get_current_frame() -> int:
+	if _director == null:
+		return 0
+	return _director.get_current_frame()
+
+
+## 转发自 director,供测试 / UI 拉取当前所有 actor 的视觉态(visual_hp / max_hp /
+## position / is_dead 等)。
+func get_actors_snapshot() -> Dictionary:
+	if _director == null:
+		return {}
+	return _director.get_actors_snapshot()
+
+
+func is_ended() -> bool:
+	return _director != null and _director.is_ended()
 
 
 # ========== Director signal → 外部 unit view ==========
