@@ -4,7 +4,8 @@
 ##   1. 创建 HexBattle (WorldGameplayInstance 子类)
 ##   2. WorldView.bind_world(battle) -> battle.start 时 add_actor signal 触发 view spawn
 ##   3. tick 同步跑完战斗 -> battle_finished signal
-##   4. _on_battle_finished -> animator.play(timeline, view.get_unit_views()) 叠加 VFX/飘字
+##   4. _on_battle_finished -> animator.load(timeline, view.get_unit_views()) 加载录像(不自动播放)
+##   5. 用户按 Play 按钮 / 1-4 速度键 / Space -> animator.play()
 extends Node
 
 
@@ -253,9 +254,9 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 
 	var meta: Dictionary = timeline.get("meta", {})
 	var total_frames: int = meta.get("totalFrames", 0)
-	_update_status("Playing - %d frames" % total_frames)
+	_update_status("Loaded - %d frames (press Play)" % total_frames)
 
-	_animator.play(timeline, _world_view.get_unit_views())
+	_animator.load(timeline, _world_view.get_unit_views())
 
 
 func _on_playback_state_changed(is_playing: bool) -> void:

@@ -66,16 +66,23 @@ func _process(_delta: float) -> void:
 
 # ========== 公共 API ==========
 
-## 播放战斗动画。
-## record_data: BattleProcedure.finish() 返回的 dict（当前 v2 格式，含 initial_actors / map_config）。
-## unit_views: actor_id -> FrontendUnitView 字典，由 WorldView 管理生命周期。
-## 可调 set_speed() 加速；playback_ended signal 在所有动画排空时触发。
-func play(record_data: Dictionary, unit_views: Dictionary) -> void:
+## 加载战斗动画(不自动播放)。完成后 frame 停在 0,等 play() / resume() 启动。
+## record_data: BattleProcedure.finish() 返回的 dict(v2 格式,含 initial_actors / map_config)。
+## unit_views: actor_id -> FrontendUnitView 字典,由 WorldView 管理生命周期。
+## 反复调用 = 重新加载(老 timeline 被替换,VFX/飘字/投射物清空)。
+func load(record_data: Dictionary, unit_views: Dictionary) -> void:
 	_unit_views = unit_views
 	_clear_effects()
 
 	var record := ReplayData.BattleRecord.from_dict(record_data)
 	_director.load_replay(record)
+
+
+## 启动播放当前已 load 的 timeline;未 load 时 no-op。
+## 调 set_speed() 调速;playback_ended signal 在所有动画排空时触发。
+func play() -> void:
+	if _director == null:
+		return
 	_director.play()
 	playback_started.emit()
 

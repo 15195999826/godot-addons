@@ -898,7 +898,8 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 	_set_status("Playing — %d frames" % _last_battle_frames)
 
 	_animator.set_speed(float(_speed_input.value))
-	_animator.play(timeline, _world_view.get_unit_views())
+	_animator.load(timeline, _world_view.get_unit_views())
+	_animator.play()
 
 
 ## 战斗回放结束后保留 world 当前状态(死者已 remove / 受伤者血条 < max), 让用户
