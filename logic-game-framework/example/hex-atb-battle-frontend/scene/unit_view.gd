@@ -44,6 +44,10 @@ var _flash_progress: float = 0.0
 var _base_material: StandardMaterial3D
 var _target_position: Vector3 = Vector3.ZERO
 var _death_tween: Tween  # 死亡动画 Tween (修复 C3)
+## 死亡动画是否已起播。Tween.is_running() 在边界态(刚创建未跑 / 完成未 kill)
+## 不可靠;同一 dead 单位被多次伤害(普攻 + 亡语等)时会重复进 _play_death_animation
+## 分支,本 flag 解耦 tween 状态做幂等。复活时(_revive_visual_state)清回 false。
+var _death_played: bool = false
 
 
 # ========== 初始化 ==========
@@ -149,7 +153,9 @@ func update_state(new_state: FrontendActorRenderState) -> void:
 	_update_tint_color(new_state.tint_color)
 
 	if not _is_alive:
-		_play_death_animation()
+		if not _death_played:
+			_death_played = true
+			_play_death_animation()
 	elif was_dead:
 		# dead → alive 复活(reset / 重新播放):取消死亡 tween,恢复 visible/scale。
 		_revive_visual_state()
@@ -203,12 +209,9 @@ func _update_tint_color(tint_color: Color) -> void:
 		_base_material.albedo_color = _base_material.albedo_color.blend(tint_color)
 
 
-## 播放死亡动画
+## 播放死亡动画。调方在 update_state 里用 _death_played flag 做幂等保护,
+## 这里不再依赖 tween 状态做 guard。
 func _play_death_animation() -> void:
-	# 防止重复创建 Tween
-	if _death_tween and _death_tween.is_running():
-		return
-	
 	_death_tween = create_tween()
 	_death_tween.tween_property(self, "scale", Vector3(0.1, 0.1, 0.1), 0.5)
 	_death_tween.parallel().tween_property(self, "position:y", position.y - 0.5, 0.5)
@@ -226,6 +229,7 @@ func _revive_visual_state() -> void:
 		_death_tween.kill()
 	visible = true
 	scale = Vector3.ONE
+	_death_played = false
 
 
 func _exit_tree() -> void:
