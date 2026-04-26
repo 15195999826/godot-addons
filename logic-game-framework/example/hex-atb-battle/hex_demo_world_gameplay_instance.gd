@@ -18,20 +18,16 @@ extends HexWorldGameplayInstance
 var tick_count: int = 0
 var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
-
-## 战斗是否结束。外部调用端 (`example/hex-atb-battle/demo_headless.gd`) 直接读此字段,
-## 保留以避免调用点修改; `is_running()` 同样可判断。
 var _ended: bool = false
 
-## 战斗结束后缓存录像, 供 get_replay_data() 复用 —— recorder.stop_recording()
-## 只能调一次, 调方拿到后可能隔几帧再读, 这里是"读过一次仍可再读"的兜底。
+## recorder.stop_recording() 单次有效, 缓存兜底"读过一次仍可再读"。
 var _final_replay_data: Dictionary = {}
 
 var _logging_enabled: bool = true
 var _recording_enabled: bool = true
 
-## Procedure 强引用。WorldGI.tick 结束时清空 _active_battle, 但 _on_battle_finished
-## 还要访问 procedure 最终状态(tick_count / result), 由本字段延命到 handler 结束。
+## 延命到 _on_battle_finished handler 结束: WorldGI.tick 末尾清 _active_battle,
+## 但 handler 还要读 procedure 最终状态。
 var _hex_procedure: HexBattleProcedure = null
 
 
@@ -137,9 +133,7 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 	_hex_procedure = null
 
 
-## 覆盖父类: 走 left_team + right_team staging 而非 actor registry。
-## demo 场景下两路视图等价(start 时 actor 全部入 registry), 但保留 staging
-## 路径让"队伍语义"显式可读。
+## 走 left_team + right_team staging 让"队伍语义"显式可读, 不走 actor registry。
 func get_all_actors() -> Array[CharacterActor]:
 	var result: Array[CharacterActor] = []
 	result.append_array(left_team)
@@ -147,7 +141,6 @@ func get_all_actors() -> Array[CharacterActor]:
 	return result
 
 
-## 覆盖父类: 走 get_all_actors() 而非 actor registry, 与 get_all_actors 对齐。
 func get_alive_actors() -> Array[CharacterActor]:
 	var result: Array[CharacterActor] = []
 	for actor in get_all_actors():
