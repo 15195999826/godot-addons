@@ -56,7 +56,7 @@ func _run_battle_sync() -> void:
 	print("\n========== 同步运行战斗 ==========\n")
 	
 	var dt := 100.0
-	for i in range(HexBattle.MAX_TICKS):
+	for i in range(HexBattleProcedure.MAX_TICKS):
 		GameWorld.tick_all(dt)
 		if not GameWorld.has_running_instances():
 			break
@@ -74,7 +74,7 @@ static func run_battle() -> void:
 	hex_battle.start()
 	
 	var dt := 100.0
-	for i in range(HexBattle.MAX_TICKS):
+	for i in range(HexBattleProcedure.MAX_TICKS):
 		hex_battle.tick(dt)
 		if hex_battle._ended:
 			break

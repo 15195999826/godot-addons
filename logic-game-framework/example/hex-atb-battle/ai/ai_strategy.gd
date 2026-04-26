@@ -12,7 +12,7 @@ class_name AIStrategy
 
 ## AI 决策：决定 actor 本回合的行动
 ## 子类必须覆盖此方法
-func decide(actor: CharacterActor, battle: HexBattle) -> Dictionary:
+func decide(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Dictionary:
 	return { "type": "skip" }
 
 
@@ -21,7 +21,7 @@ func decide(actor: CharacterActor, battle: HexBattle) -> Dictionary:
 # ============================================================
 
 ## 收集敌方存活单位
-func _get_enemies(actor: CharacterActor, battle: HexBattle) -> Array[CharacterActor]:
+func _get_enemies(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Array[CharacterActor]:
 	var enemies: Array[CharacterActor] = []
 	for a in battle.get_alive_actors():
 		if a.get_team_id() != actor.get_team_id():
@@ -30,7 +30,7 @@ func _get_enemies(actor: CharacterActor, battle: HexBattle) -> Array[CharacterAc
 
 
 ## 收集友方存活单位（不含自己）
-func _get_allies(actor: CharacterActor, battle: HexBattle) -> Array[CharacterActor]:
+func _get_allies(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Array[CharacterActor]:
 	var allies: Array[CharacterActor] = []
 	for a in battle.get_alive_actors():
 		if a.get_team_id() == actor.get_team_id() and a.get_id() != actor.get_id():
@@ -39,7 +39,7 @@ func _get_allies(actor: CharacterActor, battle: HexBattle) -> Array[CharacterAct
 
 
 ## 获取技能有效目标列表
-func _get_valid_skill_targets(actor: CharacterActor, skill: Ability, battle: HexBattle) -> Array[CharacterActor]:
+func _get_valid_skill_targets(actor: CharacterActor, skill: Ability, battle: HexWorldGameplayInstance) -> Array[CharacterActor]:
 	var targets: Array[CharacterActor] = []
 	for target in battle.get_alive_actors():
 		if battle.can_use_skill_on(actor, skill, target):

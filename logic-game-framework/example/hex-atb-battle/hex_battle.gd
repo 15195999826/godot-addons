@@ -7,14 +7,11 @@
 class_name HexBattle
 extends HexWorldGameplayInstance
 
-## 安全上限, 与 HexBattleProcedure.MAX_TICKS 保持一致; 改动需两边同步。
-const MAX_TICKS := 10000
-
 var tick_count: int = 0
 var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
-var recorder: BattleRecorder = null
 # logger 在父类 HexWorldGameplayInstance 上 (阶段 3 下沉)
+# MAX_TICKS 唯一来源在 HexBattleProcedure.MAX_TICKS, 调用方直接引用
 
 ## 战斗是否结束。外部调用端 (`example/hex-atb-battle/main.gd`) 直接读此字段,
 ## 保留以避免调用点修改; `is_running()` 同样可判断。
@@ -92,7 +89,6 @@ func start(config: Dictionary = {}) -> void:
 	start_battle(participants_as_actors)
 
 	if _hex_procedure != null:
-		recorder = _hex_procedure.get_recorder()
 		logger = _hex_procedure.logger
 
 
@@ -156,8 +152,9 @@ func get_alive_actors() -> Array[CharacterActor]:
 func get_replay_data() -> Dictionary:
 	if not _final_replay_data.is_empty():
 		return _final_replay_data
-	if recorder != null and recorder.get_is_recording():
-		return recorder.stop_recording()
+	var rec: BattleRecorder = _hex_procedure.get_recorder() if _hex_procedure != null else null
+	if rec != null and rec.get_is_recording():
+		return rec.stop_recording()
 	return {}
 
 

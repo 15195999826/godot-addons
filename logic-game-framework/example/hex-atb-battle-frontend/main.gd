@@ -236,7 +236,7 @@ func _on_start_battle_button_pressed() -> void:
 
 	# 循环兜底:防极端配置(BATTLE_TICKS_PER_WORLD_FRAME 设有限值)不在单 tick 内收敛。
 	var dt := 100.0
-	for _i in range(HexBattle.MAX_TICKS):
+	for _i in range(HexBattleProcedure.MAX_TICKS):
 		GameWorld.tick_all(dt)
 		if not GameWorld.has_running_instances():
 			break

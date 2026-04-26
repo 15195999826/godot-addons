@@ -81,6 +81,16 @@ func get_alive_actor_ids() -> Array[String]:
 	return result
 
 
+## 获取所有存活角色对象(供 AI strategy / scenario / scripting 使用)。
+## 与 get_alive_actor_ids 区别在返回 CharacterActor 对象, 调用方少一次 get_actor。
+func get_alive_actors() -> Array[CharacterActor]:
+	var result: Array[CharacterActor] = []
+	for actor in get_actors():
+		if actor is CharacterActor and not (actor as CharacterActor).is_dead():
+			result.append(actor as CharacterActor)
+	return result
+
+
 ## 把 ProjectileSystem.tick 产生的投射物事件 (HIT/MISS) 广播给所有存活 actor
 ## 触发被动 handler。从 event_collector.collect() 只读快照,不 flush ——
 ## 剩余事件由 procedure 的 record_current_frame_events 统一写录像。

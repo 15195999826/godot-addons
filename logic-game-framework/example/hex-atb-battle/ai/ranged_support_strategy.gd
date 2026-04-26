@@ -10,7 +10,7 @@ class_name RangedSupportStrategy
 extends AIStrategy
 
 
-func decide(actor: CharacterActor, battle: HexBattle) -> Dictionary:
+func decide(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Dictionary:
 	var skill := actor.get_skill_ability()
 	var skill_ready := not actor.ability_set.is_on_cooldown(skill.config_id)
 

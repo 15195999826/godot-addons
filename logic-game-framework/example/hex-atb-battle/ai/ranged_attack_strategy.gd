@@ -11,7 +11,7 @@ class_name RangedAttackStrategy
 extends AIStrategy
 
 
-func decide(actor: CharacterActor, battle: HexBattle) -> Dictionary:
+func decide(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Dictionary:
 	var skill := actor.get_skill_ability()
 	var skill_ready := not actor.ability_set.is_on_cooldown(skill.config_id)
 	var skill_range := skill.get_meta_int(HexBattleSkillMetaKeys.RANGE, 1)
