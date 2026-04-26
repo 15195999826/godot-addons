@@ -28,11 +28,11 @@ graph TB
     end
     
     subgraph "Example"
-        Core[hex-atb-battle-core<br/>Shared Events]
-        HexBattle[hex-atb-battle<br/>Game Logic]
+        Core[hex-atb-battle-core<br/>Shared Events + WorldGI base]
+        HexDemo[hex-atb-battle<br/>Demo Game Logic + HexDemoWorldGI]
         Frontend[hex-atb-battle-frontend<br/>Presentation Layer]
     end
-    
+
     World --> Entity
     World --> Events
     Entity --> Abilities
@@ -44,9 +44,9 @@ graph TB
     Components --> Abilities
     Systems --> Entity
     Replay --> Events
-    HexBattle --> World
-    HexBattle --> Core
-    HexBattle --> Replay
+    HexDemo --> World
+    HexDemo --> Core
+    HexDemo --> Replay
     Frontend --> Core
     Frontend --> Replay
 ```

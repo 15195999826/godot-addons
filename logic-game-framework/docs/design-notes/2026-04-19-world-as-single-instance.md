@@ -1,6 +1,6 @@
 # 世界即唯一 Instance：从"战斗 owns 世界"到"世界 owns 战斗"
 
-**日期**：2026-04-19（**最近更新 2026-04-26**：阶段 4 作废）
+**日期**：2026-04-19（**最近更新 2026-04-26**：阶段 4 作废 + 阶段 5 完成）
 **范围**：`core/entity/*`、`example/hex-atb-battle-core/*`、`example/hex-atb-battle-frontend/*`、`stdlib/replay/*`；主仓库的 `scripts/SkillPreviewBattle.gd`、`scenes/`、`tests/`
 **类型**：架构级设计文档（多阶段实施中，见下方进度表）
 
@@ -16,7 +16,7 @@
 | 3 | `skill_preview` 响应式切换 + D5 死亡留 world | ✅ 落地 2026-04-20 + 2026-04-26 收尾 |
 | **附** | A 层 `FrontendBattleReplayScene.load_replay` destructive 路径下线 + `main.gd` 切响应式 wire | ✅ 完成 2026-04-26 |
 | **4** | ~~录像格式 v3 split + `ReplayPlayer` hydrate 真 Actor~~ | ❌ **作废 2026-04-26**（详情见下面"阶段 4"段） |
-| 5 | `main.tscn` / `Simulation.tscn` / Web 桥接 / scenario runner 切 WorldGI；去 `HexBattle` 门面；actor id 前缀替换 | ⏳ 待启动（剩余唯一阶段） |
+| 5 | `main.tscn` / `Simulation.tscn` / Web 桥接 / scenario runner 切 WorldGI；去 `HexBattle` 门面；actor id 前缀替换 | ✅ 落地 2026-04-26（PR-1 字段归位 + PR-2 新建 `HexDemoWorldGameplayInstance` + 删 `hex_battle.gd`） |
 
 **阶段 4 误判预警**：本文档原稿把"录像 v3 + ReplayPlayer hydrate 真 Actor"列作阶段 4，2026-04-26 用户重新对齐后**整体作废**——为表演层重建逻辑 actor 复杂度过高且现状已够用，原本要解的死亡动画问题改 1 行 `damage_utils` 即解决。详见 [2026-04-26-death-keeps-actor-in-world.md](2026-04-26-death-keeps-actor-in-world.md) 和 [2026-04-26-playback-old-path-retirement.md](2026-04-26-playback-old-path-retirement.md)。**任何"阶段 4 还没做完吗"的判断都是过期理解**。
 

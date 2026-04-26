@@ -12,6 +12,58 @@
 
 ---
 
+## [Unreleased] — 2026-04-26 阶段 5 完工: 拆 HexBattle thin 门面, 引入 HexDemoWorldGameplayInstance
+
+「世界 owns 战斗」重构计划阶段 5 落地: 物理删除 `HexBattle` thin 兼容门面, 把它原本封装的 6v6 demo 战斗启动行为(默认 grid + 6 character 硬编码 + inspire buff + 队伍随机放置 + start_battle + replay save)搬到新建的 `HexDemoWorldGameplayInstance`。每个独立场景拥有自己的 `HexWorldGameplayInstance` 子类(demo / skill-preview / 将来真游戏战斗), 框架类 `HexWorldGameplayInstance` 保持通用不被 demo hardcode 污染。
+→ [design-notes/2026-04-26-phase-5-hex-demo-world-gi.md](docs/design-notes/2026-04-26-phase-5-hex-demo-world-gi.md)
+
+### Added
+
+- **`HexDemoWorldGameplayInstance`** (`example/hex-atb-battle/hex_demo_world_gameplay_instance.gd`): 新建。`extends HexWorldGameplayInstance`, 收编原 `HexBattle` 全部内容 — `start(config)` / `_create_battle_procedure` / `_on_battle_finished` / `_save_replay` / `_build_default_grid_config` / `_create_team_actor` / `_place_team_randomly` / `_apply_inspire_buff_to_all` / `_print_battle_info` / `tick(dt)` / `get_all_actors` / `get_alive_actors` / `get_replay_data` / `get_log_dir`。id 前缀 `IdGenerator.generate("demo")`(actor id 形如 `demo_001:hero_001`), `type = "hex_demo"`。
+- **`HexWorldGameplayInstance.get_alive_actors()`** (`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`): 上抬。返回 `Array[CharacterActor]`, 与 `get_alive_actor_ids()` 并列, 解耦 AI strategy 对 thin facade 的依赖。
+
+### Changed
+
+- **AI strategy 类型签名**(`example/hex-atb-battle/ai/ai_strategy.gd` + 3 个具体策略): `battle: HexBattle` → `battle: HexWorldGameplayInstance` 共 7 处。配合 `get_alive_actors` 上抬, AI 不再 IS-A 偶合具体子类。
+- **`scripts/SimulationManager.gd`**: `HexBattle.new()` → `HexDemoWorldGameplayInstance.new()`, cast 类型同步。Web 桥接 `godot_run_battle` 跑的是 demo 路径。
+- **`scripts/SkillPreviewBattle.gd`**: `_PreviewInstance` 从 `extends HexBattle` 改为 `extends HexWorldGameplayInstance`。自管 `left_team` / `right_team` / `recorder` 字段(原本借父类), 自带 `get_all_actors()` 走 staging 拼接。id 前缀 `preview` (actor id 形如 `preview_001:caster`)。
+- **`tests/smoke_world_view.gd`**: `var _world: HexBattle` + `HexBattle.new()` → `HexDemoWorldGameplayInstance`。
+- **`example/hex-atb-battle/main.gd`** / **`example/hex-atb-battle-frontend/main.gd`**: 同步切到 `HexDemoWorldGameplayInstance`。`HexBattle.MAX_TICKS` → `HexBattleProcedure.MAX_TICKS`(唯一来源)。
+- **`example/hex-atb-battle/utils/hex_battle_game_state_utils.gd`** / **`example/hex-atb-battle-core/hex_battle_procedure.gd`** / **`core/events/handler_context.gd`**: 注释里的 `HexBattle` 字面量更新为 `HexWorldGameplayInstance` / `HexDemoWorldGameplayInstance` 按语义。
+- **`CLAUDE.md`** mermaid 图: `HexBattle` 节点改名 `HexDemo`(对应新类), 关系箭头不变。
+
+### Removed
+
+- **`example/hex-atb-battle/hex_battle.gd`** 物理删除(原 268 行)。`HexBattle.MAX_TICKS` / `HexBattle.recorder` 字段在 PR-1 已先去冗余, 物理删时调用方零阻塞。
+- **`HexBattle` class_name** 和 `class_name HexBattle` 全局符号一并消失。所有调用方已切到 `HexDemoWorldGameplayInstance` 或 `HexWorldGameplayInstance`。
+
+### 设计决策(本轮关键点)
+
+- **不污染框架类**: 候选「demo 行为搬到 `HexWorldGameplayInstance`」被否决 — `HexWorldGameplayInstance` 是 framework 层通用 hex world, 写死「priest/warrior/archer 6 角色」「9x9 默认地图」「inspire buff」等 demo 行为会破坏「框架/实例」分层。
+- **不冗余 inline 到 3 个 main**: 候选「demo 启动逻辑 inline 到 frontend/main + addon/main + SimulationManager」被否决 — 同套行为出现 3 份, 未来加角色/调整地图要同步 3 处。
+- **选定: 与 `SkillPreviewWorldGI` 范式对齐**: 每个独立场景拥有自己的 `HexWorldGameplayInstance` 子类。3 个 demo main 共享一个 `HexDemoWorldGameplayInstance`(单一来源), skill-preview 走自己的 `SkillPreviewWorldGI`(已存在), 将来真游戏战斗加 `HexGameplayInstance` 之类。框架/场景边界清晰。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_frontend_main.tscn` | PASS |
+| `tests/smoke_world_view.tscn` | PASS (views 6→5) |
+| `tests/smoke_skill_preview_reactive.tscn` | PASS (3 场连续 + reset) |
+| `tests/smoke_skill_scenarios.tscn` | 12/12 ✅ |
+
+### 跨阶段成果
+
+至此「世界 owns 战斗」整个重构计划阶段 0–5 全部落地(阶段 4 作废)。`GameplayInstance` 抽象现在有 3 个 ergonomic 实现:
+- `HexWorldGameplayInstance`(框架基类, 通用 hex world)
+- `HexDemoWorldGameplayInstance`(6v6 demo 场景, 服务 3 个 demo entry)
+- `SkillPreviewWorldGI`(skill-preview 编辑器场景, 含 reset / queue_preview)
+
+`HexBattle` thin 门面消亡, actor id 前缀根据场景自然区分: `demo_*` / `preview_*` / `skill_preview_*`。
+
+---
+
 ## [Unreleased] — 2026-04-26 表演层 Event vs State 边界
 
 用户实测 bug:单位被普攻打死后亡语紧接命中,死亡动画并行播了两次。第一/二轮 patch(`Tween.is_running()` guard / `_death_played` flag) 都只解决死亡这一个 case。跟 Codex 讨论后定下表演层根边界:**State 是可覆盖事实(snapshot 同步无害),Event 是一次性命令(必须 transition-only)**。死亡动画从 snapshot 推断改成 event 触发。

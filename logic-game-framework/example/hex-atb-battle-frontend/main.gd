@@ -1,7 +1,7 @@
 ## Main - 战斗前端示例入口（响应式 wire）
 ##
 ## 用户按 Start Battle:
-##   1. 创建 HexBattle (WorldGameplayInstance 子类)
+##   1. 创建 HexDemoWorldGameplayInstance (WorldGameplayInstance 子类)
 ##   2. WorldView.bind_world(battle) -> battle.start 时 add_actor signal 触发 view spawn
 ##   3. tick 同步跑完战斗 -> battle_finished signal
 ##   4. _on_battle_finished -> animator.load(timeline, view.get_unit_views()) 加载录像(不自动播放)
@@ -26,7 +26,7 @@ extends Node
 
 # ========== 响应式栈 ==========
 
-var _battle: HexBattle = null
+var _battle: HexDemoWorldGameplayInstance = null
 var _world_view: FrontendWorldView
 var _animator: FrontendBattleAnimator
 var _camera_rig: LomoCameraRig
@@ -208,7 +208,7 @@ func _on_start_battle_button_pressed() -> void:
 	_update_status("Running battle simulation...")
 	_start_battle_button.disabled = true
 
-	# HexBattle 一次性实例,跑完留在 GameWorld._instances 不会自清,显式 destroy
+	# HexDemoWorldGameplayInstance 一次性实例,跑完留在 GameWorld._instances 不会自清,显式 destroy
 	# 防止多次 Start Battle 累积。
 	_world_view.unbind_world()
 	if _battle != null:
@@ -218,7 +218,7 @@ func _on_start_battle_button_pressed() -> void:
 	var map_config := _get_map_config()
 	print("[Main] Starting battle with map config: %s" % map_config)
 
-	_battle = HexBattle.new()
+	_battle = HexDemoWorldGameplayInstance.new()
 	GameWorld.create_instance(func() -> GameplayInstance: return _battle)
 	_battle.battle_finished.connect(_on_battle_finished)
 

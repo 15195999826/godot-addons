@@ -1,17 +1,23 @@
-## HexBattle - 六边形战斗兼容门面
+## HexDemoWorldGameplayInstance - 6v6 demo 战斗场景的 world instance
 ##
-## 在"世界 owns 战斗"架构下(见 docs/design-notes/2026-04-19-world-as-single-instance.md),
-## World(registry/grid/systems) 与 Procedure(ATB/teams/recorder) 分居两个类。
-## HexBattle 做 thin 门面, 对外维持 start(config)/tick(dt) 一把入口语义,
-## 内部通过 WorldGI.start_battle 起 HexBattleProcedure 推进。
-class_name HexBattle
+## HexWorldGameplayInstance 的 demo 场景子类: 6 职业 vs 6 职业默认 9x9 战斗,
+## 含 inspire buff / 队伍随机放置 / 录像存盘 / 战斗信息打印 等 demo 行为。
+##
+## 服务三处 demo entry: addons/.../hex-atb-battle/main.gd (headless),
+## addons/.../hex-atb-battle-frontend/main.gd (frontend), scripts/SimulationManager.gd
+## (web 桥接 godot_run_battle)。skill-preview 走 SkillPreviewWorldGI, 不走这里。
+##
+## 与 SkillPreviewWorldGI 范式一致: 每个独立场景拥有自己的 GI 子类,
+## 框架类 HexWorldGameplayInstance 保持通用不含 demo hardcode。
+##
+## 详见 docs/design-notes/2026-04-19-world-as-single-instance.md 阶段 5。
+class_name HexDemoWorldGameplayInstance
 extends HexWorldGameplayInstance
+
 
 var tick_count: int = 0
 var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
-# logger 在父类 HexWorldGameplayInstance 上 (阶段 3 下沉)
-# MAX_TICKS 唯一来源在 HexBattleProcedure.MAX_TICKS, 调用方直接引用
 
 ## 战斗是否结束。外部调用端 (`example/hex-atb-battle/main.gd`) 直接读此字段,
 ## 保留以避免调用点修改; `is_running()` 同样可判断。
@@ -30,12 +36,12 @@ var _hex_procedure: HexBattleProcedure = null
 
 
 func _init() -> void:
-	super._init(IdGenerator.generate("battle"))
-	type = "hex_battle"
+	super._init(IdGenerator.generate("demo"))
+	type = "hex_demo"
 	battle_finished.connect(_on_battle_finished)
 
 
-## 启动战斗。config 键:
+## 启动 demo 战斗。config 键:
 ##   - logging: bool        启用日志 (默认 true)
 ##   - recording: bool      启用录像 (默认 true)
 ##   - console_log: bool    日志同时输出到控制台 (默认 false)
@@ -43,7 +49,7 @@ func _init() -> void:
 ##   - map_config: GridMapConfig  地图配置 (默认 9x9 ROW_COLUMN FLAT)
 func start(config: Dictionary = {}) -> void:
 	super.start()
-	print("\n========== HexBattle 开始 ==========\n")
+	print("\n========== Hex Demo Battle 开始 ==========\n")
 
 	_logging_enabled = config.get("logging", true)
 	_recording_enabled = config.get("recording", true)
@@ -121,7 +127,7 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 	if _hex_procedure != null:
 		proc_result = _hex_procedure.get_result()
 		tick_count = _hex_procedure.get_current_tick()
-	print("\n========== HexBattle 结束 ==========")
+	print("\n========== Hex Demo Battle 结束 ==========")
 	print("总帧数: %d" % tick_count)
 	print("逻辑时间: %.1f ms" % _logic_time)
 	if proc_result != "":
@@ -131,6 +137,9 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 	_hex_procedure = null
 
 
+## 覆盖父类: 走 left_team + right_team staging 而非 actor registry。
+## demo 场景下两路视图等价(start 时 actor 全部入 registry), 但保留 staging
+## 路径让"队伍语义"显式可读。
 func get_all_actors() -> Array[CharacterActor]:
 	var result: Array[CharacterActor] = []
 	result.append_array(left_team)
@@ -138,6 +147,7 @@ func get_all_actors() -> Array[CharacterActor]:
 	return result
 
 
+## 覆盖父类: 走 get_all_actors() 而非 actor registry, 与 get_all_actors 对齐。
 func get_alive_actors() -> Array[CharacterActor]:
 	var result: Array[CharacterActor] = []
 	for actor in get_all_actors():
@@ -169,7 +179,7 @@ func _save_replay(replay_data: Dictionary) -> void:
 		return
 
 	var timestamp := Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
-	var replay_path := "user://Replays/battle_%s_%s.json" % [timestamp, id]
+	var replay_path := "user://Replays/demo_%s_%s.json" % [timestamp, id]
 	var dir := DirAccess.open("user://")
 	if dir != null and not dir.dir_exists("Replays"):
 		dir.make_dir("Replays")
@@ -180,7 +190,7 @@ func _save_replay(replay_data: Dictionary) -> void:
 		file.close()
 		print("📼 录像已保存到: %s" % replay_path)
 	else:
-		push_error("[HexBattle] 无法保存录像: %s" % replay_path)
+		push_error("[HexDemoWorldGI] 无法保存录像: %s" % replay_path)
 
 
 # ========== 战斗布阵辅助 ==========

@@ -14,7 +14,7 @@
 ##         return Intent.pass_through()
 ##
 ##     # 使用游戏状态
-##     var battle: HexBattle = ctx.game_state
+##     var battle: HexWorldGameplayInstance = ctx.game_state
 ##     # ...
 ## ```
 class_name HandlerContext

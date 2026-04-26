@@ -14,7 +14,7 @@ extends Node
 @export var enable_console_log: bool = false
 
 
-var battle: HexBattle
+var battle: HexDemoWorldGameplayInstance
 var tick_interval: float = 100.0  # 每帧 100ms
 var accumulated_time: float = 0.0
 
@@ -22,9 +22,9 @@ var accumulated_time: float = 0.0
 func _ready() -> void:
 	print("HexAtbBattle Example Starting...")
 	GameWorld.init()
-	
+
 	battle = GameWorld.create_instance(func() -> GameplayInstance:
-		var b := HexBattle.new()
+		var b := HexDemoWorldGameplayInstance.new()
 		b.start({
 			"logging": enable_logging,
 			"recording": enable_recording,
@@ -70,7 +70,7 @@ static func run_battle() -> void:
 	print("\n========== 运行 HexAtbBattle 示例 ==========\n")
 	GameWorld.init()
 	
-	var hex_battle := HexBattle.new()
+	var hex_battle := HexDemoWorldGameplayInstance.new()
 	hex_battle.start()
 	
 	var dt := 100.0

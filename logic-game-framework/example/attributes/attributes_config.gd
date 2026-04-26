@@ -10,7 +10,7 @@ const SETS := {
 		"max_hp": { "baseValue": 350.0 },
 		"range": { "baseValue": 6.0 },
 	},
-	# HexBattle 角色属性集
+	# Hex 角色通用属性集（demo / preview / scenario 共用）
 	"HexBattleCharacter": {
 		"hp": { "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" },
 		"max_hp": { "baseValue": 100.0, "minValue": 1.0 },
