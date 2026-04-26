@@ -40,11 +40,13 @@ static func get_by_id(config_id: String) -> AbilityConfig:
 	return null
 
 
-## 从 HexBattleAllSkills.ALL 派生:保留 skill / passive,过滤 buff / debuff。
-## 判定标准:ability_tags 含 "skill" 或 "passive"(buff 标签是 "buff" / "debuff")。
+## 从 HexBattleAllSkills.ALL 派生:排除 buff / debuff。
+## 用排除式而非包含式 — Move(tags=["action","move"])这种"非主动技能也非被动"的项
+## 用包含式会被误过滤;只有 buff/debuff 是真不该出现在玩家选单里的。
 static func _build_all() -> Array[AbilityConfig]:
 	var out: Array[AbilityConfig] = []
 	for cfg in HexBattleAllSkills.all_abilities():
-		if cfg.ability_tags.has("skill") or cfg.ability_tags.has("passive"):
-			out.append(cfg)
+		if cfg.ability_tags.has("buff") or cfg.ability_tags.has("debuff"):
+			continue
+		out.append(cfg)
 	return out

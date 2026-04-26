@@ -62,9 +62,11 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var stacks_before := ability.get_stacks()
 	ability.remove_stacks(1)
 	var stacks_after := ability.get_stacks()
-	# 通知 frontend buff UI 更新 stacks。即便 stacks_after = 0(随后 expire 会触发
-	# AbilityRemoved),也保持事件流完整 —— REMOVE 在 frontend 端会覆盖此 UPDATE。
-	all_events.append(
+	# 直接 push 进 event_collector — execute() 返回的 ActionResult.event_dicts 会被
+	# AbilityExecutionInstance._execute_actions_for_tag 丢弃,只能通过 collector 入 replay。
+	# 即便 stacks_after = 0(随后 expire 触发 AbilityRemoved)也保持事件流完整,
+	# REMOVE 在 frontend 端会覆盖此 UPDATE。
+	ctx.event_collector.push(
 		GameEvent.AbilityStacksChanged.create(
 			target_id, ability.id, ability.config_id, stacks_before, stacks_after
 		).to_dict()
