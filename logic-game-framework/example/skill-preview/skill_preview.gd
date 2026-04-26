@@ -340,33 +340,57 @@ func _move_caster_to(q: int, r: int) -> void:
 func _rebuild_actors_ui() -> void:
 	for child in _actors_container.get_children():
 		child.queue_free()
+	_actors_container.add_child(_build_actor_header_row())
 	for i in _actors.size():
 		_actors_container.add_child(_build_actor_row(i))
+
+
+func _build_actor_header_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(_make_actor_header_label("Role", 50))
+	row.add_child(_make_actor_header_label("Class", 96))
+	row.add_child(_make_actor_header_label("Q", 44))
+	row.add_child(_make_actor_header_label("R", 44))
+	row.add_child(_make_actor_header_label("HP", 62))
+	row.add_child(_make_actor_header_label("", 56))
+	return row
+
+
+func _make_actor_header_label(text: String, width: int) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.custom_minimum_size = Vector2(width, 0)
+	lbl.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	lbl.add_theme_font_size_override("font_size", 11)
+	return lbl
 
 
 func _build_actor_row(idx: int) -> HBoxContainer:
 	var data: Dictionary = _actors[idx]
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
+	row.add_theme_constant_override("separation", 6)
 
 	var role_label := Label.new()
-	role_label.custom_minimum_size = Vector2(54, 0)
+	role_label.custom_minimum_size = Vector2(50, 0)
 	if data["role"] == "caster":
-		role_label.text = "[CAST]"
-		role_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+		role_label.text = "Caster"
+		role_label.add_theme_color_override("font_color", Color("1F7A4D"))
 	else:
-		role_label.text = "[A]" if data["team"] == "A" else "[B]"
+		role_label.text = "Ally" if data["team"] == "A" else "Enemy"
 		role_label.add_theme_color_override(
 			"font_color",
-			Color(0.4, 0.9, 0.4) if data["team"] == "A" else Color(0.9, 0.4, 0.4)
+			Color("2F6FED") if data["team"] == "A" else Color("B23B3B")
 		)
+	role_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(role_label)
 
 	var class_opt := OptionButton.new()
 	for cls in CLASS_NAMES:
 		class_opt.add_item(cls)
 	class_opt.selected = max(0, CLASS_NAMES.find(data["class"]))
-	class_opt.custom_minimum_size = Vector2(90, 0)
+	class_opt.custom_minimum_size = Vector2(96, 0)
+	class_opt.tooltip_text = "Actor class"
 	class_opt.item_selected.connect(func(i: int) -> void:
 		_actors[idx]["class"] = CLASS_NAMES[i]
 		if _is_playing:
@@ -376,29 +400,35 @@ func _build_actor_row(idx: int) -> HBoxContainer:
 	row.add_child(class_opt)
 
 	var pos: Array = data["pos"]
-	row.add_child(_make_actor_spin(idx, "q", pos[0], -20, 20))
-	row.add_child(_make_actor_spin(idx, "r", pos[1], -20, 20))
-	row.add_child(_make_actor_spin(idx, "hp", data["hp"], 0, 9999, true))
+	row.add_child(_make_actor_spin(idx, "q", pos[0], -20, 20, false, 44))
+	row.add_child(_make_actor_spin(idx, "r", pos[1], -20, 20, false, 44))
+	row.add_child(_make_actor_spin(idx, "hp", data["hp"], 0, 9999, true, 62))
 
 	if data["role"] != "caster":
 		var rm := Button.new()
-		rm.text = "x"
-		rm.custom_minimum_size = Vector2(24, 0)
+		rm.text = "Del"
+		rm.custom_minimum_size = Vector2(56, 0)
+		rm.tooltip_text = "Remove actor"
 		rm.pressed.connect(func() -> void: _remove_actor_at(idx))
 		row.add_child(rm)
+	else:
+		var spacer := Control.new()
+		spacer.custom_minimum_size = Vector2(56, 0)
+		row.add_child(spacer)
 	return row
 
 
 func _make_actor_spin(
 	actor_idx: int, field: String, value: float,
-	min_v: int, max_v: int, allow_float: bool = false
+	min_v: int, max_v: int, allow_float: bool = false, width: int = 60
 ) -> SpinBox:
 	var s := SpinBox.new()
 	s.min_value = min_v
 	s.max_value = max_v
 	s.step = 0.1 if allow_float else 1
 	s.value = value
-	s.custom_minimum_size = Vector2(60, 0)
+	s.custom_minimum_size = Vector2(width, 0)
+	s.tooltip_text = field.to_upper()
 	s.value_changed.connect(func(v: float) -> void:
 		match field:
 			"q": _actors[actor_idx]["pos"][0] = int(v)
@@ -1219,31 +1249,30 @@ func _log(line: String) -> void:
 
 
 # ============================================================================
-# Clay Theme (Claymorphism + Vibrant + Block-based)
+# Control Panel Theme
 # ============================================================================
 
-const CLAY_BG        := Color("FFF4E6")  ## 暖米白背景
-const CLAY_SURFACE   := Color("FFFBF5")  ## 左/底面板底色
-const CLAY_TEXT      := Color("2C1810")  ## 主文字 (深咖)
-const CLAY_TEXT_SOFT := Color("6B4F3E")  ## 次要文字
-const CLAY_TEXT_LIGHT := Color("F5F0E8") ## 反白文字 (深 bg 上用)
-const CLAY_SHADOW    := Color(0, 0, 0, 0.18)
-const CLAY_SHADOW_SOFT := Color(0, 0, 0, 0.08)
+const CLAY_BG := Color("F4F0E8")
+const CLAY_SURFACE := Color("FCFAF6")
+const CLAY_TEXT := Color("1F2428")
+const CLAY_TEXT_SOFT := Color("69727D")
+const CLAY_SHADOW := Color(0, 0, 0, 0.10)
 
-## 每个 section 的粘土块主色 (饱和 Vibrant)
+## 每个 section 保留轻量色标，避免整面板变成同一种颜色。
 const SECTION_COLORS := {
-	"TitlePreset":  Color("FFC2D1"),  # 粉
-	"TitleMap":     Color("B5DEFF"),  # 天蓝
-	"TitleSkill":   Color("FFE699"),  # 柠檬
-	"TitleActors":  Color("B8F2C8"),  # 薄荷
-	"TitleTarget":  Color("FFB89A"),  # 珊瑚
-	"TitleCtrl":    Color("D4B8FF"),  # 淡紫
+	"TitlePreset": Color("E8EEF9"),
+	"TitleMap": Color("E6F4EF"),
+	"TitleSkill": Color("FFF0C2"),
+	"TitleActors": Color("E8EEF9"),
+	"TitleTarget": Color("FDE7E7"),
+	"TitleCtrl": Color("EDE7F6"),
 }
 
-const START_COLOR := Color("FF6B6B")    ## Start 主 CTA (鲜珊瑚)
-const START_HOVER := Color("FF8585")
-const CONSOLE_BG  := Color("1E1A26")    ## 深紫 console 背景
-const CONSOLE_FG  := Color("F5F0E8")
+const START_COLOR := Color("2F6FED")
+const START_HOVER := Color("3F7FFF")
+const START_PRESSED := Color("1E56C5")
+const CONSOLE_BG := Color("171C24")
+const CONSOLE_FG := Color("E8EDF4")
 
 
 func _apply_clay_theme() -> void:
@@ -1252,6 +1281,7 @@ func _apply_clay_theme() -> void:
 	_style_section_titles()
 	_style_start_button()
 	_style_reset_button()
+	_style_status_label()
 	_style_console()
 
 
@@ -1272,11 +1302,11 @@ func _clay_font_bold() -> Font:
 	return fv
 
 
-## 构造一个"粘土块" stylebox: 饱和底色 + 柔和阴影 + 圆角
+## 构造一个 panel/control stylebox: 低阴影 + 小圆角 + 稳定内边距。
 func _clay_sb(
-	bg: Color, radius: int = 18,
-	pad_x: int = 14, pad_y: int = 10,
-	shadow_y: int = 4, shadow_size: int = 8
+	bg: Color, radius: int = 8,
+	pad_x: int = 10, pad_y: int = 7,
+	shadow_y: int = 2, shadow_size: int = 4
 ) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = bg
@@ -1298,42 +1328,47 @@ func _build_clay_theme() -> Theme:
 	t.default_font_size = 14
 
 	# PanelContainer (LeftPanel, BottomPanel)
-	var panel_sb := _clay_sb(CLAY_SURFACE, 24, 16, 12, 8, 14)
+	var panel_sb := _clay_sb(CLAY_SURFACE, 10, 14, 12, 4, 10)
+	panel_sb.border_color = Color("E2D8CA")
+	panel_sb.border_width_left = 1
+	panel_sb.border_width_right = 1
+	panel_sb.border_width_top = 1
+	panel_sb.border_width_bottom = 1
 	t.set_stylebox("panel", "PanelContainer", panel_sb)
 
-	# Button — 柔和米色粘土
-	var btn_bg := Color("FFE4C4")
-	var btn_hover := Color("FFD8A8")
-	var btn_pressed := Color("F5C78E")
-	t.set_stylebox("normal",   "Button", _clay_sb(btn_bg, 16, 14, 8))
-	t.set_stylebox("hover",    "Button", _clay_sb(btn_hover, 16, 14, 8))
+	# Button
+	var btn_bg := Color("F1E8DA")
+	var btn_hover := Color("E6D9C7")
+	var btn_pressed := Color("D8C8B3")
+	t.set_stylebox("normal",   "Button", _clay_sb(btn_bg, 8, 12, 7))
+	t.set_stylebox("hover",    "Button", _clay_sb(btn_hover, 8, 12, 7))
 	t.set_stylebox("pressed",  "Button",
-		_clay_sb(btn_pressed, 16, 14, 8, 1, 3))  # 按下 shadow 缩小
-	t.set_stylebox("disabled", "Button", _clay_sb(Color("F0E0D0"), 16, 14, 8, 0, 0))
+		_clay_sb(btn_pressed, 8, 12, 7, 1, 2))
+	t.set_stylebox("disabled", "Button", _clay_sb(Color("E5E0D8"), 8, 12, 7, 0, 0))
 	t.set_stylebox("focus",    "Button", StyleBoxEmpty.new())
 	t.set_color("font_color",          "Button", CLAY_TEXT)
 	t.set_color("font_hover_color",    "Button", CLAY_TEXT)
 	t.set_color("font_pressed_color",  "Button", CLAY_TEXT)
 	t.set_color("font_disabled_color", "Button", CLAY_TEXT_SOFT)
 
-	# CheckBox — 走粘土按钮视觉
-	t.set_stylebox("normal",  "CheckBox", _clay_sb(Color("FFE4C4"), 14, 10, 6, 3, 5))
-	t.set_stylebox("hover",   "CheckBox", _clay_sb(Color("FFD8A8"), 14, 10, 6, 3, 5))
-	t.set_stylebox("pressed", "CheckBox", _clay_sb(Color("F5C78E"), 14, 10, 6, 1, 2))
+	# CheckBox
+	t.set_stylebox("normal",  "CheckBox", _clay_sb(Color("F7F2EA"), 8, 8, 5, 1, 2))
+	t.set_stylebox("hover",   "CheckBox", _clay_sb(Color("EEE5D9"), 8, 8, 5, 1, 2))
+	t.set_stylebox("pressed", "CheckBox", _clay_sb(Color("D8C8B3"), 8, 8, 5, 1, 2))
 	t.set_stylebox("focus",   "CheckBox", StyleBoxEmpty.new())
 	t.set_color("font_color", "CheckBox", CLAY_TEXT)
 
 	# OptionButton
-	t.set_stylebox("normal",  "OptionButton", _clay_sb(Color("FFF0DE"), 14, 12, 7))
-	t.set_stylebox("hover",   "OptionButton", _clay_sb(Color("FFE4C4"), 14, 12, 7))
-	t.set_stylebox("pressed", "OptionButton", _clay_sb(Color("F5C78E"), 14, 12, 7, 1, 3))
+	t.set_stylebox("normal",  "OptionButton", _clay_sb(Color("FFFFFF"), 8, 10, 6, 1, 2))
+	t.set_stylebox("hover",   "OptionButton", _clay_sb(Color("F5F7FA"), 8, 10, 6, 1, 2))
+	t.set_stylebox("pressed", "OptionButton", _clay_sb(Color("E8EEF9"), 8, 10, 6, 1, 2))
 	t.set_stylebox("focus",   "OptionButton", StyleBoxEmpty.new())
 	t.set_color("font_color", "OptionButton", CLAY_TEXT)
 
 	# SpinBox 内部 LineEdit
-	t.set_stylebox("normal",   "LineEdit", _clay_sb(Color("FFF9EF"), 12, 10, 6, 2, 4))
-	t.set_stylebox("focus",    "LineEdit", _clay_sb(Color("FFFFFF"), 12, 10, 6, 2, 5))
-	t.set_stylebox("read_only","LineEdit", _clay_sb(Color("F0E4D4"), 12, 10, 6, 0, 0))
+	t.set_stylebox("normal",   "LineEdit", _clay_sb(Color("FFFFFF"), 8, 8, 5, 1, 2))
+	t.set_stylebox("focus",    "LineEdit", _clay_sb(Color("F8FBFF"), 8, 8, 5, 1, 2))
+	t.set_stylebox("read_only","LineEdit", _clay_sb(Color("ECE7DF"), 8, 8, 5, 0, 0))
 	t.set_color("font_color",  "LineEdit", CLAY_TEXT)
 	t.set_color("caret_color", "LineEdit", CLAY_TEXT)
 
@@ -1341,29 +1376,29 @@ func _build_clay_theme() -> Theme:
 	t.set_color("font_color", "Label", CLAY_TEXT)
 
 	# ItemList / ScrollContainer
-	t.set_stylebox("panel",      "ItemList",         _clay_sb(Color("FFFBF5"), 14, 8, 6, 2, 4))
+	t.set_stylebox("panel",      "ItemList",         _clay_sb(Color("FCFAF6"), 8, 8, 6, 1, 2))
 	t.set_stylebox("focus",      "ItemList",         StyleBoxEmpty.new())
-	t.set_stylebox("selected",   "ItemList",         _clay_sb(Color("FFC2D1"), 8, 6, 3, 0, 0))
+	t.set_stylebox("selected",   "ItemList",         _clay_sb(Color("DCEBFF"), 6, 6, 3, 0, 0))
 	t.set_color("font_color",              "ItemList", CLAY_TEXT)
 	t.set_color("font_selected_color",     "ItemList", CLAY_TEXT)
 
 	# PopupMenu (右键菜单)
-	t.set_stylebox("panel",         "PopupMenu", _clay_sb(CLAY_SURFACE, 16, 8, 6, 6, 12))
-	t.set_stylebox("hover",         "PopupMenu", _clay_sb(Color("FFE4C4"), 10, 10, 4, 0, 0))
+	t.set_stylebox("panel",         "PopupMenu", _clay_sb(CLAY_SURFACE, 8, 8, 6, 4, 8))
+	t.set_stylebox("hover",         "PopupMenu", _clay_sb(Color("E8EEF9"), 6, 10, 4, 0, 0))
 	t.set_color("font_color",       "PopupMenu", CLAY_TEXT)
 	t.set_color("font_hover_color", "PopupMenu", CLAY_TEXT)
 	t.set_color("font_separator_color", "PopupMenu", CLAY_TEXT_SOFT)
 
 	# HSeparator (细分隔 — 我们主要不用,保留 fallback)
 	var sep_sb := StyleBoxLine.new()
-	sep_sb.color = Color("E8D4B8")
-	sep_sb.thickness = 2
+	sep_sb.color = Color("E2D8CA")
+	sep_sb.thickness = 1
 	t.set_stylebox("separator", "HSeparator", sep_sb)
 
 	return t
 
 
-## 给每个 Section Title label 套上粘土块 pill
+## 给每个 Section Title label 套上轻量标题块。
 func _style_section_titles() -> void:
 	var vbox: Node = get_node("ConfigUI/Root/LeftPanel/Scroll/VBox")
 	for child in vbox.get_children():
@@ -1373,50 +1408,63 @@ func _style_section_titles() -> void:
 		if not SECTION_COLORS.has(lbl.name):
 			continue
 		var color: Color = SECTION_COLORS[lbl.name]
-		var sb := _clay_sb(color, 14, 14, 6, 3, 6)
+		var sb := _clay_sb(color, 8, 10, 5, 0, 0)
+		sb.border_color = Color("D8DDE6")
+		sb.border_width_left = 3
 		lbl.add_theme_stylebox_override("normal", sb)
 		lbl.add_theme_font_override("font", _clay_font_bold())
-		lbl.add_theme_font_size_override("font_size", 14)
+		lbl.add_theme_font_size_override("font_size", 13)
 		lbl.add_theme_color_override("font_color", CLAY_TEXT)
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lbl.text = lbl.text.replace("—", "").strip_edges().to_upper()
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		lbl.text = lbl.text.replace("—", "").strip_edges()
 
 
-## StartButton 强视觉焦点: 鲜珊瑚 + 白字 + 厚 shadow + 高阵仗
+## StartButton 是主操作，使用唯一高对比色。
 func _style_start_button() -> void:
 	var btn := _start_button
 	btn.add_theme_stylebox_override("normal",
-		_clay_sb(START_COLOR, 26, 24, 16, 6, 14))
+		_clay_sb(START_COLOR, 8, 18, 10, 2, 4))
 	btn.add_theme_stylebox_override("hover",
-		_clay_sb(START_HOVER, 26, 24, 16, 8, 16))
+		_clay_sb(START_HOVER, 8, 18, 10, 2, 5))
 	btn.add_theme_stylebox_override("pressed",
-		_clay_sb(Color("E54444"), 26, 24, 16, 2, 4))
+		_clay_sb(START_PRESSED, 8, 18, 10, 1, 2))
 	btn.add_theme_stylebox_override("disabled",
-		_clay_sb(Color("FFAFAF"), 26, 24, 16, 0, 0))
+		_clay_sb(Color("AFC6F5"), 8, 18, 10, 0, 0))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_font_override("font", _clay_font_bold())
-	btn.add_theme_font_size_override("font_size", 18)
+	btn.add_theme_font_size_override("font_size", 14)
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	btn.add_theme_color_override("font_hover_color", Color.WHITE)
 	btn.add_theme_color_override("font_pressed_color", Color.WHITE)
 
 
-## ResetButton 视觉次于 START: 浅米底 + 深咖字, 阵仗低 —— 它不是常用主操作,
-## 只在战斗结束需要恢复战前状态时才用, 视觉应让位给 START。
+## ResetButton 视觉次于 START，用中性按钮避免误抢焦点。
 func _style_reset_button() -> void:
 	var btn := _reset_button
 	btn.add_theme_stylebox_override("normal",
-		_clay_sb(CLAY_SURFACE, 16, 16, 8, 2, 4))
+		_clay_sb(Color("F1E8DA"), 8, 14, 10, 1, 2))
 	btn.add_theme_stylebox_override("hover",
-		_clay_sb(CLAY_BG, 16, 16, 8, 3, 6))
+		_clay_sb(Color("E6D9C7"), 8, 14, 10, 1, 2))
 	btn.add_theme_stylebox_override("pressed",
-		_clay_sb(Color("E8DDC8"), 16, 16, 8, 1, 2))
+		_clay_sb(Color("D8C8B3"), 8, 14, 10, 1, 2))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_font_override("font", _clay_font_bold())
 	btn.add_theme_font_size_override("font_size", 14)
 	btn.add_theme_color_override("font_color", CLAY_TEXT)
 	btn.add_theme_color_override("font_hover_color", CLAY_TEXT)
 	btn.add_theme_color_override("font_pressed_color", CLAY_TEXT)
+
+
+func _style_status_label() -> void:
+	var sb := _clay_sb(CLAY_BG, 8, 10, 7, 0, 0)
+	sb.border_color = Color("DED5C7")
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 1
+	_status_label.add_theme_stylebox_override("normal", sb)
+	_status_label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	_status_label.add_theme_font_size_override("font_size", 12)
 
 
 ## Passive CheckBox 选中/未选中视觉: 选中 = 鲜珊瑚 + 白字(高对比),
@@ -1431,10 +1479,10 @@ func _on_passive_toggled(_pressed: bool, cb: CheckBox) -> void:
 
 func _apply_passive_style(cb: CheckBox, selected: bool) -> void:
 	if selected:
-		var sb := _clay_sb(START_COLOR, 14, 10, 6, 2, 4)
+		var sb := _clay_sb(START_COLOR, 8, 8, 5, 1, 2)
 		cb.add_theme_stylebox_override("normal", sb)
-		cb.add_theme_stylebox_override("hover", _clay_sb(START_HOVER, 14, 10, 6, 2, 4))
-		cb.add_theme_stylebox_override("pressed", _clay_sb(Color("E54444"), 14, 10, 6, 1, 2))
+		cb.add_theme_stylebox_override("hover", _clay_sb(START_HOVER, 8, 8, 5, 1, 2))
+		cb.add_theme_stylebox_override("pressed", _clay_sb(START_PRESSED, 8, 8, 5, 1, 2))
 		cb.add_theme_color_override("font_color", Color.WHITE)
 		cb.add_theme_color_override("font_hover_color", Color.WHITE)
 		cb.add_theme_color_override("font_pressed_color", Color.WHITE)
@@ -1452,6 +1500,6 @@ func _style_console() -> void:
 	var console_panel: Node = _console_log.get_parent()  # PanelContainer
 	if console_panel is PanelContainer:
 		console_panel.add_theme_stylebox_override("panel",
-			_clay_sb(CONSOLE_BG, 20, 14, 10, 6, 12))
+			_clay_sb(CONSOLE_BG, 10, 12, 10, 4, 8))
 	_console_log.add_theme_color_override("default_color", CONSOLE_FG)
 	_console_log.add_theme_font_size_override("normal_font_size", 12)
