@@ -352,7 +352,9 @@ func _update_workspace_layout() -> void:
 	_console_panel.offset_right = -INSPECTOR_MARGIN
 	_console_panel.offset_bottom = -INSPECTOR_MARGIN
 	_console_panel.offset_top = -(_drawer_height() + INSPECTOR_MARGIN)
-	_frame_stage_camera()
+	# 不在 layout 切换时 reframe camera —— Start/Replay/Reset 都会过这条路径,
+	# 用户不希望相机被动归位。初始 frame 在 _setup_camera_and_env 做一次,
+	# 之后想归位按 Space。
 
 
 func _current_inspector_width() -> float:
@@ -394,10 +396,23 @@ func _ground_point_at_screen(cam: Camera3D, screen_pos: Vector2) -> Vector3:
 	return from + dir * distance
 
 
+func _is_text_input_focused() -> bool:
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	if focus_owner == null:
+		return false
+	if focus_owner is LineEdit:
+		return (focus_owner as LineEdit).editable
+	if focus_owner is TextEdit:
+		return (focus_owner as TextEdit).editable
+	return false
+
+
 func _process_stage_camera_input(_delta: float) -> void:
 	if _camera_rig == null:
 		return
-	if get_viewport().gui_get_focus_owner() != null:
+	# 只在文字编辑控件拿焦点时 block (SpinBox/LineEdit/TextEdit 里输入数值/文本),
+	# 否则 Button/OptionButton 点过一次就保持焦点, WASD 永远进不来。
+	if _is_text_input_focused():
 		return
 	var move_input := Vector2.ZERO
 	if Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
