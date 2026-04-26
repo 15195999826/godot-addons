@@ -2,13 +2,17 @@ class_name BattleRecorder
 extends RefCounted
 ## 战斗录像器
 ##
-## 录像事件有两个来源：
-## 1. 主动事件（frame_events）：每帧 tick 中由 EventCollector.flush() 收集，如伤害、治疗等
-## 2. 被动事件（pending_events）：由 RecordingContext 监听回调在 tick 过程中异步触发，
-##    如属性变化、Tag 变化、Ability 获得/移除等
+## 职责：管理一次战斗 session 的录像（meta + initial_actors + timeline + actor 订阅生命周期）。
+## 不持有事件 buffer —— 所有事件统一走 GameWorld.event_collector，保证调用栈穿插时真实时序自然成立。
 ##
-## record_frame() 调用时，将两种来源合并写入当前帧的 timeline。
-## pending_events 作为帧间缓冲区，在合并后清空。
+## 事件流：
+##   Action.execute() ──┐
+##                      ├─→ GameWorld.event_collector ──flush()──→ record_frame(events)
+##   ability/attr CB ───┘    (按调用栈真实顺序入队)
+##
+## record_frame(events) 由外部（battle_procedure）每帧调用，传入 flush 出的事件数组写入 timeline。
+## register_actor / unregister_actor 也把 ActorSpawned/Destroyed 推到同一个 collector，
+## 等下次 record_frame 一并归档。
 ##
 ## 【已知问题：录像文件大小】
 ##
@@ -33,8 +37,6 @@ var _meta: ReplayData.BattleMeta
 var is_recording: bool = false
 var current_frame: int = 0
 var actor_subscriptions: Dictionary = {}
-## 帧间事件缓冲区：存放监听回调异步产生的事件，在 record_frame() 时合并并清空
-var pending_events: Array[Dictionary] = []
 
 func _init(recorder_config: Dictionary = {}) -> void:
 	var battle_id := recorder_config.get("battleId", "") as String
@@ -53,7 +55,6 @@ func start_recording(actors: Array, configs_value: Dictionary = {}, map_config_v
 	is_recording = true
 	_meta.recorded_at = Time.get_unix_time_from_system()
 	current_frame = 0
-	pending_events.clear()
 
 	_record = ReplayData.BattleRecord.new()
 	_record.meta = _meta
@@ -85,7 +86,6 @@ func start_recording_events_only() -> void:
 	is_recording = true
 	_meta.recorded_at = Time.get_unix_time_from_system()
 	current_frame = 0
-	pending_events.clear()
 
 	_record = ReplayData.BattleRecord.new()
 	_record.meta = _meta
@@ -100,26 +100,10 @@ func record_frame(frame: int, events: Array[Dictionary]) -> void:
 
 	current_frame = frame
 
-	# 顺序契约:pending_events(被动事件:AbilityGranted/Removed/Triggered/Activated)
-	# 必须排在 events(主动事件:damage/heal/StacksChanged 等 collector push)之前。
-	#
-	# 反例:GRANTED_SELF + on_timeline_start 的 buff(如 Surge)在 grant 同步链里
-	# 立即 fire first tick,collector 顺序是 [damage, StacksChanged],pending 队列里
-	# 是 [AbilityGranted]。如果 events 先 / pending 后,frontend 看到的是
-	# StacksChanged 早于 AbilityGranted → BuffVisualizer.UPDATE 找不到 buff 静默
-	# 失败,然后 ADD primary=3,显示 U3 → 下一周期 U1 → 消失(中间漏 U2)。
-	#
-	# 把 pending 放前面 → 先建立 buff state(ADD primary=3),再 UPDATE primary=2,
-	# 显示 U2 → U1 → 消失,符合预期。
-	var all_events: Array[Dictionary] = []
-	all_events.append_array(pending_events)
-	all_events.append_array(events)
-	pending_events.clear()
-
-	if not all_events.is_empty():
+	if not events.is_empty():
 		var frame_data := ReplayData.FrameData.new()
 		frame_data.frame = frame
-		frame_data.events = all_events
+		frame_data.events = events
 		_record.timeline.append(frame_data)
 
 func stop_recording(result: String = "") -> Dictionary:
@@ -165,7 +149,7 @@ func register_actor(actor: Actor) -> void:
 
 	var init_data := ReplayData.ActorInitData.create(actor)
 	var event := GameEvent.ActorSpawned.create(actor.id, init_data.to_dict())
-	pending_events.append(event.to_dict())
+	GameWorld.event_collector.push(event.to_dict())
 
 	_subscribe_actor(actor)
 
@@ -174,7 +158,7 @@ func unregister_actor(actor_id: String, reason: String = "") -> void:
 		return
 
 	var event := GameEvent.ActorDestroyed.create(actor_id, reason)
-	pending_events.append(event.to_dict())
+	GameWorld.event_collector.push(event.to_dict())
 
 	var subscription: Dictionary = actor_subscriptions.get(actor_id, {}) as Dictionary
 	if not subscription.is_empty():

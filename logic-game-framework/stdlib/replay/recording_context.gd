@@ -14,7 +14,14 @@ func _init(p_actor_id: String, recorder: BattleRecorder) -> void:
 
 
 ## 推送录像事件
-## 只有在录像进行中时才会实际推送
+##
+## 走 GameWorld.event_collector，与 Action 主动 push 的事件共用同一个 buffer。
+## 这样 callback(AbilityGranted/AttributeChanged/...)与 Action push(damage/...)
+## 在调用栈穿插发生时,真实时序被自然保留 —— battle_procedure 帧末 flush()
+## 一次性拿到的就是按发生顺序排列的事件流。
+##
+## is_recording guard 保留:防 stop_recording 与 unsubscribe 之间的 callback 残响
+## 把脏事件灌进 collector(此时 collector 仍在被复用,无录像消费)。
 func push_event(event: Dictionary) -> void:
 	if _recorder.is_recording:
-		_recorder.pending_events.append(event)
+		GameWorld.event_collector.push(event)

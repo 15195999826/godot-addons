@@ -12,6 +12,47 @@
 
 ---
 
+## [Unreleased] — 2026-04-27 录像: BattleRecorder 单 buffer 重构 (根治时序错位)
+
+`BattleRecorder.pending_events` 字段删除。所有录像事件 (Action 显式 push 的 damage/heal/StacksChanged + Actor lifecycle callback push 的 AbilityGranted/AttributeChanged/ActorSpawned/Destroyed) 统一进 `GameWorld.event_collector`。`record_frame(frame, events)` 简化为只写入参数 events,不再合并第二容器。
+
+→ [docs/design-notes/2026-04-27-recorder-single-buffer.md](docs/design-notes/2026-04-27-recorder-single-buffer.md)
+
+### Bug
+
+之前用两个并行容器: Action push 的事件进 `EventCollector._events`,callback 的事件进 `BattleRecorder.pending_events`。`record_frame` 合并时按"容器类型"拼接,无论 `[events, pending]` 还是 `[pending, events]` 都构造得出反例 — Action_A 中途 grant ability 触发 callback 这种调用栈穿插的场景下,真实时序是 `[damage1, AbilityGranted, damage2]`,任何固定拼接顺序都会错位。
+
+之前 commit `dc3dcac` 颠倒为 `[pending, events]` 是症状疗法,只在 Surge (grant + first tick same frame) 这种"callback 全在 push 之前"的简单场景下 PASS,无法处理穿插。
+
+### Changed
+
+- **`RecordingContext.push_event`**: `_recorder.pending_events.append(event)` → `GameWorld.event_collector.push(event)`。`is_recording` guard 保留,防 `stop_recording` 与 unsubscribe 之间的 callback 残响灌脏事件。
+- **`BattleRecorder.register_actor` / `unregister_actor`**: ActorSpawned/Destroyed event 改 push 进 `GameWorld.event_collector`,不再持有自己的 buffer。
+- **`BattleRecorder.record_frame(frame, events)`**: 删除 `all_events.append_array(pending_events)` 合并逻辑,`pending_events.clear()` 也一并删除,`frame_data.events = events` 直接写入。
+- **`BattleRecorder` 顶部 docstring**: 重写,去掉「两个来源 / 帧间缓冲区」叙述。
+
+### Removed
+
+- **`BattleRecorder.pending_events`** 字段。
+- **`start_recording` / `start_recording_events_only`** 中的 `pending_events.clear()` 调用。
+
+### 关键设计决策
+
+- **为什么是 EventCollector 而非反过来**: EventCollector 是 Action 层的硬依赖 (永远存在),BattleRecorder 是可选的 session 抽象 (录像才创建)。让事件流统一往必选的 collector 走,recorder 退化为「session 元数据 + subscription 生命周期 + 写 timeline」职责。
+- **`is_recording` guard 保留**: 录像 callback 可能在 `stop_recording` 与异步 unsubscribe 之间触发一次,此时 `event_collector` 仍在被复用 (下场战斗或主流程消费),不能让残响污染。
+- **`dc3dcac` 不 revert**: 留作历史。新 commit message 标注 "supersedes dc3dcac"。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_skill_scenarios.tscn` (含 SurgeScenario `grant_index < first_stacks_index` 断言) | PASS |
+| `tests/smoke_buff_ui.tscn` / `smoke_buff_pipeline.tscn` / `smoke_surge_unit_view.tscn` | PASS |
+| `tests/smoke_frontend_main.tscn` | PASS |
+
+---
+
 ## [Unreleased] — 2026-04-26 表演层: 血条迁移到 state 路径(贯彻 event/state 边界)
 
 补完 `2026-04-26-presentation-event-vs-state.md` 边界 — 该 design-note 已把"hp 条高度"明确划入 State,但代码侧 `damage` / `heal` 一直走 `FrontendUpdateHPAction(from, to, duration)` 进 `ActionScheduler` 并行 lerp(Event 路径)。本轮把血条彻底迁到 state:visual_hp 每 tick 朝 target_hp 收敛,delta 只是把 target 拉低。
