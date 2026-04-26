@@ -1,23 +1,59 @@
-## 所有"每文件一技能"技能的 timeline 注册目录
+## HexBattle 技能 / Buff 总清单(单一花名册)
 ##
-## 唯一职责：把所有技能的 TimelineData 注册到 TimelineRegistry。
-## 消费点：hex_battle.gd::_register_timelines / SkillPreviewBattle.gd（沙盒战斗）
+## 一份 manifest 同时驱动:
+##   - register_all_timelines() - 战斗启动时把所有 TimelineData 注册到 TimelineRegistry
+##   - all_abilities()           - SkillPreview / 工具层枚举所有 AbilityConfig
 ##
-## 加一个有 timeline 的新技能 = 下面 register_all_timelines() 里加一行（每个 TimelineData 一行）。
-## 纯被动技能（无 timeline，如 Thorn / DeathrattleAoe / Vitality / Vigor）= 此文件不用动。
+## 加新技能 / Buff = 在 _build_manifest() 里加一行 _Entry.new(...);消费侧自动跟随。
+## 纯被动技能(无 timeline)传 [];Buff 也走这里(buff 自己的 tick timeline 也要注册)。
 class_name HexBattleAllSkills
 
 
+## 一项条目 = 一个 AbilityConfig + 它需要注册的 timelines
+class _Entry extends RefCounted:
+	var ability: AbilityConfig
+	var timelines: Array[TimelineData]
+
+	func _init(p_ability: AbilityConfig, p_timelines: Array[TimelineData]) -> void:
+		ability = p_ability
+		timelines = p_timelines
+
+
+static var ALL: Array[_Entry] = _build_manifest()
+
+
+static func _build_manifest() -> Array[_Entry]:
+	var arr: Array[_Entry] = []
+	# Active skills(timeline-driven)
+	arr.append(_Entry.new(HexBattleMove.ABILITY,         [HexBattleMove.MOVE_TIMELINE]))
+	arr.append(_Entry.new(HexBattleStrike.ABILITY,       [HexBattleStrike.STRIKE_TIMELINE]))
+	arr.append(_Entry.new(HexBattleCrushingBlow.ABILITY, [HexBattleCrushingBlow.CRUSHING_BLOW_TIMELINE]))
+	arr.append(_Entry.new(HexBattleSwiftStrike.ABILITY,  [HexBattleSwiftStrike.SWIFT_STRIKE_TIMELINE]))
+	arr.append(_Entry.new(HexBattlePreciseShot.ABILITY,  [HexBattlePreciseShot.PRECISE_SHOT_TIMELINE, HexBattlePreciseShot.PRECISE_SHOT_HIT_TIMELINE]))
+	arr.append(_Entry.new(HexBattleFireball.ABILITY,     [HexBattleFireball.FIREBALL_TIMELINE, HexBattleFireball.FIREBALL_HIT_TIMELINE]))
+	arr.append(_Entry.new(HexBattleHolyHeal.ABILITY,     [HexBattleHolyHeal.HOLY_HEAL_TIMELINE]))
+	arr.append(_Entry.new(HexBattlePoison.ABILITY,       [HexBattlePoison.POISON_TIMELINE]))
+	arr.append(_Entry.new(HexBattleWard.ABILITY,         [HexBattleWard.WARD_TIMELINE]))
+	# Pure passives(no timeline)
+	arr.append(_Entry.new(HexBattleThorn.ABILITY,           []))
+	arr.append(_Entry.new(HexBattleDeathrattleAoe.ABILITY,  []))
+	arr.append(_Entry.new(HexBattleVitality.ABILITY,        []))
+	arr.append(_Entry.new(HexBattleVigor.ABILITY,           []))
+	# Buffs(non-skill ability,但其 tick timeline 也要注册)
+	arr.append(_Entry.new(HexBattlePoisonBuff.POISON_BUFF,  [HexBattlePoisonBuff.POISON_TICK_TIMELINE]))
+	return arr
+
+
+## 把所有 TimelineData 注册进 TimelineRegistry。战斗启动时调一次。
 static func register_all_timelines() -> void:
-	TimelineRegistry.register(HexBattleMove.MOVE_TIMELINE)
-	TimelineRegistry.register(HexBattleStrike.STRIKE_TIMELINE)
-	TimelineRegistry.register(HexBattlePreciseShot.PRECISE_SHOT_TIMELINE)
-	TimelineRegistry.register(HexBattlePreciseShot.PRECISE_SHOT_HIT_TIMELINE)
-	TimelineRegistry.register(HexBattleFireball.FIREBALL_TIMELINE)
-	TimelineRegistry.register(HexBattleFireball.FIREBALL_HIT_TIMELINE)
-	TimelineRegistry.register(HexBattleCrushingBlow.CRUSHING_BLOW_TIMELINE)
-	TimelineRegistry.register(HexBattleSwiftStrike.SWIFT_STRIKE_TIMELINE)
-	TimelineRegistry.register(HexBattleHolyHeal.HOLY_HEAL_TIMELINE)
-	TimelineRegistry.register(HexBattlePoison.POISON_TIMELINE)
-	TimelineRegistry.register(HexBattlePoisonBuff.POISON_TICK_TIMELINE)
-	TimelineRegistry.register(HexBattleWard.WARD_TIMELINE)
+	for entry in ALL:
+		for tl in entry.timelines:
+			TimelineRegistry.register(tl)
+
+
+## 返回 manifest 里所有 AbilityConfig(含 skill / passive / buff)
+static func all_abilities() -> Array[AbilityConfig]:
+	var out: Array[AbilityConfig] = []
+	for entry in ALL:
+		out.append(entry.ability)
+	return out

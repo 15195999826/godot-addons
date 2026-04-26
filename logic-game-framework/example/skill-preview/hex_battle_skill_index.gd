@@ -1,9 +1,11 @@
 ## HexBattle 技能索引
 ##
-## 服务于 SkillPreview 开发者工具: 把所有 HexBattle*.ABILITY 汇总成一张表,
-## 供 UI 下拉枚举。active/passive 由 AbilityConfig.active_use_components 字段判定。
+## 服务于 SkillPreview 开发者工具:从 HexBattleAllSkills 总清单派生"玩家可选技能"列表
+## (过滤掉 buff / debuff,只留带 "skill" 或 "passive" 标签的)。
 ##
-## 加新技能 = 下面 _build_all() 里加一行。
+## active/passive 由 AbilityConfig.active_use_components 字段判定。
+##
+## 加新技能 = 在 hex-atb-battle/skills/all_skills.gd::_build_manifest() 加一行,这里自动跟随。
 class_name HexBattleSkillIndex
 
 
@@ -38,19 +40,11 @@ static func get_by_id(config_id: String) -> AbilityConfig:
 	return null
 
 
+## 从 HexBattleAllSkills.ALL 派生:保留 skill / passive,过滤 buff / debuff。
+## 判定标准:ability_tags 含 "skill" 或 "passive"(buff 标签是 "buff" / "debuff")。
 static func _build_all() -> Array[AbilityConfig]:
-	var out: Array[AbilityConfig] = [
-		HexBattleStrike.ABILITY,
-		HexBattleCrushingBlow.ABILITY,
-		HexBattleSwiftStrike.ABILITY,
-		HexBattlePreciseShot.ABILITY,
-		HexBattleFireball.ABILITY,
-		HexBattleHolyHeal.ABILITY,
-		HexBattlePoison.ABILITY,
-		HexBattleMove.ABILITY,
-		HexBattleThorn.ABILITY,
-		HexBattleDeathrattleAoe.ABILITY,
-		HexBattleVitality.ABILITY,
-		HexBattleVigor.ABILITY,
-	]
+	var out: Array[AbilityConfig] = []
+	for cfg in HexBattleAllSkills.all_abilities():
+		if cfg.ability_tags.has("skill") or cfg.ability_tags.has("passive"):
+			out.append(cfg)
 	return out
