@@ -1,5 +1,6 @@
 # Godot auto-generated
-*.uid
+# 注意:*.uid 不能 ignore — Godot 4.4+ 里 .uid 是源码的一部分(每个 .gd/.tscn
+# 资源的稳定 UUID),不入库会让 ResourceLoader 跨机器/CI 引用断裂。
 .godot/
 *.import
 
