@@ -10,22 +10,11 @@ class_name FrontendBuffSummary
 extends RefCounted
 
 
-## ability 实例 id(用于 update / remove 时定位)
 var id: String = ""
-
-## ability config_id(用于查 BuffVisualizer 白名单决定 short / color)
 var config_id: String = ""
-
-## 显示名(预留 tooltip 用,第一版不画)
 var display_name: String = ""
-
-## 单字母缩写,例 "P" "S" "V" "T" "G"
 var short: String = ""
-
-## 色块颜色
 var color: Color = Color.WHITE
-
-## 关键数字:Poison=stacks,Ward=current shield,纯被动=0
 var primary: float = 0.0
 
 

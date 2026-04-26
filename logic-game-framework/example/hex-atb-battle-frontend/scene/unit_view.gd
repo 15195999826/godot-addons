@@ -25,10 +25,7 @@ signal death_animation_finished(actor_id: String)
 ## 名称标签高度偏移
 @export var name_label_offset: float = 1.5
 
-## buff 行高度偏移(在血条下方)
 @export var buff_row_offset: float = 0.95
-
-## 每个 buff 色块的尺寸(meters)
 @export var buff_block_width: float = 0.18
 @export var buff_block_height: float = 0.06
 @export var buff_block_spacing: float = 0.04
@@ -40,12 +37,9 @@ var _mesh_instance: MeshInstance3D
 var _hp_bar: ProgressBar
 var _name_label: Label3D
 var _buff_label: Label3D
-## 已渲染的 buff 块,key = buff.id,value = MeshInstance3D。
-## 池化复用:同一 buff 的 mesh 在多次 update_state 之间稳定。
-## 顺序由 _buff_order 数组维护(按首次 ADD 顺序),避免 Dictionary 遍历乱序导致重排。
+## key = buff.id, value = MeshInstance3D。GDScript Dictionary 是 insertion-ordered,
+## 直接用 keys() 获取首次 ADD 顺序,避免重排闪动。
 var _buff_blocks: Dictionary = {}
-## buff.id 的稳定显示顺序(按出现顺序 append),消失时从中移除。
-var _buff_order: Array[String] = []
 
 
 # ========== 状态 ==========
@@ -117,8 +111,6 @@ func _create_hp_bar() -> void:
 	add_child(hp_bar_mesh)
 
 
-## 创建 buff 文字行(Label3D,billboard,显示 "P3 S20 T" 这种紧凑文字)。
-## 色块 mesh 由 _sync_buff_row 按需创建/回收。
 func _create_buff_label() -> void:
 	_buff_label = Label3D.new()
 	_buff_label.position = Vector3(0, buff_row_offset - buff_block_height - 0.04, 0)
@@ -225,61 +217,47 @@ func _update_flash_effect(flash_progress: float) -> void:
 		_base_material.albedo_color = base_color.lerp(flash_color, flash_progress)
 
 
-## 同步 buff 行(色块 + 文字)。
-##
-## 顺序契约:_buff_order 维护"首次 ADD 顺序",新 buff append 到末尾,旧 buff
-## 消失时从中间移除 — 已存在的 buff 位置不变,避免 UI 重排闪动。
-##
 ## 入场动画(0.15s scale.x 0→1)只在新增时触发;数值变化(stacks-1 / shield 吸收)
 ## 静默更新文字,不弹动画(避免 Poison tick / 频繁吸收引起的视觉吵闹)。
 func _sync_buff_row(buffs: Array) -> void:
-	# 1. 收集本帧 id → summary
+	if buffs.is_empty() and _buff_blocks.is_empty():
+		return
+
 	var current_ids: Dictionary = {}
 	for b in buffs:
 		current_ids[b.id] = b
 
-	# 2. 移除消失的 buff(从 _buff_order 和 _buff_blocks 同步删)
 	var to_remove: Array[String] = []
-	for buff_id in _buff_order:
+	for buff_id in _buff_blocks.keys():
 		if not current_ids.has(buff_id):
 			to_remove.append(buff_id)
 	for buff_id in to_remove:
-		_buff_order.erase(buff_id)
-		var node: MeshInstance3D = _buff_blocks.get(buff_id)
-		if node != null and is_instance_valid(node):
-			node.queue_free()
+		var dead_node: MeshInstance3D = _buff_blocks[buff_id]
+		if is_instance_valid(dead_node):
+			dead_node.queue_free()
 		_buff_blocks.erase(buff_id)
 
-	# 3. 新增的 buff append 到 _buff_order 末尾;创建 mesh + 入场动画
 	for buff_id in current_ids.keys():
-		if _buff_order.has(buff_id):
+		if _buff_blocks.has(buff_id):
 			continue
-		_buff_order.append(buff_id)
 		var summary = current_ids[buff_id]
 		var block := _create_buff_block(summary.color)
 		_buff_blocks[buff_id] = block
 		add_child(block)
-		# 入场:scale.x 从 0 弹到 1
 		block.scale.x = 0.0
-		var tween := create_tween()
-		tween.tween_property(block, "scale:x", 1.0, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		create_tween().tween_property(block, "scale:x", 1.0, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
-	# 4. 重排所有 block 的 x 位置(按 _buff_order 顺序居中排列)
-	var n := _buff_order.size()
-	if n > 0:
-		var step := buff_block_width + buff_block_spacing
-		var total_width := step * n - buff_block_spacing
-		var start_x := -total_width * 0.5 + buff_block_width * 0.5
-		for i in range(n):
-			var bid: String = _buff_order[i]
-			var node: MeshInstance3D = _buff_blocks.get(bid)
-			if node != null:
-				node.position = Vector3(start_x + step * i, buff_row_offset, 0.0)
-
-	# 5. 更新文字行(按顺序拼接 "短标识+数字",带颜色丢失,因 Label3D 不支持 BBCode)
+	var ordered_ids: Array = _buff_blocks.keys()
+	var n := ordered_ids.size()
+	var step := buff_block_width + buff_block_spacing
+	var total_width := step * n - buff_block_spacing
+	var start_x := -total_width * 0.5 + buff_block_width * 0.5
 	var parts: Array[String] = []
-	for buff_id in _buff_order:
-		var s = current_ids[buff_id]
+	for i in range(n):
+		var bid: String = ordered_ids[i]
+		var node: MeshInstance3D = _buff_blocks[bid]
+		node.position = Vector3(start_x + step * i, buff_row_offset, 0.0)
+		var s = current_ids[bid]
 		if s.primary > 0.0:
 			parts.append("%s%d" % [s.short, int(s.primary)])
 		else:
@@ -288,7 +266,6 @@ func _sync_buff_row(buffs: Array) -> void:
 		_buff_label.text = " ".join(parts)
 
 
-## 创建一个 buff 色块 mesh
 func _create_buff_block(block_color: Color) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	var box := BoxMesh.new()

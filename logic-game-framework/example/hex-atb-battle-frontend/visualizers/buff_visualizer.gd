@@ -16,37 +16,39 @@ class_name FrontendBuffVisualizer
 extends FrontendBaseVisualizer
 
 
-## 一项 = 一个 buff 在 UI 上的显示规则
-## primary_source: "stacks" | "shield_remaining" | "none"
-##   - stacks: 从 ability.stacks 取 primary;AbilityStacksChanged.newStacks 更新
-##   - shield_remaining: 从 ability.components 里的 ShieldComponent.current 取
-##                       初值;DamageEvent.consumption_records.remaining 更新
-##   - none: primary 始终 0(纯被动如 Thorn / Vitality / Vigor)
+## primary 取值策略:
+##   STACKS           - 从 ability.stacks(grant)/ AbilityStacksChanged.newStacks 取
+##   SHIELD_REMAINING - 从 ShieldComponent.current(grant)/ DamageEvent record.remaining 取
+##   NONE             - 始终 0(纯被动)
+enum PrimarySource { STACKS, SHIELD_REMAINING, NONE }
+
+
+## buff_id 用 ability 自身 CONFIG_ID 常量,避免字符串漂移。
 const BUFF_REGISTRY := {
-	"buff_poison": {
+	HexBattlePoisonBuff.CONFIG_ID: {
 		"short": "P",
-		"color": Color(0.6, 0.2, 0.8),    # 紫
-		"primary_source": "stacks",
+		"color": Color(0.6, 0.2, 0.8),
+		"primary_source": PrimarySource.STACKS,
 	},
-	"buff_ward": {
+	HexBattleWardBuff.CONFIG_ID: {
 		"short": "S",
-		"color": Color(0.3, 0.5, 1.0),    # 蓝
-		"primary_source": "shield_remaining",
+		"color": Color(0.3, 0.5, 1.0),
+		"primary_source": PrimarySource.SHIELD_REMAINING,
 	},
-	"passive_thorn": {
+	HexBattleThorn.CONFIG_ID: {
 		"short": "T",
-		"color": Color(1.0, 0.5, 0.2),    # 橙
-		"primary_source": "none",
+		"color": Color(1.0, 0.5, 0.2),
+		"primary_source": PrimarySource.NONE,
 	},
-	"passive_vitality": {
+	HexBattleVitality.CONFIG_ID: {
 		"short": "V",
-		"color": Color(0.3, 0.9, 0.4),    # 绿
-		"primary_source": "none",
+		"color": Color(0.3, 0.9, 0.4),
+		"primary_source": PrimarySource.NONE,
 	},
-	"passive_vigor": {
+	HexBattleVigor.CONFIG_ID: {
 		"short": "G",
-		"color": Color(0.95, 0.85, 0.3),  # 黄
-		"primary_source": "none",
+		"color": Color(0.95, 0.85, 0.3),
+		"primary_source": PrimarySource.NONE,
 	},
 }
 
@@ -67,8 +69,7 @@ func can_handle(event: Dictionary) -> bool:
 
 func translate(event: Dictionary, _context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:
 	var actions: Array[FrontendVisualAction] = []
-	var kind := get_event_kind(event)
-	match kind:
+	match get_event_kind(event):
 		GameEvent.ABILITY_GRANTED_EVENT:
 			_handle_granted(event, actions)
 		GameEvent.ABILITY_STACKS_CHANGED_EVENT:
@@ -80,26 +81,22 @@ func translate(event: Dictionary, _context: FrontendVisualizerContext) -> Array[
 	return actions
 
 
-# ========== 内部:事件处理 ==========
-
 func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
-	var actor_id := event.get("actorId", "") as String
+	var actor_id := get_string_field(event, "actorId")
 	var payload: Dictionary = event.get("ability", {})
 	var config_id := payload.get("configId", "") as String
-	if not BUFF_REGISTRY.has(config_id):
+	var rule = BUFF_REGISTRY.get(config_id)
+	if rule == null:
 		return
-	var rule: Dictionary = BUFF_REGISTRY[config_id]
 	var ability_id := payload.get("instanceId", payload.get("id", "")) as String
 	if ability_id.is_empty() or actor_id.is_empty():
 		return
 
-	var summary := FrontendBuffSummary.new()
-	summary.id = ability_id
-	summary.config_id = config_id
+	var summary := _build_summary(
+		ability_id, config_id, rule,
+		_resolve_initial_primary(payload, rule["primary_source"])
+	)
 	summary.display_name = payload.get("displayName", "") as String
-	summary.short = rule["short"]
-	summary.color = rule["color"]
-	summary.primary = _resolve_initial_primary(payload, rule["primary_source"])
 
 	actions.append(FrontendApplyBuffStateAction.new(
 		actor_id, FrontendApplyBuffStateAction.Op.ADD, ability_id, summary
@@ -107,36 +104,26 @@ func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) ->
 
 
 func _handle_stacks_changed(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
-	var config_id := event.get("abilityConfigId", "") as String
-	if not BUFF_REGISTRY.has(config_id):
+	var config_id := get_string_field(event, "abilityConfigId")
+	var rule = BUFF_REGISTRY.get(config_id)
+	if rule == null or rule["primary_source"] != PrimarySource.STACKS:
 		return
-	var rule: Dictionary = BUFF_REGISTRY[config_id]
-	if rule["primary_source"] != "stacks":
-		return  # 只有 stacks 类 buff 关心 stacks 变化
-
-	var actor_id := event.get("actorId", "") as String
-	var ability_id := event.get("abilityInstanceId", "") as String
-	var new_stacks := event.get("newStacks", 0) as int
+	var actor_id := get_string_field(event, "actorId")
+	var ability_id := get_string_field(event, "abilityInstanceId")
 	if actor_id.is_empty() or ability_id.is_empty():
 		return
-
-	var summary := FrontendBuffSummary.new()
-	summary.id = ability_id
-	summary.config_id = config_id
-	summary.short = rule["short"]
-	summary.color = rule["color"]
-	summary.primary = float(new_stacks)
-
+	var summary := _build_summary(
+		ability_id, config_id, rule, float(event.get("newStacks", 0))
+	)
 	actions.append(FrontendApplyBuffStateAction.new(
 		actor_id, FrontendApplyBuffStateAction.Op.UPDATE, ability_id, summary
 	))
 
 
 func _handle_removed(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
-	# REMOVE 不查白名单:即便登记被去掉也保证清理一致。RenderWorld 端
-	# 找不到对应 BuffSummary 会自然 noop。
-	var actor_id := event.get("actorId", "") as String
-	var ability_id := event.get("abilityInstanceId", "") as String
+	# REMOVE 不查白名单,确保即便登记被去掉也保证清理一致。
+	var actor_id := get_string_field(event, "actorId")
+	var ability_id := get_string_field(event, "abilityInstanceId")
 	if actor_id.is_empty() or ability_id.is_empty():
 		return
 	actions.append(FrontendApplyBuffStateAction.new(
@@ -151,38 +138,41 @@ func _handle_damage(event: Dictionary, actions: Array[FrontendVisualAction]) -> 
 	for record_variant in consumption:
 		var record: Dictionary = record_variant
 		var config_id := record.get("shield_config_id", "") as String
-		if not BUFF_REGISTRY.has(config_id):
-			continue
-		var rule: Dictionary = BUFF_REGISTRY[config_id]
-		if rule["primary_source"] != "shield_remaining":
+		var rule = BUFF_REGISTRY.get(config_id)
+		if rule == null or rule["primary_source"] != PrimarySource.SHIELD_REMAINING:
 			continue
 		var actor_id := record.get("owner_actor_id", "") as String
 		var ability_id := record.get("shield_ability_id", "") as String
 		if actor_id.is_empty() or ability_id.is_empty():
 			continue
-		# broken=true 时 remaining=0:不在这里删 BuffSummary,等 AbilityRemoved
-		# 事件来兜底(逻辑层 on_break 后会 expire ability,触发 AbilityRemoved)。
-		var remaining := record.get("remaining", 0.0) as float
-		var summary := FrontendBuffSummary.new()
-		summary.id = ability_id
-		summary.config_id = config_id
-		summary.short = rule["short"]
-		summary.color = rule["color"]
-		summary.primary = remaining
+		# broken=true 时 remaining=0,不在这里删 BuffSummary,等 AbilityRemoved
+		# 兜底(逻辑层 on_break 后会 expire ability,触发 AbilityRemoved)。
+		var summary := _build_summary(
+			ability_id, config_id, rule, record.get("remaining", 0.0) as float
+		)
 		actions.append(FrontendApplyBuffStateAction.new(
 			actor_id, FrontendApplyBuffStateAction.Op.UPDATE, ability_id, summary
 		))
 
 
-# ========== 内部:工具 ==========
+func _build_summary(
+	ability_id: String, config_id: String, rule: Dictionary, primary: float
+) -> FrontendBuffSummary:
+	var summary := FrontendBuffSummary.new()
+	summary.id = ability_id
+	summary.config_id = config_id
+	summary.short = rule["short"]
+	summary.color = rule["color"]
+	summary.primary = primary
+	return summary
+
 
 ## 从 ability.serialize() 的 payload 推断初始 primary。
-## stacks 直接读 payload.stacks;shield_remaining 扫 payload.components 找 ShieldComponent.current。
-func _resolve_initial_primary(payload: Dictionary, primary_source: String) -> float:
+func _resolve_initial_primary(payload: Dictionary, primary_source: PrimarySource) -> float:
 	match primary_source:
-		"stacks":
+		PrimarySource.STACKS:
 			return float(payload.get("stacks", 0))
-		"shield_remaining":
+		PrimarySource.SHIELD_REMAINING:
 			var components: Array = payload.get("components", [])
 			for comp_variant in components:
 				var comp: Dictionary = comp_variant

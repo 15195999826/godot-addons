@@ -264,6 +264,10 @@ func _apply_apply_buff_state_action(action: FrontendApplyBuffStateAction) -> voi
 		FrontendApplyBuffStateAction.Op.UPDATE:
 			if idx < 0 or action.summary == null:
 				return
+			# noop guard:primary 没变就不 mark dirty,避免下游 actor_state_changed
+			# → BattleAnimator → unit_view.update_state → _sync_buff_row 整条链空跑。
+			if is_equal_approx(actor.buffs[idx].primary, action.summary.primary):
+				return
 			actor.buffs[idx].primary = action.summary.primary
 			_dirty_actors[action.actor_id] = true
 		FrontendApplyBuffStateAction.Op.REMOVE:
