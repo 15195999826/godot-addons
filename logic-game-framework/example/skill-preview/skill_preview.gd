@@ -13,8 +13,8 @@
 ##   - 一个常驻 FrontendWorldView bind 到 world, 订阅 mutation signal 管 view 生命周期
 ##   - 一个常驻 FrontendBattleAnimator 播放 battle_finished 产出的 timeline
 ##   - 编辑态增删 actor 走 world.add_actor / remove_actor, WorldView 自动刷新
-##   - 战斗期间 damage_utils 会 remove_actor 死者, 对应 view 被 WorldView 响应式回收
-##     (死亡动画缺憾留给阶段 4/5 的 ReplayPlayer 方案根治)
+##   - 战斗中死者 view 不被销毁 (damage_utils 不再 remove_actor 死者), Replay 走
+##     animator.reset()+play() 复用同一组 unit_views, 跟 demo_frontend 一致
 ##
 ## 数据模型:
 ##   actors: Array[Dictionary] —— 每条 {role: "caster"|"dummy", team: "A"|"B",
@@ -77,6 +77,7 @@ const DRAWER_EXPANDED_HEIGHT := 280.0
 
 @onready var _start_button: Button = %StartButton
 @onready var _reset_button: Button = %ResetButton
+@onready var _replay_button: Button = %ReplayButton
 @onready var _status_label: Label = %StatusLabel
 
 @onready var _console_panel: PanelContainer = %BottomPanel
@@ -130,6 +131,12 @@ var _actor_ids: Array[String] = []
 ## 不能从 _world.get_active_battle() 读 —— battle_finished emit 之前
 ## _active_battle 已经被 null 掉了 (见 world_gameplay_instance.gd:103-113)。
 var _last_battle_frames: int = 0
+
+## 最近一次战斗的录像 timeline。Replay 按钮按下时调 _animator.reset()+play()
+## 即可,不需要重新 load (timeline 已在 _on_battle_finished 时 load 过, animator
+## 内部 _replay_data 还在;且 actor_id / unit_views 跟战时一致)。
+## 缓存 timeline 的目的只是判断 Replay 按钮是否该 enabled (空 timeline 不可重播)。
+var _last_timeline: Dictionary = {}
 
 ## Map spinbox value_changed debounce —— 拖动时合并多次 rebuild。
 var _map_change_timer: Timer = null
@@ -291,6 +298,7 @@ func _init_ui_static_options() -> void:
 func _init_signals() -> void:
 	_start_button.pressed.connect(_on_start_pressed)
 	_reset_button.pressed.connect(_on_reset_pressed)
+	_replay_button.pressed.connect(_on_replay_pressed)
 	_console_toggle_button.pressed.connect(_on_console_toggle_pressed)
 	_actor_add_enemy_button.pressed.connect(func() -> void: _add_actor_at_next_free("B"))
 	_actor_add_ally_button.pressed.connect(func() -> void: _add_actor_at_next_free("A"))
@@ -1145,6 +1153,8 @@ func _on_start_pressed() -> void:
 	_is_playing = true
 	_set_inspector_editable(false)
 	_reset_button.disabled = true
+	_replay_button.disabled = true
+	_last_timeline = {}
 	_apply_playback_inspector_layout()
 	_set_console_expanded(true)
 	_set_status("Running...")
@@ -1187,6 +1197,7 @@ func _finish_with_status(s: String) -> void:
 	_apply_setup_inspector_layout()
 	_start_button.disabled = false
 	_reset_button.disabled = false
+	_replay_button.disabled = _last_timeline.is_empty()
 	_set_inspector_editable(true)
 	_set_status(s)
 
@@ -1253,12 +1264,14 @@ func _find_nearest_character(origin: HexCoord, filter: Callable) -> CharacterAct
 func _on_battle_finished(timeline: Dictionary) -> void:
 	if timeline.is_empty():
 		_last_battle_frames = 0
+		_last_timeline = {}
 		_log_battle_end(0)
 		_finish_with_status("Empty timeline")
 		return
 
 	_dump_timeline_events(timeline)
 	_last_battle_frames = _read_total_frames(timeline)
+	_last_timeline = timeline
 	_set_status("Playing — %d frames" % _last_battle_frames)
 
 	_animator.set_speed(float(_speed_input.value))
@@ -1274,9 +1287,10 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 ## 流程, 让"再次战斗"始终从干净初始态开始。
 func _on_playback_ended() -> void:
 	_log_battle_end(_last_battle_frames)
-	_set_status("Playback ended — 按 RESET 恢复战前状态")
+	_set_status("Playback ended — 按 RESET 恢复战前状态 / REPLAY 重播录像")
 	_is_playing = false
 	_reset_button.disabled = false
+	_replay_button.disabled = _last_timeline.is_empty()
 
 
 ## 用户主动重置: world 状态归零到 _actors 数据模型对应的"战前"。清 console log
@@ -1291,7 +1305,35 @@ func _on_reset_pressed() -> void:
 	_apply_setup_inspector_layout()
 	_set_status("Ready — 已重置")
 	_start_button.disabled = false
+	_replay_button.disabled = true
+	_last_timeline = {}
 	_frame_stage_camera()
+
+
+## 重播缓存的录像: 不动 world, 仅 animator.reset() (director 内部 _world.reset_to
+## 把 RenderState 拉回第 0 帧 + view.revive() 复活视觉态) -> play()。
+## actor_id 跟战时一致, _unit_views 字典 key 匹配, timeline 事件能正确打到 view。
+func _on_replay_pressed() -> void:
+	if _is_playing or _last_timeline.is_empty():
+		return
+	_is_playing = true
+	_set_inspector_editable(false)
+	_start_button.disabled = true
+	_reset_button.disabled = true
+	_replay_button.disabled = true
+	_apply_playback_inspector_layout()
+	_set_console_expanded(true)
+	_console_log.clear()
+	_log_battle_start(_get_selected_active_ability(), int(_max_ticks_input.value))
+	_log_battle_header_params(
+		_role_id_to_actor_id.get("caster", ""),
+		_resolve_target_actor_id(),
+	)
+	_dump_timeline_events(_last_timeline)
+	_set_status("Replaying — %d frames" % _last_battle_frames)
+	_animator.set_speed(float(_speed_input.value))
+	_animator.reset()
+	_animator.play()
 
 
 func _read_total_frames(timeline: Dictionary) -> int:

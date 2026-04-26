@@ -337,6 +337,13 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Reset Scene"
 
+[node name="ReplayButton" type="Button" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter/ActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "Replay"
+
 [node name="StatusLabel" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter"]
 unique_name_in_owner = true
 layout_mode = 2
