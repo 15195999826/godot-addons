@@ -19,10 +19,7 @@ var move_easing: FrontendVisualAction.EasingType = FrontendVisualAction.EasingTy
 ## 飘字持续时间（毫秒）
 var damage_floating_text_duration: float = 1000.0
 
-## 血条动画时长（毫秒）
-var damage_hp_bar_duration: float = 300.0
-
-## 血条动画延迟（毫秒），等待受击特效
+## 血条动画延迟（毫秒），等待受击特效后再 apply hp delta
 var damage_hp_bar_delay: float = 200.0
 
 ## 受击特效时长（毫秒）
@@ -34,8 +31,13 @@ var damage_hit_vfx_duration: float = 300.0
 ## 飘字持续时间（毫秒）
 var heal_floating_text_duration: float = 1000.0
 
-## 血条动画时长（毫秒）
-var heal_hp_bar_duration: float = 300.0
+
+# ========== 血条插值配置（State 路径） ==========
+
+## visual_hp 朝 target_hp 收敛速率(单位 1/秒)。指数衰减:
+## progress = 1 - exp(-rate * dt),rate=8 → 约 125ms 收敛 63%。
+## 数值越大越快收敛(接近瞬切),越小越慢(明显的"血条滚动"感)。
+var hp_lerp_rate: float = 8.0
 
 
 # ========== 死亡动画配置 ==========
@@ -89,14 +91,15 @@ static func from_dict(data: Dictionary) -> FrontendAnimationConfig:
 	if data.has("damage"):
 		var damage_data: Dictionary = data["damage"]
 		config.damage_floating_text_duration = damage_data.get("floatingTextDuration", config.damage_floating_text_duration) as float
-		config.damage_hp_bar_duration = damage_data.get("hpBarDuration", config.damage_hp_bar_duration) as float
 		config.damage_hp_bar_delay = damage_data.get("hpBarDelay", config.damage_hp_bar_delay) as float
 		config.damage_hit_vfx_duration = damage_data.get("hitVfxDuration", config.damage_hit_vfx_duration) as float
-	
+
 	if data.has("heal"):
 		var heal_data: Dictionary = data["heal"]
 		config.heal_floating_text_duration = heal_data.get("floatingTextDuration", config.heal_floating_text_duration) as float
-		config.heal_hp_bar_duration = heal_data.get("hpBarDuration", config.heal_hp_bar_duration) as float
+
+	if data.has("hp_lerp_rate"):
+		config.hp_lerp_rate = data.get("hp_lerp_rate", config.hp_lerp_rate) as float
 	
 	if data.has("death"):
 		var death_data: Dictionary = data["death"]

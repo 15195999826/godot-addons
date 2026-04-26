@@ -232,10 +232,14 @@ FrontendBattleDirector._process(delta)
       |      _interpolated_positions[actor_id] = pos
       |      if progress>=1: actor["position"] = to_hex
       |
-      |    UPDATE_HP:
-      |      actor["visual_hp"] = lerp(from, to, progress)
-      |      if progress>=1: 精确赋值 + 更新 is_alive
+      |    APPLY_HP_DELTA:                              <-- 瞬时指令(state 路径)
+      |      actor.target_hp = clamp(target_hp + delta, 0, max)
+      |      _set_actor_alive(...)
+      |      progress=1 立即完成,visual_hp 不在这里改
       |      _dirty_actors[actor_id] = true
+      |      (visual_hp 由 RenderWorld.tick_hp_lerp 每帧收敛,
+      |       见 docs/design-notes/2026-04-26-presentation-event-vs-state.md
+      |       「血条迁移到 state」)
       |
       |    FLOATING_TEXT:
       |      首次: 加入 _floating_texts 列表
@@ -337,30 +341,34 @@ timeline[frame=10].events[0] =
   |   DamageVisualizer.translate():
   v
 生成 3 个 VisualAction:
-  [0] FloatingTextAction { "-25", WHITE, pos, NORMAL, 1000ms }
-  [1] ProceduralVFXAction { HIT_FLASH, 300ms, actor_2 }
-  [2] UpdateHPAction { from:80, to:55, 300ms, delay:200ms }
+  [0] FloatingTextAction      { "-25", WHITE, pos, NORMAL, 1000ms }   <-- Event
+  [1] ProceduralVFXAction     { HIT_FLASH, 300ms, actor_2 }            <-- Event
+  [2] ApplyHPDeltaAction      { delta:-25, delay:200ms }               <-- 瞬时指令(state 路径)
   |
-  | [2] Scheduler.enqueue() -> 3 个 ActiveAction 并行启动
+  | [2] Scheduler.enqueue() -> 3 个 ActiveAction 启动
+  |     [0]/[1] 走"持续 progress 0→1"; [2] duration=0,delay 结束当帧 progress=1 立即完成
   |
   | [3] 每帧 tick:
   |
-  |   t=0ms    飘字 p=0.0   闪白 p=0.0   血条 [等待 delay]
-  |   t=100ms  飘字 p=0.1   闪白 p=0.33  血条 [等待 delay]
-  |   t=200ms  飘字 p=0.2   闪白 p=0.67  血条 p=0.0  <-- delay 结束
-  |   t=300ms  飘字 p=0.3   闪白 p=1.0   血条 p=0.33
-  |   t=500ms  飘字 p=0.5                血条 p=1.0
-  |   t=1000ms 飘字 p=1.0
+  |   t=0ms    飘字 p=0.0   闪白 p=0.0   hp delta [等待 delay]
+  |   t=100ms  飘字 p=0.1   闪白 p=0.33  hp delta [等待 delay]
+  |   t=200ms  飘字 p=0.2   闪白 p=0.67  hp delta apply: target_hp 80→55(瞬时)
+  |   t=300ms  飘字 p=0.3   闪白 p=1.0   visual_hp lerp ~ 65 (rate=8/s)
+  |   t=500ms  飘字 p=0.5                visual_hp lerp ~ 56
+  |   t=1000ms 飘字 p=1.0                visual_hp ≈ 55(snap)
   |
   | [4] apply 过程中:
-  |   - 飘字: 首帧 emit floating_text_created
-  |           -> Scene 创建 FloatingTextView
-  |   - 闪白: actor["flash_progress"] 从 0->1->0
-  |           -> dirty -> flush -> UnitView 材质变白再恢复
-  |   - 血条: actor["visual_hp"] 从 80->55 插值
-  |           -> dirty -> flush -> UnitView HPBar 缩放+变色
+  |   - 飘字 / 闪白: 同前(Event 路径,持续 progress)
+  |   - hp delta: 一帧把 actor.target_hp 从 80 改到 55,is_alive transition guard
+  |     visual_hp 跟踪由 RenderWorld.tick_hp_lerp(delta_ms) 每 tick 推进,
+  |     与 ActionScheduler 解耦
   |
-  | [5] cleanup: 飘字 1000ms 后从 _floating_texts 移除
+  | [5] 多次伤害的连续性:
+  |     第二次伤害命中(还在 lerp 中)生成新 ApplyHPDeltaAction(delta=-15):
+  |     target_hp 55→40,visual_hp 从当前位置(比如 62)继续追赶 40,不跳变。
+  |     → 不需要 action 互斥 / from-hp 快照,设计上消除并行覆盖问题。
+  |
+  | [6] cleanup: 飘字 1000ms 后从 _floating_texts 移除
 ```
 
 ---
@@ -384,7 +392,7 @@ hex-atb-battle-frontend/
 ├── actions/                  # 视觉动作定义
 │   ├── visual_action.gd      # 基类 + ActionType 枚举
 │   ├── move_action.gd        # 移动动作
-│   ├── update_hp_action.gd   # 血条更新
+│   ├── apply_hp_delta_action.gd # 血条 hp delta(瞬时,state 路径)
 │   ├── floating_text_action.gd # 飘字
 │   ├── procedural_vfx_action.gd # 程序化特效
 │   └── death_action.gd       # 死亡动画
@@ -492,7 +500,7 @@ func reset() -> void
 class_name FrontendVisualAction
 extends RefCounted
 
-enum ActionType { MOVE, UPDATE_HP, FLOATING_TEXT, MELEE_STRIKE, PROCEDURAL_VFX, DEATH }
+enum ActionType { MOVE, APPLY_HP_DELTA, FLOATING_TEXT, MELEE_STRIKE, PROCEDURAL_VFX, DEATH, ATTACK_VFX, PROJECTILE }
 enum EasingType { LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT, ... }
 
 var type: ActionType

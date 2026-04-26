@@ -12,6 +12,62 @@
 
 ---
 
+## [Unreleased] — 2026-04-26 表演层: 血条迁移到 state 路径(贯彻 event/state 边界)
+
+补完 `2026-04-26-presentation-event-vs-state.md` 边界 — 该 design-note 已把"hp 条高度"明确划入 State,但代码侧 `damage` / `heal` 一直走 `FrontendUpdateHPAction(from, to, duration)` 进 `ActionScheduler` 并行 lerp(Event 路径)。本轮把血条彻底迁到 state:visual_hp 每 tick 朝 target_hp 收敛,delta 只是把 target 拉低。
+
+→ [docs/design-notes/2026-04-26-presentation-event-vs-state.md](docs/design-notes/2026-04-26-presentation-event-vs-state.md) 末尾「血条迁移到 state」补章节
+
+### Bug
+
+用户报告:多次伤害,血条不是从当前进度继续变化(同帧多伤害 → 多个 UpdateHPAction 并行写 visual_hp 互相覆盖 → 视觉跳变)。
+
+### Added
+
+- **`FrontendApplyHPDeltaAction`** (`example/hex-atb-battle-frontend/actions/apply_hp_delta_action.gd`): 瞬时指令(duration=0,delay 结束当帧 progress=1 立即完成),apply 时 `actor.target_hp = clamp(target_hp + delta, 0, max)`。
+- **`FrontendActorRenderState.target_hp`** 字段:damage / heal apply 累在这里;visual_hp 由 RenderWorld 异步追赶。
+- **`FrontendRenderWorld.tick_hp_lerp(delta_ms)`**: 每 tick 调一次,指数衰减 `1 - exp(-rate * dt)` 让 visual_hp 朝 target_hp 收敛。`FrontendBattleDirector._tick` 末尾 wire。
+- **`FrontendAnimationConfig.hp_lerp_rate`** = 8.0(单位 1/秒,默认约 125ms 收敛 63%)。
+
+### Changed
+
+- **`FrontendVisualAction.ActionType`**: `UPDATE_HP` → `APPLY_HP_DELTA`。
+- **`damage_visualizer.gd`**: 不再读 `context.get_actor_hp` snapshot,改生成 `FrontendApplyHPDeltaAction(target_id, -actual_life_damage, hp_bar_delay)`。`damage_hp_bar_delay` 仍然有用 — 飘字 / 闪白先飞,扣血后跟,节奏感保留。
+- **`heal_visualizer.gd`**: 同上,`FrontendApplyHPDeltaAction(target_id, +heal_amount)`。
+- **`render_world.gd`**: 删 `_apply_update_hp_action`,加 `_apply_apply_hp_delta_action` + `tick_hp_lerp`。`set_actor_hp` / `set_actor_dead` / `_apply_death_action` 同步 snap target_hp。`_initialize_actor_from_init_data` 初始化 target_hp = visual_hp。
+- **`battle_director.gd::_tick`**: 末尾 `_world.tick_hp_lerp(delta_ms)` — 与 ActionScheduler 解耦,即使无 action 活跃也每帧推进 lerp。
+
+### Removed
+
+- **`FrontendUpdateHPAction`** (`actions/update_hp_action.gd` + `.uid`) 物理删除 — duration-driven 持续 lerp 是 Event 路径,血条作为 State 不再适用。
+- **`FrontendAnimationConfig.damage_hp_bar_duration`** / **`heal_hp_bar_duration`**: state 路径下"动画时长"概念由 `hp_lerp_rate` 替代。
+
+### 关键设计决策
+
+- **delta-action 而非 set-target-action**: 候选「`SetTargetHPAction(actor_id, target_hp)`」被否决 — visualizer 是 stateless,从 context 读 visual_hp snapshot 再算 target,会重新引入「同帧多 event 拿到同一起点」的 bug。delta 表达「相对变化」,与 logic 层 damage event 的 `actual_life_damage` 字段语义对齐,RenderWorld 累加自然连续。
+- **hp_lerp_rate 配合指数衰减**(`1 - exp(-rate * dt)`)而非线性 lerp:目标变更时不需要重置进度,任何时刻都从「当前 visual_hp」朝「target_hp」收敛,主观感知与原 300ms 线性 lerp 接近,但天然处理多次叠加。
+- **方法论**:本文档主体只迁了 death 一个 case,bug 暴露后才补血条 — 边界立完贯彻不彻底是边界没立够明确的信号(见 design-note 第 8 条总结)。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `addons/logic-game-framework/tests/run_tests.tscn` | 59/59 ✅ |
+| `tests/smoke_frontend_main.tscn` | PASS |
+| `tests/smoke_world_view.tscn` | PASS |
+| `tests/smoke_skill_preview_reactive.tscn` | PASS |
+| `tests/smoke_skill_scenarios.tscn` | 12/12 ✅ |
+
+---
+
+## [Unreleased] — 2026-04-26 文档归属:`docs/skills/` 从主仓迁回 LGF submodule
+
+主仓 `docs/skills/`(`damage-pipeline.md` / `shield-system.md` / `skill-implementation-progress.md` / `README.md`)4 份文档全部 `git mv` 到 `addons/logic-game-framework/docs/skills/`。原因:这些文档描述的实现代码全部在 LGF submodule 内(`hex-atb-battle-core/apply_damage` / `Shield*` 组件 / `example/hex-atb-battle/skills/` 进度卡),文档归属应跟随实现仓库以保证版本一致性 — 主仓 bump submodule pointer 时,代码 + 文档同步快进,避免「shield V1 文档 + shield V2 代码」错版风险。
+
+主仓 `docs/` 整个目录清空(plan-docs/ 不在范围)。
+
+---
+
 ## [Unreleased] — 2026-04-26 阶段 5 完工: 拆 HexBattle thin 门面, 引入 HexDemoWorldGameplayInstance
 
 「世界 owns 战斗」重构计划阶段 5 落地: 物理删除 `HexBattle` thin 兼容门面, 把它原本封装的 6v6 demo 战斗启动行为(默认 grid + 6 character 硬编码 + inspire buff + 队伍随机放置 + start_battle + replay save)搬到新建的 `HexDemoWorldGameplayInstance`。每个独立场景拥有自己的 `HexWorldGameplayInstance` 子类(demo / skill-preview / 将来真游戏战斗), 框架类 `HexWorldGameplayInstance` 保持通用不被 demo hardcode 污染。

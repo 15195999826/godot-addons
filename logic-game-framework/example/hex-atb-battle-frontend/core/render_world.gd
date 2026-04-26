@@ -136,6 +136,7 @@ func _initialize_actor_from_init_data(actor_init: ReplayData.ActorInitData) -> v
 	actor_state.team = actor_init.team
 	actor_state.position = hex_pos
 	actor_state.visual_hp = actor_init.attributes.get("hp", 100.0) as float
+	actor_state.target_hp = actor_state.visual_hp
 	actor_state.max_hp = actor_init.attributes.get("maxHp", actor_init.attributes.get("max_hp", 100.0)) as float
 	actor_state.is_alive = true
 	actor_state.flash_progress = 0.0
@@ -189,8 +190,8 @@ func _apply_action(active_action: FrontendActionScheduler.ActiveAction) -> void:
 	match action.type:
 		FrontendVisualAction.ActionType.MOVE:
 			_apply_move_action(action, progress)
-		FrontendVisualAction.ActionType.UPDATE_HP:
-			_apply_update_hp_action(action, progress)
+		FrontendVisualAction.ActionType.APPLY_HP_DELTA:
+			_apply_apply_hp_delta_action(action)
 		FrontendVisualAction.ActionType.FLOATING_TEXT:
 			_apply_floating_text_action(action, active_action.id)
 		FrontendVisualAction.ActionType.PROCEDURAL_VFX:
@@ -216,26 +217,40 @@ func _apply_move_action(action: FrontendMoveAction, progress: float) -> void:
 			actor_state_changed.emit(action.actor_id, actor)
 
 
-## 应用血条更新动作
-func _apply_update_hp_action(action: FrontendUpdateHPAction, progress: float) -> void:
+## 应用 hp delta(瞬时):把伤害 / 治疗的 delta 立刻累到 target_hp,
+## visual_hp 由 tick_hp_lerp 每帧朝它收敛。actor_died 在 target_hp 落到 ≤0
+## 那一刻 emit(transition-only),不等 visual_hp lerp 完。
+##
+## 多次伤害的连续性靠「单一 target_hp + 持续 lerp」保证 — 不需要 action
+## 互斥或 from-snapshot,新 delta 只是把 target_hp 进一步拉低,visual_hp
+## 始终从当前位置追赶。
+func _apply_apply_hp_delta_action(action: FrontendApplyHPDeltaAction) -> void:
 	var actor: FrontendActorRenderState = _actors.get(action.actor_id)
 	if actor == null:
-		print("[Frontend:RenderWorld] ⚠️ UpdateHP 找不到 actor: %s" % action.actor_id)
+		print("[Frontend:RenderWorld] ⚠️ ApplyHPDelta 找不到 actor: %s" % action.actor_id)
 		return
-	
-	# 线性插值 HP
-	actor.visual_hp = action.get_interpolated_hp(progress)
-	
-	# 动画完成时确保精确值。is_alive 走 _set_actor_alive 收口,保证 hp→0 那帧
-	# emit actor_died(transition-only)。
-	if progress >= 1.0:
-		actor.visual_hp = action.to_hp
-		_set_actor_alive(actor, action.to_hp > 0)
-		print("[Frontend:RenderWorld] HP更新完成: actor=%s hp=%.0f->%.0f alive=%s" % [
-			action.actor_id, action.from_hp, action.to_hp, actor.is_alive
-		])
-	
+	actor.target_hp = clampf(actor.target_hp + action.delta, 0.0, actor.max_hp)
+	_set_actor_alive(actor, actor.target_hp > 0.0)
 	_dirty_actors[action.actor_id] = true
+
+
+## 每 tick 调用,把所有 actor 的 visual_hp 朝 target_hp 收敛。指数衰减
+## 模型:进度 = 1 - exp(-rate * dt),配合 _animation_config.hp_lerp_rate
+## 决定收敛速度(单位 1/秒)。已贴近 target 时直接 snap 避免无限 lerp。
+func tick_hp_lerp(delta_ms: float) -> void:
+	var dt: float = delta_ms / 1000.0
+	var rate: float = _animation_config.hp_lerp_rate
+	var t: float = 1.0 - exp(-rate * dt) if rate > 0.0 else 1.0
+	for actor_id: String in _actors.keys():
+		var actor: FrontendActorRenderState = _actors[actor_id]
+		if is_equal_approx(actor.visual_hp, actor.target_hp):
+			continue
+		var diff := actor.target_hp - actor.visual_hp
+		if absf(diff) < 0.5:
+			actor.visual_hp = actor.target_hp
+		else:
+			actor.visual_hp += diff * t
+		_dirty_actors[actor_id] = true
 
 
 ## 应用飘字动作
@@ -311,6 +326,7 @@ func _apply_death_action(action: FrontendDeathAction, progress: float) -> void:
 	
 	_set_actor_alive(actor, false)
 	actor.visual_hp = 0.0
+	actor.target_hp = 0.0
 	actor.death_progress = progress
 
 	if progress >= 1.0:
@@ -497,11 +513,12 @@ func flush_dirty_actors() -> void:
 
 # ========== 直接状态更新 ==========
 
-## 直接更新 Actor HP（无动画）
+## 直接更新 Actor HP(无动画 / 无 lerp,visual_hp 与 target_hp 同步 snap)
 func set_actor_hp(actor_id: String, hp: float) -> void:
 	var actor: FrontendActorRenderState = _actors.get(actor_id)
 	if actor != null:
 		actor.visual_hp = hp
+		actor.target_hp = hp
 		_set_actor_alive(actor, hp > 0)
 		actor_state_changed.emit(actor_id, actor)
 
@@ -515,12 +532,13 @@ func set_actor_position(actor_id: String, hex: HexCoord) -> void:
 		actor_state_changed.emit(actor_id, actor)
 
 
-## 标记 Actor 死亡
+## 标记 Actor 死亡(visual_hp / target_hp 同步 snap 到 0)
 func set_actor_dead(actor_id: String) -> void:
 	var actor: FrontendActorRenderState = _actors.get(actor_id)
 	if actor != null:
 		_set_actor_alive(actor, false)
 		actor.visual_hp = 0.0
+		actor.target_hp = 0.0
 		actor_state_changed.emit(actor_id, actor)
 
 

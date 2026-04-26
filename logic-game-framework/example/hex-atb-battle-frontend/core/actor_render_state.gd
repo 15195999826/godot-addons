@@ -29,8 +29,12 @@ var position: HexCoord = HexCoord.zero()
 
 # ========== 战斗状态 ==========
 
-## 当前视觉 HP（用于动画插值）
+## 当前视觉 HP(每 tick 朝 target_hp 收敛 lerp,见 RenderWorld.tick_hp_lerp)
 var visual_hp: float = 0.0
+
+## 目标 HP(damage / heal event apply 后立即累到这里;visual_hp 异步追赶)
+## 设计依据:docs/animation/event-vs-state.md「血条作为 State」
+var target_hp: float = 0.0
 
 ## 最大 HP
 var max_hp: float = 100.0
@@ -62,6 +66,7 @@ func duplicate() -> FrontendActorRenderState:
 	copy.team = team
 	copy.position = HexCoord.new(position.q, position.r)
 	copy.visual_hp = visual_hp
+	copy.target_hp = target_hp
 	copy.max_hp = max_hp
 	copy.is_alive = is_alive
 	copy.flash_progress = flash_progress

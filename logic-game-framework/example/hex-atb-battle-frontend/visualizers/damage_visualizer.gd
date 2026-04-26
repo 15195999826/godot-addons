@@ -27,7 +27,6 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	var is_reflected := e.is_reflected
 
 	var target_position := context.get_actor_position(target_id)
-	var current_hp := context.get_actor_hp(target_id)
 
 	var actions: Array[FrontendVisualAction] = []
 
@@ -69,17 +68,16 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 		)
 		actions.append(hit_flash)
 
-	# 3. 血条更新（按 actual_life_damage 扣血；全吸收时血条不动）
+	# 3. 血条 hp delta(state 路径:把 -damage 累到 actor.target_hp,
+	# visual_hp 由 RenderWorld 每 tick lerp 收敛)。全吸收时血条不动。
+	# delay 仍然有用(等闪白 / 飘字先起播再扣血,节奏感保留)。
 	if actual_life_damage > 0.0:
-		var new_hp := maxf(0.0, current_hp - actual_life_damage)
-		var update_hp := FrontendUpdateHPAction.new(
+		var apply_delta := FrontendApplyHPDeltaAction.new(
 			target_id,
-			current_hp,
-			new_hp,
-			config.damage_hp_bar_duration,
+			-actual_life_damage,
 			config.damage_hp_bar_delay
 		)
-		actions.append(update_hp)
+		actions.append(apply_delta)
 
 	return actions
 

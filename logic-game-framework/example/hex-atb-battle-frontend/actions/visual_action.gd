@@ -15,7 +15,7 @@ extends RefCounted
 
 enum ActionType {
 	MOVE,
-	UPDATE_HP,
+	APPLY_HP_DELTA,  # 瞬时指令:把 hp delta 累到 actor.target_hp,visual_hp 由 RenderWorld 持续 lerp
 	FLOATING_TEXT,
 	MELEE_STRIKE,
 	PROCEDURAL_VFX,

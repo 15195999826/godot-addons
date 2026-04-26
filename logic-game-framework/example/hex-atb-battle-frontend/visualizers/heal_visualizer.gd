@@ -23,15 +23,13 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	var heal_amount := e.heal_amount
 	
 	var target_position := context.get_actor_position(target_id)
-	var current_hp := context.get_actor_hp(target_id)
-	var max_hp := context.get_actor_max_hp(target_id)
-	
+
 	var actions: Array[FrontendVisualAction] = []
-	
+
 	# 1. 治疗飘字
 	var text := "+%d" % roundi(heal_amount)
 	var color := Color(0.2, 1.0, 0.2)  # 绿色
-	
+
 	var floating_text := FrontendFloatingTextAction.new(
 		target_id,
 		text,
@@ -41,15 +39,12 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 		config.heal_floating_text_duration
 	)
 	actions.append(floating_text)
-	
-	# 2. 血条更新
-	var new_hp := minf(current_hp + heal_amount, max_hp)
-	var update_hp := FrontendUpdateHPAction.new(
+
+	# 2. 血条 hp delta(state 路径,见 damage_visualizer 同段注释)
+	var apply_delta := FrontendApplyHPDeltaAction.new(
 		target_id,
-		current_hp,
-		new_hp,
-		config.heal_hp_bar_duration
+		heal_amount
 	)
-	actions.append(update_hp)
-	
+	actions.append(apply_delta)
+
 	return actions

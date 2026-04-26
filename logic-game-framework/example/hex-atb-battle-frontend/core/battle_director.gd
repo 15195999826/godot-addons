@@ -324,7 +324,11 @@ func _tick(delta_ms: float) -> void:
 		# 再应用本帧完成的动作（确保最终状态被应用）
 		_world.apply_actions(result.completed_this_tick)
 		_world.cleanup(_world.get_world_time())
-	
+
+	# 血条 visual_hp 朝 target_hp 收敛(state 路径,每 tick 推进,
+	# 与 action 系统解耦,即便没有任何 action 活跃也要 lerp)
+	_world.tick_hp_lerp(delta_ms)
+
 	# 批量触发状态变化信号
 	_world.flush_dirty_actors()
 	

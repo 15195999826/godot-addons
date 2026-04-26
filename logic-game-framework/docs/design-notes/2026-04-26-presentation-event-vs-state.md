@@ -189,3 +189,78 @@ func revive() -> void:
 - `actor_revived` event：未来真有战斗内复活技能时再加，同样 transition-only（`was_dead && now_alive`）
 - `actor_damaged(id, amount, source_id, is_critical)` event：未来受击表现需要时落地，view 端 retrigger 策略
 - 暴击大字 / 治疗光环 / buff proc 等：套用同模板（Director emit transition event → Animator wire → view 公共方法 + 显式策略）
+
+---
+
+## 2026-04-26 补章：血条迁移到 state（贯彻边界）
+
+### 背景
+
+本文档主体落地了 **death animation** 的 event/state 拆分（`actor_died` transition-only event + view once 策略），但 `damage` / `heal` 这一支没跟着迁——`damage_visualizer.gd` 仍生成 `FrontendUpdateHPAction(from_hp, to_hp, duration)`，走 `ActionScheduler` 并行 lerp。第 27 行表格里"hp 条高度"明确归在 State 一列，**代码却在走 Event 路径**。
+
+### Bug 现象（用户报告）
+
+> 血条动画 bug：多次伤害，不是从当前进度继续变化。
+
+两种典型场景：
+
+1. **同帧多次伤害**：`damage_visualizer.translate()` 取 `context.get_actor_hp()`（= `visual_hp`），同一逻辑帧的多个 damage event 依次 translate 时 visual_hp 还没被 tick 推进，两次都拿到同一起点，生成 `(100→80)` 和 `(100→60)`，并行 lerp 互相覆盖 → 视觉直接跳。
+2. **跨帧但旧动画未完**：第二次 translate 拿到中间值 90，新 action `(90→70)` 没问题，但旧 action `(100→80)` 还在跑，每帧把 visual_hp 拉回 lerp(100,80,p) → 两条曲线打架。
+
+根因是**两个并行的 UpdateHPAction 同时写 visual_hp**——README 的"全部并行"策略对持续 lerp action 没有互斥保证，而血条天然是单一连续值的跟踪问题。
+
+### 决策：把血条彻底从 Event 路径搬到 State 路径
+
+按本文档第 27 行表格的分类落地。引入 `target_hp` 作为 RenderWorld 的状态字段：
+
+```
+ActorRenderState
+├── visual_hp        ← View 实际显示值,每 tick 朝 target_hp 收敛 lerp
+└── target_hp        ← damage / heal event apply 后立即累到此处
+```
+
+伤害/治疗事件不再生成"持续 lerp action"，而是生成**瞬时指令** `FrontendApplyHPDeltaAction(actor_id, delta, delay)`：
+
+- duration=0,delay 结束当帧 progress=1 立即完成
+- apply 时 `actor.target_hp = clamp(target_hp + delta, 0, max_hp)`,`_set_actor_alive` 收口（target ≤ 0 那一帧 emit `actor_died`，跟原 transition guard 完全一致）
+
+`RenderWorld.tick_hp_lerp(delta_ms)` 在 `BattleDirector._tick` 末尾每帧调一次，与 ActionScheduler 解耦：
+
+```gdscript
+func tick_hp_lerp(delta_ms: float) -> void:
+    var dt: float = delta_ms / 1000.0
+    var rate: float = _animation_config.hp_lerp_rate  # 默认 8.0 / s
+    var t: float = 1.0 - exp(-rate * dt) if rate > 0.0 else 1.0
+    for actor_id in _actors.keys():
+        var actor: FrontendActorRenderState = _actors[actor_id]
+        if is_equal_approx(actor.visual_hp, actor.target_hp):
+            continue
+        var diff := actor.target_hp - actor.visual_hp
+        if absf(diff) < 0.5:
+            actor.visual_hp = actor.target_hp
+        else:
+            actor.visual_hp += diff * t
+        _dirty_actors[actor_id] = true
+```
+
+指数衰减 `1 - exp(-rate*dt)` 跟原"线性 lerp 300ms"在主观感知上接近，但天然处理「目标变更」——多次伤害进来只是把 target_hp 拉得更低，visual_hp 始终从当前位置追赶，**不需要 action 互斥也不会跳变**。
+
+### 落地范围
+
+| 文件 | 改动 |
+|---|---|
+| `actions/visual_action.gd` | 枚举 `UPDATE_HP` → `APPLY_HP_DELTA` |
+| `actions/apply_hp_delta_action.gd` | 新建（替代 `update_hp_action.gd`，后者删除） |
+| `core/actor_render_state.gd` | 加 `target_hp` 字段 |
+| `core/render_world.gd` | 删 `_apply_update_hp_action`；加 `_apply_apply_hp_delta_action` + `tick_hp_lerp`；`set_actor_hp` / `set_actor_dead` / `_apply_death_action` 同步 `target_hp` |
+| `core/battle_director.gd` | `_tick` 末尾调 `_world.tick_hp_lerp(delta_ms)` |
+| `core/animation_config.gd` | 加 `hp_lerp_rate: float = 8.0`；删 `damage_hp_bar_duration` / `heal_hp_bar_duration`（duration 概念在 state 路径下不存在） |
+| `visualizers/damage_visualizer.gd` | 生成 `FrontendApplyHPDeltaAction(target_id, -actual_life_damage, hp_bar_delay)` |
+| `visualizers/heal_visualizer.gd` | 生成 `FrontendApplyHPDeltaAction(target_id, +heal_amount)` |
+| `example/hex-atb-battle-frontend/README.md` | 更新 ActionType 枚举、damage 生命周期例子、目录结构 |
+
+### 方法论补充（架构 KB 候选）
+
+6. **「持续值跟踪」是 State 路径的本质特征**——任何场景下「单一连续浮点 + 来自上游的瞬时变更指令 + 视觉平滑追赶」都应该是 state，不是 event。位置(`_target_position` lerp)是这个范式的先驱，血条只是迁过来而已。判断标准：「这个值在任何时刻都有"当前正确目标"吗？」如果是，就是 state。
+7. **Action.duration 的存在不必然代表持续 lerp**——Action 可以是「瞬时指令 + 仅 delay 用于节奏控制」（`ApplyHPDelta` 就是 duration=0 + delay=200ms）。这样既能复用 ActionScheduler 的延迟机制提供"飘字先飞、扣血后跟"的节奏感，又不进入并行 lerp 写状态的反模式。
+8. **本文档主体（death）和补章（hp）的差异是教训本身**——立完边界要一次性贯彻所有同形态 case，否则会在不同时间点被同样的 bug 二次暴露。Patch 累积是边界没立住的信号；**边界立完贯彻不彻底，是边界立得不够明确的信号**。
