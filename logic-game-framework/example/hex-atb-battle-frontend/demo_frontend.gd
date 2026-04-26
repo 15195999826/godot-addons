@@ -1,4 +1,8 @@
-## Main - 战斗前端示例入口（响应式 wire）
+## HexAtbBattle Frontend Demo 入口脚本（响应式 wire）
+##
+## addon 自带的 frontend demo 场景: 3D camera + 6v6 默认战斗 + animator 播放。
+## 用户按 Start Battle 看战斗动起来什么样。真正的项目入口在主仓
+## scenes/Simulation.tscn (web 桥接)。本场景只是 addon frontend 演示。
 ##
 ## 用户按 Start Battle:
 ##   1. 创建 HexDemoWorldGameplayInstance (WorldGameplayInstance 子类)

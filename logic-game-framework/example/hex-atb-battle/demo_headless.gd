@@ -1,6 +1,11 @@
-## HexAtbBattle 入口脚本
+## HexAtbBattle Headless Demo 入口脚本
 ##
-## 运行六边形 ATB 战斗示例
+## addon 自带的 demo 场景: 无 UI / 无相机 / 无 view, 跑一场 6v6 默认战斗,
+## 输出日志 / 录像。Godot 编辑器 F6 或 plugin 菜单「运行 HexATB 测试 (Headless)」。
+##
+## 真正的项目入口在主仓 scenes/Simulation.tscn (web 桥接)。本场景只是 addon
+## 自检 / API 演示。frontend demo 在 addons/.../hex-atb-battle-frontend/
+## demo_frontend.tscn (3D + camera + animator)。
 extends Node
 
 

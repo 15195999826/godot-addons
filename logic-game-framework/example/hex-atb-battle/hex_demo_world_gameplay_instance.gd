@@ -3,8 +3,8 @@
 ## HexWorldGameplayInstance 的 demo 场景子类: 6 职业 vs 6 职业默认 9x9 战斗,
 ## 含 inspire buff / 队伍随机放置 / 录像存盘 / 战斗信息打印 等 demo 行为。
 ##
-## 服务三处 demo entry: addons/.../hex-atb-battle/main.gd (headless),
-## addons/.../hex-atb-battle-frontend/main.gd (frontend), scripts/SimulationManager.gd
+## 服务三处 demo entry: addons/.../hex-atb-battle/demo_headless.gd,
+## addons/.../hex-atb-battle-frontend/demo_frontend.gd, scripts/SimulationManager.gd
 ## (web 桥接 godot_run_battle)。skill-preview 走 SkillPreviewWorldGI, 不走这里。
 ##
 ## 与 SkillPreviewWorldGI 范式一致: 每个独立场景拥有自己的 GI 子类,
@@ -19,7 +19,7 @@ var tick_count: int = 0
 var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
 
-## 战斗是否结束。外部调用端 (`example/hex-atb-battle/main.gd`) 直接读此字段,
+## 战斗是否结束。外部调用端 (`example/hex-atb-battle/demo_headless.gd`) 直接读此字段,
 ## 保留以避免调用点修改; `is_running()` 同样可判断。
 var _ended: bool = false
 

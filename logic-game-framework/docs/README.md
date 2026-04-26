@@ -118,7 +118,7 @@ TargetSelector.fixed([actor_ref1, actor_ref2])
 | 层级 | 职责 | 类型 |
 |------|------|------|
 | **框架层** | 传递游戏状态引用 | `Variant`（无类型） |
-| **项目层** | 转换为具体类型并使用 | 项目定义的类型（如 `HexBattle`） |
+| **项目层** | 转换为具体类型并使用 | 项目定义的类型（如 `HexWorldGameplayInstance` 或其子类 `HexDemoWorldGameplayInstance` / `SkillPreviewWorldGI`） |
 
 #### 推荐做法：创建项目级 Utils 类
 
@@ -132,7 +132,7 @@ TargetSelector.fixed([actor_ref1, actor_ref2])
 class_name HexBattleGameStateUtils
 
 ## 获取角色显示名称
-static func get_actor_display_name(actor_ref: ActorRef, game_state_provider: HexBattle) -> String:
+static func get_actor_display_name(actor_ref: ActorRef, game_state_provider: HexWorldGameplayInstance) -> String:
     if actor_ref == null:
         return "???"
     if game_state_provider != null:
@@ -150,9 +150,9 @@ class_name MyProjectDamageAction
 extends Action.BaseAction
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-    # 项目层负责类型转换
-    var battle: HexBattle = ctx.game_state_provider
-    
+    # 项目层负责类型转换 — 收敛到框架基类, 不绑死具体场景子类
+    var battle: HexWorldGameplayInstance = ctx.game_state_provider
+
     # 获取存活角色 ID 列表（用于 Post 阶段广播）
     var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()
     var name := HexBattleGameStateUtils.get_actor_display_name(target, battle)
@@ -227,7 +227,7 @@ DamageAction.execute()
 
 ```gdscript
 func execute(ctx: ExecutionContext) -> ActionResult:
-    var battle: HexBattle = ctx.game_state_provider
+    var battle: HexWorldGameplayInstance = ctx.game_state_provider
     var event_processor: EventProcessor = GameWorld.event_processor
     var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()
     
@@ -673,8 +673,8 @@ var actor = game_state_provider.get_actor(actor_ref.id)
 **项目层**：可以直接使用具体实例
 
 ```gdscript
-# 项目层可以使用具体类型
-var battle: HexBattle = ctx.game_state_provider
+# 项目层可以使用具体类型 — 默认收敛到框架基类, 仅在需要场景独有字段时收窄
+var battle: HexWorldGameplayInstance = ctx.game_state_provider
 var actor := battle.get_actor(actor_id)
 ```
 

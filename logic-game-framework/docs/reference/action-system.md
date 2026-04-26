@@ -163,7 +163,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 | `Action.NoopAction` | 空操作 | `NoopAction.new(target_selector?)` |
 | `StageCueAction` | 发送舞台提示 | `StageCueAction.new(target_selector, cue_id, params?)` |
 
-### HexBattle 示例
+### Hex Demo 示例（hex-atb-battle 模块自带 Action）
 
 | Action | 描述 | 构造函数 |
 |--------|------|----------|

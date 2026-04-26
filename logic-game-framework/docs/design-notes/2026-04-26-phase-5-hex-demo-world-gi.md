@@ -1,7 +1,7 @@
 # 阶段 5 落地：拆 HexBattle thin 门面，引入 HexDemoWorldGameplayInstance
 
 **日期**：2026-04-26
-**范围**：`example/hex-atb-battle/hex_battle.gd`（删）、`example/hex-atb-battle/hex_demo_world_gameplay_instance.gd`（新）、`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`、`example/hex-atb-battle/ai/*.gd` × 4、`example/hex-atb-battle/main.gd` × 2、主仓 `scripts/SimulationManager.gd` / `scripts/SkillPreviewBattle.gd` / `tests/smoke_world_view.gd`
+**范围**：`example/hex-atb-battle/hex_battle.gd`（删）、`example/hex-atb-battle/hex_demo_world_gameplay_instance.gd`（新）、`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`、`example/hex-atb-battle/ai/*.gd` × 4、`example/hex-atb-battle/demo_headless.{gd,tscn}` + `example/hex-atb-battle-frontend/demo_frontend.{gd,tscn}`（含改名 `main.*` → `demo_*`）、主仓 `scripts/SimulationManager.gd` / `scripts/SkillPreviewBattle.gd` / `tests/smoke_world_view.gd`
 **类型**：架构落地 + 范式对齐
 **前置**：[2026-04-19-world-as-single-instance.md](2026-04-19-world-as-single-instance.md) 阶段 5（最后一个待启动阶段）
 
@@ -29,8 +29,8 @@
 - 录像保存（`_save_replay` 写 `user://Replays/battle_*.json`）
 
 这套行为被三个 demo entry 共用：
-- `addons/.../hex-atb-battle/main.gd`（headless demo）
-- `addons/.../hex-atb-battle-frontend/main.gd`（frontend demo）
+- `addons/.../hex-atb-battle/demo_headless.gd`（addon headless demo，本轮从 `main.gd` 改名）
+- `addons/.../hex-atb-battle-frontend/demo_frontend.gd`（addon frontend demo，本轮从 `main.gd` 改名）
 - `scripts/SimulationManager.gd`（web 桥接 `godot_run_battle`，本质也是给前端跑一场 demo battle）
 
 "删 `HexBattle`" 等价于"把这套 demo 行为搬到某处"。这是个本轮才暴露的**架构决策**。
