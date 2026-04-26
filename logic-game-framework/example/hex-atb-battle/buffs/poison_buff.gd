@@ -27,7 +27,7 @@ static var POISON_TICK_TIMELINE := TimelineData.periodic(TICK_TIMELINE_ID, TICK_
 ##
 ## 装配点：
 ## - ActivateInstanceConfig 用 GRANTED_SELF trigger，grant 即启动 loop
-## - on_timeline_start 触发 PoisonTickAction（读 stacks → PURE damage → remove_stacks(1) → 归零 expire）
+## - on_timeline_end 触发 PoisonTickAction（2s 后读 stacks → PURE damage → remove_stacks(1) → 归零 expire）
 static var POISON_BUFF := (
 	AbilityConfig.builder()
 	.config_id(CONFIG_ID)
@@ -39,7 +39,7 @@ static var POISON_BUFF := (
 		ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.GRANTED_SELF)
 		.timeline_id(TICK_TIMELINE_ID)
-		.on_timeline_start([HexBattlePoisonTickAction.new()])
+		.on_timeline_end([HexBattlePoisonTickAction.new()])
 		.build()
 	)
 	.build()
