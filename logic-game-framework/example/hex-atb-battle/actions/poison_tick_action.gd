@@ -59,8 +59,17 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		HexBattleDamageUtils.broadcast_post_damage(damage_result.damage_event_dict, alive_actor_ids, battle)
 
 	# ========== 层数递减（无论是否 cancelled 都消耗一层） ==========
+	var stacks_before := ability.get_stacks()
 	ability.remove_stacks(1)
-	if ability.get_stacks() <= 0:
+	var stacks_after := ability.get_stacks()
+	# 通知 frontend buff UI 更新 stacks。即便 stacks_after = 0(随后 expire 会触发
+	# AbilityRemoved),也保持事件流完整 —— REMOVE 在 frontend 端会覆盖此 UPDATE。
+	all_events.append(
+		GameEvent.AbilityStacksChanged.create(
+			target_id, ability.id, ability.config_id, stacks_before, stacks_after
+		).to_dict()
+	)
+	if stacks_after <= 0:
 		ability.expire("poison_exhausted")
 
 	return ActionResult.create_success_result(all_events, { "poison_tick_stacks": stacks })

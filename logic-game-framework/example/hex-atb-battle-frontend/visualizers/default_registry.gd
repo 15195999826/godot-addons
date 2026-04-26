@@ -15,5 +15,6 @@ static func create() -> FrontendVisualizerRegistry:
 	registry.register(FrontendDeathVisualizer.new())
 	registry.register(FrontendProjectileVisualizer.new())
 	registry.register(FrontendStageCueVisualizer.new())
-	
+	registry.register(FrontendBuffVisualizer.new())
+
 	return registry

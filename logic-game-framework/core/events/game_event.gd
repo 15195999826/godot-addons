@@ -9,6 +9,7 @@ const ABILITY_GRANTED_EVENT := "abilityGranted"
 const ABILITY_REMOVED_EVENT := "abilityRemoved"
 const ABILITY_ACTIVATED_EVENT := "abilityActivated"
 const ABILITY_TRIGGERED_EVENT := "abilityTriggered"
+const ABILITY_STACKS_CHANGED_EVENT := "abilityStacksChanged"
 const EXECUTION_ACTIVATED_EVENT := "executionActivated"
 const TAG_CHANGED_EVENT := "tagChanged"
 const STAGE_CUE_EVENT := "stageCue"
@@ -171,6 +172,51 @@ class AbilityRemoved extends Base:
 	
 	static func is_match(d: Dictionary) -> bool:
 		return d.get("kind") == ABILITY_REMOVED_EVENT
+
+
+## ability.stacks 变化时由业务方主动 emit(core 不在 add_stacks/remove_stacks 里耦合)。
+## 首个消费者:PoisonTickAction 每轮 tick 减一层后 emit。
+## frontend BuffVisualizer 用它更新 BuffSummary.primary。
+class AbilityStacksChanged extends Base:
+	var actor_id: String = ""
+	var ability_instance_id: String = ""
+	var ability_config_id: String = ""
+	var old_stacks: int = 0
+	var new_stacks: int = 0
+
+	func _init() -> void:
+		kind = ABILITY_STACKS_CHANGED_EVENT
+
+	static func create(p_actor_id: String, p_ability_instance_id: String, p_ability_config_id: String, p_old_stacks: int, p_new_stacks: int) -> AbilityStacksChanged:
+		var e := AbilityStacksChanged.new()
+		e.actor_id = p_actor_id
+		e.ability_instance_id = p_ability_instance_id
+		e.ability_config_id = p_ability_config_id
+		e.old_stacks = p_old_stacks
+		e.new_stacks = p_new_stacks
+		return e
+
+	func to_dict() -> Dictionary:
+		return {
+			"kind": kind,
+			"actorId": actor_id,
+			"abilityInstanceId": ability_instance_id,
+			"abilityConfigId": ability_config_id,
+			"oldStacks": old_stacks,
+			"newStacks": new_stacks,
+		}
+
+	static func from_dict(d: Dictionary) -> AbilityStacksChanged:
+		var e := AbilityStacksChanged.new()
+		e.actor_id = d.get("actorId", "")
+		e.ability_instance_id = d.get("abilityInstanceId", "")
+		e.ability_config_id = d.get("abilityConfigId", "")
+		e.old_stacks = d.get("oldStacks", 0)
+		e.new_stacks = d.get("newStacks", 0)
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == ABILITY_STACKS_CHANGED_EVENT
 
 
 class AbilityActivated extends Base:

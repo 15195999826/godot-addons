@@ -55,6 +55,14 @@ var tint_color: Color = Color.WHITE
 var death_progress: float = 0.0
 
 
+# ========== Buff 状态 ==========
+
+## 当前挂在该 actor 上的 buff 摘要列表(顺序 = 首次 ADD 顺序,稳定不重排)。
+## 由 BuffVisualizer 翻译 AbilityGranted/Stacks/Removed/DamageEvent 后,通过
+## ApplyBuffStateAction 由 RenderWorld 维护。
+var buffs: Array[FrontendBuffSummary] = []
+
+
 # ========== 工具方法 ==========
 
 ## 创建深拷贝
@@ -72,4 +80,6 @@ func duplicate() -> FrontendActorRenderState:
 	copy.flash_progress = flash_progress
 	copy.tint_color = tint_color
 	copy.death_progress = death_progress
+	for b in buffs:
+		copy.buffs.append(b.duplicate())
 	return copy

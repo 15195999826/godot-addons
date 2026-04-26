@@ -202,6 +202,8 @@ func _apply_action(active_action: FrontendActionScheduler.ActiveAction) -> void:
 			_apply_attack_vfx_action(action, active_action.id, progress)
 		FrontendVisualAction.ActionType.PROJECTILE:
 			_apply_projectile_action(action, active_action.id, progress)
+		FrontendVisualAction.ActionType.APPLY_BUFF_STATE:
+			_apply_apply_buff_state_action(action)
 
 
 ## 应用移动动作
@@ -232,6 +234,43 @@ func _apply_apply_hp_delta_action(action: FrontendApplyHPDeltaAction) -> void:
 	actor.target_hp = clampf(actor.target_hp + action.delta, 0.0, actor.max_hp)
 	_set_actor_alive(actor, actor.target_hp > 0.0)
 	_dirty_actors[action.actor_id] = true
+
+
+## 应用 buff 状态变化(瞬时):对 actor.buffs 数组做 ADD/UPDATE/REMOVE。
+##
+## 顺序契约:
+##   - ADD: 若 buff_id 已存在则覆盖(防御性,正常路径不会出现);否则 append 到尾部,
+##          顺序 = "首次 ADD 顺序",稳定不重排。
+##   - UPDATE: 找到 buff_id 即覆盖 primary;找不到则忽略(常见于白名单不命中时)。
+##   - REMOVE: 找到 buff_id 即移除;找不到 noop。
+func _apply_apply_buff_state_action(action: FrontendApplyBuffStateAction) -> void:
+	var actor: FrontendActorRenderState = _actors.get(action.actor_id)
+	if actor == null:
+		return
+	var idx := -1
+	for i in range(actor.buffs.size()):
+		if actor.buffs[i].id == action.buff_id:
+			idx = i
+			break
+	match action.op:
+		FrontendApplyBuffStateAction.Op.ADD:
+			if action.summary == null:
+				return
+			if idx >= 0:
+				actor.buffs[idx] = action.summary
+			else:
+				actor.buffs.append(action.summary)
+			_dirty_actors[action.actor_id] = true
+		FrontendApplyBuffStateAction.Op.UPDATE:
+			if idx < 0 or action.summary == null:
+				return
+			actor.buffs[idx].primary = action.summary.primary
+			_dirty_actors[action.actor_id] = true
+		FrontendApplyBuffStateAction.Op.REMOVE:
+			if idx < 0:
+				return
+			actor.buffs.remove_at(idx)
+			_dirty_actors[action.actor_id] = true
 
 
 ## 每 tick 调用,把所有 actor 的 visual_hp 朝 target_hp 收敛。指数衰减
