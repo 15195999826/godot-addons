@@ -9,6 +9,7 @@ script = ExtResource("1_skill_preview")
 layer = 2
 
 [node name="Root" type="Control" parent="ConfigUI"]
+unique_name_in_owner = true
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -20,57 +21,217 @@ mouse_filter = 2
 anchor_bottom = 1.0
 offset_left = 12.0
 offset_top = 12.0
-offset_right = 384.0
+offset_right = 360.0
 offset_bottom = -12.0
 grow_vertical = 2
+clip_contents = true
 
-[node name="Scroll" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel"]
-layout_mode = 2
-horizontal_scroll_mode = 0
-
-[node name="VBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll"]
+[node name="InspectorVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_constants/separation = 8
+theme_override_constants/separation = 10
+clip_contents = true
 
-; =============== Preset ===============
-[node name="TitlePreset" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="InspectorTabs" type="TabContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox"]
+unique_name_in_owner = true
 layout_mode = 2
-text = "Preset"
+custom_minimum_size = Vector2(0, 0)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+current_tab = 0
+clip_contents = true
+clip_tabs = true
 
-[node name="PresetRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="Skill" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
 layout_mode = 2
-theme_override_constants/separation = 8
+horizontal_scroll_mode = 0
 
-[node name="PresetLoadOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/PresetRow"]
+[node name="SkillVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+; =============== Skill ===============
+[node name="TitleSkill" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
+layout_mode = 2
+text = "Skill Loadout"
+
+[node name="SkillActiveLabel" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
+layout_mode = 2
+text = "Active Skill"
+
+[node name="SkillActiveOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+fit_to_longest_item = false
 
-[node name="PresetSaveButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/PresetRow"]
+[node name="SkillPassivesLabel" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
+layout_mode = 2
+text = "Passive Skills"
+
+[node name="PassivesContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Save Preset"
+size_flags_horizontal = 3
+theme_override_constants/separation = 3
 
-[node name="Sep1" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="Actors" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
 layout_mode = 2
+horizontal_scroll_mode = 0
 
-; =============== Map ===============
-[node name="TitleMap" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="ActorsVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Actors"]
 layout_mode = 2
-text = "Map"
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
 
-[node name="MapRadiusRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+; =============== Actors ===============
+[node name="TitleActors" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Actors/ActorsVBox"]
+layout_mode = 2
+text = "Actors"
+
+[node name="ActorAddRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Actors/ActorsVBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapRadiusRow"]
+[node name="ActorAddEnemyButton" type="Button" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Actors/ActorsVBox/ActorAddRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "+ Enemy"
+
+[node name="ActorAddAllyButton" type="Button" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Actors/ActorsVBox/ActorAddRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "+ Ally"
+
+[node name="ActorsContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Actors/ActorsVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="Target" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="TargetVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+; =============== Target ===============
+[node name="TitleTarget" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
+layout_mode = 2
+text = "Target"
+
+[node name="TargetModeOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="TargetIndexRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetIndexRow"]
 layout_mode = 2
 custom_minimum_size = Vector2(112, 0)
+text = "Index"
+
+[node name="TargetIndexInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetIndexRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.0
+max_value = 20.0
+
+[node name="TargetPosRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Lq" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(36, 0)
+text = "Q"
+
+[node name="TargetQInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -20.0
+max_value = 20.0
+
+[node name="Lr" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(24, 0)
+text = "R"
+
+[node name="TargetRInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -20.0
+max_value = 20.0
+
+[node name="Scene" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="SceneVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+; =============== Preset ===============
+[node name="TitlePreset" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox"]
+layout_mode = 2
+text = "Preset"
+
+[node name="PresetRow" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PresetLoadOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="PresetSaveButton" type="Button" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Save Preset"
+
+[node name="Sep1" type="HSeparator" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox"]
+layout_mode = 2
+
+; =============== Map ===============
+[node name="TitleMap" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox"]
+layout_mode = 2
+text = "Map"
+
+[node name="MapRadiusRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/MapRadiusRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(86, 0)
 text = "Radius"
 
-[node name="MapRadiusInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapRadiusRow"]
+[node name="MapRadiusInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/MapRadiusRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -78,30 +239,31 @@ min_value = 1.0
 max_value = 20.0
 value = 5.0
 
-[node name="MapOrientationRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="MapOrientationRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapOrientationRow"]
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/MapOrientationRow"]
 layout_mode = 2
-custom_minimum_size = Vector2(112, 0)
+custom_minimum_size = Vector2(86, 0)
 text = "Orientation"
 
-[node name="MapOrientationOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapOrientationRow"]
+[node name="MapOrientationOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/MapOrientationRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+fit_to_longest_item = false
 
-[node name="MapHexSizeRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="MapHexSizeRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapHexSizeRow"]
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/MapHexSizeRow"]
 layout_mode = 2
-custom_minimum_size = Vector2(112, 0)
+custom_minimum_size = Vector2(86, 0)
 text = "Hex Size"
 
-[node name="MapHexSizeInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/MapHexSizeRow"]
+[node name="MapHexSizeInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox/MapHexSizeRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -110,146 +272,27 @@ max_value = 200.0
 step = 0.5
 value = 1.0
 
-[node name="Sep2" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-
-; =============== Skill ===============
-[node name="TitleSkill" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-text = "Skill Loadout"
-
-[node name="SkillActiveLabel" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-text = "Active Skill"
-
-[node name="SkillActiveOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="SkillPassivesLabel" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-text = "Passive Skills"
-
-[node name="PassivesScroll" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-custom_minimum_size = Vector2(0, 132)
-layout_mode = 2
-horizontal_scroll_mode = 0
-
-[node name="PassivesContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/PassivesScroll"]
+[node name="RunFooter" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
-
-[node name="Sep3" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-
-; =============== Actors ===============
-[node name="TitleActors" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-text = "Actors"
-
-[node name="ActorAddRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="ActorAddEnemyButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/ActorAddRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "+ Enemy"
-
-[node name="ActorAddAllyButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/ActorAddRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "+ Ally"
-
-[node name="ActorsContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Sep4" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-
-; =============== Target ===============
-[node name="TitleTarget" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
-text = "Target"
-
-[node name="TargetModeOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="TargetIndexRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetIndexRow"]
-layout_mode = 2
-custom_minimum_size = Vector2(112, 0)
-text = "Index"
-
-[node name="TargetIndexInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetIndexRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-min_value = 0.0
-max_value = 20.0
-
-[node name="TargetPosRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Lq" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
-layout_mode = 2
-custom_minimum_size = Vector2(36, 0)
-text = "Q"
-
-[node name="TargetQInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-min_value = -20.0
-max_value = 20.0
-
-[node name="Lr" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
-layout_mode = 2
-custom_minimum_size = Vector2(24, 0)
-text = "R"
-
-[node name="TargetRInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TargetPosRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-min_value = -20.0
-max_value = 20.0
-
-[node name="Sep5" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
-layout_mode = 2
 
 ; =============== Controls ===============
-[node name="TitleCtrl" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="TitleCtrl" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter"]
 layout_mode = 2
 text = "Run"
 
-[node name="TicksRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="TicksRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TicksRow"]
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter/TicksRow"]
 layout_mode = 2
 custom_minimum_size = Vector2(112, 0)
 text = "Max Ticks"
 
-[node name="MaxTicksInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/TicksRow"]
+[node name="MaxTicksInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter/TicksRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -257,16 +300,16 @@ min_value = 10.0
 max_value = 5000.0
 value = 500.0
 
-[node name="SpeedRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="SpeedRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/SpeedRow"]
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter/SpeedRow"]
 layout_mode = 2
 custom_minimum_size = Vector2(112, 0)
 text = "Playback Speed"
 
-[node name="SpeedInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/SpeedRow"]
+[node name="SpeedInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter/SpeedRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -275,26 +318,26 @@ max_value = 10.0
 step = 0.1
 value = 1.0
 
-[node name="Sep6" type="HSeparator" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="Sep6" type="HSeparator" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter"]
 layout_mode = 2
 
-[node name="ActionRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="ActionRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="StartButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/ActionRow"]
+[node name="StartButton" type="Button" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Start Preview"
 
-[node name="ResetButton" type="Button" parent="ConfigUI/Root/LeftPanel/Scroll/VBox/ActionRow"]
+[node name="ResetButton" type="Button" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Reset Scene"
 
-[node name="StatusLabel" type="Label" parent="ConfigUI/Root/LeftPanel/Scroll/VBox"]
+[node name="StatusLabel" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/RunFooter"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Status: Ready"
@@ -302,18 +345,41 @@ autowrap_mode = 2
 
 ; =============== Console (bottom) ===============
 [node name="BottomPanel" type="PanelContainer" parent="ConfigUI/Root"]
-anchor_left = 1.0
-anchor_top = 0.0
+unique_name_in_owner = true
+anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -356.0
-offset_top = 12.0
+offset_left = 372.0
+offset_top = -44.0
 offset_right = -12.0
 offset_bottom = -12.0
 
-[node name="ConsoleLog" type="RichTextLabel" parent="ConfigUI/Root/BottomPanel"]
+[node name="DrawerVBox" type="VBoxContainer" parent="ConfigUI/Root/BottomPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DrawerHeader" type="HBoxContainer" parent="ConfigUI/Root/BottomPanel/DrawerVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ConsoleToggleButton" type="Button" parent="ConfigUI/Root/BottomPanel/DrawerVBox/DrawerHeader"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(112, 0)
+text = "Show Log"
+
+[node name="ConsoleSummaryLabel" type="Label" parent="ConfigUI/Root/BottomPanel/DrawerVBox/DrawerHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Ready"
+text_overrun_behavior = 3
+
+[node name="ConsoleLog" type="RichTextLabel" parent="ConfigUI/Root/BottomPanel/DrawerVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
 bbcode_enabled = true
 scroll_following = true
 
