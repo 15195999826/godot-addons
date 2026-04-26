@@ -1,8 +1,26 @@
 # 世界即唯一 Instance：从"战斗 owns 世界"到"世界 owns 战斗"
 
-**日期**：2026-04-19
+**日期**：2026-04-19（**最近更新 2026-04-26**：阶段 4 作废）
 **范围**：`core/entity/*`、`example/hex-atb-battle-core/*`、`example/hex-atb-battle-frontend/*`、`stdlib/replay/*`；主仓库的 `scripts/SkillPreviewBattle.gd`、`scenes/`、`tests/`
-**类型**：架构级设计文档（前瞻性，尚未实现）
+**类型**：架构级设计文档（多阶段实施中，见下方进度表）
+
+---
+
+## 📌 进度速览（先看这里，避免误判）
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| 0 | 设计对齐（本文档） | ✅ 完成 |
+| 1 | Core 分层（`WorldGameplayInstance` / `BattleProcedure` / `HexBattleProcedure` / `HexBattle` 收缩为门面） | ✅ 落地 2026-04-20 |
+| 2 | Frontend 订阅器（`WorldView` + `BattleAnimator`） | ✅ 落地 2026-04-20 |
+| 3 | `skill_preview` 响应式切换 + D5 死亡留 world | ✅ 落地 2026-04-20 + 2026-04-26 收尾 |
+| **附** | A 层 `FrontendBattleReplayScene.load_replay` destructive 路径下线 + `main.gd` 切响应式 wire | ✅ 完成 2026-04-26 |
+| **4** | ~~录像格式 v3 split + `ReplayPlayer` hydrate 真 Actor~~ | ❌ **作废 2026-04-26**（详情见下面"阶段 4"段） |
+| 5 | `main.tscn` / `Simulation.tscn` / Web 桥接 / scenario runner 切 WorldGI；去 `HexBattle` 门面；actor id 前缀替换 | ⏳ 待启动（剩余唯一阶段） |
+
+**阶段 4 误判预警**：本文档原稿把"录像 v3 + ReplayPlayer hydrate 真 Actor"列作阶段 4，2026-04-26 用户重新对齐后**整体作废**——为表演层重建逻辑 actor 复杂度过高且现状已够用，原本要解的死亡动画问题改 1 行 `damage_utils` 即解决。详见 [2026-04-26-death-keeps-actor-in-world.md](2026-04-26-death-keeps-actor-in-world.md) 和 [2026-04-26-playback-old-path-retirement.md](2026-04-26-playback-old-path-retirement.md)。**任何"阶段 4 还没做完吗"的判断都是过期理解**。
+
+命名分层（钉死）：A 层 = `Playback`（"放给观众看",不重建逻辑,现状）；B 层 = `Replay`（deterministic 重算,**未来不一定做**,命名占位保留）。
 
 ---
 
@@ -367,15 +385,29 @@ static func play(record: Dictionary, parent: Node) -> void:
 - START = `world.start_battle(participants, abilities)` → 监听 `battle_finished(timeline)` → 喂 `BattleAnimator`
 - 验证"无缝展开战斗"可行
 
-**阶段 4 — Replay 格式 + 录像路径**
-- `BattleRecord` v3 格式（split `world_snapshot` + `event_timeline`）
-- `ReplayPlayer`（临时 WorldGI + WorldView）
-- 现有录像数据做一次性迁移脚本或版本检测 fallback
+**阶段 4 — Replay 格式 + 录像路径** ⚠️ **已作废（2026-04-26 重新对齐）**
+
+> 原计划：`BattleRecord` v3 格式（split `world_snapshot` + `event_timeline`）+ `ReplayPlayer`（临时 WorldGI hydrate 真 Actor）+ 录像数据迁移脚本。
+>
+> **2026-04-26 用户重新对齐后整体作废**，原因：
+> - 用户**强烈反对**为表演层重建逻辑 actor（hydrate 真 Actor + AbilitySet + AttributeSet）—— 巨量复杂度
+> - 现状 `FrontendBattleReplayScene.load_replay` 走的"从录像 dict 直接 spawn 视觉 view，不重建逻辑层"路径已经够用
+> - 阶段 4 原本要解的"战斗期死亡动画消失"问题，根因是 `damage_utils.apply_damage` 顺手 `remove_actor`，**改一行**即可解决（见下）
+>
+> 替代决策：
+> - **录像格式 v3 split 不做**，`PROTOCOL_VERSION` 不升，外部消费方（JS / cloud）不动
+> - **`ReplayPlayer` hydrate 真 Actor 路径作废**（字面看像 B 层但实际是 A 层包装，名字误导）
+> - **死亡动画问题**用 `damage_utils._clear_grid_footprint` 解决（保留 actor 在 world，只清 grid 占用），见 [2026-04-26-death-keeps-actor-in-world.md](2026-04-26-death-keeps-actor-in-world.md)
+> - **A 层老路径下线**（`FrontendBattleReplayScene.load_replay` destructive 路径）已在 2026-04-26 完成，见 [2026-04-26-playback-old-path-retirement.md](2026-04-26-playback-old-path-retirement.md)
+> - **命名分层钉死**：A 层 = `Playback`（"放给观众看"，不重建逻辑），B 层 = `Replay`（deterministic 重算，**未来不一定做**），命名占位 `BattleReplayPlayer` / `BattleReplaySession` 留着待 B 层实需出现再启动
+>
+> R2（Replay 独立性 vs 轻量性）和 R5（Save / Load）原本依赖阶段 4 一并设计，现在 R2 直接随阶段 4 作废而消解；R5 等真正做存档时单独立项。
 
 **阶段 5 — 正式游戏场景**
 - `main.tscn` 切换到 WorldGI 承载；战斗走 `start_battle` + 监听 `battle_finished`
 - `scenes/Simulation.tscn` / Web 桥接器适配
 - scenario runner / smoke test 适配（大多数断言应该变简单：直接查 WorldGI actor 终态）
+- 去掉 `HexBattle` thin 兼容门面，actor id 前缀从 `battle_*` 自然替换为 `world_*`
 
 每个阶段结束都应能独立跑通 `smoke_frontend_main` + scenario runner，保证增量推进。
 
@@ -391,12 +423,13 @@ static func play(record: Dictionary, parent: Node) -> void:
 
 > **注**：signal 风暴不是问题 —— 战斗是 blocking 的一次性推算，frontend 期间不做同步渲染，unit view 停在战斗开始时的视觉状态，由 `BattleAnimator` 消费 event_timeline 回放动画，播完自然追上 WorldGI 终态。signal 只服务非战斗期间的 view lifecycle（actor 进/出、NPC 移动、buff 过期）。
 
-### R2. Replay 独立性 vs 轻量性
+### R2. Replay 独立性 vs 轻量性 ⚠️ **已消解（2026-04-26）**
 
-- 纯 `event_timeline`：轻，但脱离 WorldGI 没法独立播放。
-- 完整 `world_snapshot`：重，整个 world 序列化对大地图不现实。
-
-**对策**：`world_snapshot` 只存"参战者 + 战斗范围内的 grid cell"（比如施法者周围 N 格），不是整个世界。录像回放时 hydrate 出的是一个局部 WorldGI，够 animator 跑完就行。
+> 原议题随阶段 4 作废一并消解：A 层 `Playback` 不重建逻辑层，本来就不需要"独立 hydrate"；B 层 `Replay`（deterministic 重算）未来不一定做。等真正启动 B 层时再单独立项讨论 snapshot 边界。
+>
+> ~~纯 `event_timeline`：轻，但脱离 WorldGI 没法独立播放。~~
+> ~~完整 `world_snapshot`：重，整个 world 序列化对大地图不现实。~~
+> ~~**对策**：`world_snapshot` 只存"参战者 + 战斗范围内的 grid cell"~~
 
 ### R3. 多战斗并行
 
@@ -412,9 +445,9 @@ static func play(record: Dictionary, parent: Node) -> void:
 
 **建议**：每 cell signal + frontend 内部 batching（一 tick 汇总）。
 
-### R5. Save / Load
+### R5. Save / Load ⚠️ **解耦自阶段 4（2026-04-26）**
 
-WorldGI 状态的序列化格式应该和 replay `world_snapshot` 复用同一套 hydrate 逻辑（存档就是一次 WorldGI snapshot，加载就是 `hydrate_from_snapshot`）。阶段 4 一并设计，不要分两套。
+原文档把 Save/Load 和 replay `world_snapshot` 绑在一起，让阶段 4 一并设计。阶段 4 作废后，Save/Load 不再有"已经要做的 snapshot 路径"可复用 —— 等真正做存档时单独立项设计 hydrate 接口，**不再视为本重构计划的一部分**。
 
 ---
 
@@ -446,11 +479,24 @@ WorldGI 状态的序列化格式应该和 replay `world_snapshot` 复用同一�
 | `BattleProcedure.finish() -> Dictionary` 无参 | `finish(result: String = "battle_complete")` | 需向 recorder 传战斗结果标签(`left_win` / `right_win` / `timeout`) |
 | `HexBattle` 改名为 `HexWorldGameplayInstance` 职责收缩 | `HexBattle` 保留为 thin 兼容门面,`extends HexWorldGameplayInstance` | 阶段 1 不改调用端(`main.tscn` / `SkillPreviewBattle` / `SimulationManager` / scenario runner 仍用 `HexBattle`);阶段 5 去门面 |
 | Actor id 形如 `world_0:Character_3` | 经 HexBattle 门面仍为 `battle_0:Character_3`,经直接 `HexWorldGameplayInstance` 则为 `world_0:xxx` | 门面 `_init` 用 "battle" prefix 维持向后兼容;阶段 5 去门面时自然替换 |
-| `BattleRecorder.start_recording_events_only()` 为唯一路径 | 基类 `BattleProcedure._start_recorder` 虚钩子默认走 events-only,HexBattleProcedure override 走旧版 `start_recording(actors, configs, map_config)` | 阶段 1 保留 `initial_actors` / `map_config`,FrontendBattleReplayScene 不受影响;录像格式 v3 在阶段 4 落地 |
+| `BattleRecorder.start_recording_events_only()` 为唯一路径 | 基类 `BattleProcedure._start_recorder` 虚钩子默认走 events-only,HexBattleProcedure override 走旧版 `start_recording(actors, configs, map_config)` | 阶段 1 保留 `initial_actors` / `map_config`,FrontendBattleReplayScene 不受影响;~~录像格式 v3 在阶段 4 落地~~ **阶段 4 作废,v3 不做,这条差异成永久现状** |
 
-**已落地**:`WorldView` / `BattleAnimator`(阶段 2,2026-04-20,见 [2026-04-20-world-view.md](2026-04-20-world-view.md))。
+**已落地**:
+- `WorldView` / `BattleAnimator`(阶段 2,2026-04-20,见 [2026-04-20-world-view.md](2026-04-20-world-view.md))
+- `SkillPreviewWorldGI.reset()` 等(阶段 3,2026-04-20,见 [2026-04-20-skill-preview-reactive.md](2026-04-20-skill-preview-reactive.md))
+- 死亡不 remove_actor / `_clear_grid_footprint`(阶段 3 D5 收尾,2026-04-26,见 [2026-04-26-death-keeps-actor-in-world.md](2026-04-26-death-keeps-actor-in-world.md))
+- A 层 `FrontendBattleReplayScene.load_replay` destructive 路径下线 + `main.gd` 切响应式 wire(2026-04-26,见 [2026-04-26-playback-old-path-retirement.md](2026-04-26-playback-old-path-retirement.md))
 
-**未实装(按阶段推进)**:`SkillPreviewWorldGI.reset()`(阶段 3)、`ReplayPlayer` + 录像 v3(阶段 4)、`main.tscn` / `Simulation.tscn` 切换到 WorldGI 承载(阶段 5)。
+**已作废(2026-04-26)**:
+- 阶段 4 整体:`BattleRecord` v3 split / `ReplayPlayer` hydrate 真 Actor / 录像数据迁移脚本 —— 见上面"阶段 4"段
+- R2 / R5 议题随阶段 4 解耦
+
+**未实装**:阶段 5 — `main.tscn` / `Simulation.tscn` 切 WorldGI 承载 + 去 `HexBattle` 兼容门面 + actor id `battle_*` → `world_*`。
+
+**未来工作(不属于本计划)**:
+- B 层 `Replay`(deterministic 重算)如真有需求时再单独立项,命名占位 `BattleReplayPlayer` / `BattleReplaySession` 已腾出
+- A 层现有 `Replay*` 类(`BattleRecorder` / `ReplayData` 等)系统性改名到 `Playback*` —— 视未来 B 层启动节奏决定
+- Save / Load —— 单独立项
 
 ---
 
@@ -460,7 +506,8 @@ WorldGI 状态的序列化格式应该和 replay `world_snapshot` 复用同一�
 
 1. ~~阶段 1 起稿：新增 `WorldGameplayInstance`（含 signal + tick + start_battle + mutation API）+ core `BattleProcedure` 抽象基类 + `HexBattleProcedure` + `HexBattle` 改名收缩~~ **已落地(2026-04-20),见上面"阶段 1 实装差异"**。
 2. ~~阶段 2 起稿：`WorldView`（订阅 WorldGI signal）+ `BattleAnimator`（消费 event_timeline）~~ **已落地(2026-04-20),见 [2026-04-20-world-view.md](2026-04-20-world-view.md)**。
-3. 阶段 3：`skill_preview` 端到端 POC 验证"无缝战斗"
-4. 视 POC 结果决定阶段 4/5 的优先级
+3. ~~阶段 3：`skill_preview` 端到端 POC 验证"无缝战斗"~~ **已落地(2026-04-20 主体 + 2026-04-26 D5 收尾)**。
+4. ~~视 POC 结果决定阶段 4/5 的优先级~~ **2026-04-26 重新对齐:阶段 4 作废,只剩阶段 5**。
+5. **阶段 5(待启动)**:`main.tscn` / `Simulation.tscn` / Web 桥接 / scenario runner 切 WorldGI 承载;去 `HexBattle` 兼容门面;actor id 前缀替换。
 
 每个阶段独立一个 `docs/design-notes/YYYY-MM-DD-<topic>.md`，详细记录 probe / 决策 / 验证数字。
