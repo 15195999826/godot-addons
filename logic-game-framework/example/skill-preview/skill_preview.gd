@@ -1704,6 +1704,11 @@ const SECTION_COLORS := {
 const START_COLOR := Color("2563EB")
 const START_HOVER := Color("1D4ED8")
 const START_PRESSED := Color("1E40AF")
+const PASSIVE_SELECTED_BG := Color("DCFCE7")
+const PASSIVE_SELECTED_HOVER := Color("BBF7D0")
+const PASSIVE_SELECTED_PRESSED := Color("86EFAC")
+const PASSIVE_SELECTED_BORDER := Color("22C55E")
+const PASSIVE_SELECTED_TEXT := Color("14532D")
 const CONSOLE_BG := Color("111827")
 const CONSOLE_FG := Color("E5E7EB")
 
@@ -1960,8 +1965,8 @@ func _style_status_label() -> void:
 	_status_label.add_theme_font_size_override("font_size", 12)
 
 
-## Passive CheckBox 选中/未选中视觉: 选中 = 鲜珊瑚 + 白字(高对比),
-## 未选中 = 淡米(低突出)。直接 override 每个状态 stylebox 让渲染顺序无歧义。
+## Passive CheckBox 选中/未选中视觉: 选中 = 浅绿底 + 深绿字,
+## 未选中 = 默认白底。直接 override 每个状态 stylebox 让渲染顺序无歧义。
 ##
 ## passive 选择只影响 _on_start_pressed 时 _collect_selected_passives() 传给
 ## queue_preview, 编辑期 world 不感知 passive (passive 是战斗期 grant 给 caster),
@@ -1972,25 +1977,32 @@ func _on_passive_toggled(_pressed: bool, cb: CheckBox) -> void:
 
 func _apply_passive_style(cb: CheckBox, selected: bool) -> void:
 	if selected:
-		var sb := _clay_sb(Color("CFE1FF"), 6, 6, 3, 0, 0)
-		sb.border_color = START_COLOR
+		var sb := _clay_sb(PASSIVE_SELECTED_BG, 6, 6, 3, 0, 0)
+		sb.border_color = PASSIVE_SELECTED_BORDER
 		sb.border_width_left = 1
 		sb.border_width_right = 1
 		sb.border_width_top = 1
 		sb.border_width_bottom = 1
 		cb.add_theme_stylebox_override("normal", sb)
-		cb.add_theme_stylebox_override("hover", _outlined_sb(Color("BDD5FF"), Color("1D4ED8"), 6, 6, 3))
-		cb.add_theme_stylebox_override("pressed", _outlined_sb(Color("AFCBFF"), Color("1E40AF"), 6, 6, 3))
-		cb.add_theme_color_override("font_color", START_PRESSED)
-		cb.add_theme_color_override("font_hover_color", START_PRESSED)
-		cb.add_theme_color_override("font_pressed_color", START_PRESSED)
+		cb.add_theme_stylebox_override("hover",
+			_outlined_sb(PASSIVE_SELECTED_HOVER, PASSIVE_SELECTED_BORDER, 6, 6, 3))
+		cb.add_theme_stylebox_override("pressed",
+			_outlined_sb(PASSIVE_SELECTED_PRESSED, PASSIVE_SELECTED_BORDER, 6, 6, 3))
+		cb.add_theme_stylebox_override("hover_pressed",
+			_outlined_sb(PASSIVE_SELECTED_HOVER, PASSIVE_SELECTED_BORDER, 6, 6, 3))
+		cb.add_theme_color_override("font_color", PASSIVE_SELECTED_TEXT)
+		cb.add_theme_color_override("font_hover_color", PASSIVE_SELECTED_TEXT)
+		cb.add_theme_color_override("font_pressed_color", PASSIVE_SELECTED_TEXT)
+		cb.add_theme_color_override("font_hover_pressed_color", PASSIVE_SELECTED_TEXT)
 	else:
 		cb.remove_theme_stylebox_override("normal")
 		cb.remove_theme_stylebox_override("hover")
 		cb.remove_theme_stylebox_override("pressed")
+		cb.remove_theme_stylebox_override("hover_pressed")
 		cb.remove_theme_color_override("font_color")
 		cb.remove_theme_color_override("font_hover_color")
 		cb.remove_theme_color_override("font_pressed_color")
+		cb.remove_theme_color_override("font_hover_pressed_color")
 
 
 ## Console: 深紫底 + 亮字, 对比 vibrant 主面板
