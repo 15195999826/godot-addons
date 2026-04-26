@@ -35,6 +35,11 @@ const BUFF_REGISTRY := {
 		"color": Color(0.3, 0.5, 1.0),
 		"primary_source": PrimarySource.SHIELD_REMAINING,
 	},
+	HexBattleSurgeBuff.CONFIG_ID: {
+		"short": "U",
+		"color": Color(0.95, 0.6, 0.2),
+		"primary_source": PrimarySource.STACKS,
+	},
 	HexBattleThorn.CONFIG_ID: {
 		"short": "T",
 		"color": Color(1.0, 0.5, 0.2),
