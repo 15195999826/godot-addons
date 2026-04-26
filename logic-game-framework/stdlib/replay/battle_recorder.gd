@@ -100,9 +100,20 @@ func record_frame(frame: int, events: Array[Dictionary]) -> void:
 
 	current_frame = frame
 
+	# 顺序契约:pending_events(被动事件:AbilityGranted/Removed/Triggered/Activated)
+	# 必须排在 events(主动事件:damage/heal/StacksChanged 等 collector push)之前。
+	#
+	# 反例:GRANTED_SELF + on_timeline_start 的 buff(如 Surge)在 grant 同步链里
+	# 立即 fire first tick,collector 顺序是 [damage, StacksChanged],pending 队列里
+	# 是 [AbilityGranted]。如果 events 先 / pending 后,frontend 看到的是
+	# StacksChanged 早于 AbilityGranted → BuffVisualizer.UPDATE 找不到 buff 静默
+	# 失败,然后 ADD primary=3,显示 U3 → 下一周期 U1 → 消失(中间漏 U2)。
+	#
+	# 把 pending 放前面 → 先建立 buff state(ADD primary=3),再 UPDATE primary=2,
+	# 显示 U2 → U1 → 消失,符合预期。
 	var all_events: Array[Dictionary] = []
-	all_events.append_array(events)
 	all_events.append_array(pending_events)
+	all_events.append_array(events)
 	pending_events.clear()
 
 	if not all_events.is_empty():
