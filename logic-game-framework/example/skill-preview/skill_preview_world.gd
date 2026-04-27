@@ -9,6 +9,10 @@
 ## HexWorldGameplayInstance 不含 reset API —— reset 是编辑态 / 测试场景的需求，
 ## 不是框架 API，故放在子类里。
 ##
+## 多 actor 时间轴模型: queue_preview 接收 Array[ActorSetup], 每个 setup
+## 包含 passives + track (keyframe 列表)。procedure 在 start() 立即 drain
+## time_ms<=0 的 keyframe, tick_once 按 logic_time 调度后续。
+##
 ## 详见 docs/design-notes/2026-04-19-world-as-single-instance.md 阶段 3。
 class_name SkillPreviewWorldGI
 extends HexWorldGameplayInstance
@@ -16,11 +20,11 @@ extends HexWorldGameplayInstance
 
 # ========== 字段 ==========
 
-# 预存下一次 start_battle 的 preview 参数；_create_battle_procedure 读出并组装 procedure。
-var _queued_caster_id: String = ""
-var _queued_ability_config: AbilityConfig = null
-var _queued_target_id: String = ""
-var _queued_passives: Array[AbilityConfig] = []
+# 预存下一次 start_battle 的 setups；_create_battle_procedure 读出并组装 procedure。
+# 每条 setup = {actor_id: String, passives: Array[AbilityConfig], track: Array[Dictionary]}
+# 每条 keyframe = {time_ms: int, ability_config: AbilityConfig, target_id: String}
+var _queued_setups: Array[Dictionary] = []
+var _queued_allow_empty_track: bool = false
 
 
 # ========== 初始化 ==========
@@ -47,49 +51,85 @@ func reset() -> void:
 	_systems.clear()
 	grid = null
 	_logic_time = 0.0
-	_queued_caster_id = ""
-	_queued_ability_config = null
-	_queued_target_id = ""
-	_queued_passives = []
+	_queued_setups = []
+	_queued_allow_empty_track = false
 
 
 # ========== Preview 参数 ==========
 
-## 预存下一次 start_battle 用的 preview 参数。调方在 start_battle 前调用一次。
+## 预存下一次 start_battle 用的 actor setups。调方在 start_battle 前调用一次。
+##
+## actor_setups[i] = {
+##   "actor_id": String,
+##   "passives": Array[AbilityConfig],
+##   "track":    Array[Dictionary],   # 见 keyframe 格式
+## }
+## keyframe = {
+##   "time_ms":        int,           # 触发时刻 (>=0; <=0 在 procedure.start() 末尾立即 drain)
+##   "ability_config": AbilityConfig,
+##   "target_id":      String,        # "" 表无 target
+## }
+##
+## allow_empty_track=true 允许所有 actor track 全空 (纯被动验证场景)；
+## 默认 false 时至少有一个 actor 必须有非空 track —— 阻止"忘配 action"静默成空跑。
 func queue_preview(
-	caster_id: String,
-	ability_config: AbilityConfig,
-	target_id: String = "",
-	passives: Array[AbilityConfig] = [],
+	actor_setups: Array[Dictionary],
+	allow_empty_track: bool = false,
 ) -> void:
-	_queued_caster_id = caster_id
-	_queued_ability_config = ability_config
-	_queued_target_id = target_id
-	# duplicate 防御调方后续 mutate 传入数组反向影响 world 缓存
-	_queued_passives = passives.duplicate()
+	# duplicate(true) 防御调方后续 mutate 反向影响 world 缓存; passives / track 数组
+	# 也是嵌套 dict, 浅拷贝不足以隔离。
+	_queued_setups = actor_setups.duplicate(true)
+	_queued_allow_empty_track = allow_empty_track
 
 
 # ========== Procedure 工厂 ==========
 
-## 消费预存的 preview 参数构造 SkillPreviewProcedure。消费后清空，避免
-## 下一场战斗误用上一场的技能 —— 必须每场前重新 queue_preview。
-## assert 防 "忘 queue_preview 直接 start_battle" 静默跑 null ability 的坑。
+## 消费预存的 setups 构造 SkillPreviewProcedure。消费后清空，避免下一场战斗
+## 误用上一场的配置 —— 必须每场前重新 queue_preview。
+##
+## assert 链:
+## 1. setups 至少一条 (即使纯被动也得有 actor 在场上)
+## 2. 每条 setup.actor_id 能解析到 world.get_actor
+## 3. 每条 keyframe 的 ability_config 非 null
+## 4. has_any_keyframe or _queued_allow_empty_track —— 阻止静默空跑
 func _create_battle_procedure(participants: Array[Actor]) -> BattleProcedure:
 	Log.assert_crash(
-		_queued_ability_config != null,
+		not _queued_setups.is_empty(),
 		"SkillPreviewWorldGI",
-		"start_battle called without a preceding queue_preview — ability_config is null"
+		"start_battle called without a preceding queue_preview — _queued_setups is empty"
 	)
+
+	var has_any_keyframe := false
+	for setup in _queued_setups:
+		var actor_id: String = setup.get("actor_id", "") as String
+		Log.assert_crash(
+			actor_id != "" and get_actor(actor_id) != null,
+			"SkillPreviewWorldGI",
+			"setup.actor_id unresolved in world: %s" % actor_id
+		)
+		var track: Array = setup.get("track", []) as Array
+		if not track.is_empty():
+			has_any_keyframe = true
+		for kf in track:
+			var ability_cfg = (kf as Dictionary).get("ability_config")
+			Log.assert_crash(
+				ability_cfg != null and ability_cfg is AbilityConfig,
+				"SkillPreviewWorldGI",
+				"keyframe.ability_config null/invalid for actor %s" % actor_id
+			)
+
+	Log.assert_crash(
+		has_any_keyframe or _queued_allow_empty_track,
+		"SkillPreviewWorldGI",
+		"queue_preview: no actor has a non-empty track — set allow_empty_track=true if intentional"
+	)
+
 	var procedure := SkillPreviewProcedure.new(
 		self,
 		participants,
-		_queued_caster_id,
-		_queued_ability_config,
-		_queued_target_id,
-		_queued_passives,
+		_queued_setups,
+		_queued_allow_empty_track,
 	)
-	_queued_caster_id = ""
-	_queued_ability_config = null
-	_queued_target_id = ""
-	_queued_passives = []
+	_queued_setups = []
+	_queued_allow_empty_track = false
 	return procedure

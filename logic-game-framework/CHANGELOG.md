@@ -12,6 +12,28 @@
 
 ---
 
+## [Unreleased] — 2026-04-27 SkillPreview 多 actor 时间轴模型
+
+### Changed
+
+- **`SkillPreviewWorldGI.queue_preview`** 改签名: 从 `(caster_id, ability, target_id, passives)` 改为 `(actor_setups: Array[Dictionary], allow_empty_track: bool = false)`。每个 setup 携带 `{actor_id, passives: Array[AbilityConfig], track: Array[Keyframe]}`,`Keyframe = {time_ms, ability_config, target_id}`。旧调用全部需要迁移 (改造前 baseline = caster 单条 t=0 keyframe)。
+- **`SkillPreviewProcedure._init`** 改签名: 接收 `actor_setups` 替换原 `caster_id / ability_config / target_id / passives`。`start()` 末尾立即 drain `time_ms <= 0` 的 keyframe (保留改造前"第 0 帧 activate"行为, event `logicTime=0.0`)。`tick_once` 在 `world.base_tick` 后按 `world.get_logic_time()` 调度后续 keyframe。结束判定加 `_pending_keyframes.is_empty()`。
+- **`SkillPreviewBattle.run_with_actions`** (主仓 helper): `actions[i]` 增加可选 `time_ms: int` 字段 (默认 0)。`t<=0` 在 grant 阶段立即 activate (与改造前一致),`t>0` 进 pending 队列,每帧 `battle.tick` 后 drain 已到时项。
+- **`SkillPreview` 工具 UI**: 删除全局 `Skill` / `Target` tab。Actors detail panel 内每个 actor 自己挂 passives + skill track (keyframe 列表 `[time_ms] [skill] [target_mode + index/q/r]`)。同 actor 同 `time_ms` 在 UI 阻止 (push 到下一个 100 边界)。
+
+### Removed
+
+- 旧 preset 文件 (`01_strike_basic.json` ~ `09_surge_self_buff.json`) 全删,替换为 v2 schema 的 3 个示例 (`01_caster_strike` / `02_combo_caster_3hit` / `03_thorns_reflect`)。preset JSON 加 `version: 2`,旧版被 `_is_preset_v2` 拒绝加载。
+
+### 验证
+
+| 场景 | 改造前 | 改造后 |
+|---|---|---|
+| caster t=0 Strike → enemy_0 (smoke_skill_preview_reactive) | PASS | PASS |
+| caster t=0 + enemy_0 t=500 双 Strike (smoke_skill_preview_timeline) | N/A | PASS — caster damage @ frame 3, enemy damage @ frame 8, 间隔 5 帧 |
+
+---
+
 ## [Unreleased] — 2026-04-27 录像: BattleRecorder 单 buffer 重构 (根治时序错位)
 
 `BattleRecorder.pending_events` 字段删除。所有录像事件 (Action 显式 push 的 damage/heal/StacksChanged + Actor lifecycle callback push 的 AbilityGranted/AttributeChanged/ActorSpawned/Destroyed) 统一进 `GameWorld.event_collector`。`record_frame(frame, events)` 简化为只写入参数 events,不再合并第二容器。

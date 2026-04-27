@@ -43,41 +43,6 @@ current_tab = 0
 clip_contents = true
 clip_tabs = true
 
-[node name="Skill" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
-layout_mode = 2
-horizontal_scroll_mode = 0
-
-[node name="SkillVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/separation = 6
-
-; =============== Skill ===============
-[node name="TitleSkill" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
-layout_mode = 2
-text = "Skill Loadout"
-
-[node name="SkillActiveLabel" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
-layout_mode = 2
-text = "Active Skill"
-
-[node name="SkillActiveOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-fit_to_longest_item = false
-
-[node name="SkillPassivesLabel" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
-layout_mode = 2
-text = "Passive Skills"
-
-[node name="PassivesContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Skill/SkillVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 3
-
 [node name="Actors" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
 layout_mode = 2
 horizontal_scroll_mode = 0
@@ -113,75 +78,6 @@ text = "+ Ally"
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 3
-
-[node name="Target" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
-layout_mode = 2
-horizontal_scroll_mode = 0
-
-[node name="TargetVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/separation = 6
-
-; =============== Target ===============
-[node name="TitleTarget" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
-layout_mode = 2
-text = "Target"
-
-[node name="TargetModeOption" type="OptionButton" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-fit_to_longest_item = false
-
-[node name="TargetIndexRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetIndexRow"]
-layout_mode = 2
-custom_minimum_size = Vector2(112, 0)
-text = "Index"
-
-[node name="TargetIndexInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetIndexRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-min_value = 0.0
-max_value = 20.0
-
-[node name="TargetPosRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Lq" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
-layout_mode = 2
-custom_minimum_size = Vector2(36, 0)
-text = "Q"
-
-[node name="TargetQInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-min_value = -20.0
-max_value = 20.0
-
-[node name="Lr" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
-layout_mode = 2
-custom_minimum_size = Vector2(24, 0)
-text = "R"
-
-[node name="TargetRInput" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Target/TargetVBox/TargetPosRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-min_value = -20.0
-max_value = 20.0
 
 [node name="Scene" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
 layout_mode = 2

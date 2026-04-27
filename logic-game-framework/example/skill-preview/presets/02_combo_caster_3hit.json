@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "map": {"radius": 5, "orientation": "flat", "hex_size": 1.0},
+  "actors": [
+    {
+      "role": "caster", "team": "A", "class": "WARRIOR", "pos": [0, 0],
+      "hp": 100.0, "atk": 0.0,
+      "passives": [],
+      "track": [
+        {"time_ms": 0,    "skill": "skill_strike", "target": {"mode": "auto", "index": 0, "q": 0, "r": 0}},
+        {"time_ms": 600,  "skill": "skill_strike", "target": {"mode": "auto", "index": 0, "q": 0, "r": 0}},
+        {"time_ms": 1200, "skill": "skill_strike", "target": {"mode": "auto", "index": 0, "q": 0, "r": 0}}
+      ]
+    },
+    {
+      "role": "dummy", "team": "B", "class": "WARRIOR", "pos": [1, 0],
+      "hp": 500.0, "atk": 0.0,
+      "passives": [],
+      "track": []
+    }
+  ],
+  "controls": {"max_ticks": 500, "speed": 1.0}
+}

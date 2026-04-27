@@ -1,12 +1,19 @@
 ## SkillPreviewProcedure - 技能预览战斗过程
 ##
-## BattleProcedure 的 skill_preview 特化：不跑 ATB / AI / 胜负判定，直接让
-## caster 施放指定 ability，tick 到"所有技能无 executing instance 且无飞行
-## 投射物"后 +POST_EXECUTION_TICKS 延迟关停。承接原 SkillPreviewBattle 的
-## tick loop 语义，但寄生在外部常驻 WorldGI 上 —— 不 GameWorld.destroy()，
-## actor 生命周期归 world 管，procedure 结束后可再次 start_battle。
+## BattleProcedure 的 skill_preview 特化：不跑 ATB / AI / 胜负判定，按"多 actor
+## 时间轴"模型施法 —— 每个 actor 一条 track, 每条 track 多个 keyframe
+## (time_ms / ability_config / target_id)。tick 到达 keyframe.time_ms 时
+## grant + activate, "所有 keyframe 已 fire 且无 executing instance 且无飞行
+## 投射物"后 +POST_EXECUTION_TICKS 延迟关停。
 ##
-## 由 SkillPreviewWorldGI._create_battle_procedure 构造；preview 参数通过
+## 寄生在外部常驻 WorldGI 上 —— 不 GameWorld.destroy()，actor 生命周期归
+## world 管，procedure 结束后可再次 start_battle。
+##
+## 触发语义: keyframe.time_ms <= world.get_logic_time() 即触发。time_ms<=0
+## 的 keyframe 在 start() 末尾立即 drain, 让"第 0 帧 activate"在 tick_once
+## 推进 logic_time 之前完成 —— 否则会延后 100ms 触发。
+##
+## 由 SkillPreviewWorldGI._create_battle_procedure 构造；setups 通过
 ## SkillPreviewWorldGI.queue_preview 预存。
 class_name SkillPreviewProcedure
 extends BattleProcedure
@@ -21,12 +28,14 @@ const POST_EXECUTION_TICKS := 10
 
 # ========== 字段 ==========
 
-var _caster_id: String
-var _ability_config: AbilityConfig
-var _target_id: String
-var _passive_configs: Array[AbilityConfig] = []
+# 原始 setups 副本，留作日志/诊断。运行时调度走 _pending_keyframes。
+var _actor_setups: Array[Dictionary] = []
+var _allow_empty_track: bool = false
+
+# 待触发的 keyframe 队列, 按 (time_ms, actor_order, track_order) 升序。
+# 每条 = {time_ms: int, actor_id: String, ability_config: AbilityConfig, target_id: String}
+var _pending_keyframes: Array[Dictionary] = []
 var _post_countdown: int = -1
-var _preview_ability_instance_id: String = ""
 
 
 # ========== 初始化 ==========
@@ -34,17 +43,13 @@ var _preview_ability_instance_id: String = ""
 func _init(
 	world: WorldGameplayInstance,
 	participants: Array[Actor],
-	caster_id: String,
-	ability_config: AbilityConfig,
-	target_id: String = "",
-	passives: Array[AbilityConfig] = [],
+	actor_setups: Array[Dictionary],
+	allow_empty_track: bool = false,
 ) -> void:
 	super._init(world, participants)
-	_caster_id = caster_id
-	_ability_config = ability_config
-	_target_id = target_id
-	# duplicate 防御调方后续 mutate 数组反向影响 procedure
-	_passive_configs = passives.duplicate()
+	# duplicate(true) 防御调方后续 mutate 数组反向影响 procedure
+	_actor_setups = actor_setups.duplicate(true)
+	_allow_empty_track = allow_empty_track
 
 
 # ========== 生命周期 ==========
@@ -74,31 +79,48 @@ func start() -> void:
 	if world == null:
 		mark_finished()
 		return
-	var caster := world.get_actor(_caster_id) as CharacterActor
-	if caster == null:
-		mark_finished()
-		return
 
-	for passive_cfg in _passive_configs:
-		if passive_cfg != null:
-			caster.ability_set.grant_ability(Ability.new(passive_cfg, caster.get_id()), world)
+	# 1. Grant passives (一次性, 全部 actor)
+	for setup in _actor_setups:
+		var actor_id: String = setup.get("actor_id", "") as String
+		var actor := world.get_actor(actor_id) as CharacterActor
+		if actor == null:
+			continue
+		for passive_cfg in setup.get("passives", []) as Array:
+			if passive_cfg != null and passive_cfg is AbilityConfig:
+				actor.ability_set.grant_ability(Ability.new(passive_cfg, actor.get_id()), world)
 
-	if _ability_config == null:
-		mark_finished()
-		return
-	var ability := Ability.new(_ability_config, caster.get_id())
-	_preview_ability_instance_id = ability.id
-	caster.ability_set.grant_ability(ability, world)
+	# 2. 平铺 keyframe 到 _pending_keyframes, 按 (time_ms, actor_order, track_order) 稳定排序。
+	#    actor_order = setup 在 _actor_setups 里的 idx; track_order = keyframe 在 track 里的 idx。
+	#    同 time_ms 用 (actor_order, track_order) 决定确定顺序 —— 不同 actor 同 time 是
+	#    "确定顺序"而不是"真并发"。
+	var flat: Array[Dictionary] = []
+	for actor_idx in _actor_setups.size():
+		var setup: Dictionary = _actor_setups[actor_idx]
+		var actor_id: String = setup.get("actor_id", "") as String
+		var track: Array = setup.get("track", []) as Array
+		for kf_idx in track.size():
+			var kf: Dictionary = track[kf_idx]
+			flat.append({
+				"time_ms": int(kf.get("time_ms", 0)),
+				"actor_id": actor_id,
+				"ability_config": kf.get("ability_config"),
+				"target_id": String(kf.get("target_id", "")),
+				"_actor_order": actor_idx,
+				"_track_order": kf_idx,
+			})
+	flat.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["time_ms"] != b["time_ms"]:
+			return a["time_ms"] < b["time_ms"]
+		if a["_actor_order"] != b["_actor_order"]:
+			return a["_actor_order"] < b["_actor_order"]
+		return a["_track_order"] < b["_track_order"]
+	)
+	_pending_keyframes = flat
 
-	var activate_event := {
-		"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
-		"abilityInstanceId": ability.id,
-		"sourceId": caster.get_id(),
-		"logicTime": 0.0,
-	}
-	if _target_id != "":
-		activate_event["target_actor_id"] = _target_id
-	caster.ability_set.receive_event(activate_event, world)
+	# 3. 立即 drain time_ms<=0 的 keyframe, 让"第 0 帧 activate"在 tick_once 推进
+	#    logic_time 之前完成 —— 否则首次 base_tick 后才触发, 实际落在 100ms。
+	_fire_due_keyframes(0.0)
 
 
 func tick_once() -> void:
@@ -112,8 +134,11 @@ func tick_once() -> void:
 
 	var cur_logic_time := world.get_logic_time() if world != null else float(_current_tick) * _tick_interval
 
-	# 合并两件事到同一循环:跑 ability tick + 探测 executing ability。避免 _still_executing
-	# 再全量扫一遍 world.get_actors() 里的 CharacterActor 与其 abilities。
+	# 先 fire 已到时的 keyframe; activate event 在本帧内被 ability_set 接收, 接着的 tick_executions
+	# 也会处理刚被 grant 的 ability。这样 t=0 keyframe 不会比"显式 grant" baseline 慢一帧。
+	_fire_due_keyframes(cur_logic_time)
+
+	# 合并两件事到同一循环:跑 ability tick + 探测 executing ability。
 	var any_ability_executing := false
 	for pid in _participant_ids:
 		var actor := _get_actor(pid)
@@ -136,8 +161,11 @@ func tick_once() -> void:
 		mark_finished()
 		return
 
+	# 结束判定: 待触发 keyframe 全部 fired + 无 executing + 无飞行投射物
 	if _post_countdown < 0:
-		if not (any_ability_executing or _any_projectile_flying(world)):
+		var no_more_pending := _pending_keyframes.is_empty()
+		var idle := no_more_pending and not any_ability_executing and not _any_projectile_flying(world)
+		if idle:
 			_post_countdown = POST_EXECUTION_TICKS
 	else:
 		_post_countdown -= 1
@@ -165,8 +193,35 @@ func _mark_in_combat(actor_id: String, active: bool) -> void:
 
 # ========== 内部工具 ==========
 
-## 扫 world.get_actors() 里是否有飞行中的投射物。仅此一项 —— ability executing
-## 探测在 tick_once 循环里顺带做了,不再重复扫 CharacterActor。
+## drain 队首所有 time_ms <= now_ms 的 keyframe, 各自 grant + activate。
+## 事件 logicTime 写 keyframe.time_ms (deterministic intent), 不写 now_ms;
+## 例: keyframe time_ms=850, 实际在 now=900ms tick 触发, 事件 logicTime 仍记 850。
+func _fire_due_keyframes(now_ms: float) -> void:
+	var world := _get_world()
+	while not _pending_keyframes.is_empty() and float(_pending_keyframes[0]["time_ms"]) <= now_ms:
+		var kf: Dictionary = _pending_keyframes.pop_front()
+		var actor_id: String = kf["actor_id"] as String
+		var actor := _get_actor(actor_id) as CharacterActor
+		if actor == null:
+			continue
+		var ability_cfg: AbilityConfig = kf["ability_config"]
+		if ability_cfg == null:
+			continue
+		var ability := Ability.new(ability_cfg, actor.get_id())
+		actor.ability_set.grant_ability(ability, world)
+		var event := {
+			"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
+			"abilityInstanceId": ability.id,
+			"sourceId": actor.get_id(),
+			"logicTime": float(kf["time_ms"]),
+		}
+		var target_id: String = kf["target_id"] as String
+		if target_id != "":
+			event["target_actor_id"] = target_id
+		actor.ability_set.receive_event(event, world)
+
+
+## 扫 world.get_actors() 里是否有飞行中的投射物。
 func _any_projectile_flying(world: HexWorldGameplayInstance) -> bool:
 	if world == null:
 		return false

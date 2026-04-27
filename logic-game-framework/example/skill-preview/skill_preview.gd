@@ -1,12 +1,17 @@
 ## SkillPreview - 技能预览开发者工具
 ##
 ## 打开 skill_preview.tscn F6:
-## - 左侧面板: Preset / Map / Skill / Actors (unified) / Target / Controls
+## - 左侧面板: Actors (含 passives + skill track) / Scene (preset + map) / Controls
 ## - 3D viewport: 编辑模式下 WorldView 响应式渲染 actors 摆位, 右键点格子 /
 ##   actor 弹 PopupMenu
-## - 点 START: world.queue_preview + world.start_battle -> SkillPreviewProcedure
+## - 点 START: world.queue_preview(actor_setups) + start_battle -> SkillPreviewProcedure
 ##   -> battle_finished -> FrontendBattleAnimator.play 在已有 unit view 上叠加
 ##   VFX / 飘字 / 死亡动画
+##
+## 多 actor 时间轴模型:
+##   每个 actor 一条 track, track 上多个 keyframe = {time_ms, skill, target}。
+##   passive 也每 actor 自己挂。procedure 在 start() drain time_ms<=0,
+##   tick_once 按 logic_time 调度后续 keyframe。
 ##
 ## 响应式架构 (阶段 3):
 ##   - 一个 skill_preview session 一个常驻 SkillPreviewWorldGI
@@ -16,12 +21,16 @@
 ##   - 战斗中死者 view 不被销毁 (damage_utils 不再 remove_actor 死者), Replay 走
 ##     animator.reset()+play() 复用同一组 unit_views, 跟 demo_frontend 一致
 ##
-## 数据模型:
-##   actors: Array[Dictionary] —— 每条 {role: "caster"|"dummy", team: "A"|"B",
-##           class, pos: [q,r], hp, atk}。role=="caster" 唯一且必是 team A。
-##   map:    {radius: int, orientation: "pointy"|"flat", hex_size: float}
-##   skill:  {active_id: String, passive_ids: Array[String]}
-##   target: {mode: "auto"|"enemy_index"|"ally_index"|"fixed_pos", index, pos}
+## 数据模型 (v2):
+##   actors: Array[Dictionary] —— 每条 {
+##     role: "caster"|"dummy", team: "A"|"B", class, pos: [q,r], hp, atk,
+##     passives: Array[String],   # config_id 列表
+##     track:    Array[Dictionary],
+##     # keyframe = {time_ms: int, skill: String,
+##     #             target: {mode: "auto"|"enemy_index"|"ally_index"|"fixed_pos",
+##     #                      index: int, q: int, r: int}}
+##   }。role=="caster" 唯一且必是 team A。
+##   map:      {radius: int, orientation: "pointy"|"flat", hex_size: float}
 ##   controls: {max_ticks, speed}
 extends Node
 
@@ -58,19 +67,9 @@ const DRAWER_EXPANDED_HEIGHT := 280.0
 @onready var _map_orientation_option: OptionButton = %MapOrientationOption
 @onready var _map_hex_size_input: SpinBox = %MapHexSizeInput
 
-@onready var _skill_active_option: OptionButton = %SkillActiveOption
-@onready var _passives_container: VBoxContainer = %PassivesContainer
-
 @onready var _actors_container: VBoxContainer = %ActorsContainer
 @onready var _actor_add_enemy_button: Button = %ActorAddEnemyButton
 @onready var _actor_add_ally_button: Button = %ActorAddAllyButton
-
-@onready var _target_mode_option: OptionButton = %TargetModeOption
-@onready var _target_index_input: SpinBox = %TargetIndexInput
-@onready var _target_q_input: SpinBox = %TargetQInput
-@onready var _target_r_input: SpinBox = %TargetRInput
-@onready var _target_index_row: HBoxContainer = %TargetIndexRow
-@onready var _target_pos_row: HBoxContainer = %TargetPosRow
 
 @onready var _max_ticks_input: SpinBox = %MaxTicksInput
 @onready var _speed_input: SpinBox = %SpeedInput
@@ -106,9 +105,6 @@ var _playback_mode: bool = false
 var _console_expanded: bool = false
 var _selected_actor_idx: int = 0
 var _actors_ui_rebuild_queued: bool = false
-
-## Passive 被动 Checkbox 缓存,顺序对齐 HexBattleSkillIndex.passives()
-var _passive_checks: Array[CheckBox] = []
 
 ## PopupMenu 上下文(右键点的格子 / actor idx)
 var _popup_hex: HexCoord = null
@@ -255,38 +251,12 @@ func _init_player_controller() -> void:
 func _init_ui_static_options() -> void:
 	_preset_load_option.fit_to_longest_item = false
 	_map_orientation_option.fit_to_longest_item = false
-	_skill_active_option.fit_to_longest_item = false
-	_target_mode_option.fit_to_longest_item = false
 
 	# Map
 	_map_orientation_option.clear()
 	_map_orientation_option.add_item("pointy")
 	_map_orientation_option.add_item("flat")
 	_map_orientation_option.selected = 1  # flat 与 main.tscn 默认一致
-
-	# Skill active
-	_skill_active_option.clear()
-	for cfg in HexBattleSkillIndex.actives():
-		_skill_active_option.add_item("%s (%s)" % [cfg.display_name, cfg.config_id])
-
-	# Passives
-	for child in _passives_container.get_children():
-		child.queue_free()
-	_passive_checks.clear()
-	for cfg in HexBattleSkillIndex.passives():
-		var cb := CheckBox.new()
-		cb.text = "%s (%s)" % [cfg.display_name, cfg.config_id]
-		_passives_container.add_child(cb)
-		_passive_checks.append(cb)
-		cb.toggled.connect(_on_passive_toggled.bind(cb))
-		_apply_passive_style(cb, false)
-
-	# Target mode
-	_target_mode_option.clear()
-	for m in TARGET_MODE_NAMES:
-		_target_mode_option.add_item(m)
-	_target_mode_option.selected = 0
-	_update_target_visibility()
 
 	# Defaults
 	_map_radius_input.value = 5
@@ -302,7 +272,6 @@ func _init_signals() -> void:
 	_console_toggle_button.pressed.connect(_on_console_toggle_pressed)
 	_actor_add_enemy_button.pressed.connect(func() -> void: _add_actor_at_next_free("B"))
 	_actor_add_ally_button.pressed.connect(func() -> void: _add_actor_at_next_free("A"))
-	_target_mode_option.item_selected.connect(_on_target_mode_changed)
 	_preset_save_button.pressed.connect(_on_preset_save_pressed)
 	_preset_load_option.item_selected.connect(_on_preset_load_selected)
 	_speed_input.value_changed.connect(_on_speed_changed)
@@ -472,11 +441,41 @@ func _is_mouse_inside_control(control: Control) -> bool:
 
 
 func _init_default_actors() -> void:
+	# 默认给 caster 挂一条 t=0 Strike keyframe (target=auto), 跟改造前 baseline 等价。
+	# dummy 默认空 track + 空 passives, 用户通过 Actors 详情面板按需添加。
+	var default_active_id := _default_active_skill_id()
 	_actors = [
-		{"role": "caster", "team": "A", "class": "WARRIOR", "pos": [0, 0], "hp": 0.0, "atk": 0.0},
-		{"role": "dummy",  "team": "B", "class": "WARRIOR", "pos": [2, 0], "hp": 100.0, "atk": 0.0},
+		{
+			"role": "caster", "team": "A", "class": "WARRIOR",
+			"pos": [0, 0], "hp": 0.0, "atk": 0.0,
+			"passives": [] as Array[String],
+			"track": [_make_default_keyframe(default_active_id)] if default_active_id != "" else [] as Array[Dictionary],
+		},
+		{
+			"role": "dummy", "team": "B", "class": "WARRIOR",
+			"pos": [2, 0], "hp": 100.0, "atk": 0.0,
+			"passives": [] as Array[String],
+			"track": [] as Array[Dictionary],
+		},
 	]
 	_rebuild_actors_ui()
+
+
+## 默认 active skill: HexBattleStrike 优先, 没有则取第一个。空场则空 (允许场上无技能)。
+static func _default_active_skill_id() -> String:
+	for cfg in HexBattleSkillIndex.actives():
+		if cfg.config_id == "skill_strike":
+			return cfg.config_id
+	var actives := HexBattleSkillIndex.actives()
+	return actives[0].config_id if not actives.is_empty() else ""
+
+
+static func _make_default_keyframe(skill_id: String) -> Dictionary:
+	return {
+		"time_ms": 0,
+		"skill": skill_id,
+		"target": {"mode": "auto", "index": 0, "q": 0, "r": 0},
+	}
 
 
 # ========== 数据模型操作 ==========
@@ -489,6 +488,8 @@ func _add_actor(role: String, team: String, cls: String, q: int, r: int) -> void
 	_actors.append({
 		"role": role, "team": team, "class": cls,
 		"pos": [coord.q, coord.r], "hp": 100.0, "atk": 0.0,
+		"passives": [] as Array[String],
+		"track": [] as Array[Dictionary],
 	})
 	_selected_actor_idx = _actors.size() - 1
 	_rebuild_actors_ui()
@@ -582,14 +583,12 @@ func _rebuild_actors_ui() -> void:
 		child.queue_free()
 	if _actors.is_empty():
 		_selected_actor_idx = 0
-		_sync_target_index_bounds()
-		return
+			return
 	_selected_actor_idx = clampi(_selected_actor_idx, 0, _actors.size() - 1)
 	for i in _actors.size():
 		_actors_container.add_child(_build_actor_card(i))
 	_actors_container.add_child(HSeparator.new())
 	_actors_container.add_child(_build_actor_detail_panel(_selected_actor_idx))
-	_sync_target_index_bounds()
 
 
 func _build_actor_card(idx: int) -> Button:
@@ -697,6 +696,13 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 	box.add_child(_build_actor_detail_field("R", _make_actor_spin(idx, "r", pos[1], -20, 20, false, 0)))
 	box.add_child(_build_actor_detail_field("HP", _make_actor_spin(idx, "hp", data["hp"], 0, 9999, true, 0)))
 
+	# Passives 段: 每 actor 自己的 passive 选择 (来源 HexBattleSkillIndex.passives())。
+	# 与 Skill Track 解耦 —— passive 在战斗 start() 一次性 grant, 不进 timeline。
+	box.add_child(_build_actor_passive_section(idx))
+
+	# Skill Track 段: actor 的施法时间轴, 编辑 keyframe (time / skill / target).
+	box.add_child(_build_actor_track_section(idx))
+
 	if data["role"] != "caster":
 		var rm := Button.new()
 		rm.text = "Remove Actor"
@@ -704,6 +710,187 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 		rm.pressed.connect(func() -> void: _remove_actor_at(idx))
 		box.add_child(rm)
 	return panel
+
+
+func _build_actor_passive_section(actor_idx: int) -> Control:
+	var section := VBoxContainer.new()
+	section.add_theme_constant_override("separation", 4)
+	var title := Label.new()
+	title.text = "Passives"
+	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	section.add_child(title)
+
+	var current_ids: Array = (_actors[actor_idx] as Dictionary).get("passives", []) as Array
+	for cfg in HexBattleSkillIndex.passives():
+		var cb := CheckBox.new()
+		cb.text = "%s (%s)" % [cfg.display_name, cfg.config_id]
+		cb.button_pressed = current_ids.has(cfg.config_id)
+		_apply_passive_style(cb, cb.button_pressed)
+		var passive_id: String = cfg.config_id  # capture for closure
+		cb.toggled.connect(func(pressed: bool) -> void:
+			_apply_passive_style(cb, pressed)
+			_on_actor_passive_toggled(actor_idx, passive_id, pressed)
+		)
+		section.add_child(cb)
+	return section
+
+
+func _build_actor_track_section(actor_idx: int) -> Control:
+	var section := VBoxContainer.new()
+	section.add_theme_constant_override("separation", 4)
+	var title := Label.new()
+	title.text = "Skill Track"
+	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	section.add_child(title)
+
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	for kf_idx in track.size():
+		section.add_child(_build_keyframe_row(actor_idx, kf_idx))
+
+	var add_btn := Button.new()
+	add_btn.text = "+ Add Action"
+	add_btn.pressed.connect(func() -> void: _add_keyframe(actor_idx))
+	section.add_child(add_btn)
+	return section
+
+
+func _build_keyframe_row(actor_idx: int, kf_idx: int) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+
+	var track: Array = (_actors[actor_idx] as Dictionary)["track"] as Array
+	var kf: Dictionary = track[kf_idx]
+
+	# Time (ms): SpinBox step=100, min=0, max=60000
+	var time_spin := SpinBox.new()
+	time_spin.min_value = 0.0
+	time_spin.max_value = 60000.0
+	time_spin.step = 100.0
+	time_spin.value = float(int(kf.get("time_ms", 0)))
+	time_spin.custom_minimum_size = Vector2(80, 0)
+	time_spin.suffix = "ms"
+	time_spin.tooltip_text = "Trigger time (ms). Step=100. >=N triggers in tick where logic_time>=N."
+	time_spin.value_changed.connect(func(v: float) -> void:
+		_on_keyframe_time_changed(actor_idx, kf_idx, int(v))
+	)
+	row.add_child(time_spin)
+
+	# Skill: OptionButton, 选项 = HexBattleSkillIndex.actives()
+	var skill_opt := OptionButton.new()
+	skill_opt.fit_to_longest_item = false
+	skill_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var actives := HexBattleSkillIndex.actives()
+	var current_skill_id: String = str(kf.get("skill", ""))
+	var selected := 0
+	for i in actives.size():
+		skill_opt.add_item("%s" % actives[i].display_name)
+		skill_opt.set_item_metadata(i, actives[i].config_id)
+		if actives[i].config_id == current_skill_id:
+			selected = i
+	if not actives.is_empty():
+		skill_opt.selected = selected
+	skill_opt.item_selected.connect(func(i: int) -> void:
+		_on_keyframe_skill_changed(actor_idx, kf_idx, str(skill_opt.get_item_metadata(i)))
+	)
+	row.add_child(skill_opt)
+
+	# Target editor: 折叠到 vbox (mode option + 条件子行)
+	var target_box := _build_keyframe_target_editor(actor_idx, kf_idx)
+	target_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(target_box)
+
+	# Remove
+	var rm := Button.new()
+	rm.text = "✕"
+	rm.tooltip_text = "Delete this keyframe"
+	rm.custom_minimum_size = Vector2(28, 0)
+	rm.pressed.connect(func() -> void: _remove_keyframe(actor_idx, kf_idx))
+	row.add_child(rm)
+
+	return row
+
+
+func _build_keyframe_target_editor(actor_idx: int, kf_idx: int) -> Control:
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 2)
+
+	var track: Array = (_actors[actor_idx] as Dictionary)["track"] as Array
+	var kf: Dictionary = track[kf_idx]
+	var target: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
+
+	var mode_opt := OptionButton.new()
+	mode_opt.fit_to_longest_item = false
+	for m in TARGET_MODE_NAMES:
+		mode_opt.add_item(m)
+	var current_mode: String = target.get("mode", "auto") as String
+	mode_opt.selected = max(0, TARGET_MODE_NAMES.find(current_mode))
+	vb.add_child(mode_opt)
+
+	# index 子行 (mode = enemy_index/ally_index 时显示)
+	var index_row := HBoxContainer.new()
+	index_row.add_theme_constant_override("separation", 4)
+	var index_label := Label.new()
+	index_label.text = "idx"
+	index_label.custom_minimum_size = Vector2(28, 0)
+	index_row.add_child(index_label)
+	var index_spin := SpinBox.new()
+	index_spin.min_value = 0.0
+	index_spin.max_value = 20.0
+	index_spin.step = 1.0
+	index_spin.value = float(int(target.get("index", 0)))
+	index_spin.custom_minimum_size = Vector2(60, 0)
+	index_spin.value_changed.connect(func(v: float) -> void:
+		_on_keyframe_target_field_changed(actor_idx, kf_idx, "index", int(v))
+	)
+	index_row.add_child(index_spin)
+	vb.add_child(index_row)
+
+	# pos 子行 (mode = fixed_pos 时显示)
+	var pos_row := HBoxContainer.new()
+	pos_row.add_theme_constant_override("separation", 4)
+	var lq := Label.new()
+	lq.text = "Q"
+	lq.custom_minimum_size = Vector2(16, 0)
+	pos_row.add_child(lq)
+	var q_spin := SpinBox.new()
+	q_spin.min_value = -20.0
+	q_spin.max_value = 20.0
+	q_spin.step = 1.0
+	q_spin.value = float(int(target.get("q", 0)))
+	q_spin.custom_minimum_size = Vector2(48, 0)
+	q_spin.value_changed.connect(func(v: float) -> void:
+		_on_keyframe_target_field_changed(actor_idx, kf_idx, "q", int(v))
+	)
+	pos_row.add_child(q_spin)
+	var lr := Label.new()
+	lr.text = "R"
+	lr.custom_minimum_size = Vector2(16, 0)
+	pos_row.add_child(lr)
+	var r_spin := SpinBox.new()
+	r_spin.min_value = -20.0
+	r_spin.max_value = 20.0
+	r_spin.step = 1.0
+	r_spin.value = float(int(target.get("r", 0)))
+	r_spin.custom_minimum_size = Vector2(48, 0)
+	r_spin.value_changed.connect(func(v: float) -> void:
+		_on_keyframe_target_field_changed(actor_idx, kf_idx, "r", int(v))
+	)
+	pos_row.add_child(r_spin)
+	vb.add_child(pos_row)
+
+	var apply_visibility := func() -> void:
+		var mode: String = TARGET_MODE_NAMES[mode_opt.selected]
+		index_row.visible = mode == "enemy_index" or mode == "ally_index"
+		pos_row.visible = mode == "fixed_pos"
+	apply_visibility.call()
+	mode_opt.item_selected.connect(func(i: int) -> void:
+		_on_keyframe_target_field_changed(actor_idx, kf_idx, "mode", TARGET_MODE_NAMES[i])
+		apply_visibility.call()
+	)
+
+	return vb
 
 
 func _build_actor_detail_field(label_text: String, editor: Control) -> HBoxContainer:
@@ -717,6 +904,101 @@ func _build_actor_detail_field(label_text: String, editor: Control) -> HBoxConta
 	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(editor)
 	return row
+
+
+## Passive 勾选/取消: 仅 mutate 数据模型, world 编辑期不感知 passive
+## (passive 在战斗 start() grant)。
+func _on_actor_passive_toggled(actor_idx: int, passive_id: String, pressed: bool) -> void:
+	var data: Dictionary = _actors[actor_idx]
+	var arr: Array = data.get("passives", []) as Array
+	if pressed:
+		if not arr.has(passive_id):
+			arr.append(passive_id)
+	else:
+		arr.erase(passive_id)
+	data["passives"] = arr
+
+
+# ========== Keyframe mutation ==========
+
+func _add_keyframe(actor_idx: int) -> void:
+	var skill_id := _default_active_skill_id()
+	if skill_id == "":
+		_set_status("No active skill registered")
+		return
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	# 同 actor 同 time 阻止: 起始 t=0; 若 0 已被占, 找下一个空闲 100 边界。
+	var time_ms := _next_free_time_ms_in_track(track, 0)
+	track.append({
+		"time_ms": time_ms,
+		"skill": skill_id,
+		"target": {"mode": "auto", "index": 0, "q": 0, "r": 0},
+	})
+	(_actors[actor_idx] as Dictionary)["track"] = track
+	_queue_actors_ui_rebuild()
+
+
+func _remove_keyframe(actor_idx: int, kf_idx: int) -> void:
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return
+	track.remove_at(kf_idx)
+	(_actors[actor_idx] as Dictionary)["track"] = track
+	_queue_actors_ui_rebuild()
+
+
+## time_ms 改动: 同 actor 同 time 冲突时 push 到下一个 100 边界并提示。
+func _on_keyframe_time_changed(actor_idx: int, kf_idx: int, requested_ms: int) -> void:
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return
+	var conflict := false
+	for i in track.size():
+		if i == kf_idx:
+			continue
+		if int((track[i] as Dictionary).get("time_ms", 0)) == requested_ms:
+			conflict = true
+			break
+	var final_ms := requested_ms
+	if conflict:
+		final_ms = _next_free_time_ms_in_track(track, requested_ms + 100, kf_idx)
+		_set_status("Time conflict — bumped to %dms" % final_ms)
+		_queue_actors_ui_rebuild()
+	(track[kf_idx] as Dictionary)["time_ms"] = final_ms
+
+
+func _on_keyframe_skill_changed(actor_idx: int, kf_idx: int, skill_id: String) -> void:
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return
+	(track[kf_idx] as Dictionary)["skill"] = skill_id
+
+
+func _on_keyframe_target_field_changed(actor_idx: int, kf_idx: int, field: String, value: Variant) -> void:
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return
+	var target: Dictionary = (track[kf_idx] as Dictionary).get("target", {}) as Dictionary
+	target[field] = value
+	(track[kf_idx] as Dictionary)["target"] = target
+
+
+## 在 track 里找一个不冲突的 time_ms (从 start 起, 100 步进上扫)。
+## skip_kf_idx: 排除自己 (用于改 time 时不算自己冲突)。
+func _next_free_time_ms_in_track(track: Array, start_ms: int, skip_kf_idx: int = -1) -> int:
+	var t := max(0, start_ms - (start_ms % 100))
+	for _i in range(0, 600):  # 最多扫 60s
+		var occupied := false
+		for j in track.size():
+			if j == skip_kf_idx:
+				continue
+			if int((track[j] as Dictionary).get("time_ms", 0)) == t:
+				occupied = true
+				break
+		if not occupied:
+			return t
+		t += 100
+	return t
 
 
 func _make_actor_spin(
@@ -1034,14 +1316,11 @@ func _show_hex_popup() -> void:
 	if _popup_actor_idx == 0:
 		_hex_popup.add_item("Caster 位置", 100)
 	elif _popup_actor_idx > 0:
-		_hex_popup.add_item("🎯 设为 target (enemy_index/ally_index)", 10)
 		_hex_popup.add_item("🗑  删除此 actor", 11)
 	else:
 		_hex_popup.add_item("⚔  加敌方 actor (team B)", 1)
 		_hex_popup.add_item("💚 加友方 actor (team A)", 2)
 		_hex_popup.add_item("🎯 移动 caster 到此", 3)
-	_hex_popup.add_separator()
-	_hex_popup.add_item("📍 设为 target (fixed_pos)", 20)
 	var local_mouse := Vector2i(get_viewport().get_mouse_position())
 	_hex_popup.popup_on_parent(Rect2i(local_mouse, Vector2i(1, 1)))
 
@@ -1104,56 +1383,7 @@ func _on_popup_id_pressed(id: int) -> void:
 		1: _add_actor("dummy", "B", "WARRIOR", q, r)
 		2: _add_actor("dummy", "A", "WARRIOR", q, r)
 		3: _move_caster_to(q, r)
-		10:
-			var a: Dictionary = _actors[_popup_actor_idx]
-			var team: String = a["team"]
-			var idx_among_team := -1
-			var count := 0
-			for i in _actors.size():
-				var ai: Dictionary = _actors[i]
-				if ai["role"] == "dummy" and ai["team"] == team:
-					if i == _popup_actor_idx:
-						idx_among_team = count
-						break
-					count += 1
-			_target_mode_option.selected = (2 if team == "A" else 1)  # ally_index=2, enemy_index=1
-			_target_index_input.value = idx_among_team
-			_update_target_visibility()
 		11: _remove_actor_at(_popup_actor_idx)
-		20:
-			_target_mode_option.selected = 3  # fixed_pos
-			_target_q_input.value = q
-			_target_r_input.value = r
-			_update_target_visibility()
-
-
-# ========== Target UI ==========
-
-func _on_target_mode_changed(_idx: int) -> void:
-	_update_target_visibility()
-
-
-func _update_target_visibility() -> void:
-	var mode: String = TARGET_MODE_NAMES[_target_mode_option.selected]
-	_target_index_row.visible = mode == "enemy_index" or mode == "ally_index"
-	_target_pos_row.visible = mode == "fixed_pos"
-	_sync_target_index_bounds()
-
-
-func _sync_target_index_bounds() -> void:
-	var mode: String = TARGET_MODE_NAMES[_target_mode_option.selected]
-	if mode != "enemy_index" and mode != "ally_index":
-		return
-	var team := "B" if mode == "enemy_index" else "A"
-	var count := 0
-	for actor_data in _actors:
-		var data := actor_data as Dictionary
-		if data.get("role", "") == "dummy" and data.get("team", "") == team:
-			count += 1
-	var max_index := max(0, count - 1)
-	_target_index_input.max_value = max_index
-	if int(_target_index_input.value) > max_index:
-		_target_index_input.value = max_index
 
 
 func _on_speed_changed(v: float) -> void:
@@ -1175,26 +1405,30 @@ func _on_start_pressed() -> void:
 	_set_status("Running...")
 	_console_log.clear()
 
-	var ability_cfg := _get_selected_active_ability()
-	if ability_cfg == null:
-		_finish_with_status("No active skill selected")
-		return
-
 	# 编辑期所有面板/右键操作走 event→update 增量 mutation,
 	# world state 与 _actors 数据模型实时一致, 战斗前不需要再 commit。
 
-	var caster_id: String = _role_id_to_actor_id.get("caster", "")
-	if caster_id == "":
+	if _role_id_to_actor_id.get("caster", "") == "":
 		_finish_with_status("No caster in world")
 		return
 
-	var target_id := _resolve_target_actor_id()
-	var passives := _collect_selected_passives()
+	var setups := _collect_actor_setups()
+	if setups.is_empty():
+		_finish_with_status("No actor setups (something is broken)")
+		return
 
-	_log_battle_start(ability_cfg, int(_max_ticks_input.value))
-	_log_battle_header_params(caster_id, target_id)
+	var has_keyframe := false
+	for setup in setups:
+		if not (setup.get("track", []) as Array).is_empty():
+			has_keyframe = true
+			break
+	if not has_keyframe:
+		_finish_with_status("No skill keyframes — add at least one action to a track")
+		return
 
-	_world.queue_preview(caster_id, ability_cfg, target_id, passives)
+	_log_battle_start(setups, int(_max_ticks_input.value))
+
+	_world.queue_preview(setups, false)
 
 	var participants: Array[Actor] = []
 	for actor in _world.get_actors():
@@ -1217,42 +1451,72 @@ func _finish_with_status(s: String) -> void:
 	_set_status(s)
 
 
-func _get_selected_active_ability() -> AbilityConfig:
-	var idx := _skill_active_option.selected
-	if idx < 0:
-		return null
-	var actives := HexBattleSkillIndex.actives()
-	return actives[idx] if idx < actives.size() else null
+## 把 _actors 数据模型转换成 SkillPreviewWorldGI.queue_preview 的 actor_setups 入参。
+## 每个 actor: passives 数组解析为 AbilityConfig；track 每条 keyframe 解析:
+##   skill (string config_id) → AbilityConfig
+##   target (dict) → 具体 actor_id (按 keyframe 自身 caster 的视角解析)
+func _collect_actor_setups() -> Array[Dictionary]:
+	var setups: Array[Dictionary] = []
+	for i in _actors.size():
+		if i >= _actor_ids.size() or _actor_ids[i] == "":
+			continue
+		var data: Dictionary = _actors[i]
+		var actor_id: String = _actor_ids[i]
+		var actor := _world.get_actor(actor_id) as CharacterActor
+
+		var passive_cfgs: Array[AbilityConfig] = []
+		for pid_variant in data.get("passives", []) as Array:
+			var pid: String = str(pid_variant)
+			var cfg := HexBattleSkillIndex.get_by_id(pid)
+			if cfg != null:
+				passive_cfgs.append(cfg)
+
+		var track_in: Array = data.get("track", []) as Array
+		var track_out: Array[Dictionary] = []
+		for kf_variant in track_in:
+			var kf: Dictionary = kf_variant as Dictionary
+			var skill_id: String = str(kf.get("skill", ""))
+			var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+			if skill_cfg == null:
+				continue
+			var target_dict: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
+			var target_id := _resolve_keyframe_target(target_dict, actor)
+			track_out.append({
+				"time_ms": int(kf.get("time_ms", 0)),
+				"ability_config": skill_cfg,
+				"target_id": target_id,
+			})
+
+		setups.append({
+			"actor_id": actor_id,
+			"passives": passive_cfgs,
+			"track": track_out,
+		})
+	return setups
 
 
-func _collect_selected_passives() -> Array[AbilityConfig]:
-	var passives: Array[AbilityConfig] = []
-	var passive_pool := HexBattleSkillIndex.passives()
-	for i in _passive_checks.size():
-		if _passive_checks[i].button_pressed and i < passive_pool.size():
-			passives.append(passive_pool[i])
-	return passives
-
-
-## 按 target UI 模式解析到 world 里实际的 actor id。
-func _resolve_target_actor_id() -> String:
-	var mode: String = TARGET_MODE_NAMES[_target_mode_option.selected]
+## 按 keyframe 自身 caster (action_caster) 视角解析 target dict → world actor_id 字符串。
+##   auto         → action_caster 的最近敌方 character
+##   enemy_index  → _role_id_to_actor_id["enemy_<N>"]
+##   ally_index   → _role_id_to_actor_id["ally_<N>"]
+##   fixed_pos    → 离 (q,r) 最近的 character
+func _resolve_keyframe_target(target: Dictionary, action_caster: CharacterActor) -> String:
+	var mode: String = str(target.get("mode", "auto"))
 	match mode:
 		"enemy_index":
-			return _role_id_to_actor_id.get("enemy_%d" % int(_target_index_input.value), "")
+			return _role_id_to_actor_id.get("enemy_%d" % int(target.get("index", 0)), "")
 		"ally_index":
-			return _role_id_to_actor_id.get("ally_%d" % int(_target_index_input.value), "")
+			return _role_id_to_actor_id.get("ally_%d" % int(target.get("index", 0)), "")
 		"fixed_pos":
-			var coord := HexCoord.new(int(_target_q_input.value), int(_target_r_input.value))
+			var coord := HexCoord.new(int(target.get("q", 0)), int(target.get("r", 0)))
 			var nearest := _find_nearest_character(coord, func(_c: CharacterActor) -> bool: return true)
 			return nearest.get_id() if nearest != null else ""
 		_:
-			var caster: CharacterActor = _world.get_actor(_role_id_to_actor_id.get("caster", "")) as CharacterActor
-			if caster == null:
+			if action_caster == null:
 				return ""
 			var nearest := _find_nearest_character(
-				caster.hex_position,
-				func(c: CharacterActor) -> bool: return c.get_team_id() != caster.get_team_id(),
+				action_caster.hex_position,
+				func(c: CharacterActor) -> bool: return c.get_team_id() != action_caster.get_team_id(),
 			)
 			return nearest.get_id() if nearest != null else ""
 
@@ -1339,11 +1603,7 @@ func _on_replay_pressed() -> void:
 	_apply_playback_inspector_layout()
 	_set_console_expanded(true)
 	_console_log.clear()
-	_log_battle_start(_get_selected_active_ability(), int(_max_ticks_input.value))
-	_log_battle_header_params(
-		_role_id_to_actor_id.get("caster", ""),
-		_resolve_target_actor_id(),
-	)
+	_log_battle_start(_collect_actor_setups(), int(_max_ticks_input.value))
 	_dump_timeline_events(_last_timeline)
 	_set_status("Replaying — %d frames" % _last_battle_frames)
 	_animator.set_speed(float(_speed_input.value))
@@ -1388,19 +1648,52 @@ func _log_welcome() -> void:
 	_log(EVENT_DIVIDER)
 
 
-func _log_battle_start(ability_cfg: AbilityConfig, max_ticks: int) -> void:
+## 战报头: timeline 上的所有 keyframe 列出来 (按 time_ms+actor_idx 排序)。
+func _log_battle_start(setups: Array[Dictionary], max_ticks: int) -> void:
 	_console_log.clear()
 	_log(EVENT_DIVIDER)
-	_log("  [color=#FF6B6B][b]▶ %s[/b][/color]  [color=#6B4F3E](%s)[/color]  [color=#A89580]max_ticks=%d[/color]" % [
-		ability_cfg.display_name, ability_cfg.config_id, max_ticks,
-	])
+	_log("  [color=#FF6B6B][b]▶ Timeline[/b][/color]  [color=#A89580]max_ticks=%d[/color]" % max_ticks)
+	# 反向 actor_id → role_id 映射, 一次性 O(N) 构建, 内层查 O(1)。
+	var actor_id_to_role: Dictionary[String, String] = {}
+	for k in _role_id_to_actor_id.keys():
+		actor_id_to_role[_role_id_to_actor_id[k]] = k
+	# 平铺 + 排序展示
+	var rows: Array = []
+	for actor_idx in setups.size():
+		var setup: Dictionary = setups[actor_idx]
+		var actor_id: String = setup.get("actor_id", "?") as String
+		var role_id: String = actor_id_to_role.get(actor_id, actor_id)
+		# Passive
+		var passives: Array = setup.get("passives", []) as Array
+		if not passives.is_empty():
+			var pids: Array[String] = []
+			for cfg in passives:
+				if cfg is AbilityConfig:
+					pids.append((cfg as AbilityConfig).config_id)
+			_log("  [color=#A89580]passive[/color] %s: %s" % [role_id, ", ".join(pids)])
+		# Track
+		for kf_idx in (setup.get("track", []) as Array).size():
+			var kf: Dictionary = (setup["track"] as Array)[kf_idx] as Dictionary
+			var ability_cfg := kf.get("ability_config") as AbilityConfig
+			rows.append({
+				"time_ms": int(kf.get("time_ms", 0)),
+				"actor_idx": actor_idx,
+				"role_id": role_id,
+				"skill_name": ability_cfg.display_name if ability_cfg != null else "?",
+				"target_id": str(kf.get("target_id", "")),
+			})
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["time_ms"] != b["time_ms"]:
+			return a["time_ms"] < b["time_ms"]
+		return a["actor_idx"] < b["actor_idx"]
+	)
+	for r in rows:
+		var tgt := r["target_id"] as String
+		_log("  [color=#6B4F3E]%5dms[/color]  [b]%s[/b]  [color=#FF6B6B]%s[/color]  → %s" % [
+			r["time_ms"], r["role_id"], r["skill_name"],
+			tgt if tgt != "" else "(none)",
+		])
 	_log(EVENT_DIVIDER)
-
-
-func _log_battle_header_params(caster_id: String, target_id: String) -> void:
-	_log("  [color=#A89580]caster=[/color][b]%s[/b]  [color=#A89580]target=[/color]%s" % [
-		caster_id, target_id if target_id != "" else "(none)",
-	])
 
 
 func _log_battle_end(last_frame: int) -> void:
@@ -1533,42 +1826,38 @@ func _on_preset_load_selected(idx: int) -> void:
 	if not (data_variant is Dictionary):
 		_log("[color=red]Preset not a dict: %s[/color]" % path)
 		return
+	if not _is_preset_v2(data_variant as Dictionary):
+		_log("[color=red]Preset version unsupported (v2 required): %s[/color]" % path)
+		return
 	_deserialize_ui_state(data_variant as Dictionary)
 	_log("Preset loaded: %s" % _preset_load_option.get_item_text(idx))
 
 
 ## Preset JSON 格式 (v2, 统一 actors):
 ##   {
+##     "version": 2,
 ##     "map": {"radius", "orientation", "hex_size"},
-##     "skill": {"active_id", "passive_ids"},
-##     "actors": [{"role", "team", "class", "pos":[q,r], "hp", "atk"}, ...],
-##     "target": {"mode", "index", "q", "r"},
+##     "actors": [
+##       {"role", "team", "class", "pos":[q,r], "hp", "atk",
+##        "passives": [String], "track": [Keyframe]},
+##       ...
+##     ],
 ##     "controls": {"max_ticks", "speed"}
 ##   }
+##   Keyframe = {"time_ms": int, "skill": String,
+##               "target": {"mode", "index", "q", "r"}}
+const PRESET_VERSION := 2
+
+
 func _serialize_ui_state() -> Dictionary:
-	var passive_ids: Array[String] = []
-	var passive_pool := HexBattleSkillIndex.passives()
-	for i in _passive_checks.size():
-		if _passive_checks[i].button_pressed and i < passive_pool.size():
-			passive_ids.append(passive_pool[i].config_id)
-	var actives := HexBattleSkillIndex.actives()
-	var active_id: String = ""
-	if _skill_active_option.selected >= 0 and _skill_active_option.selected < actives.size():
-		active_id = actives[_skill_active_option.selected].config_id
 	return {
+		"version": PRESET_VERSION,
 		"map": {
 			"radius": int(_map_radius_input.value),
 			"orientation": "flat" if _map_orientation_option.selected == 1 else "pointy",
 			"hex_size": float(_map_hex_size_input.value),
 		},
-		"skill": {"active_id": active_id, "passive_ids": passive_ids},
 		"actors": _actors.duplicate(true),
-		"target": {
-			"mode": TARGET_MODE_NAMES[_target_mode_option.selected],
-			"index": int(_target_index_input.value),
-			"q": int(_target_q_input.value),
-			"r": int(_target_r_input.value),
-		},
 		"controls": {
 			"max_ticks": int(_max_ticks_input.value),
 			"speed": _speed_input.value,
@@ -1576,6 +1865,8 @@ func _serialize_ui_state() -> Dictionary:
 	}
 
 
+## 反序列化 v2 preset; 旧版 (无 version 或 version<2) 直接拒绝, 不做兼容转换。
+## 调方需保证 d 已通过 _is_preset_v2 校验。
 func _deserialize_ui_state(d: Dictionary) -> void:
 	# Map
 	var map_cfg: Dictionary = d.get("map", {})
@@ -1583,27 +1874,31 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 	_map_orientation_option.selected = 1 if map_cfg.get("orientation", "flat") == "flat" else 0
 	_map_hex_size_input.value = map_cfg.get("hex_size", 1.0)
 
-	# Skill
-	var skill_cfg: Dictionary = d.get("skill", {})
-	var actives := HexBattleSkillIndex.actives()
-	var active_id: String = skill_cfg.get("active_id", "")
-	for i in actives.size():
-		if actives[i].config_id == active_id:
-			_skill_active_option.selected = i
-			break
-	var passives := HexBattleSkillIndex.passives()
-	var passive_ids: Array = skill_cfg.get("passive_ids", [])
-	for i in _passive_checks.size():
-		var is_on: bool = i < passives.size() and passives[i].config_id in passive_ids
-		_passive_checks[i].button_pressed = is_on
-		_apply_passive_style(_passive_checks[i], is_on)
-
-	# Actors
+	# Actors (v2: 内嵌 passives + track)
 	var loaded_actors: Array = d.get("actors", [])
 	_actors = []
 	for a_variant in loaded_actors:
 		var a := a_variant as Dictionary
 		var pos: Array = a.get("pos", [0, 0])
+		var passives_in: Array = a.get("passives", []) as Array
+		var passives_str: Array[String] = []
+		for p in passives_in:
+			passives_str.append(str(p))
+		var track_in: Array = a.get("track", []) as Array
+		var track_norm: Array[Dictionary] = []
+		for kf_variant in track_in:
+			var kf := kf_variant as Dictionary
+			var target_dict: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
+			track_norm.append({
+				"time_ms": int(kf.get("time_ms", 0)),
+				"skill": str(kf.get("skill", "")),
+				"target": {
+					"mode": str(target_dict.get("mode", "auto")),
+					"index": int(target_dict.get("index", 0)),
+					"q": int(target_dict.get("q", 0)),
+					"r": int(target_dict.get("r", 0)),
+				},
+			})
 		_actors.append({
 			"role": a.get("role", "dummy"),
 			"team": a.get("team", "B"),
@@ -1611,20 +1906,17 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 			"pos": [int(pos[0]), int(pos[1])],
 			"hp": float(a.get("hp", 100.0)),
 			"atk": float(a.get("atk", 0.0)),
+			"passives": passives_str,
+			"track": track_norm,
 		})
 	if _actors.is_empty() or _actors[0]["role"] != "caster":
-		_actors.insert(0, {"role": "caster", "team": "A",
-			"class": "WARRIOR", "pos": [0, 0], "hp": 0.0, "atk": 0.0})
+		_actors.insert(0, {
+			"role": "caster", "team": "A", "class": "WARRIOR",
+			"pos": [0, 0], "hp": 0.0, "atk": 0.0,
+			"passives": [] as Array[String],
+			"track": [] as Array[Dictionary],
+		})
 	_rebuild_actors_ui()
-
-	# Target
-	var target: Dictionary = d.get("target", {})
-	var tmode_idx := TARGET_MODE_NAMES.find(target.get("mode", "auto"))
-	_target_mode_option.selected = max(0, tmode_idx)
-	_target_index_input.value = target.get("index", 0)
-	_target_q_input.value = target.get("q", 0)
-	_target_r_input.value = target.get("r", 0)
-	_update_target_visibility()
 
 	# Controls
 	var ctrl: Dictionary = d.get("controls", {})
@@ -1632,6 +1924,10 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 	_speed_input.value = ctrl.get("speed", 1.0)
 
 	_reset_world_to_model()
+
+
+static func _is_preset_v2(d: Dictionary) -> bool:
+	return int(d.get("version", 0)) >= PRESET_VERSION
 
 
 # ========== 工具 ==========
@@ -1968,13 +2264,9 @@ func _style_status_label() -> void:
 ## Passive CheckBox 选中/未选中视觉: 选中 = 浅绿底 + 深绿字,
 ## 未选中 = 默认白底。直接 override 每个状态 stylebox 让渲染顺序无歧义。
 ##
-## passive 选择只影响 _on_start_pressed 时 _collect_selected_passives() 传给
-## queue_preview, 编辑期 world 不感知 passive (passive 是战斗期 grant 给 caster),
-## 因此勾选/取消勾选不需要触发 world mutation。
-func _on_passive_toggled(_pressed: bool, cb: CheckBox) -> void:
-	_apply_passive_style(cb, _pressed)
-
-
+## passive 选择只 mutate _actors[idx]["passives"] 数据模型, 编辑期 world 不感知
+## passive (passive 是战斗 start() 时 grant 给 actor), 因此勾选/取消勾选不需要
+## 触发 world mutation。
 func _apply_passive_style(cb: CheckBox, selected: bool) -> void:
 	if selected:
 		var sb := _clay_sb(PASSIVE_SELECTED_BG, 6, 6, 3, 0, 0)
