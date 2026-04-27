@@ -14,6 +14,10 @@
 
 ## [Unreleased] — 2026-04-27 SkillPreview 多 actor 时间轴模型
 
+### Added
+
+- **`SkillPreview` 工具 UI: SkillPreviewTimeline tab** (阶段二) — 在 Inspector 加横向多 actor 可视化时间轴。每 actor 一条 track, keyframe 渲染为色块按钮(团队上色: caster 绿/A 蓝/B 红); 点色块弹 `PopupPanel` 富表单(time / skill / target / Delete / Close), 点空白处按位置 snap 到 100ms 边界并自动 add + popup。Toolbar 含 `Span` SpinBox (0=auto-fit, >0=override); ruler 按 `_pick_tick_step(max_ms)` 选 250/500/1000/2000ms 步长。命名前缀 `Spt*` / `_spt_*` / `SPT_*` 与 LGF core `TimelineRegistry` / Ability animation timeline 概念区分。所有 mutation 仍走阶段一的 `_on_keyframe_*_changed` handler, Actors tab 列表式编辑器与 Timeline tab 同步重建(`_queue_inspector_rebuild` → `_rebuild_inspector` 双 tab 一次性刷新)。Time SpinBox conflict bump 后自动同步(`_build_kf_time_spin` 工厂在 Actors tab 行内和 popup 共用)。
+
 ### Changed
 
 - **`SkillPreviewWorldGI.queue_preview`** 改签名: 从 `(caster_id, ability, target_id, passives)` 改为 `(actor_setups: Array[Dictionary], allow_empty_track: bool = false)`。每个 setup 携带 `{actor_id, passives: Array[AbilityConfig], track: Array[Keyframe]}`,`Keyframe = {time_ms, ability_config, target_id}`。旧调用全部需要迁移 (改造前 baseline = caster 单条 t=0 keyframe)。

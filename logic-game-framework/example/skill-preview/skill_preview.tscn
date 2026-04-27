@@ -79,6 +79,73 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 3
 
+; =============== SkillPreviewTimeline ===============
+; 命名 SkillPreview 前缀: 与 LGF core TimelineRegistry / Ability timeline 概念区分,
+; 这里是技能预览 UI 的多 actor 时间轴, 不是 ability animation timeline。
+[node name="SkillPreviewTimeline" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="SptVBox" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="SptTitle" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
+layout_mode = 2
+text = "Skill Preview Timeline"
+
+[node name="SptToolbar" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="L" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox/SptToolbar"]
+layout_mode = 2
+text = "Span"
+
+[node name="SptMaxOverride" type="SpinBox" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox/SptToolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 60000.0
+step = 100.0
+suffix = "ms"
+
+[node name="SptMaxAutoLabel" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox/SptToolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "auto = 1000 ms"
+
+[node name="SptHint" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
+layout_mode = 2
+text = "Click block to edit · click empty to add"
+autowrap_mode = 2
+
+[node name="SptSep" type="HSeparator" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
+layout_mode = 2
+
+[node name="SptRulerRow" type="HBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="SptRulerSpacer" type="Control" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox/SptRulerRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+
+[node name="SptRuler" type="Control" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox/SptRulerRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 18)
+
+[node name="SptTracksContainer" type="VBoxContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
 [node name="Scene" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
 layout_mode = 2
 horizontal_scroll_mode = 0

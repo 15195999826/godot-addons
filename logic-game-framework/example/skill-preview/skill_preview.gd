@@ -54,6 +54,19 @@ const WORKSPACE_GAP := 12.0
 const DRAWER_COLLAPSED_HEIGHT := 44.0
 const DRAWER_EXPANDED_HEIGHT := 280.0
 
+# Keyframe 时间语义常量(SpinBox 取值范围 / 步进)
+const KF_TIME_MAX_MS := 60000
+const KF_TIME_STEP_MS := 100
+
+# SkillPreviewTimeline (SPT) tab 视觉常量
+# 命名前缀 SPT 与 LGF core TimelineRegistry / Ability timeline 概念区分。
+const SPT_ACTOR_LABEL_W := 110
+const SPT_ROW_H := 36
+const SPT_KF_BTN_W := 16
+const SPT_KF_BTN_H := 22
+const SPT_MIN_AUTO_MS := 1000
+const SPT_AUTO_BUFFER_MS := 200
+
 
 # ========== Scene 节点 (unique names) ==========
 
@@ -70,6 +83,11 @@ const DRAWER_EXPANDED_HEIGHT := 280.0
 @onready var _actors_container: VBoxContainer = %ActorsContainer
 @onready var _actor_add_enemy_button: Button = %ActorAddEnemyButton
 @onready var _actor_add_ally_button: Button = %ActorAddAllyButton
+
+@onready var _spt_max_override_input: SpinBox = %SptMaxOverride
+@onready var _spt_max_auto_label: Label = %SptMaxAutoLabel
+@onready var _spt_ruler: Control = %SptRuler
+@onready var _spt_tracks_container: VBoxContainer = %SptTracksContainer
 
 @onready var _max_ticks_input: SpinBox = %MaxTicksInput
 @onready var _speed_input: SpinBox = %SpeedInput
@@ -104,7 +122,13 @@ var _is_playing: bool = false
 var _playback_mode: bool = false
 var _console_expanded: bool = false
 var _selected_actor_idx: int = 0
-var _actors_ui_rebuild_queued: bool = false
+var _inspector_rebuild_queued: bool = false
+
+# SkillPreviewTimeline tab 状态
+var _spt_max_override: int = 0           # 0 = auto-fit; >0 = override
+# popup 单实例, 挂 self 子树(随 scene 卸载自动清理); 当前编辑的 (actor_idx, kf_idx)
+# 通过 popup.set_meta("actor_idx"/"kf_idx") 携带, 避免冗余字段。
+var _keyframe_popup: PopupPanel = null
 
 ## PopupMenu 上下文(右键点的格子 / actor idx)
 var _popup_hex: HexCoord = null
@@ -288,6 +312,15 @@ func _init_signals() -> void:
 	_map_hex_size_input.value_changed.connect(func(_v: float) -> void: _map_change_timer.start())
 	_hex_popup.id_pressed.connect(_on_popup_id_pressed)
 	_hex_popup.window_input.connect(_on_hex_popup_window_input)
+	# SkillPreviewTimeline span override + ruler 自绘。
+	# Override 警告在 mutation 点 emit, 不放 _spt_max_ms() getter — 否则每次 redraw
+	# 都会盖掉用户正在看的 status。
+	_spt_max_override_input.value_changed.connect(func(v: float) -> void:
+		_spt_max_override = int(v)
+		_warn_if_override_below_keyframes()
+		_rebuild_spt_ui()
+	)
+	_spt_ruler.draw.connect(_draw_spt_ruler)
 
 
 func _apply_setup_inspector_layout() -> void:
@@ -458,7 +491,7 @@ func _init_default_actors() -> void:
 			"track": [] as Array[Dictionary],
 		},
 	]
-	_rebuild_actors_ui()
+	_rebuild_inspector()
 
 
 ## 默认 active skill: HexBattleStrike 优先, 没有则取第一个。空场则空 (允许场上无技能)。
@@ -492,7 +525,7 @@ func _add_actor(role: String, team: String, cls: String, q: int, r: int) -> void
 		"track": [] as Array[Dictionary],
 	})
 	_selected_actor_idx = _actors.size() - 1
-	_rebuild_actors_ui()
+	_rebuild_inspector()
 	if _is_playing:
 		return
 	# 增量 spawn: 不动其它 actor view,新 view 直接落在 _actors 末尾。
@@ -551,7 +584,7 @@ func _remove_actor_at(idx: int) -> void:
 		_selected_actor_idx = min(idx, _actors.size() - 1)
 	_selected_actor_idx = clampi(_selected_actor_idx, 0, max(0, _actors.size() - 1))
 	_rebuild_role_id_mapping()
-	_rebuild_actors_ui()
+	_rebuild_inspector()
 
 
 func _find_actor_idx_at(q: int, r: int) -> int:
@@ -569,7 +602,7 @@ func _move_caster_to(q: int, r: int) -> void:
 		return
 	_actors[0]["pos"] = [coord.q, coord.r]
 	_selected_actor_idx = 0
-	_rebuild_actors_ui()
+	_rebuild_inspector()
 	if _is_playing:
 		return
 	_apply_actor_position_change(0, coord.q, coord.r)
@@ -578,7 +611,7 @@ func _move_caster_to(q: int, r: int) -> void:
 # ========== UI: Actors 表 ==========
 
 func _rebuild_actors_ui() -> void:
-	_actors_ui_rebuild_queued = false
+	_inspector_rebuild_queued = false
 	for child in _actors_container.get_children():
 		child.queue_free()
 	if _actors.is_empty():
@@ -615,14 +648,333 @@ func _build_actor_card(idx: int) -> Button:
 
 func _select_actor(idx: int) -> void:
 	_selected_actor_idx = clampi(idx, 0, _actors.size() - 1)
-	_rebuild_actors_ui()
+	_rebuild_inspector()
 
 
-func _queue_actors_ui_rebuild() -> void:
-	if _actors_ui_rebuild_queued:
+func _queue_inspector_rebuild() -> void:
+	if _inspector_rebuild_queued:
 		return
-	_actors_ui_rebuild_queued = true
-	call_deferred("_rebuild_actors_ui")
+	_inspector_rebuild_queued = true
+	call_deferred("_rebuild_inspector")
+
+
+## 同步重建两个 inspector tab。所有 mutation 都走这里, 保证 Actors / SkillPreviewTimeline
+## 共用的 _actors 数据源在两边视图都一致。
+func _rebuild_inspector() -> void:
+	_inspector_rebuild_queued = false
+	_rebuild_actors_ui()
+	_rebuild_spt_ui()
+
+
+# ========== UI: SkillPreviewTimeline tab ==========
+#
+# 命名 spt 前缀 = SkillPreviewTimeline, 与 LGF core TimelineRegistry / Ability
+# timeline 概念严格区分: 这是技能预览 UI 的多 actor 时间轴, 不是 ability animation
+# timeline。
+#
+# 视图全部从 _actors[i] 派生, 不引入新数据 (除 _spt_max_override 一个 int)。
+# 重建职责严格分离:
+#   _rebuild_spt_ui            只重建节点 (清空 + 每 actor 一行 row)
+#   _layout_keyframes_for_row  只调整 KeyframeButton 的 position/size
+# resized signal 触发 layout(不重建), 避免 flicker。
+
+func _rebuild_spt_ui() -> void:
+	_inspector_rebuild_queued = false
+	if _spt_tracks_container == null:
+		return
+	_spt_max_auto_label.text = "auto = %d ms" % _compute_auto_max_ms()
+	_spt_ruler.queue_redraw()
+	for c in _spt_tracks_container.get_children():
+		c.queue_free()
+	for i in _actors.size():
+		_spt_tracks_container.add_child(_build_track_row(i))
+
+
+## 一行 actor track: [ActorLabel(min_w=110)] [TrackArea(expand)]。
+## TrackArea Control 上挂: baseline draw / 每条 keyframe 一个 Button 子节点 /
+## 空白点击 gui_input handler。
+func _build_track_row(actor_idx: int) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.custom_minimum_size = Vector2(0, SPT_ROW_H)
+	row.add_theme_constant_override("separation", 4)
+
+	var actor_label := Button.new()
+	actor_label.text = _actor_role_label(_actors[actor_idx])
+	actor_label.tooltip_text = "Switch to Actors tab"
+	actor_label.custom_minimum_size = Vector2(SPT_ACTOR_LABEL_W, 0)
+	actor_label.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	actor_label.add_theme_stylebox_override("normal", _outlined_sb(Color("F8FAFC"), Color("D8DEE8"), 4, 8, 4))
+	actor_label.add_theme_stylebox_override("hover", _outlined_sb(Color("EAF2FF"), Color("7AA7F7"), 4, 8, 4))
+	actor_label.add_theme_stylebox_override("pressed", _outlined_sb(Color("CFE1FF"), Color("2563EB"), 4, 8, 4))
+	actor_label.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	actor_label.pressed.connect(func() -> void:
+		_select_actor(actor_idx)
+		# Actors tab 默认是第一个; 切回去
+		if _inspector_tabs != null:
+			_inspector_tabs.current_tab = 0
+	)
+	row.add_child(actor_label)
+
+	var track_area := Control.new()
+	track_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	track_area.custom_minimum_size = Vector2(0, SPT_ROW_H)
+	# STOP 而非 PASS: 自己处理空白点击 add keyframe; KeyframeButton 子节点默认 STOP
+	# 优先吃事件, 命中 button 时不会传到这里。
+	track_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	track_area.draw.connect(_draw_track_baseline.bind(track_area))
+	# 每条 keyframe 一个 Button 子节点; position 由 _layout_keyframes_for_row 后期填。
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	for k in track.size():
+		track_area.add_child(_build_keyframe_button(actor_idx, k))
+	# 容器尺寸 settle 后/任意 resize 触发 layout, 不重建节点。
+	track_area.resized.connect(func() -> void: _layout_keyframes_for_row(actor_idx, track_area))
+	track_area.gui_input.connect(func(event: InputEvent) -> void:
+		_on_track_area_clicked(actor_idx, track_area, event)
+	)
+	# 首次 build: layout 时 size 还没 settle, 推迟一帧。
+	call_deferred("_layout_keyframes_for_row", actor_idx, track_area)
+	row.add_child(track_area)
+
+	return row
+
+
+## TrackArea 中线 (baseline)。bind track_area 因为 draw 信号自身不带 sender 上下文。
+func _draw_track_baseline(track_area: Control) -> void:
+	var w := track_area.size.x
+	var h := track_area.size.y
+	if w <= 0.0 or h <= 0.0:
+		return
+	var y := h * 0.5
+	track_area.draw_line(Vector2(0, y), Vector2(w, y), Color("D8DEE8"), 1)
+
+
+## Keyframe 色块按钮: 颜色按 actor team 区分(caster=绿/A=蓝/B=红); 不显文本, 信息走
+## tooltip。pressed → 弹 popup 编辑。
+func _build_keyframe_button(actor_idx: int, kf_idx: int) -> Button:
+	var btn := Button.new()
+	btn.set_meta("kf_idx", kf_idx)
+	btn.size = Vector2(SPT_KF_BTN_W, SPT_KF_BTN_H)
+	btn.custom_minimum_size = Vector2(SPT_KF_BTN_W, SPT_KF_BTN_H)
+	btn.tooltip_text = _keyframe_tooltip(actor_idx, kf_idx)
+
+	var bg: Color
+	var border: Color
+	var data: Dictionary = _actors[actor_idx]
+	if data["role"] == "caster":
+		bg = Color("BBF7D0"); border = Color("16A34A")
+	elif data["team"] == "A":
+		bg = Color("DBEAFE"); border = Color("2563EB")
+	else:
+		bg = Color("FECACA"); border = Color("B23B3B")
+	btn.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 4, 0, 0))
+	btn.add_theme_stylebox_override("hover", _outlined_sb(bg.lightened(0.1), border, 4, 0, 0))
+	btn.add_theme_stylebox_override("pressed", _outlined_sb(bg.darkened(0.1), border, 4, 0, 0))
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.pressed.connect(func() -> void:
+		_open_keyframe_popup(actor_idx, int(btn.get_meta("kf_idx", -1)))
+	)
+	return btn
+
+
+## tooltip 文本: "Strike @ 600ms → enemy_0"。target 模式简写。
+func _keyframe_tooltip(actor_idx: int, kf_idx: int) -> String:
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return ""
+	var kf: Dictionary = track[kf_idx]
+	var skill_name := str(kf.get("skill", "?"))
+	var time_ms := int(kf.get("time_ms", 0))
+	var target: Dictionary = kf.get("target", {}) as Dictionary
+	var mode := str(target.get("mode", "auto"))
+	var target_str := mode
+	match mode:
+		"enemy_index", "ally_index":
+			target_str = "%s %d" % [mode, int(target.get("index", 0))]
+		"fixed_pos":
+			target_str = "(%d,%d)" % [int(target.get("q", 0)), int(target.get("r", 0))]
+	return "%s @ %dms → %s" % [skill_name, time_ms, target_str]
+
+
+## 重排 track_area 内所有 KeyframeButton 的 position/size, 不创建/删除节点。
+## resized signal / 首次 build call_deferred / span override 改变后 _rebuild_spt_ui
+## 三处都会调到。
+func _layout_keyframes_for_row(actor_idx: int, track_area: Control) -> void:
+	if track_area == null or not is_instance_valid(track_area):
+		return
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	var max_ms := _spt_max_ms()
+	var w := track_area.size.x
+	var h := track_area.size.y
+	for k in track.size():
+		if k >= track_area.get_child_count():
+			break
+		var btn := track_area.get_child(k) as Button
+		if btn == null:
+			continue
+		var t := int((track[k] as Dictionary).get("time_ms", 0))
+		var ratio := clampf(float(t) / float(max_ms), 0.0, 1.0)
+		var x := int(ratio * (w - SPT_KF_BTN_W))
+		var y := int((h - SPT_KF_BTN_H) * 0.5)
+		btn.position = Vector2(x, y)
+		btn.size = Vector2(SPT_KF_BTN_W, SPT_KF_BTN_H)
+
+
+# ========== UI: SkillPreviewTimeline keyframe popup ==========
+
+## 弹 popup 编辑指定 keyframe。popup 单实例挂 self 子树(scene 卸载自动清),
+## 不挂在 inspector subtree 内 —— 避免 _rebuild_inspector 把 popup 一起 free。
+## 越界(idx 已被外部删除)直接 return。
+func _open_keyframe_popup(actor_idx: int, kf_idx: int) -> void:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return
+	if _keyframe_popup == null:
+		_keyframe_popup = PopupPanel.new()
+		add_child(_keyframe_popup)
+	_keyframe_popup.set_meta("actor_idx", actor_idx)
+	_keyframe_popup.set_meta("kf_idx", kf_idx)
+	_populate_keyframe_popup(actor_idx, kf_idx)
+	_keyframe_popup.popup_centered()
+
+
+## 清空旧子节点, 重建 form: title / time / skill / target editor / [Delete] [Close]。
+## time/skill 复用 _build_kf_time_spin / _build_kf_skill_opt(与 Actors tab 行内
+## 共用同一份实现, 行为含 conflict bump 同步), target editor 复用现成函数。
+func _populate_keyframe_popup(actor_idx: int, kf_idx: int) -> void:
+	for c in _keyframe_popup.get_children():
+		c.queue_free()
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	var kf: Dictionary = track[kf_idx]
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	vbox.custom_minimum_size = Vector2(360, 0)
+	_keyframe_popup.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "Edit %s @ %dms" % [_actor_role_label(_actors[actor_idx]), int(kf.get("time_ms", 0))]
+	title.add_theme_font_override("font", _clay_font_bold())
+	vbox.add_child(title)
+
+	vbox.add_child(_build_kf_form_row("Time", _build_kf_time_spin(actor_idx, kf_idx)))
+	vbox.add_child(_build_kf_form_row("Skill", _build_kf_skill_opt(actor_idx, kf_idx)))
+
+	var target_label := Label.new()
+	target_label.text = "Target"
+	target_label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	vbox.add_child(target_label)
+	vbox.add_child(_build_keyframe_target_editor(actor_idx, kf_idx))
+
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 8)
+	var del_btn := Button.new()
+	del_btn.text = "Delete"
+	del_btn.tooltip_text = "Delete this keyframe"
+	del_btn.pressed.connect(func() -> void:
+		_remove_keyframe(actor_idx, kf_idx)
+		_keyframe_popup.hide()
+	)
+	btn_row.add_child(del_btn)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_row.add_child(spacer)
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	close_btn.pressed.connect(func() -> void: _keyframe_popup.hide())
+	btn_row.add_child(close_btn)
+	vbox.add_child(btn_row)
+
+
+## label + editor 横排, 用于 popup 表单行。
+func _build_kf_form_row(label_text: String, editor: Control) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var label := Label.new()
+	label.text = label_text
+	label.custom_minimum_size = Vector2(60, 0)
+	row.add_child(label)
+	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(editor)
+	return row
+
+
+## TrackArea 空白处左键: 按点击位置算 time_ms (snap 到 100), 在 actor 末尾追加
+## keyframe, 然后立即弹 popup 让用户编辑。冲突走 _next_free_time_ms_in_track。
+## call_deferred 弹 popup 是因为 _add_keyframe_at 触发的 inspector rebuild 也是
+## call_deferred 的, 避免半重建状态下打开 popup。
+func _on_track_area_clicked(actor_idx: int, track_area: Control, event: InputEvent) -> void:
+	if _is_playing:
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if not (mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT):
+		return
+	if track_area == null or not is_instance_valid(track_area) or track_area.size.x <= 0.0:
+		return
+	var max_ms := _spt_max_ms()
+	var ratio := clampf(mb.position.x / track_area.size.x, 0.0, 1.0)
+	var raw_ms := int(round(ratio * float(max_ms) / 100.0)) * 100
+	var new_idx := _add_keyframe_at(actor_idx, raw_ms)
+	if new_idx >= 0:
+		call_deferred("_open_keyframe_popup", actor_idx, new_idx)
+
+
+## auto-fit: 取所有 keyframe 最大 time_ms + buffer, 并保证不低于 1000ms 防空 track 退化。
+func _compute_auto_max_ms() -> int:
+	var m := 0
+	for actor_data in _actors:
+		var track: Array = (actor_data as Dictionary).get("track", []) as Array
+		for kf in track:
+			m = maxi(m, int((kf as Dictionary).get("time_ms", 0)))
+	return maxi(m + SPT_AUTO_BUFFER_MS, SPT_MIN_AUTO_MS)
+
+
+## 当前生效的时间轴 max。override>0 强制覆盖。纯函数, 不写 status —— 警告由
+## _warn_if_override_below_keyframes 在 mutation 点单次触发。
+func _spt_max_ms() -> int:
+	if _spt_max_override > 0:
+		return _spt_max_override
+	return _compute_auto_max_ms()
+
+
+## Override 比实际最大 keyframe 还小时, 在改 override 的 SpinBox 上即时提醒一次。
+func _warn_if_override_below_keyframes() -> void:
+	if _spt_max_override <= 0:
+		return
+	var max_kf_ms := _compute_auto_max_ms() - SPT_AUTO_BUFFER_MS
+	if _spt_max_override < max_kf_ms:
+		_set_status("Override below max keyframe (%d ms)" % max_kf_ms)
+
+
+## 根据 max_ms 选合适的刻度步长 (250/500/1000/2000), 比固定 5 段更直观。
+func _pick_tick_step(max_ms: int) -> int:
+	if max_ms <= 1500:
+		return 250
+	if max_ms <= 3000:
+		return 500
+	if max_ms <= 8000:
+		return 1000
+	return 2000
+
+
+func _draw_spt_ruler() -> void:
+	if _spt_ruler == null:
+		return
+	var max_ms := _spt_max_ms()
+	var step := _pick_tick_step(max_ms)
+	var w := _spt_ruler.size.x
+	if w <= 0.0:
+		return
+	var font := _clay_font()
+	var t := 0
+	while t <= max_ms:
+		var x := int(float(t) / float(max_ms) * w)
+		_spt_ruler.draw_line(Vector2(x, 4), Vector2(x, 14), CLAY_TEXT_SOFT, 1)
+		_spt_ruler.draw_string(font, Vector2(x + 2, 13), "%d" % t, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, CLAY_TEXT_SOFT)
+		t += step
 
 
 func _refresh_actor_card_summary(actor_idx: int) -> void:
@@ -760,40 +1112,12 @@ func _build_keyframe_row(actor_idx: int, kf_idx: int) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 
-	var track: Array = (_actors[actor_idx] as Dictionary)["track"] as Array
-	var kf: Dictionary = track[kf_idx]
-
-	# Time (ms): SpinBox step=100, min=0, max=60000
-	var time_spin := SpinBox.new()
-	time_spin.min_value = 0.0
-	time_spin.max_value = 60000.0
-	time_spin.step = 100.0
-	time_spin.value = float(int(kf.get("time_ms", 0)))
+	var time_spin := _build_kf_time_spin(actor_idx, kf_idx)
 	time_spin.custom_minimum_size = Vector2(80, 0)
-	time_spin.suffix = "ms"
-	time_spin.tooltip_text = "Trigger time (ms). Step=100. >=N triggers in tick where logic_time>=N."
-	time_spin.value_changed.connect(func(v: float) -> void:
-		_on_keyframe_time_changed(actor_idx, kf_idx, int(v))
-	)
 	row.add_child(time_spin)
 
-	# Skill: OptionButton, 选项 = HexBattleSkillIndex.actives()
-	var skill_opt := OptionButton.new()
-	skill_opt.fit_to_longest_item = false
+	var skill_opt := _build_kf_skill_opt(actor_idx, kf_idx)
 	skill_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var actives := HexBattleSkillIndex.actives()
-	var current_skill_id: String = str(kf.get("skill", ""))
-	var selected := 0
-	for i in actives.size():
-		skill_opt.add_item("%s" % actives[i].display_name)
-		skill_opt.set_item_metadata(i, actives[i].config_id)
-		if actives[i].config_id == current_skill_id:
-			selected = i
-	if not actives.is_empty():
-		skill_opt.selected = selected
-	skill_opt.item_selected.connect(func(i: int) -> void:
-		_on_keyframe_skill_changed(actor_idx, kf_idx, str(skill_opt.get_item_metadata(i)))
-	)
 	row.add_child(skill_opt)
 
 	# Target editor: 折叠到 vbox (mode option + 条件子行)
@@ -810,6 +1134,50 @@ func _build_keyframe_row(actor_idx: int, kf_idx: int) -> Control:
 	row.add_child(rm)
 
 	return row
+
+
+## time SpinBox: Actors tab 行内 / SkillPreviewTimeline popup 共用。
+## value_changed 调 `_on_keyframe_time_changed` 拿 final_ms (conflict bump 后),
+## 同步回 SpinBox 自身, 避免显示旧值。
+func _build_kf_time_spin(actor_idx: int, kf_idx: int) -> SpinBox:
+	var s := SpinBox.new()
+	s.min_value = 0.0
+	s.max_value = float(KF_TIME_MAX_MS)
+	s.step = float(KF_TIME_STEP_MS)
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	var kf: Dictionary = track[kf_idx]
+	s.value = float(int(kf.get("time_ms", 0)))
+	s.suffix = "ms"
+	s.tooltip_text = "Trigger time (ms). Step=%d. logic_time>=N tick 触发。" % KF_TIME_STEP_MS
+	s.value_changed.connect(func(v: float) -> void:
+		var requested := int(v)
+		var final_ms := _on_keyframe_time_changed(actor_idx, kf_idx, requested)
+		if final_ms != requested and is_instance_valid(s):
+			s.set_value_no_signal(float(final_ms))
+	)
+	return s
+
+
+## skill OptionButton: Actors tab 行内 / SkillPreviewTimeline popup 共用。
+## 选项 = HexBattleSkillIndex.actives(), metadata 存 config_id。
+func _build_kf_skill_opt(actor_idx: int, kf_idx: int) -> OptionButton:
+	var opt := OptionButton.new()
+	opt.fit_to_longest_item = false
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	var current_skill_id: String = str((track[kf_idx] as Dictionary).get("skill", ""))
+	var actives := HexBattleSkillIndex.actives()
+	var selected := 0
+	for i in actives.size():
+		opt.add_item(actives[i].display_name)
+		opt.set_item_metadata(i, actives[i].config_id)
+		if actives[i].config_id == current_skill_id:
+			selected = i
+	if not actives.is_empty():
+		opt.selected = selected
+	opt.item_selected.connect(func(i: int) -> void:
+		_on_keyframe_skill_changed(actor_idx, kf_idx, str(opt.get_item_metadata(i)))
+	)
+	return opt
 
 
 func _build_keyframe_target_editor(actor_idx: int, kf_idx: int) -> Control:
@@ -921,21 +1289,29 @@ func _on_actor_passive_toggled(actor_idx: int, passive_id: String, pressed: bool
 
 # ========== Keyframe mutation ==========
 
-func _add_keyframe(actor_idx: int) -> void:
+## 在 actor 的 track 末尾追加一条 keyframe, requested_ms 起算找下一个空闲 100 边界。
+## 返回新增 keyframe 的索引 (caller 可立即用它打开 popup); 失败返回 -1。
+## SkillPreviewTimeline 空白点击 / Actors tab "+ Add Action" 都走这里。
+func _add_keyframe_at(actor_idx: int, requested_ms: int) -> int:
 	var skill_id := _default_active_skill_id()
 	if skill_id == "":
 		_set_status("No active skill registered")
-		return
+		return -1
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
-	# 同 actor 同 time 阻止: 起始 t=0; 若 0 已被占, 找下一个空闲 100 边界。
-	var time_ms := _next_free_time_ms_in_track(track, 0)
+	# 同 actor 同 time 阻止: 从 requested_ms 起找下一个空闲 100 边界。
+	var time_ms := _next_free_time_ms_in_track(track, requested_ms)
 	track.append({
 		"time_ms": time_ms,
 		"skill": skill_id,
 		"target": {"mode": "auto", "index": 0, "q": 0, "r": 0},
 	})
 	(_actors[actor_idx] as Dictionary)["track"] = track
-	_queue_actors_ui_rebuild()
+	_queue_inspector_rebuild()
+	return track.size() - 1
+
+
+func _add_keyframe(actor_idx: int) -> void:
+	_add_keyframe_at(actor_idx, 0)
 
 
 func _remove_keyframe(actor_idx: int, kf_idx: int) -> void:
@@ -944,14 +1320,21 @@ func _remove_keyframe(actor_idx: int, kf_idx: int) -> void:
 		return
 	track.remove_at(kf_idx)
 	(_actors[actor_idx] as Dictionary)["track"] = track
-	_queue_actors_ui_rebuild()
+	# 同 actor 已删/后位的 keyframe 还在 popup 编辑中 → 关掉避免悬挂索引。
+	if _keyframe_popup != null and _keyframe_popup.visible \
+			and int(_keyframe_popup.get_meta("actor_idx", -1)) == actor_idx \
+			and int(_keyframe_popup.get_meta("kf_idx", -1)) >= kf_idx:
+		_keyframe_popup.hide()
+	_queue_inspector_rebuild()
 
 
 ## time_ms 改动: 同 actor 同 time 冲突时 push 到下一个 100 边界并提示。
-func _on_keyframe_time_changed(actor_idx: int, kf_idx: int, requested_ms: int) -> void:
+## 返回最终生效的 time_ms (popup 端用返回值同步自身 SpinBox, 避免 conflict bump
+## 后显示旧值)。
+func _on_keyframe_time_changed(actor_idx: int, kf_idx: int, requested_ms: int) -> int:
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	if kf_idx < 0 or kf_idx >= track.size():
-		return
+		return requested_ms
 	var conflict := false
 	for i in track.size():
 		if i == kf_idx:
@@ -963,8 +1346,9 @@ func _on_keyframe_time_changed(actor_idx: int, kf_idx: int, requested_ms: int) -
 	if conflict:
 		final_ms = _next_free_time_ms_in_track(track, requested_ms + 100, kf_idx)
 		_set_status("Time conflict — bumped to %dms" % final_ms)
-		_queue_actors_ui_rebuild()
 	(track[kf_idx] as Dictionary)["time_ms"] = final_ms
+	_queue_inspector_rebuild()
+	return final_ms
 
 
 func _on_keyframe_skill_changed(actor_idx: int, kf_idx: int, skill_id: String) -> void:
@@ -972,6 +1356,7 @@ func _on_keyframe_skill_changed(actor_idx: int, kf_idx: int, skill_id: String) -
 	if kf_idx < 0 or kf_idx >= track.size():
 		return
 	(track[kf_idx] as Dictionary)["skill"] = skill_id
+	_queue_inspector_rebuild()
 
 
 func _on_keyframe_target_field_changed(actor_idx: int, kf_idx: int, field: String, value: Variant) -> void:
@@ -981,6 +1366,7 @@ func _on_keyframe_target_field_changed(actor_idx: int, kf_idx: int, field: Strin
 	var target: Dictionary = (track[kf_idx] as Dictionary).get("target", {}) as Dictionary
 	target[field] = value
 	(track[kf_idx] as Dictionary)["target"] = target
+	_queue_inspector_rebuild()
 
 
 ## 在 track 里找一个不冲突的 time_ms (从 start 起, 100 步进上扫)。
@@ -1022,14 +1408,14 @@ func _make_actor_spin(
 				var coord := _nearest_free_coord_for(next_q, next_r, actor_data["team"] as String, actor_idx)
 				if not coord.is_valid():
 					_set_status("No free hex available")
-					_queue_actors_ui_rebuild()
+					_queue_inspector_rebuild()
 					return
 				_actors[actor_idx]["pos"] = [coord.q, coord.r]
 				if not _is_playing:
 					_apply_actor_position_change(actor_idx, coord.q, coord.r)
 				if coord.q != next_q or coord.r != next_r:
 					_set_status("Position occupied — moved to nearest free hex")
-					_queue_actors_ui_rebuild()
+					_queue_inspector_rebuild()
 				else:
 					_refresh_actor_card_summary(actor_idx)
 			"hp":
@@ -1077,7 +1463,7 @@ func _reset_world_to_model_unguarded() -> void:
 
 	_world.configure_grid(_build_grid_config())
 	if _sanitize_actor_positions():
-		_queue_actors_ui_rebuild()
+		_queue_inspector_rebuild()
 	var collision_detector := MobaCollisionDetector.new()
 	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
 	HexBattleAllSkills.register_all_timelines()
@@ -1930,7 +2316,7 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 			"passives": [] as Array[String],
 			"track": [] as Array[Dictionary],
 		})
-	_rebuild_actors_ui()
+	_rebuild_inspector()
 
 	# Controls
 	var ctrl: Dictionary = d.get("controls", {})
@@ -1970,6 +2356,9 @@ func _set_inspector_editable(editable: bool) -> void:
 	_set_controls_editable(_left_panel, editable)
 	_speed_input.editable = true
 	_speed_input.get_line_edit().editable = true
+	# SkillPreviewTimeline: 战斗中 / 回放中关 popup, 防止编辑期触发 mutation。
+	if not editable and _keyframe_popup != null and _keyframe_popup.visible:
+		_keyframe_popup.hide()
 
 
 func _set_controls_editable(node: Node, editable: bool) -> void:
