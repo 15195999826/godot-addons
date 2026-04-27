@@ -120,7 +120,7 @@ text = "auto = 1000 ms"
 
 [node name="SptHint" type="Label" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
 layout_mode = 2
-text = "Click block to edit · click empty to add"
+text = "Click empty track to add · click block to edit"
 autowrap_mode = 2
 
 [node name="SptSep" type="HSeparator" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox"]
@@ -132,7 +132,7 @@ theme_override_constants/separation = 0
 
 [node name="SptRulerSpacer" type="Control" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox/SptRulerRow"]
 layout_mode = 2
-custom_minimum_size = Vector2(110, 0)
+custom_minimum_size = Vector2(148, 0)
 
 [node name="SptRuler" type="Control" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/SkillPreviewTimeline/SptVBox/SptRulerRow"]
 unique_name_in_owner = true

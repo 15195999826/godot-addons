@@ -48,7 +48,7 @@ const TARGET_MODE_NAMES: Array[String] = [
 
 const TICK_INTERVAL_MS := 100
 const INSPECTOR_MARGIN := 12.0
-const INSPECTOR_WIDTH := 348.0
+const INSPECTOR_WIDTH := 408.0
 const INSPECTOR_PLAYBACK_WIDTH := 320.0
 const WORKSPACE_GAP := 12.0
 const DRAWER_COLLAPSED_HEIGHT := 44.0
@@ -60,12 +60,13 @@ const KF_TIME_STEP_MS := 100
 
 # SkillPreviewTimeline (SPT) tab 视觉常量
 # 命名前缀 SPT 与 LGF core TimelineRegistry / Ability timeline 概念区分。
-const SPT_ACTOR_LABEL_W := 110
-const SPT_ROW_H := 36
-const SPT_KF_BTN_W := 16
-const SPT_KF_BTN_H := 22
+const SPT_ACTOR_LABEL_W := 148
+const SPT_ROW_H := 42
+const SPT_KF_BTN_W := 22
+const SPT_KF_BTN_H := 24
 const SPT_MIN_AUTO_MS := 1000
 const SPT_AUTO_BUFFER_MS := 200
+const KEYFRAME_POPUP_SIZE := Vector2i(392, 300)
 
 
 # ========== Scene 节点 (unique names) ==========
@@ -275,6 +276,10 @@ func _init_player_controller() -> void:
 func _init_ui_static_options() -> void:
 	_preset_load_option.fit_to_longest_item = false
 	_map_orientation_option.fit_to_longest_item = false
+	if _inspector_tabs != null and _inspector_tabs.get_tab_count() >= 3:
+		_inspector_tabs.set_tab_title(0, "Actors")
+		_inspector_tabs.set_tab_title(1, "Timeline")
+		_inspector_tabs.set_tab_title(2, "Scene")
 
 	# Map
 	_map_orientation_option.clear()
@@ -342,7 +347,6 @@ func _update_workspace_layout() -> void:
 		return
 	var inspector_width := _current_inspector_width()
 	_left_panel.custom_minimum_size = Vector2(0.0, 0.0)
-	_left_panel.size = Vector2(inspector_width, get_viewport().get_visible_rect().size.y - INSPECTOR_MARGIN * 2.0)
 	if _inspector_tabs != null:
 		_inspector_tabs.custom_minimum_size = Vector2(0.0, 0.0)
 	_left_panel.offset_left = INSPECTOR_MARGIN
@@ -703,10 +707,11 @@ func _build_track_row(actor_idx: int) -> HBoxContainer:
 	row.add_theme_constant_override("separation", 4)
 
 	var actor_label := Button.new()
-	actor_label.text = _actor_role_label(_actors[actor_idx])
+	actor_label.text = _actor_timeline_label(actor_idx)
 	actor_label.tooltip_text = "Switch to Actors tab"
 	actor_label.custom_minimum_size = Vector2(SPT_ACTOR_LABEL_W, 0)
 	actor_label.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	actor_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	actor_label.add_theme_stylebox_override("normal", _outlined_sb(Color("F8FAFC"), Color("D8DEE8"), 4, 8, 4))
 	actor_label.add_theme_stylebox_override("hover", _outlined_sb(Color("EAF2FF"), Color("7AA7F7"), 4, 8, 4))
 	actor_label.add_theme_stylebox_override("pressed", _outlined_sb(Color("CFE1FF"), Color("2563EB"), 4, 8, 4))
@@ -787,16 +792,23 @@ func _keyframe_tooltip(actor_idx: int, kf_idx: int) -> String:
 		return ""
 	var kf: Dictionary = track[kf_idx]
 	var skill_name := str(kf.get("skill", "?"))
+	var skill_cfg := HexBattleSkillIndex.get_by_id(skill_name)
 	var time_ms := int(kf.get("time_ms", 0))
 	var target: Dictionary = kf.get("target", {}) as Dictionary
 	var mode := str(target.get("mode", "auto"))
-	var target_str := mode
-	match mode:
-		"enemy_index", "ally_index":
-			target_str = "%s %d" % [mode, int(target.get("index", 0))]
-		"fixed_pos":
-			target_str = "(%d,%d)" % [int(target.get("q", 0)), int(target.get("r", 0))]
-	return "%s @ %dms → %s" % [skill_name, time_ms, target_str]
+	var target_str := _target_mode_label(mode)
+	if _skill_uses_self_target(skill_cfg):
+		target_str = "Self"
+	else:
+		match mode:
+			"enemy_index", "ally_index":
+				target_str = "%s %d" % [_target_mode_label(mode), int(target.get("index", 0))]
+			"fixed_pos":
+				target_str = "(%d,%d)" % [int(target.get("q", 0)), int(target.get("r", 0))]
+		var resolved_idx := _resolve_target_actor_idx_for_ui(actor_idx, target)
+		if resolved_idx >= 0:
+			target_str += " -> %s" % _role_id_for(resolved_idx)
+	return "%s @ %dms -> %s" % [skill_name, time_ms, target_str]
 
 
 ## 重排 track_area 内所有 KeyframeButton 的 position/size, 不创建/删除节点。
@@ -858,7 +870,19 @@ func _open_keyframe_popup(actor_idx: int, kf_idx: int) -> void:
 	_keyframe_popup.set_meta("actor_idx", actor_idx)
 	_keyframe_popup.set_meta("kf_idx", kf_idx)
 	_populate_keyframe_popup(actor_idx, kf_idx)
-	_keyframe_popup.popup_centered()
+	_popup_keyframe_near_cursor()
+
+
+func _popup_keyframe_near_cursor() -> void:
+	var viewport_size := get_viewport().get_visible_rect().size
+	var mouse_pos := get_viewport().get_mouse_position()
+	var max_x := maxf(8.0, viewport_size.x - float(KEYFRAME_POPUP_SIZE.x) - 8.0)
+	var max_y := maxf(8.0, viewport_size.y - float(KEYFRAME_POPUP_SIZE.y) - 8.0)
+	var x := int(clampf(mouse_pos.x + 14.0, 8.0, max_x))
+	var y := int(clampf(mouse_pos.y + 14.0, 8.0, max_y))
+	_keyframe_popup.position = Vector2i(x, y)
+	_keyframe_popup.size = KEYFRAME_POPUP_SIZE
+	_keyframe_popup.popup()
 
 
 ## 清空旧子节点, 重建 form: title / time / skill / target editor / [Delete] [Close]。
@@ -1014,12 +1038,18 @@ func _refresh_actor_card_summary(actor_idx: int) -> void:
 func _actor_summary(idx: int) -> String:
 	var data: Dictionary = _actors[idx]
 	var pos: Array = data["pos"]
-	return "%s  %s  (%d,%d)  HP %.0f" % [
-		_actor_role_label(data),
+	var track: Array = data.get("track", []) as Array
+	var passives: Array = data.get("passives", []) as Array
+	return "%s  %s  (%d,%d)  HP %.0f  · %d action%s · %d passive%s" % [
+		_role_id_for(idx),
 		data["class"],
 		int(pos[0]),
 		int(pos[1]),
 		float(data["hp"]),
+		track.size(),
+		"" if track.size() == 1 else "s",
+		passives.size(),
+		"" if passives.size() == 1 else "s",
 	]
 
 
@@ -1027,6 +1057,15 @@ func _actor_role_label(data: Dictionary) -> String:
 	if data["role"] == "caster":
 		return "Caster"
 	return "Ally" if data["team"] == "A" else "Enemy"
+
+
+func _actor_timeline_label(idx: int) -> String:
+	var data: Dictionary = _actors[idx]
+	return "%s · %s" % [_role_id_for(idx), str(data.get("class", "?"))]
+
+
+func _actor_detail_title(idx: int) -> String:
+	return "Edit %s" % _actor_timeline_label(idx)
 
 
 func _build_actor_detail_panel(idx: int) -> PanelContainer:
@@ -1045,7 +1084,7 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 	panel.add_child(box)
 
 	var title := Label.new()
-	title.text = "Edit %s" % _actor_role_label(data)
+	title.text = _actor_detail_title(idx)
 	title.add_theme_color_override(
 		"font_color",
 		Color("1F7A4D") if data["role"] == "caster" else Color("2F6FED") if data["team"] == "A" else Color("B23B3B")
@@ -1063,7 +1102,7 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 		_actors[idx]["class"] = CLASS_NAMES[i]
 		if not _is_playing:
 			_apply_actor_class_change(idx)
-		_refresh_actor_card_summary(idx)
+		_queue_inspector_rebuild()
 	)
 	box.add_child(_build_actor_detail_field("Class", class_opt))
 
@@ -1210,12 +1249,14 @@ func _build_keyframe_target_editor(actor_idx: int, kf_idx: int) -> Control:
 
 	var track: Array = (_actors[actor_idx] as Dictionary)["track"] as Array
 	var kf: Dictionary = track[kf_idx]
+	var keyframe_skill_cfg := HexBattleSkillIndex.get_by_id(str(kf.get("skill", "")))
 	var target: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
 
 	var mode_opt := OptionButton.new()
 	mode_opt.fit_to_longest_item = false
 	for m in TARGET_MODE_NAMES:
-		mode_opt.add_item(m)
+		mode_opt.add_item(_target_mode_label(m))
+		mode_opt.set_item_metadata(mode_opt.item_count - 1, m)
 	var current_mode: String = target.get("mode", "auto") as String
 	mode_opt.selected = max(0, TARGET_MODE_NAMES.find(current_mode))
 	vb.add_child(mode_opt)
@@ -1272,17 +1313,183 @@ func _build_keyframe_target_editor(actor_idx: int, kf_idx: int) -> Control:
 	pos_row.add_child(r_spin)
 	vb.add_child(pos_row)
 
+	var target_hint := Label.new()
+	target_hint.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	target_hint.add_theme_font_size_override("font_size", 11)
+	target_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(target_hint)
+
 	var apply_visibility := func() -> void:
-		var mode: String = TARGET_MODE_NAMES[mode_opt.selected]
+		var mode := str(mode_opt.get_item_metadata(mode_opt.selected))
+		var self_target := _skill_uses_self_target(keyframe_skill_cfg)
+		var index_count := _target_candidate_count(actor_idx, mode)
+		mode_opt.set_meta("force_disabled", self_target)
+		mode_opt.disabled = self_target
 		index_row.visible = mode == "enemy_index" or mode == "ally_index"
 		pos_row.visible = mode == "fixed_pos"
+		index_spin.max_value = float(maxi(index_count - 1, 0))
+		index_spin.set_meta("force_disabled", self_target or index_count <= 0)
+		index_spin.editable = (not self_target) and index_count > 0
+		index_spin.get_line_edit().editable = (not self_target) and index_count > 0
+		index_spin.tooltip_text = "" if index_count > 0 else "No target candidates for this mode"
+		q_spin.set_meta("force_disabled", self_target)
+		q_spin.editable = not self_target
+		q_spin.get_line_edit().editable = not self_target
+		r_spin.set_meta("force_disabled", self_target)
+		r_spin.editable = not self_target
+		r_spin.get_line_edit().editable = not self_target
+		if actor_idx >= 0 and actor_idx < _actors.size():
+			var current_track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+			if kf_idx >= 0 and kf_idx < current_track.size():
+				var current_target: Dictionary = (current_track[kf_idx] as Dictionary).get("target", {}) as Dictionary
+				var current_skill_id := str((current_track[kf_idx] as Dictionary).get("skill", ""))
+				var current_skill_cfg := HexBattleSkillIndex.get_by_id(current_skill_id)
+				target_hint.text = _target_hint_for_ui(actor_idx, current_target, current_skill_cfg)
 	apply_visibility.call()
 	mode_opt.item_selected.connect(func(i: int) -> void:
-		_on_keyframe_target_field_changed(actor_idx, kf_idx, "mode", TARGET_MODE_NAMES[i])
+		var selected_mode := str(mode_opt.get_item_metadata(i))
+		_on_keyframe_target_field_changed(actor_idx, kf_idx, "mode", selected_mode)
+		var candidate_count := _target_candidate_count(actor_idx, selected_mode)
+		var max_index := maxi(candidate_count - 1, 0)
+		if actor_idx < 0 or actor_idx >= _actors.size():
+			return
+		var track_now: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+		if kf_idx >= 0 and kf_idx < track_now.size():
+			var target_now: Dictionary = (track_now[kf_idx] as Dictionary).get("target", {}) as Dictionary
+			if int(target_now.get("index", 0)) > max_index:
+				_on_keyframe_target_field_changed(actor_idx, kf_idx, "index", max_index)
 		apply_visibility.call()
 	)
 
 	return vb
+
+
+static func _target_mode_label(mode: String) -> String:
+	match mode:
+		"enemy_index":
+			return "Enemy #"
+		"ally_index":
+			return "Ally #"
+		"fixed_pos":
+			return "Nearest Hex"
+		_:
+			return "Auto Enemy"
+
+
+func _target_candidate_count(actor_idx: int, mode: String) -> int:
+	return _target_actor_indices_for(actor_idx, mode).size()
+
+
+func _target_actor_indices_for(actor_idx: int, mode: String) -> Array[int]:
+	var result: Array[int] = []
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return result
+	var caster_data: Dictionary = _actors[actor_idx]
+	var caster_team := str(caster_data.get("team", "A"))
+	var want_same_team := mode == "ally_index"
+	for i in _actors.size():
+		if i == actor_idx:
+			continue
+		var data: Dictionary = _actors[i]
+		var same_team := str(data.get("team", "B")) == caster_team
+		if want_same_team and same_team:
+			result.append(i)
+		elif not want_same_team and not same_team:
+			result.append(i)
+	return result
+
+
+func _target_hint_for_ui(actor_idx: int, target: Dictionary, skill_cfg: AbilityConfig = null) -> String:
+	if _skill_uses_self_target(skill_cfg):
+		return "Target: self"
+	var resolved_idx := _resolve_target_actor_idx_for_ui(actor_idx, target)
+	if resolved_idx >= 0:
+		var target_text := "Target: %s" % _role_id_for(resolved_idx)
+		if not _target_matches_skill_tags(skill_cfg, actor_idx, resolved_idx):
+			target_text += " (tag mismatch)"
+		return target_text
+	var mode := str(target.get("mode", "auto"))
+	match mode:
+		"enemy_index":
+			return "No valid enemy target for this actor"
+		"ally_index":
+			return "No valid ally target for this actor"
+		"fixed_pos":
+			return "No actor near this hex"
+		_:
+			return "No enemy target for auto mode"
+
+
+static func _skill_uses_self_target(skill_cfg: AbilityConfig) -> bool:
+	return skill_cfg != null and skill_cfg.ability_tags.has("self")
+
+
+static func _skill_requires_external_target(skill_cfg: AbilityConfig) -> bool:
+	if skill_cfg == null or _skill_uses_self_target(skill_cfg):
+		return false
+	return skill_cfg.ability_tags.has("enemy") or skill_cfg.ability_tags.has("ally")
+
+
+func _target_matches_skill_tags(skill_cfg: AbilityConfig, actor_idx: int, target_idx: int) -> bool:
+	if skill_cfg == null or not _skill_requires_external_target(skill_cfg):
+		return true
+	if actor_idx < 0 or actor_idx >= _actors.size() or target_idx < 0 or target_idx >= _actors.size():
+		return false
+	var actor_team := str((_actors[actor_idx] as Dictionary).get("team", "A"))
+	var target_team := str((_actors[target_idx] as Dictionary).get("team", "B"))
+	if skill_cfg.ability_tags.has("enemy"):
+		return actor_team != target_team
+	if skill_cfg.ability_tags.has("ally"):
+		return actor_team == target_team and actor_idx != target_idx
+	return true
+
+
+func _resolve_target_actor_idx_for_ui(actor_idx: int, target: Dictionary) -> int:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return -1
+	var mode := str(target.get("mode", "auto"))
+	match mode:
+		"enemy_index", "ally_index":
+			var candidates := _target_actor_indices_for(actor_idx, mode)
+			var target_index := int(target.get("index", 0))
+			if target_index >= 0 and target_index < candidates.size():
+				return candidates[target_index]
+			return -1
+		"fixed_pos":
+			var candidates := _all_actor_indices()
+			var coord := HexCoord.new(int(target.get("q", 0)), int(target.get("r", 0)))
+			return _nearest_actor_idx_to(coord, candidates)
+		_:
+			var origin := _actor_coord(actor_idx)
+			return _nearest_actor_idx_to(origin, _target_actor_indices_for(actor_idx, "enemy_index"))
+
+
+func _all_actor_indices() -> Array[int]:
+	var result: Array[int] = []
+	for i in _actors.size():
+		result.append(i)
+	return result
+
+
+func _nearest_actor_idx_to(origin: HexCoord, candidates: Array[int]) -> int:
+	if origin == null or not origin.is_valid():
+		return -1
+	var best_idx := -1
+	var best_dist := 0x7FFFFFFF
+	for idx in candidates:
+		if idx < 0 or idx >= _actors.size():
+			continue
+		var d := _actor_coord(idx).distance_to(origin)
+		if d < best_dist:
+			best_dist = d
+			best_idx = idx
+	return best_idx
+
+
+func _actor_coord(idx: int) -> HexCoord:
+	var data: Dictionary = _actors[idx]
+	var pos: Array = data.get("pos", [0, 0])
+	return HexCoord.new(int(pos[0]), int(pos[1]))
 
 
 func _build_actor_detail_field(label_text: String, editor: Control) -> HBoxContainer:
@@ -1309,6 +1516,7 @@ func _on_actor_passive_toggled(actor_idx: int, passive_id: String, pressed: bool
 	else:
 		arr.erase(passive_id)
 	data["passives"] = arr
+	_refresh_actor_card_summary(actor_idx)
 
 
 # ========== Keyframe mutation ==========
@@ -1384,6 +1592,8 @@ func _on_keyframe_skill_changed(actor_idx: int, kf_idx: int, skill_id: String) -
 
 
 func _on_keyframe_target_field_changed(actor_idx: int, kf_idx: int, field: String, value: Variant) -> void:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	if kf_idx < 0 or kf_idx >= track.size():
 		return
@@ -1822,6 +2032,11 @@ func _on_start_pressed() -> void:
 		_finish_with_status("No caster in world")
 		return
 
+	var setup_error := _find_preview_setup_error()
+	if setup_error != "":
+		_finish_with_status(setup_error)
+		return
+
 	var setups := _collect_actor_setups()
 	if setups.is_empty():
 		_finish_with_status("No actor setups (something is broken)")
@@ -1859,6 +2074,32 @@ func _finish_with_status(s: String) -> void:
 	_replay_button.disabled = _last_timeline.is_empty()
 	_set_inspector_editable(true)
 	_set_status(s)
+
+
+func _find_preview_setup_error() -> String:
+	for actor_idx in _actors.size():
+		var actor_data: Dictionary = _actors[actor_idx]
+		var track: Array = actor_data.get("track", []) as Array
+		for kf_idx in track.size():
+			var kf: Dictionary = track[kf_idx]
+			var skill_id := str(kf.get("skill", ""))
+			var time_ms := int(kf.get("time_ms", 0))
+			var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+			if skill_cfg == null:
+				return "%s @ %dms has unknown skill: %s" % [
+					_role_id_for(actor_idx), time_ms, skill_id,
+				]
+			var target: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
+			var target_idx := _resolve_target_actor_idx_for_ui(actor_idx, target)
+			if _skill_requires_external_target(skill_cfg) and target_idx < 0:
+				return "%s @ %dms has no valid target (%s)" % [
+					_role_id_for(actor_idx), time_ms, _target_mode_label(str(target.get("mode", "auto"))),
+				]
+			if not _target_matches_skill_tags(skill_cfg, actor_idx, target_idx):
+				return "%s @ %dms target does not match skill tags" % [
+					_role_id_for(actor_idx), time_ms,
+				]
+	return ""
 
 
 ## 把 _actors 数据模型转换成 SkillPreviewWorldGI.queue_preview 的 actor_setups 入参。
@@ -2392,16 +2633,21 @@ func _set_controls_editable(node: Node, editable: bool) -> void:
 		if child == _reset_button:
 			continue
 		if child is Button:
-			(child as Button).disabled = not editable
+			(child as Button).disabled = (not editable) or _control_force_disabled(child as Control)
 		elif child is SpinBox:
 			var spin := child as SpinBox
-			spin.editable = editable
-			spin.get_line_edit().editable = editable
+			var can_edit := editable and not _control_force_disabled(spin)
+			spin.editable = can_edit
+			spin.get_line_edit().editable = can_edit
 		elif child is OptionButton:
-			(child as OptionButton).disabled = not editable
+			(child as OptionButton).disabled = (not editable) or _control_force_disabled(child as Control)
 		elif child is CheckBox:
-			(child as CheckBox).disabled = not editable
+			(child as CheckBox).disabled = (not editable) or _control_force_disabled(child as Control)
 		_set_controls_editable(child, editable)
+
+
+func _control_force_disabled(control: Control) -> bool:
+	return control.has_meta("force_disabled") and bool(control.get_meta("force_disabled"))
 
 
 func _log(line: String) -> void:
