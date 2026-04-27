@@ -570,6 +570,10 @@ func _remove_actor_at(idx: int) -> void:
 	if idx <= 0 or idx >= _actors.size():
 		return  # caster (idx 0) 不可删
 
+	# popup 持有的 (actor_idx, kf_idx) 在拓扑变化后可能漂移到错误的 actor —
+	# 简单起见关掉, 用户重新点 keyframe 编辑。
+	_hide_keyframe_popup()
+
 	if not _is_playing and idx < _actor_ids.size():
 		# 增量 remove: HexWorldGameplayInstance.remove_actor 内部会处理 grid occupant
 		# 清理并 emit actor_removed → WorldView 销毁对应 unit view。其它 view 不动。
@@ -799,7 +803,14 @@ func _keyframe_tooltip(actor_idx: int, kf_idx: int) -> String:
 ## resized signal / 首次 build call_deferred / span override 改变后 _rebuild_spt_ui
 ## 三处都会调到。
 func _layout_keyframes_for_row(actor_idx: int, track_area: Control) -> void:
+	# Stale callback 防御: 该 row 是 deferred / resized 触发的, 但 actor 可能在
+	# 这之间被 _remove_actor_at / _on_preset_load_selected 干掉了, 此时 actor_idx
+	# 越界或落到了不同的 actor 上; track_area 也可能正在被 queue_free。
 	if track_area == null or not is_instance_valid(track_area):
+		return
+	if track_area.is_queued_for_deletion():
+		return
+	if actor_idx < 0 or actor_idx >= _actors.size():
 		return
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	var max_ms := _spt_max_ms()
@@ -820,6 +831,17 @@ func _layout_keyframes_for_row(actor_idx: int, track_area: Control) -> void:
 
 
 # ========== UI: SkillPreviewTimeline keyframe popup ==========
+
+## 关闭 popup + 立即清空内部子节点。统一入口避免散落 .hide() 漏清子节点的子控件
+## (SpinBox value_changed 队列里的 stale 回调)。actor 拓扑变化(_remove_actor_at /
+## _on_preset_load_selected)、START/REPLAY 切 disable 都走这里。
+func _hide_keyframe_popup() -> void:
+	if _keyframe_popup == null or not _keyframe_popup.visible:
+		return
+	_keyframe_popup.hide()
+	for c in _keyframe_popup.get_children():
+		c.queue_free()
+
 
 ## 弹 popup 编辑指定 keyframe。popup 单实例挂 self 子树(scene 卸载自动清),
 ## 不挂在 inspector subtree 内 —— 避免 _rebuild_inspector 把 popup 一起 free。
@@ -874,7 +896,7 @@ func _populate_keyframe_popup(actor_idx: int, kf_idx: int) -> void:
 	del_btn.tooltip_text = "Delete this keyframe"
 	del_btn.pressed.connect(func() -> void:
 		_remove_keyframe(actor_idx, kf_idx)
-		_keyframe_popup.hide()
+		_hide_keyframe_popup()
 	)
 	btn_row.add_child(del_btn)
 	var spacer := Control.new()
@@ -882,7 +904,7 @@ func _populate_keyframe_popup(actor_idx: int, kf_idx: int) -> void:
 	btn_row.add_child(spacer)
 	var close_btn := Button.new()
 	close_btn.text = "Close"
-	close_btn.pressed.connect(func() -> void: _keyframe_popup.hide())
+	close_btn.pressed.connect(func() -> void: _hide_keyframe_popup())
 	btn_row.add_child(close_btn)
 	vbox.add_child(btn_row)
 
@@ -914,6 +936,8 @@ func _on_track_area_clicked(actor_idx: int, track_area: Control, event: InputEve
 		return
 	if track_area == null or not is_instance_valid(track_area) or track_area.size.x <= 0.0:
 		return
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return  # row 在 free 队列中, actor 已变 — 忽略点击
 	var max_ms := _spt_max_ms()
 	var ratio := clampf(mb.position.x / track_area.size.x, 0.0, 1.0)
 	var raw_ms := int(round(ratio * float(max_ms) / 100.0)) * 100
@@ -1324,7 +1348,7 @@ func _remove_keyframe(actor_idx: int, kf_idx: int) -> void:
 	if _keyframe_popup != null and _keyframe_popup.visible \
 			and int(_keyframe_popup.get_meta("actor_idx", -1)) == actor_idx \
 			and int(_keyframe_popup.get_meta("kf_idx", -1)) >= kf_idx:
-		_keyframe_popup.hide()
+		_hide_keyframe_popup()
 	_queue_inspector_rebuild()
 
 
@@ -2215,6 +2239,8 @@ func _on_preset_load_selected(idx: int) -> void:
 	var path_variant: Variant = _preset_load_option.get_item_metadata(idx)
 	if not (path_variant is String) or (path_variant as String).is_empty():
 		return
+	# preset 切换会替换整个 _actors 数组, popup 的 (actor_idx, kf_idx) 失效。
+	_hide_keyframe_popup()
 	var path: String = path_variant
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
@@ -2357,8 +2383,8 @@ func _set_inspector_editable(editable: bool) -> void:
 	_speed_input.editable = true
 	_speed_input.get_line_edit().editable = true
 	# SkillPreviewTimeline: 战斗中 / 回放中关 popup, 防止编辑期触发 mutation。
-	if not editable and _keyframe_popup != null and _keyframe_popup.visible:
-		_keyframe_popup.hide()
+	if not editable:
+		_hide_keyframe_popup()
 
 
 func _set_controls_editable(node: Node, editable: bool) -> void:
