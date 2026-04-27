@@ -620,7 +620,7 @@ func _rebuild_actors_ui() -> void:
 		child.queue_free()
 	if _actors.is_empty():
 		_selected_actor_idx = 0
-			return
+		return
 	_selected_actor_idx = clampi(_selected_actor_idx, 0, _actors.size() - 1)
 	for i in _actors.size():
 		_actors_container.add_child(_build_actor_card(i))
