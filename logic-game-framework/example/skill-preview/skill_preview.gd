@@ -1497,16 +1497,30 @@ func _collect_actor_setups() -> Array[Dictionary]:
 
 ## 按 keyframe 自身 caster (action_caster) 视角解析 target dict → world actor_id 字符串。
 ##   auto         → action_caster 的最近敌方 character
-##   enemy_index  → _role_id_to_actor_id["enemy_<N>"]
-##   ally_index   → _role_id_to_actor_id["ally_<N>"]
+##   enemy_index  → action_caster 视角第 N 个敌方 (跨 team 不同 actor 解析不同结果)
+##   ally_index   → action_caster 视角第 N 个友方 (排除自己)
 ##   fixed_pos    → 离 (q,r) 最近的 character
 func _resolve_keyframe_target(target: Dictionary, action_caster: CharacterActor) -> String:
 	var mode: String = str(target.get("mode", "auto"))
 	match mode:
-		"enemy_index":
-			return _role_id_to_actor_id.get("enemy_%d" % int(target.get("index", 0)), "")
-		"ally_index":
-			return _role_id_to_actor_id.get("ally_%d" % int(target.get("index", 0)), "")
+		"enemy_index", "ally_index":
+			if action_caster == null:
+				return ""
+			var caster_team := action_caster.get_team_id()
+			var want_same_team := mode == "ally_index"
+			var idx: int = int(target.get("index", 0))
+			var matched: Array[CharacterActor] = []
+			for actor in _world.get_actors():
+				if not (actor is CharacterActor):
+					continue
+				var c := actor as CharacterActor
+				var same := c.get_team_id() == caster_team
+				if want_same_team and (not same or c == action_caster):
+					continue
+				if not want_same_team and same:
+					continue
+				matched.append(c)
+			return matched[idx].get_id() if idx >= 0 and idx < matched.size() else ""
 		"fixed_pos":
 			var coord := HexCoord.new(int(target.get("q", 0)), int(target.get("r", 0)))
 			var nearest := _find_nearest_character(coord, func(_c: CharacterActor) -> bool: return true)
@@ -1926,8 +1940,10 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 	_reset_world_to_model()
 
 
+## 阶段一只支持 v2; 未来 v3+ schema 改了字段会被 v2 反序列化静默吞掉默认值,
+## 故用 == 拒绝, 加新版时显式扩 supported list。
 static func _is_preset_v2(d: Dictionary) -> bool:
-	return int(d.get("version", 0)) >= PRESET_VERSION
+	return int(d.get("version", 0)) == PRESET_VERSION
 
 
 # ========== 工具 ==========
