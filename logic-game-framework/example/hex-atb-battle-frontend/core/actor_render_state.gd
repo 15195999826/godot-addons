@@ -63,6 +63,17 @@ var death_progress: float = 0.0
 var buffs: Array[FrontendBuffSummary] = []
 
 
+# ========== 护盾状态 ==========
+
+## 当前挂在该 actor 上的护盾实例列表(顺序 = 首次 ADD 顺序,稳定不重排)。
+## 由 ShieldBarVisualizer 翻译 AbilityGranted/Removed/DamageEvent.consumption_records
+## 后,通过 ApplyShieldStateAction 由 RenderWorld 维护。
+##
+## 与 buffs 数组互补:buffs 提供头顶 chip 的视觉摘要,shields 提供血条上方独立
+## 护盾条的数据,保留多盾粒度(current/capacity/priority)。
+var shields: Array[FrontendShieldSummary] = []
+
+
 # ========== 工具方法 ==========
 
 ## 创建深拷贝
@@ -82,4 +93,6 @@ func duplicate() -> FrontendActorRenderState:
 	copy.death_progress = death_progress
 	for b in buffs:
 		copy.buffs.append(b.duplicate())
+	for s in shields:
+		copy.shields.append(s.duplicate())
 	return copy

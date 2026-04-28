@@ -204,6 +204,8 @@ func _apply_action(active_action: FrontendActionScheduler.ActiveAction) -> void:
 			_apply_projectile_action(action, active_action.id, progress)
 		FrontendVisualAction.ActionType.APPLY_BUFF_STATE:
 			_apply_apply_buff_state_action(action)
+		FrontendVisualAction.ActionType.APPLY_SHIELD_STATE:
+			_apply_apply_shield_state_action(action)
 
 
 ## 应用移动动作
@@ -274,6 +276,46 @@ func _apply_apply_buff_state_action(action: FrontendApplyBuffStateAction) -> voi
 			if idx < 0:
 				return
 			actor.buffs.remove_at(idx)
+			_dirty_actors[action.actor_id] = true
+
+
+## 应用护盾状态变化(瞬时):对 actor.shields 数组做 ADD/UPDATE/REMOVE。
+##
+## 与 _apply_apply_buff_state_action 对偶,语义完全一致(ADD 防御性覆盖、
+## UPDATE primary 无变化时 noop guard、REMOVE 找不到 noop)。
+##
+## UPDATE 比较的是 current,因为吸收伤害时只有 current 变,capacity 是 ADD 时
+## 一次定下不再改。这样 noop guard 才能挡住"DamageEvent 但当前 shield 没参与
+## 消耗"那条 record(remaining 等于上一次 current)的空跑。
+func _apply_apply_shield_state_action(action: FrontendApplyShieldStateAction) -> void:
+	var actor: FrontendActorRenderState = _actors.get(action.actor_id)
+	if actor == null:
+		return
+	var idx := -1
+	for i in range(actor.shields.size()):
+		if actor.shields[i].id == action.shield_id:
+			idx = i
+			break
+	match action.op:
+		FrontendApplyShieldStateAction.Op.ADD:
+			if action.summary == null:
+				return
+			if idx >= 0:
+				actor.shields[idx] = action.summary
+			else:
+				actor.shields.append(action.summary)
+			_dirty_actors[action.actor_id] = true
+		FrontendApplyShieldStateAction.Op.UPDATE:
+			if idx < 0 or action.summary == null:
+				return
+			if is_equal_approx(actor.shields[idx].current, action.summary.current):
+				return
+			actor.shields[idx].current = action.summary.current
+			_dirty_actors[action.actor_id] = true
+		FrontendApplyShieldStateAction.Op.REMOVE:
+			if idx < 0:
+				return
+			actor.shields.remove_at(idx)
 			_dirty_actors[action.actor_id] = true
 
 

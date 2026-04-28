@@ -1,9 +1,14 @@
-## UnitView - 单位视图
+## UnitView - 单位视图(组装根)
 ##
-## 3D 单位的视觉表现，包含：
-## - 球体网格（代表单位）
-## - 血条
-## - 名称标签
+## 只管理"和 actor 整体表演强绑定"的部分:
+##   - body mesh + 队伍/环境材质
+##   - 受击闪白 / tint
+##   - 死亡动画(影响 root scale/position/visible)
+##   - 位置插值
+##
+## 所有 attached visual(血条 / 护盾条 / buff 行 / 名字)拆到独立子 view,
+## update_state() 时 fan-out 给它们各自的 update_from_state(state)。
+## 加新 attached visual = 加一个子 view + 在 _ready 装配 + 在 update_state 加一行。
 class_name FrontendUnitView
 extends Node3D
 
@@ -19,40 +24,28 @@ signal death_animation_finished(actor_id: String)
 ## 单位半径
 @export var unit_radius: float = 0.5
 
-## 血条高度偏移
-@export var hp_bar_offset: float = 1.2
-
-## 名称标签高度偏移
-@export var name_label_offset: float = 1.5
-
-@export var buff_row_offset: float = 0.95
-@export var buff_block_width: float = 0.18
-@export var buff_block_height: float = 0.06
-@export var buff_block_spacing: float = 0.04
-
 
 # ========== 节点引用 ==========
 
 var _mesh_instance: MeshInstance3D
-var _hp_bar: ProgressBar
-var _name_label: Label3D
-var _buff_label: Label3D
-## key = buff.id, value = MeshInstance3D。GDScript Dictionary 是 insertion-ordered,
-## 直接用 keys() 获取首次 ADD 顺序,避免重排闪动。
-var _buff_blocks: Dictionary = {}
+var _base_material: StandardMaterial3D
+
+## attached visual 子 view(在 _ready 装配)
+var _hp_bar_view: FrontendHpBarView
+var _shield_bar_view: FrontendShieldBarView
+var _buff_row_view: FrontendBuffRowView
+var _name_label_view: FrontendNameLabelView
 
 
 # ========== 状态 ==========
 
 var _actor_id: String = ""
 var _team: int = 0
-var _max_hp: float = 100.0
-var _current_hp: float = 100.0
 var _is_alive: bool = true
 var _flash_progress: float = 0.0
-var _base_material: StandardMaterial3D
 var _target_position: Vector3 = Vector3.ZERO
 var _death_tween: Tween
+var _environment_kind: String = ""
 ## 死亡动画 once 策略 flag。play_death() 是 transition event 入口,但同一战斗内
 ## 的非战斗事件(动画系统重入 / debug 重 wire)仍可能触发多次,view 自己挡 once。
 var _death_played: bool = false
@@ -62,78 +55,31 @@ var _death_played: bool = false
 
 func _ready() -> void:
 	_create_mesh()
-	_create_hp_bar()
-	_create_name_label()
-	_create_buff_label()
+	_hp_bar_view = FrontendHpBarView.new()
+	add_child(_hp_bar_view)
+	_shield_bar_view = FrontendShieldBarView.new()
+	add_child(_shield_bar_view)
+	_buff_row_view = FrontendBuffRowView.new()
+	add_child(_buff_row_view)
+	_name_label_view = FrontendNameLabelView.new()
+	add_child(_name_label_view)
 	_target_position = position
 
 
 func _process(delta: float) -> void:
-	# 平滑插值到目标位置
 	position = position.lerp(_target_position, delta * 15.0)
 
 
-## 创建球体网格
 func _create_mesh() -> void:
 	_mesh_instance = MeshInstance3D.new()
-	
 	var sphere := SphereMesh.new()
 	sphere.radius = unit_radius
 	sphere.height = unit_radius * 2.0
 	_mesh_instance.mesh = sphere
-	
-	# 创建材质
 	_base_material = StandardMaterial3D.new()
 	_base_material.albedo_color = Color.WHITE
 	_mesh_instance.material_override = _base_material
-	
 	add_child(_mesh_instance)
-
-
-## 创建血条
-func _create_hp_bar() -> void:
-	# 使用 Label3D 显示血条（简化实现）
-	# 实际项目中可以使用 SubViewport + Control 实现更复杂的血条
-	_hp_bar = null  # 暂时不创建复杂的血条
-	
-	# 简单的血条实现：使用另一个扁平的 MeshInstance3D
-	var hp_bar_mesh := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(1.0, 0.1, 0.1)
-	hp_bar_mesh.mesh = box
-	hp_bar_mesh.position = Vector3(0, hp_bar_offset, 0)
-	
-	var hp_material := StandardMaterial3D.new()
-	hp_material.albedo_color = Color.GREEN
-	hp_bar_mesh.material_override = hp_material
-	hp_bar_mesh.name = "HPBar"
-	
-	add_child(hp_bar_mesh)
-
-
-func _create_buff_label() -> void:
-	_buff_label = Label3D.new()
-	_buff_label.position = Vector3(0, buff_row_offset - buff_block_height - 0.04, 0)
-	_buff_label.pixel_size = 0.006
-	_buff_label.font_size = 24
-	_buff_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_buff_label.no_depth_test = true
-	_buff_label.modulate = Color.WHITE
-	_buff_label.text = ""
-	add_child(_buff_label)
-
-
-## 创建名称标签
-func _create_name_label() -> void:
-	_name_label = Label3D.new()
-	_name_label.position = Vector3(0, name_label_offset, 0)
-	_name_label.pixel_size = 0.01
-	_name_label.font_size = 32
-	_name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_name_label.no_depth_test = true
-	_name_label.modulate = Color.WHITE
-	
-	add_child(_name_label)
 
 
 # ========== 公共方法 ==========
@@ -142,19 +88,40 @@ func _create_name_label() -> void:
 func initialize(p_actor_id: String, display_name: String, team: int, max_hp: float, current_hp: float) -> void:
 	_actor_id = p_actor_id
 	_team = team
-	_max_hp = max_hp
-	_current_hp = current_hp
 	_is_alive = current_hp > 0
-	
-	# 设置名称
-	if _name_label:
-		_name_label.text = display_name
-	
-	# 设置队伍颜色
 	_update_team_color()
-	
-	# 更新血条
-	_update_hp_bar()
+
+	# 用初始 state 同步给子 view,避免每个子 view 各自 initialize 接口爆炸
+	var initial_state := FrontendActorRenderState.new()
+	initial_state.id = p_actor_id
+	initial_state.display_name = display_name
+	initial_state.team = team
+	initial_state.visual_hp = current_hp
+	initial_state.target_hp = current_hp
+	initial_state.max_hp = max_hp
+	initial_state.is_alive = _is_alive
+	_hp_bar_view.update_from_state(initial_state)
+	_shield_bar_view.update_from_state(initial_state)
+	_buff_row_view.update_from_state(initial_state)
+	_name_label_view.update_from_state(initial_state)
+
+
+func set_environment_style(kind: String) -> void:
+	_environment_kind = kind
+	if _mesh_instance != null:
+		var box := BoxMesh.new()
+		box.size = Vector3(0.9, 0.85, 0.9)
+		_mesh_instance.mesh = box
+		_mesh_instance.position = Vector3(0.0, 0.4, 0.0)
+	if _base_material != null:
+		_base_material.albedo_color = Color(0.45, 0.42, 0.36)
+	if _hp_bar_view != null:
+		_hp_bar_view.set_hidden(true)
+	if _shield_bar_view != null:
+		_shield_bar_view.visible = false
+	if _name_label_view != null:
+		var override := "StoneWall" if kind == "stone_wall" else kind
+		_name_label_view.set_override_text(override)
 
 
 ## 获取 Actor ID
@@ -162,17 +129,35 @@ func get_actor_id() -> String:
 	return _actor_id
 
 
-## 同步可覆盖 state(hp / flash / tint)。一次性动画(死亡 / 复活)走 play_death /
-## revive 公共方法,不在这里推断 transition。
+## 给 smoke 测试 / 调试用的子 view 访问器(避免外部 poke 内部字段)。
+func get_hp_bar_view() -> FrontendHpBarView:
+	return _hp_bar_view
+
+
+func get_shield_bar_view() -> FrontendShieldBarView:
+	return _shield_bar_view
+
+
+func get_buff_row_view() -> FrontendBuffRowView:
+	return _buff_row_view
+
+
+func get_name_label_view() -> FrontendNameLabelView:
+	return _name_label_view
+
+
+## 同步可覆盖 state(hp / flash / tint / buffs)。一次性动画(死亡 / 复活)走
+## play_death / revive 公共方法,不在这里推断 transition。
 func update_state(new_state: FrontendActorRenderState) -> void:
-	_current_hp = new_state.visual_hp
 	_is_alive = new_state.is_alive
 	_flash_progress = new_state.flash_progress
 
-	_update_hp_bar()
+	_hp_bar_view.update_from_state(new_state)
+	_shield_bar_view.update_from_state(new_state)
+	_buff_row_view.update_from_state(new_state)
+	_name_label_view.update_from_state(new_state)
 	_update_flash_effect(new_state.flash_progress)
 	_update_tint_color(new_state.tint_color)
-	_sync_buff_row(new_state.buffs)
 
 
 ## 设置世界位置
@@ -187,95 +172,22 @@ func _update_team_color() -> void:
 	if _base_material:
 		if _team == 0:
 			_base_material.albedo_color = Color(0.2, 0.6, 1.0)  # 蓝色
-		else:
+		elif _team == 1:
 			_base_material.albedo_color = Color(1.0, 0.3, 0.3)  # 红色
-
-
-## 更新血条
-func _update_hp_bar() -> void:
-	var hp_bar_node := get_node_or_null("HPBar") as MeshInstance3D
-	if hp_bar_node:
-		var hp_ratio := _current_hp / _max_hp if _max_hp > 0 else 0.0
-		hp_bar_node.scale.x = maxf(0.01, hp_ratio)
-		
-		# 更新颜色
-		var material := hp_bar_node.material_override as StandardMaterial3D
-		if material:
-			if hp_ratio > 0.5:
-				material.albedo_color = Color.GREEN
-			elif hp_ratio > 0.25:
-				material.albedo_color = Color.YELLOW
-			else:
-				material.albedo_color = Color.RED
+		else:
+			_base_material.albedo_color = Color(0.45, 0.42, 0.36)
 
 
 ## 更新闪白效果
 func _update_flash_effect(flash_progress: float) -> void:
 	if _base_material:
-		var base_color := Color(0.2, 0.6, 1.0) if _team == 0 else Color(1.0, 0.3, 0.3)
+		var base_color := Color(0.45, 0.42, 0.36)
+		if _team == 0:
+			base_color = Color(0.2, 0.6, 1.0)
+		elif _team == 1:
+			base_color = Color(1.0, 0.3, 0.3)
 		var flash_color := Color.WHITE
 		_base_material.albedo_color = base_color.lerp(flash_color, flash_progress)
-
-
-## 入场动画(0.15s scale.x 0→1)只在新增时触发;数值变化(stacks-1 / shield 吸收)
-## 静默更新文字,不弹动画(避免 Poison tick / 频繁吸收引起的视觉吵闹)。
-func _sync_buff_row(buffs: Array) -> void:
-	if buffs.is_empty() and _buff_blocks.is_empty():
-		return
-
-	var current_ids: Dictionary = {}
-	for b in buffs:
-		current_ids[b.id] = b
-
-	var to_remove: Array[String] = []
-	for buff_id in _buff_blocks.keys():
-		if not current_ids.has(buff_id):
-			to_remove.append(buff_id)
-	for buff_id in to_remove:
-		var dead_node: MeshInstance3D = _buff_blocks[buff_id]
-		if is_instance_valid(dead_node):
-			dead_node.queue_free()
-		_buff_blocks.erase(buff_id)
-
-	for buff_id in current_ids.keys():
-		if _buff_blocks.has(buff_id):
-			continue
-		var summary = current_ids[buff_id]
-		var block := _create_buff_block(summary.color)
-		_buff_blocks[buff_id] = block
-		add_child(block)
-		block.scale.x = 0.0
-		create_tween().tween_property(block, "scale:x", 1.0, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-
-	var ordered_ids: Array = _buff_blocks.keys()
-	var n := ordered_ids.size()
-	var step := buff_block_width + buff_block_spacing
-	var total_width := step * n - buff_block_spacing
-	var start_x := -total_width * 0.5 + buff_block_width * 0.5
-	var parts: Array[String] = []
-	for i in range(n):
-		var bid: String = ordered_ids[i]
-		var node: MeshInstance3D = _buff_blocks[bid]
-		node.position = Vector3(start_x + step * i, buff_row_offset, 0.0)
-		var s = current_ids[bid]
-		if s.primary > 0.0:
-			parts.append("%s%d" % [s.short, int(s.primary)])
-		else:
-			parts.append(s.short)
-	if _buff_label != null:
-		_buff_label.text = " ".join(parts)
-
-
-func _create_buff_block(block_color: Color) -> MeshInstance3D:
-	var node := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(buff_block_width, buff_block_height, 0.04)
-	node.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = block_color
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	node.material_override = mat
-	return node
 
 
 ## 更新染色

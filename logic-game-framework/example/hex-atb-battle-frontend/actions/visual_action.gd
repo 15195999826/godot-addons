@@ -23,6 +23,7 @@ enum ActionType {
 	ATTACK_VFX,      # 朝向性攻击特效
 	PROJECTILE,      # 投射物飞行
 	APPLY_BUFF_STATE, # 瞬时:对 actor.buffs 数组做 ADD/UPDATE/REMOVE
+	APPLY_SHIELD_STATE, # 瞬时:对 actor.shields 数组做 ADD/UPDATE/REMOVE
 }
 
 

@@ -178,12 +178,7 @@ func _resolve_initial_primary(payload: Dictionary, primary_source: PrimarySource
 		PrimarySource.STACKS:
 			return float(payload.get("stacks", 0))
 		PrimarySource.SHIELD_REMAINING:
-			var components: Array = payload.get("components", [])
-			for comp_variant in components:
-				var comp: Dictionary = comp_variant
-				if comp.get("type", "") == "ShieldComponent":
-					var data: Dictionary = comp.get("data", {})
-					return data.get("current", 0.0) as float
-			return 0.0
+			var data := FrontendShieldSummary.find_shield_component_data(payload)
+			return data.get("current", 0.0) as float
 		_:
 			return 0.0
