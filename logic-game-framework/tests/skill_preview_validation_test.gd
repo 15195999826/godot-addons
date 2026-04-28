@@ -41,10 +41,10 @@ func _strike_resolver() -> Callable:
 
 func _test_occupy_strike() -> void:
 	_ensure_timelines_registered()
-	# Strike: timeline=500ms, cooldown=2000ms → max=2000
-	TestFramework.assert_equal(2000, SkillPreviewValidation.ability_occupy_ms(HexBattleStrike.ABILITY))
-	# SwiftStrike: timeline=400ms, cooldown=3000ms → max=3000
-	TestFramework.assert_equal(3000, SkillPreviewValidation.ability_occupy_ms(HexBattleSwiftStrike.ABILITY))
+	# Strike: timeline=500ms (cooldown 2000ms 不再计入 occupy)
+	TestFramework.assert_equal(500, SkillPreviewValidation.ability_occupy_ms(HexBattleStrike.ABILITY))
+	# SwiftStrike: timeline=400ms
+	TestFramework.assert_equal(400, SkillPreviewValidation.ability_occupy_ms(HexBattleSwiftStrike.ABILITY))
 
 
 func _test_occupy_null() -> void:
@@ -68,34 +68,34 @@ func _test_violation_empty() -> void:
 func _test_violation_overlap() -> void:
 	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
-	# 同 skill 间隔 1000ms < occupy 2000ms → 必有错误
+	# 同 skill 间隔 200ms < occupy 500ms (timeline) → 必有错误
 	var track: Array = [
 		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
-		{"time_ms": 1000, "skill": HexBattleStrike.CONFIG_ID},
+		{"time_ms": 200, "skill": HexBattleStrike.CONFIG_ID},
 	]
 	var err := SkillPreviewValidation.find_track_occupy_violation(track, "caster", resolver)
 	TestFramework.assert_true(err != "")
 	# 错误消息里应该提到时间和 occupy
 	TestFramework.assert_true("0ms" in err)
-	TestFramework.assert_true("1000ms" in err)
-	TestFramework.assert_true("2000ms" in err)
+	TestFramework.assert_true("200ms" in err)
+	TestFramework.assert_true("500ms" in err)
 
 
 func _test_violation_legal_gap() -> void:
 	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
-	# 同 skill 间隔 2000ms == occupy → 边界合法 (严格小于才冲突)
+	# 同 skill 间隔 500ms == occupy (timeline) → 边界合法 (严格小于才冲突)
 	var track: Array = [
 		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
-		{"time_ms": 2000, "skill": HexBattleStrike.CONFIG_ID},
+		{"time_ms": 500, "skill": HexBattleStrike.CONFIG_ID},
 	]
 	TestFramework.assert_equal("",
 		SkillPreviewValidation.find_track_occupy_violation(track, "caster", resolver))
-	# 间隔 2100ms > occupy → 合法
+	# 间隔 1000ms > occupy → 合法 (即使 < cooldown 2000ms — UI 不管 cooldown)
 	var track2: Array = [
 		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
-		{"time_ms": 2100, "skill": HexBattleStrike.CONFIG_ID},
-		{"time_ms": 4200, "skill": HexBattleStrike.CONFIG_ID},
+		{"time_ms": 500, "skill": HexBattleStrike.CONFIG_ID},
+		{"time_ms": 1000, "skill": HexBattleStrike.CONFIG_ID},
 	]
 	TestFramework.assert_equal("",
 		SkillPreviewValidation.find_track_occupy_violation(track2, "caster", resolver))
@@ -135,19 +135,24 @@ func _test_violation_diff_skills() -> void:
 func _test_next_free_bump() -> void:
 	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
-	# 已有 t=0 Strike, candidate Strike 想放 t=1000 → 应被 bump 到 t=2000 (occupy 边界)
+	# 已有 t=0 Strike, candidate Strike 想放 t=200 (在 occupy 500 内) → bump 到 t=500
 	var track: Array = [{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID}]
 	var bumped := SkillPreviewValidation.next_free_time_ms_in_track(
+		track, HexBattleStrike.CONFIG_ID, resolver, 200, -1
+	)
+	TestFramework.assert_equal(500, bumped)
+	# 已有 t=0 Strike, candidate Strike 想放 t=1000 (> occupy) → 直接返回 1000
+	var bumped_legal := SkillPreviewValidation.next_free_time_ms_in_track(
 		track, HexBattleStrike.CONFIG_ID, resolver, 1000, -1
 	)
-	TestFramework.assert_equal(2000, bumped)
+	TestFramework.assert_equal(1000, bumped_legal)
 	# 已有 t=0 Strike, candidate SwiftStrike 想放 t=100 → 不同 skill 不冲突, 直接返回 100
 	var bumped2 := SkillPreviewValidation.next_free_time_ms_in_track(
 		track, HexBattleSwiftStrike.CONFIG_ID, resolver, 100, -1
 	)
 	TestFramework.assert_equal(100, bumped2)
-	# skip_kf_idx: 改 t=0 keyframe 自身的 time, requested=500 → 不算自己冲突, 返回 500
+	# skip_kf_idx: 改 t=0 keyframe 自身的 time, requested=300 → 不算自己冲突, 返回 300
 	var bumped3 := SkillPreviewValidation.next_free_time_ms_in_track(
-		track, HexBattleStrike.CONFIG_ID, resolver, 500, 0
+		track, HexBattleStrike.CONFIG_ID, resolver, 300, 0
 	)
-	TestFramework.assert_equal(500, bumped3)
+	TestFramework.assert_equal(300, bumped3)

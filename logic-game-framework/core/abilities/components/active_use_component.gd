@@ -54,6 +54,7 @@ func _check_conditions(ctx: AbilityLifecycleContext, event_dict: Dictionary, gam
 			if reason == "":
 				reason = condition.get_condition_type()
 			Log.debug("ActiveUseComponent", "条件不满足: %s" % reason)
+			_push_activate_failed(ctx, event_dict, reason, "condition")
 			# Debug: 验证 Condition 状态未被修改
 			condition._verify_unchanged()
 			return false
@@ -68,12 +69,39 @@ func _check_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_sta
 			if reason == "":
 				reason = cost.type
 			Log.debug("ActiveUseComponent", "消耗不足: %s" % reason)
+			_push_activate_failed(ctx, event_dict, reason, "cost")
 			# Debug: 验证 Cost 状态未被修改（can_pay 不应修改状态）
 			cost._verify_unchanged()
 			return false
 		# Debug: 验证 Cost 状态未被修改
 		cost._verify_unchanged()
 	return true
+
+
+## condition / cost 失败时 push AbilityActivateFailed 事件到 event_collector,
+## 让 recorder 收录、前端 console 渲染、SkillPreview 显示"释放失败 + reason"。
+##
+## 仅在 trigger 已匹配后才会进到 _check_conditions/_check_costs, 所以本事件
+## 只代表"已匹配 trigger 的本 ability 被 condition/cost 拦截", 不会被无关
+## ability 的 trigger miss 误触发。
+##
+## reason 由 example 层 condition.get_fail_reason / cost.get_fail_reason 提供
+## (LGF core 不知道"冷却"/"mp 不足", 只搬运字符串)。
+func _push_activate_failed(
+	ctx: AbilityLifecycleContext, event_dict: Dictionary,
+	reason: String, failed_component_type: String,
+) -> void:
+	var ability := ctx.ability
+	if ability == null:
+		return
+	GameWorld.event_collector.push(GameEvent.AbilityActivateFailed.create(
+		ability.id,
+		ability.config_id,
+		ctx.owner_actor_id,
+		String(event_dict.get("target_actor_id", "")),
+		reason,
+		failed_component_type,
+	).to_dict())
 
 func _pay_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> void:
 	for cost in _costs:

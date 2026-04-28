@@ -3,20 +3,23 @@
 ## SkillPreviewTimeline UI 编辑期 / START 兜底校验用的算 occupy / 找冲突的纯逻辑。
 ## 抽出来便于单元测试调用 (UI scene 不能在 headless 里实例化, 但 static helper 可以)。
 ##
-## occupy = 一个技能从 activate 到"可以再次 activate"的最短时间 (ms)
-##        = max(timeline.total_duration, TimedCooldownCost.duration)
+## occupy = 一个 skill 的 timeline 演完所需时间 (ms) = timeline.total_duration
 ##
-## procedure 在 fire keyframe 时不绕 cooldown, 同 skill 在 occupy 窗口内重叠 fire
-## 会被 CooldownCondition silently reject —— UI 编辑期就要拦住, 让这种 timeline
-## 排不出来。
+## 关注点划分:
+## - UI occupy 只管"上一发演完没有"(timeline 时长), 防止用户排出物理上重叠的 keyframe;
+## - "能否释放"(cooldown / mp / hp 等 condition / cost) 由 LGF ActiveUseComponent
+##   在 fire 时检查, 失败 push AbilityActivateFailed 事件, 前端 console 渲染。
+##
+## 这意味着用户能在 UI 里排出"间隔=timeline 但 < cooldown"的 timeline, START 跑
+## 起来后会看到 console 标红"@500ms 释放失败: 冷却中"。这是设计意图: preview 替代
+## AI 决策, 但下游施法管道 (含 cost/condition 检查) 跟真战斗 100% 一致。
 class_name SkillPreviewValidation
 
 
-## 算技能的 occupy 时长 (ms)。cfg=null 返回 0。
+## 算技能的 occupy 时长 (ms) = timeline.total_duration。cfg=null 返回 0。
 ##
-## 走 cfg.active_use_components, 取 timeline.total_duration 与
-## TimedCooldownCost.duration 的最大值。其它 Cost 类型不计入 occupy
-## (mp/hp 不约束时间, 只有 cooldown 是)。
+## 不再扫 costs: cooldown / mp / hp 等"能否释放"约束由 LGF ActiveUseComponent
+## 在 fire 时处理, 失败时 push AbilityActivateFailed 事件供前端渲染, 不参与 UI 拦截。
 static func ability_occupy_ms(cfg: AbilityConfig) -> int:
 	if cfg == null:
 		return 0
@@ -25,9 +28,6 @@ static func ability_occupy_ms(cfg: AbilityConfig) -> int:
 		var tl := TimelineRegistry.get_timeline(au.timeline_id)
 		if tl != null:
 			occupy = maxf(occupy, tl.total_duration)
-		for cost in au.costs:
-			if cost is HexBattleCooldownSystem.TimedCooldownCost:
-				occupy = maxf(occupy, (cost as HexBattleCooldownSystem.TimedCooldownCost).get_duration())
 	return int(occupy)
 
 

@@ -2375,6 +2375,22 @@ func _log_battle_end(last_frame: int) -> void:
 	_log(EVENT_DIVIDER)
 
 
+## 反查 actor_id → role label ("caster" / "ally_0" / ...), 找不到回退 actor_id。
+func _role_label_for_actor_id(actor_id: String) -> String:
+	for role_id in _role_id_to_actor_id.keys():
+		if _role_id_to_actor_id[role_id] == actor_id:
+			return role_id
+	return actor_id
+
+
+## 反查 config_id → display_name, 找不到回退 config_id。
+func _skill_display_name_by_config_id(config_id: String) -> String:
+	var cfg := HexBattleSkillIndex.get_by_id(config_id)
+	if cfg != null:
+		return cfg.display_name
+	return config_id
+
+
 func _log_event(frame: int, ev: Dictionary) -> void:
 	var kind: String = ev.get("kind", "?")
 	var ms := frame * TICK_INTERVAL_MS
@@ -2401,6 +2417,17 @@ func _log_event(frame: int, ev: Dictionary) -> void:
 				ts,
 				ev.get("abilityInstanceId", ev.get("ability_id", "?")),
 				ev.get("sourceId", "?"),
+			]
+		"abilityActivateFailed":
+			# LGF ActiveUseComponent push: condition / cost 检查失败时上报。
+			# 典型场景: SkillPreview 用户排了 timeline 间隔合法 (≥ timeline.total_duration)
+			# 但 < cooldown 的 keyframe — UI 不拦, 跑到这里被 cooldown 拒。
+			var role := _role_label_for_actor_id(str(ev.get("sourceId", "")))
+			var skill_name := _skill_display_name_by_config_id(str(ev.get("abilityConfigId", "")))
+			line = "%s  [color=#FF6B6B]⛔[/color] [b]%s[/b]  [color=#FF6B6B]%s 释放失败[/color]  [color=#A89580]%s: %s[/color]" % [
+				ts, role, skill_name,
+				str(ev.get("failedComponentType", "?")),
+				str(ev.get("reason", "?")),
 			]
 		"death":
 			line = "%s  [color=#A072C8]☠[/color] [b]%s[/b]  [color=#A89580]fell[/color]" % [

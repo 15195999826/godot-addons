@@ -12,6 +12,51 @@
 
 ---
 
+## [Unreleased] — 2026-04-28 SkillPreview 关注点分离: UI 只防 timeline 重叠, cooldown 由 LGF 上报
+
+上一段 (2026-04-28 多 keyframe 修复) UI occupy 同时算了 cooldown, 越过了 UI 的关注点边界 ——
+"能否释放" (cost / condition) 是 LGF 真战施法管道的责任, UI 不应替它做预筛。这一段把
+occupy 收窄到只看 timeline, 失败语义改由 LGF 在 fire 时 push 事件供前端渲染。
+
+设计意图: SkillPreview 替代 ATB+AI 决策层 ("在 t=X 让 caster 用 skill Y 打 Z"), 但下游施法
+管道与真战 100% 一致 — cooldown / mp / hp 等约束都由 ActiveUseComponent 检查, 失败有
+明确事件流, 不再 silently reject。
+
+### Added
+
+- **`GameEvent.AbilityActivateFailed`** (`core/events/game_event.gd`) 新事件类 +
+  `ABILITY_ACTIVATE_FAILED_EVENT = "abilityActivateFailed"` 常量。payload:
+  `abilityInstanceId / abilityConfigId / sourceId / targetActorId / reason / failedComponentType`。
+  reason 来自 `Condition.get_fail_reason` / `Cost.get_fail_reason` (LGF core 只搬运字符串,
+  example 层填语义如"技能冷却中")。failedComponentType ∈ {"condition", "cost"} 让前端区分图标。
+
+### Changed
+
+- **`ActiveUseComponent.on_event`** condition / cost 检查失败时除了 `Log.debug`, 现在还
+  push 一条 `AbilityActivateFailed` 事件到 `GameWorld.event_collector`。仅在 trigger 已
+  匹配后才会推 (即"该 ability 应该响应这次 activate 但被前置检查拒了"), trigger miss
+  不算失败不推。
+- **`SkillPreviewValidation.ability_occupy_ms`** 只取 `timeline.total_duration`, 不再扫
+  `cost`。UI 现在允许 "间隔 ≥ timeline 但 < cooldown" 的 keyframe 排布 — 跑起来后由
+  LGF 推 `AbilityActivateFailed`, 前端 console 显示"⛔ @{ms} {role} {skill} 释放失败:
+  condition: 技能冷却中"。
+- **`skill_preview.gd._log_event`** 加 `"abilityActivateFailed"` match 分支, 渲染
+  ⛔ 图标 + reason。新 helper: `_role_label_for_actor_id` / `_skill_display_name_by_config_id`。
+
+### Removed
+
+- **`HexBattleCooldownSystem.TimedCooldownCost.get_duration()`** getter 删除 (UI occupy
+  不再读它, 上一段为它专门加的, 这段不用了)。
+
+### 验证
+
+| 场景 | 上段 (cooldown 进 occupy) | 这段 (只 timeline) |
+|---|---|---|
+| Strike timeline=500, cooldown=2000, 排 t=0/500/1000 | UI 拦, 用户排不出 | UI 接受; 跑起来 1 exec + 2 abilityActivateFailed (reason="技能冷却中") |
+| LGF run_tests | 66 PASS | 66 PASS (assertions 调整: occupy 期望 500 不再 2000) |
+
+---
+
 ## [Unreleased] — 2026-04-28 SkillPreview 多 keyframe 修复
 
 ### Fixed

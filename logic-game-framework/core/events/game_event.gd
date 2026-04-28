@@ -2,6 +2,7 @@ class_name GameEvent
 extends RefCounted
 
 const ABILITY_ACTIVATE_EVENT := "abilityActivate"
+const ABILITY_ACTIVATE_FAILED_EVENT := "abilityActivateFailed"
 const ACTOR_SPAWNED_EVENT := "actorSpawned"
 const ACTOR_DESTROYED_EVENT := "actorDestroyed"
 const ATTRIBUTE_CHANGED_EVENT := "attributeChanged"
@@ -478,7 +479,69 @@ class AbilityActivate extends Base:
 		e.ability_instance_id = d.get("abilityInstanceId", "")
 		e.source_id = d.get("sourceId", "")
 		return e
-	
+
 	static func is_match(d: Dictionary) -> bool:
 		return d.get("kind") == ABILITY_ACTIVATE_EVENT
+
+
+## ActiveUseComponent 的 condition / cost 检查失败时 push。
+##
+## 语义边界: 失败事件只代表"已经匹配到 trigger 的 ability 在 condition/cost
+## 阶段被拒绝"。triggers 没匹配上(skill 不该响应这个 event)不 push 失败事件
+## —— 那是正常 silent skip, 不是失败。
+##
+## reason: 失败的 condition.get_fail_reason / cost.get_fail_reason 字符串,
+## 由 example 层填充语义 (LGF core 不知道"冷却"/"mp 不足", 只搬运字符串)。
+## failed_component_type: "condition" / "cost", 让前端区分图标。
+class AbilityActivateFailed extends Base:
+	var ability_instance_id: String = ""
+	var ability_config_id: String = ""
+	var source_id: String = ""
+	var target_actor_id: String = ""
+	var reason: String = ""
+	var failed_component_type: String = ""
+
+	func _init() -> void:
+		kind = ABILITY_ACTIVATE_FAILED_EVENT
+
+	static func create(
+		p_ability_instance_id: String,
+		p_ability_config_id: String,
+		p_source_id: String,
+		p_target_actor_id: String,
+		p_reason: String,
+		p_failed_component_type: String,
+	) -> AbilityActivateFailed:
+		var e := AbilityActivateFailed.new()
+		e.ability_instance_id = p_ability_instance_id
+		e.ability_config_id = p_ability_config_id
+		e.source_id = p_source_id
+		e.target_actor_id = p_target_actor_id
+		e.reason = p_reason
+		e.failed_component_type = p_failed_component_type
+		return e
+
+	func to_dict() -> Dictionary:
+		return {
+			"kind": kind,
+			"abilityInstanceId": ability_instance_id,
+			"abilityConfigId": ability_config_id,
+			"sourceId": source_id,
+			"targetActorId": target_actor_id,
+			"reason": reason,
+			"failedComponentType": failed_component_type,
+		}
+
+	static func from_dict(d: Dictionary) -> AbilityActivateFailed:
+		var e := AbilityActivateFailed.new()
+		e.ability_instance_id = d.get("abilityInstanceId", "")
+		e.ability_config_id = d.get("abilityConfigId", "")
+		e.source_id = d.get("sourceId", "")
+		e.target_actor_id = d.get("targetActorId", "")
+		e.reason = d.get("reason", "")
+		e.failed_component_type = d.get("failedComponentType", "")
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == ABILITY_ACTIVATE_FAILED_EVENT
 
