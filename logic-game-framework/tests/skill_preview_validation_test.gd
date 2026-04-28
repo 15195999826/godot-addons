@@ -133,6 +133,12 @@ func _test_violation_diff_skills() -> void:
 	]
 	TestFramework.assert_equal("",
 		SkillPreviewValidation.find_track_occupy_violation(track_pure_diff, "caster", resolver))
+	var track_same_time_diff: Array = [
+		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
+		{"time_ms": 0, "skill": HexBattleSwiftStrike.CONFIG_ID},
+	]
+	TestFramework.assert_equal("",
+		SkillPreviewValidation.find_track_occupy_violation(track_same_time_diff, "caster", resolver))
 	# 同 skill 第二组: SwiftStrike 之间 100 vs 200 = 100 < occupy 400 (timeline), 期望报错
 	var track_swift_overlap: Array = [
 		{"time_ms": 100, "skill": HexBattleSwiftStrike.CONFIG_ID},
@@ -163,6 +169,19 @@ func _test_next_free_bump() -> void:
 		track, HexBattleSwiftStrike.CONFIG_ID, resolver, 100, -1
 	)
 	TestFramework.assert_equal(100, bumped2)
+	var same_time_diff := SkillPreviewValidation.next_free_time_ms_in_track(
+		track, HexBattleSwiftStrike.CONFIG_ID, resolver, 0, -1
+	)
+	TestFramework.assert_equal(0, same_time_diff)
+	# same-skill bump 可以落到 different-skill 已占的时刻; different skill overlap 只 warning。
+	var mixed_track: Array = [
+		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
+		{"time_ms": 500, "skill": HexBattleSwiftStrike.CONFIG_ID},
+	]
+	var mixed_bump := SkillPreviewValidation.next_free_time_ms_in_track(
+		mixed_track, HexBattleStrike.CONFIG_ID, resolver, 200, -1
+	)
+	TestFramework.assert_equal(500, mixed_bump)
 	# skip_kf_idx: 改 t=0 keyframe 自身的 time, requested=300 → 不算自己冲突, 返回 300
 	var bumped3 := SkillPreviewValidation.next_free_time_ms_in_track(
 		track, HexBattleStrike.CONFIG_ID, resolver, 300, 0

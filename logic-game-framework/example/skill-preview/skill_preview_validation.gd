@@ -63,13 +63,19 @@ static func ability_cooldown_ms(cfg: AbilityConfig) -> int:
 	return int(cooldown)
 
 
+static func _windows_overlap(start_a: int, duration_a: int, start_b: int, duration_b: int) -> bool:
+	return duration_a > 0 and duration_b > 0 \
+			and start_a < start_b + duration_b \
+			and start_b < start_a + duration_a
+
+
 ## 扫一条 track, 找到第一个 occupy 冲突, 返回错误描述; 无冲突返回 ""。
 ##
 ## "冲突" = track 里有两条 keyframe 满足:
 ##   1. skill 相同 — SkillPreview 产品约束: procedure 复用同 config_id instance,
 ##      演完前重启在该 procedure 实现下语义错乱 (不是 LGF 框架禁止并发, 见类
 ##      顶部注释); 不同 skill 是不同 instance, 允许并发
-##   2. |t_a - t_b| < occupy(skill)
+##   2. [t_a, t_a+occupy) 与 [t_b, t_b+occupy) 重叠
 ##
 ## skill_resolver: func(skill_id: String) -> AbilityConfig
 ##   单元测试用 mock dict; UI 调点直接传 HexBattleSkillIndex.get_by_id。
@@ -94,7 +100,7 @@ static func find_track_occupy_violation(
 				continue
 			var ti := int(ki.get("time_ms", 0))
 			var tj := int(kj.get("time_ms", 0))
-			if abs(ti - tj) < occupy:
+			if _windows_overlap(ti, occupy, tj, occupy):
 				return "%s: %s @ %dms 与 @ %dms 重叠 (occupy=%dms)" % [
 					role_label, cfg.display_name,
 					min(ti, tj), max(ti, tj), occupy,
@@ -105,8 +111,10 @@ static func find_track_occupy_violation(
 ## 在 track 里找下一个空闲 time_ms (从 start_ms 起 100ms 步进上扫)。
 ##
 ## "占用" = track 里有一条 keyframe (skip_kf_idx 除外) 满足:
-##   1. 完全相同 time_ms (同 actor 单 time 互斥)
-##   2. 同 skill_id 且 [t, t+occupy_self) 与 [other_t, other_t+occupy_other) 重叠
+##   同 skill_id 且 [t, t+occupy_self) 与 [other_t, other_t+occupy_other) 重叠
+##
+## 注意: 不同 skill 允许同 time / release overlap。SkillPreviewTimeline 会用 lane
+## 和 warning 表达, 不把它当成 auto bump 条件。
 ##
 ## candidate_skill_id: 被放置/移动 keyframe 自身的 skill。
 ## skill_resolver: 同 find_track_occupy_violation。
@@ -127,16 +135,14 @@ static func next_free_time_ms_in_track(
 		for j in track.size():
 			if j == skip_kf_idx:
 				continue
-			var other_t := int((track[j] as Dictionary).get("time_ms", 0))
-			if other_t == t:
-				occupied = true
-				break
-			var other_skill := str((track[j] as Dictionary).get("skill", ""))
+			var other_kf: Dictionary = track[j] as Dictionary
+			var other_skill := str(other_kf.get("skill", ""))
 			if other_skill != candidate_skill_id:
 				continue
+			var other_t := int(other_kf.get("time_ms", 0))
 			var other_cfg: AbilityConfig = skill_resolver.call(other_skill)
 			var occupy_other := ability_occupy_ms(other_cfg)
-			if t < other_t + occupy_other and other_t < t + occupy_self:
+			if _windows_overlap(t, occupy_self, other_t, occupy_other):
 				occupied = true
 				break
 		if not occupied:
