@@ -12,6 +12,96 @@
 
 ---
 
+## [Unreleased] — 2026-04-28 EnvironmentActor 子系统 + AttributeSet 继承 (M1)
+
+引入 hex-atb-battle 中间基类 `HexBattleActor`,拆出两个子类 `CharacterActor` / `EnvironmentActor`,
+并通过 generator 的 `_extends` 元字段建立属性集继承链(`HexBattleActor` → `Character` / `Environment`)。
+M1 仅落地 `StoneWall` 一种地形作为闭环验证,trait 系统 (destructible / pushable / blocks_path) 暂不抽,
+等第二种地形 (木桶 / 巨石) 再抽。
+
+设计意图: 战斗管线 (DamageEvent / DeathEvent / PreEvent / PostEvent) 对 character + environment 平权;
+AI / 默认 enemy selector / heal / buff / shield 等保持 character-only 隔离;
+`actor.attribute_set.atk` 等专属访问保持强类型,公共代码走 `actor.get_attribute_set().hp` 拿基类视图。
+
+### Added
+
+- **`HexBattleActor`** (`example/hex-atb-battle/hex_battle_actor.gd`) — 中间基类,持公共 `hex_position` /
+  `ability_set` / `_is_dead`,提供 `get_attribute_set() -> HexBattleActorAttributeSet` 抽象合同 +
+  `check_death` / `is_dead` / `is_pre_event_responsive` / `get_ability_set` (IAbilitySetOwner) +
+  录像基础设施 (`_get_position` / `setup_recording` / `get_attribute_snapshot` / `get_ability_snapshot` /
+  `get_tag_snapshot`)。子类实现 `get_attribute_set()` 返回各自强类型字段。
+- **`EnvironmentActor`** (`example/hex-atb-battle/environment_actor.gd`) — `HexBattleActor` 子类,
+  持 `environment_kind: String` 区分视觉,持 `attribute_set: HexBattleEnvironmentAttributeSet` +
+  `collision_profile: CollisionProfile` 普通字段。type = "Environment"。
+- **`CollisionProfile`** (`example/hex-atb-battle/environment/collision_profile.gd`) — 普通数据类,
+  字段 `damage_taken_on_blocked_push` / `damage_dealt_to_pusher` / `pushable` / `blocks_path`。
+  不进 attribute_set: 这些是结构化物理参数, 不参与 buff/modifier 系统。
+  提供 `default_wall()` 静态工厂给"撞地图边界"等无 actor 场景用。
+- **`HexBattleStoneWall`** (`example/hex-atb-battle/environment/stone_wall.gd`) — M1 唯一地形,
+  `create()` 工厂返回 indestructible (hp=INF + damage_taken=0) + immovable + blocks_path 的
+  EnvironmentActor 实例。indestructible 用数据表达,不在代码里加早退分支。
+- **`HexBattleActorAttributeSet`** (generated, `example/attributes/generated/hex_battle_actor_attribute_set.gd`)
+  公共属性集基类,持 `hp` / `max_hp` 强类型访问器 + `cross_attr_clamp("hp", "max", "max_hp")`。
+- **`HexBattleEnvironmentAttributeSet`** (generated) — `extends HexBattleActorAttributeSet`,
+  M1 仅继承公共属性, 未来按需 + `mass` / `hardness` 等专属属性。
+- **Generator `_extends` 支持** (`scripts/attribute_set_generator_script.gd`) — set 配置可声明
+  `"_extends": "ParentSetName"`,生成的子类 `extends ParentAttributeSet`,父属性访问器只在父
+  set 生成,子类继承使用,不重复生成。强制规则: parent 必须存在、检测继承环、DFS topo 排序、
+  父子重复属性禁止 (`push_error`)、`maxRef/minRef` 方向校验 (父引用不能反向引子)。
+  `_init` 通过 `super(p_actor_id)` + 增量 `_raw.apply_config` 让父属性先注册再叠子属性。
+- **`HexWorldGameplayInstance.get_alive_battle_actors()`** 返回 `Array[HexBattleActor]`,
+  含 character + environment, 给"格子占用统计"、"碰撞检测"等需要看到所有占格 actor 的场景。
+- **`HexWorldGameplayInstance.get_character_actor(actor_id)`** 仅返回 `CharacterActor` (cast 失败返 null),
+  给 AI / Heal / Buff / Shield 等 character-only 调用方使用。
+- **`hex_battle_attribute_inheritance_test.gd`** — 验证 generator `_extends` 产出的继承链:
+  父属性可见、parent clamp 在子集实例生效、子集独有属性不漏到父集、未注册属性 modifier
+  warning+ignore (不 crash)。
+- **Scenario `EnvironmentIsolationScenario`** (外层 `tests/skill_scenarios/`) — strike 不会误中
+  stone_wall (隔离边界验证)。
+- **`SkillPreviewBattle._PreviewInstance.environments`** 字段 + `_create_environment(cfg)` 工厂,
+  scenario `"environment": [{"type": "stone_wall", "pos": [q, r]}]` 配置接入。
+- **Preview result `environment_ids`** 字段 + `ScenarioAssertContext.environment_id(i)` helper。
+
+### Changed
+
+- **`CharacterActor`** (`example/hex-atb-battle/character_actor.gd`) `extends Actor` →
+  `extends HexBattleActor`。公共字段/方法 (hex_position / ability_set / _is_dead / check_death /
+  is_dead / is_pre_event_responsive / get_ability_set / _get_position / setup_recording /
+  get_ability_snapshot / get_tag_snapshot) 上抬到基类, CharacterActor 自身只保留 ATB / AI /
+  职业 / `attribute_set: HexBattleCharacterAttributeSet` 等专属。新增 `get_attribute_set()` override
+  返回自己的 character 强类型 attribute_set。`get_attribute_snapshot()` 覆盖基类返回完整 stats。
+- **`HexBattleCharacterAttributeSet`** (generated) `extends BaseGeneratedAttributeSet` →
+  `extends HexBattleActorAttributeSet`。hp / max_hp 访问器 + cross-clamp 移到父集; 自身只生成
+  atk / def / speed 访问器。配置端在 `attributes_config.gd` 加 `"_extends": "HexBattleActor"`。
+- **`HexWorldGameplayInstance.get_actor()`** 返回类型从 `CharacterActor` 放宽到 `HexBattleActor`,
+  让 DamageUtils 等公共战斗管线对 character + environment 平权。AI / Heal / Buff 等 character-only
+  调用方走 `get_character_actor()`。
+- **`HexWorldGameplayInstance.remove_actor()`** 触发 grid 占用清理时, 对所有 `HexBattleActor` 子类
+  生效, 不再只看 CharacterActor (env actor 死亡 / 被显式 remove 也走同一清理流程)。
+- **`HexBattleDamageUtils.apply_damage()` / `_clear_grid_footprint()`** 改用 `HexBattleActor` 接口,
+  通过 `target_actor.get_attribute_set().set_hp_base(...)` 走基类视图扣 hp。`_clear_grid_footprint`
+  形参类型从 `CharacterActor` 放宽。
+- **`HexBattleHealAction`** 改用 `battle.get_character_actor(target_id)` (隔离边界: env 默认不被治疗)。
+- **`HexBattleTargetSelectors.AllEnemies`** 改用 `battle.get_character_actor(...)` 拿 owner (env 不施法)。
+- **`HexBattleGameStateUtils.is_actor_dead()`** 走 `actor.get_attribute_set().hp` 平权访问 hp。
+- **`HexBattleProcedure._start_recorder` / `SkillPreviewProcedure._start_recorder` /
+  `SkillPreviewBattle.start`** `positionFormats` 配置加 `"Environment": "hex"`。
+
+### 设计决策摘要
+
+- **属性继承用配置 `_extends` 而非"两份配置重复写 hp"**: 后者会破坏 `_raw` 隐藏边界 (强类型访问
+  必须暴露字符串通道 `get_attr(name)` 才能写公共代码), 前者保持 `actor.attribute_set.hp` 强类型
+  且 `_raw` 完全隐藏。
+- **`HexBattleActor` 不持 `attribute_set` 字段, 子类各自持强类型字段 + 重写 `get_attribute_set()` 抽象**:
+  避免 GDScript 子类重声明同名 var 的 shadow 陷阱。专属代码 (Strike 读 atk) 继续 `actor.attribute_set.atk`,
+  公共代码 (DamageUtils 读 hp) 走 `actor.get_attribute_set().hp`, 迁移面只在公共代码 (~5 处)。
+- **StoneWall indestructible 用数据表达 (hp=INF + damage_taken=0)**: 不在代码里加 `if indestructible: return`
+  早退分支, 让伤害管线对 wall 平权 (push damage event / 走 PreEvent / 走 PostEvent), 只是 hp 永不到 0。
+- **`get_alive_actors` 名字保留兼容 (仍仅返 character)**, 新增 `get_alive_battle_actors` 给环境物
+  访问。避免破坏现有 25+ 处 callers。
+
+---
+
 ## [Unreleased] — 2026-04-28 SkillPreview 关注点分离: UI 只防 timeline 重叠, cooldown 由 LGF 上报
 
 上一段 (2026-04-28 多 keyframe 修复) UI occupy 同时算了 cooldown, 越过了 UI 的关注点边界 ——

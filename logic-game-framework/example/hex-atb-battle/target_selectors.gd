@@ -55,7 +55,8 @@ class AllEnemies extends TargetSelector:
 		var battle: HexWorldGameplayInstance = ctx.game_state_provider
 		if battle == null:
 			return []
-		var owner := battle.get_actor(ctx.ability_ref.owner_actor_id)
+		# AllEnemies 隔离边界: owner 必须是 character (env 不施法)
+		var owner := battle.get_character_actor(ctx.ability_ref.owner_actor_id)
 		if owner == null:
 			return []
 		var owner_team := owner.get_team_id()

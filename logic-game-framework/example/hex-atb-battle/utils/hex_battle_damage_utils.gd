@@ -82,14 +82,16 @@ static func apply_damage(
 
 	if target_actor != null:
 		# ========== 扣血（按实际生命伤害） ==========
-		target_actor.attribute_set.set_hp_base(target_actor.attribute_set.hp - actual_life_damage)
+		# 走 HexBattleActor.get_attribute_set() 拿基类视图: 平权处理 character + environment。
+		var target_attrs := target_actor.get_attribute_set()
+		target_attrs.set_hp_base(target_attrs.hp - actual_life_damage)
 
 		var suffix := " (反伤)" if damage_event.is_reflected else ""
 		var absorb_text := ""
 		if shield_absorbed > 0.0:
 			absorb_text = " (护盾吸收 %.0f)" % shield_absorbed
 		print("  [伤害] %s 受到 %.0f 伤害, HP: %.0f%s%s" % [
-			target_name, actual_life_damage, target_actor.attribute_set.hp, absorb_text, suffix
+			target_name, actual_life_damage, target_attrs.hp, absorb_text, suffix
 		])
 
 		if battle.logger != null:
@@ -141,7 +143,8 @@ static func apply_damage(
 
 ## 死亡后清掉死者在 grid 上的占用 / 预订, 让活人可以走到尸体格上。
 ## 不动 actor 本身, 不动 world registry —— 这是 "死了但还在 world" 的中间态。
-static func _clear_grid_footprint(battle: HexWorldGameplayInstance, dead_actor: CharacterActor) -> void:
+## 接 HexBattleActor: 平权处理 character + environment。
+static func _clear_grid_footprint(battle: HexWorldGameplayInstance, dead_actor: HexBattleActor) -> void:
 	if battle == null or battle.grid == null or dead_actor == null:
 		return
 	var pos := dead_actor.hex_position

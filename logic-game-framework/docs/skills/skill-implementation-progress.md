@@ -3,7 +3,7 @@
 > 实施 [`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md) 16 个示范技能的进度快照。
 > 每完成一个技能就更新本文档。配合 `lgf-new-logic-skill` skill 使用 —— 实现新技能前先读这里的「pattern 速查」找最近的参考实现。
 
-最后更新：2026-04-25
+最后更新：2026-04-28
 
 ---
 
@@ -16,8 +16,17 @@
 | Tier 3 — 高级 | 🟡 1 / 4 | 跨系统 |
 | **合计** | **8 / 16** | |
 
-**当前焦点** ：暂无；上一个落地的是 Ward (V1 护盾系统，2026-04-25)。
-**下一个建议**：Tier 1 剩 Knockback Punch / Expose / Execute —— 优先把 Tier 1 补齐，再继续 Tier 2/3。
+**当前焦点** ：暂无；上一个落地的是 EnvironmentActor 子系统 + AttributeSet 继承 (M1，2026-04-28)。
+**下一个建议**：Knockback Punch (Tier 1 #4) — 现已具备 EnvironmentActor 基础设施,可启动方案稿讨论。
+
+---
+
+## 🏗️ 基础设施 (非 16 技能项)
+
+| 名称 | 状态 | 简述 | 主要文件 |
+|---|---|---|---|
+| 护盾系统 V1 | 🔵 已落地 | ShieldComponent + ShieldResolver, 不走 PreEventConfig | `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` |
+| EnvironmentActor 子系统 + AttributeSet 继承 (M1) | 🔵 已落地 | `HexBattleActor` 中间基类 / `Character` `Environment` 子类 / generator `_extends` 继承链 / StoneWall 起步 | `hex_battle_actor.gd` + `environment_actor.gd` + `environment/{stone_wall,collision_profile}.gd` + `attributes_config.gd` (含 `_extends`) + `attribute_set_generator_script.gd` |
 
 ---
 

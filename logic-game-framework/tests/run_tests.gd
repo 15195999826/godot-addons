@@ -16,6 +16,7 @@ extends Node
 const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/attributes/attribute_set_test.gd",
 	"res://addons/logic-game-framework/tests/core/attributes/define_attributes_test.gd",
+	"res://addons/logic-game-framework/tests/core/attributes/hex_battle_attribute_inheritance_test.gd",
 	"res://addons/logic-game-framework/tests/core/events/event_processor_test.gd",
 	"res://addons/logic-game-framework/tests/core/events/pre_event_component_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_test.gd",

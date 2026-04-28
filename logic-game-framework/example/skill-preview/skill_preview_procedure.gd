@@ -69,7 +69,7 @@ func _start_recorder() -> void:
 		if a != null:
 			actors.append(a)
 	_recorder.start_recording(actors, {
-		"positionFormats": {"Character": "hex"},
+		"positionFormats": {"Character": "hex", "Environment": "hex"},
 	}, replay_map_config)
 
 

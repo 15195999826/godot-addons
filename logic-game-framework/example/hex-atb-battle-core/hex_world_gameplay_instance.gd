@@ -38,12 +38,13 @@ func configure_grid(config: GridMapConfig) -> void:
 
 ## 覆盖父类: 移除 Actor 时清理格子占用与预订。
 ## 框架层 remove_actor 不感知格子系统, 此处补充 hex 特化清理。
+## 所有 HexBattleActor 子类 (CharacterActor / EnvironmentActor) 都走同一清理流程。
 func remove_actor(actor_id: String) -> bool:
 	var actor := super.get_actor(actor_id)
-	if actor != null and actor is CharacterActor:
-		var char_actor := actor as CharacterActor
-		if grid != null and char_actor.hex_position != null and char_actor.hex_position.is_valid():
-			grid.remove_occupant(char_actor.hex_position)
+	if actor != null and actor is HexBattleActor:
+		var battle_actor := actor as HexBattleActor
+		if grid != null and battle_actor.hex_position != null and battle_actor.hex_position.is_valid():
+			grid.remove_occupant(battle_actor.hex_position)
 			for coord in _find_reservations_by(actor_id):
 				grid.cancel_reservation(coord)
 	return super.remove_actor(actor_id)
@@ -60,9 +61,17 @@ func _find_reservations_by(actor_id: String) -> Array[HexCoord]:
 	return result
 
 
-## 覆盖父类, 返回类型收窄为 CharacterActor。
-func get_actor(actor_id: String) -> CharacterActor:
-	return super.get_actor(actor_id) as CharacterActor
+## 覆盖父类, 返回类型收窄为 HexBattleActor。
+## 公共战斗管线 (DamageUtils / event broadcast) 走此入口, 平权处理 character + environment。
+func get_actor(actor_id: String) -> HexBattleActor:
+	return super.get_actor(actor_id) as HexBattleActor
+
+
+## 仅返回 character (env actor 转 cast 失败时返 null)。
+## AI / 职业技能 / Heal / Buff 等 character-only 调用方使用此入口。
+func get_character_actor(actor_id: String) -> CharacterActor:
+	var actor := super.get_actor(actor_id)
+	return actor as CharacterActor
 
 
 func get_ability_set_for_actor(actor_id: String) -> BattleAbilitySet:
@@ -72,7 +81,10 @@ func get_ability_set_for_actor(actor_id: String) -> BattleAbilitySet:
 	return null
 
 
-## 获取所有存活角色的 ID 列表(用于 EventProcessor.process_post_event)。
+## 获取所有存活角色的 ID 列表 (用于 EventProcessor.process_post_event)。
+##
+## 隔离边界: M1 阶段 EnvironmentActor 不响应 PostEvent 广播 (石墙没有反伤被动等)。
+## 未来若有"被打就燃烧"等环境 passive 需求, 拆出 get_alive_battle_actor_ids 给 PostEvent。
 func get_alive_actor_ids() -> Array[String]:
 	var result: Array[String] = []
 	for actor in get_actors():
@@ -81,13 +93,23 @@ func get_alive_actor_ids() -> Array[String]:
 	return result
 
 
-## 获取所有存活角色对象(供 AI strategy / scenario / scripting 使用)。
-## 与 get_alive_actor_ids 区别在返回 CharacterActor 对象, 调用方少一次 get_actor。
+## 获取所有存活角色对象 (供 AI strategy / scenario / scripting 使用)。
+## 隔离边界: 仅返回 CharacterActor, 不含 environment。
 func get_alive_actors() -> Array[CharacterActor]:
 	var result: Array[CharacterActor] = []
 	for actor in get_actors():
 		if actor is CharacterActor and not (actor as CharacterActor).is_dead():
 			result.append(actor as CharacterActor)
+	return result
+
+
+## 获取所有存活的 HexBattleActor (含 character + environment)。
+## 用于"格子占用统计"、"碰撞检测"等需要看到所有占格 actor 的场景。
+func get_alive_battle_actors() -> Array[HexBattleActor]:
+	var result: Array[HexBattleActor] = []
+	for actor in get_actors():
+		if actor is HexBattleActor and not (actor as HexBattleActor).is_dead():
+			result.append(actor as HexBattleActor)
 	return result
 
 

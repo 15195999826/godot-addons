@@ -100,7 +100,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		
 		all_events.append(heal_event)
 		
-		var target_actor := battle.get_actor(target_id)
+		var target_actor := battle.get_character_actor(target_id)
 		if target_actor != null:
 			var old_hp: float = target_actor.attribute_set.hp
 			var max_hp: float = target_actor.attribute_set.max_hp
@@ -155,7 +155,7 @@ func _calculate_overheal(target_actor_id: String, heal_amount: float, ctx: Execu
 		return 0.0
 	
 	var battle: HexWorldGameplayInstance = ctx.game_state_provider
-	var target_actor := battle.get_actor(target_actor_id)
+	var target_actor := battle.get_character_actor(target_actor_id)
 	if target_actor != null:
 		var current_hp: float = target_actor.attribute_set.hp
 		var max_hp: float = target_actor.attribute_set.max_hp

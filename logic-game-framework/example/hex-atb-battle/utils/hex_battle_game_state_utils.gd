@@ -33,5 +33,5 @@ static func is_actor_dead(actor_id: String, game_state_provider: HexWorldGamepla
 		return false
 	var actor := game_state_provider.get_actor(actor_id)
 	if actor != null:
-		return actor.attribute_set.hp <= 0
+		return actor.get_attribute_set().hp <= 0
 	return true

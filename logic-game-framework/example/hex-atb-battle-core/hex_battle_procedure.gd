@@ -75,6 +75,7 @@ func _start_recorder() -> void:
 	var configs := {
 		"positionFormats": {
 			"Character": "hex",
+			"Environment": "hex",
 		},
 	}
 	_recorder.start_recording(get_all_characters(), configs, replay_map_config)
@@ -196,7 +197,7 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 		var target_id: String = decision.get("target_actor_id", "")
 		var target_actor: CharacterActor = null
 		if world != null:
-			target_actor = world.get_actor(target_id)
+			target_actor = world.get_character_actor(target_id)
 		var target_name := target_actor.get_display_name() if target_actor != null else "未知"
 		var skill := actor.get_skill_ability()
 		var skill_name := skill.display_name if skill != null else "技能"
