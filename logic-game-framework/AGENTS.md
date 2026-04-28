@@ -20,13 +20,13 @@ graph TB
         Timeline[Timeline System<br/>TimelineRegistry]
         Tags[Tag System<br/>TagContainer]
     end
-    
+
     subgraph "Stdlib"
         Components[Components<br/>StatModifier/Duration]
         Systems[Systems<br/>ProjectileSystem]
         Replay[Replay System<br/>BattleRecorder]
     end
-    
+
     subgraph "Example"
         Core[hex-atb-battle-core<br/>Shared Events + WorldGI base]
         HexDemo[hex-atb-battle<br/>Demo Game Logic + HexDemoWorldGI]
@@ -54,8 +54,9 @@ graph TB
 ## Key Data Flows
 
 ### 1. Ability Execution Flow
+
 ```
-User Input → AbilityComponent.on_event()
+User Input -> AbilityComponent.on_event()
     ↓ Check Triggers/Conditions/Costs
 AbilityExecutionInstance.tick()
     ↓ Timeline keyframe triggers
@@ -67,6 +68,7 @@ EventCollector collects (replay recording)
 ```
 
 ### 2. Attribute Modification Flow
+
 ```
 StatModifierComponent.on_apply()
     ↓ Create AttributeModifier
@@ -80,6 +82,7 @@ Return AttributeBreakdown
 ```
 
 ### 3. Event Processing Flow
+
 ```
 Action pushes event
     ↓
@@ -107,7 +110,7 @@ EventCollector.push()
 | Action behavior (打谁 / 打多少) | Action subclass | `DamageAction` |
 | Resource cost | Cost subclass | `MpCost` |
 
-**Cast eligibility 不进 Condition** — AI / UI / tooltip 需要事前查询配置, Condition 只在事件到达时跑, 不是 declarative 入口. 详见 `.claude/skills/enforcing-lgf/reference/cast-eligibility-vs-condition.md`.
+**Cast eligibility 不进 Condition** — AI / UI / tooltip 需要事前查询配置，Condition 只在事件到达时跑，不是 declarative 入口。详见 `enforcing-lgf` skill 的 `reference/cast-eligibility-vs-condition.md`。
 
 ---
 
@@ -147,7 +150,7 @@ addon 里的变更追溯分两层：
 
 ### 典型流程
 
-修完代码 → `CHANGELOG.md` 加条目（小改动写完就够了）→ 若是架构级变更，顺手写 `docs/design-notes/` → 源代码注释只留「现状 + 必要的 why」→ commit（submodule 先，主仓库 bump pointer 后）。
+修完代码 -> `CHANGELOG.md` 加条目（小改动写完就够了）-> 若是架构级变更，顺手写 `docs/design-notes/` -> 源代码注释只留「现状 + 必要的 why」-> commit（submodule 先，主仓库 bump pointer 后）。
 
 参考样本：
 - 循环 C/D/E：`docs/design-notes/2026-04-19-structural-cycles-weakref.md`

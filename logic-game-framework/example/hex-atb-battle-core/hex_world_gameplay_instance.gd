@@ -119,19 +119,30 @@ func broadcast_projectile_events() -> void:
 
 
 ## 判断 actor 能否对 target 使用 skill。
-## 检查: 目标存活、阵营匹配(enemy/ally tag)、施法距离。
-func can_use_skill_on(actor: CharacterActor, skill: Ability, target: CharacterActor) -> bool:
+## 检查: 目标存活、目标种类白名单、阵营匹配(enemy/ally tag, 仅 character)、施法距离。
+##
+## target 类型放宽到 HexBattleActor: 默认 metadata `allowedTargetKinds = ["Character"]`
+## 兜底 env 不会被现有技能误选; "打墙"等技能在 ability config 里显式 opt-in。
+## 阵营/self 检查仅对 character target 有意义 (env 没有 team_id), 包在 type 分支里。
+func can_use_skill_on(actor: CharacterActor, skill: Ability, target: HexBattleActor) -> bool:
 	if target.is_dead():
 		return false
 
-	var same_team := actor.get_team_id() == target.get_team_id()
-	if skill.has_ability_tag("enemy") and same_team:
-		return false
-	if skill.has_ability_tag("ally") and not same_team:
+	var allowed_kinds: Array = skill.metadata.get(
+		HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, ["Character"]
+	)
+	if not (target.type in allowed_kinds):
 		return false
 
-	if skill.has_ability_tag("ally") and actor.get_id() == target.get_id():
-		return false
+	if target is CharacterActor:
+		var character_target := target as CharacterActor
+		var same_team := actor.get_team_id() == character_target.get_team_id()
+		if skill.has_ability_tag("enemy") and same_team:
+			return false
+		if skill.has_ability_tag("ally") and not same_team:
+			return false
+		if skill.has_ability_tag("ally") and actor.get_id() == character_target.get_id():
+			return false
 
 	var skill_range := skill.get_meta_int(HexBattleSkillMetaKeys.RANGE, 1)
 	var distance := actor.hex_position.distance_to(target.hex_position)

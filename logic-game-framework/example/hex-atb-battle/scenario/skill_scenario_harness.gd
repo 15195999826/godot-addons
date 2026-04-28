@@ -139,7 +139,7 @@ static func run_with_actions(
 			errors.append("action caster ref unresolved: %s" % caster_ref)
 			continue
 		var action_target_id := _resolve_target_ref(
-			target_ref, action_caster, caster, ally_actors, enemy_actors
+			target_ref, action_caster, caster, ally_actors, enemy_actors, battle.environments
 		)
 		if time_ms <= 0:
 			_fire_action(battle, action_caster, skill_config, action_target_id, 0.0)
@@ -324,6 +324,8 @@ static func _target_cfg_to_ref(target_cfg: Dictionary) -> String:
 			return "enemy_%d" % int(target_cfg.get("index", 0))
 		"ally_index":
 			return "ally_%d" % int(target_cfg.get("index", 0))
+		"environment_index":
+			return "environment_%d" % int(target_cfg.get("index", 0))
 		_:
 			return "auto"
 
@@ -349,12 +351,16 @@ static func _resolve_actor_ref(
 
 
 ## 解析 target ref → actor id 字符串("auto" 相对于 action 施法者找最近敌人)
+##
+## environments 参数: 让 smoke / scenario 能用 "environment_N" 引用墙等环境物作为 target;
+## 仅 smoke 路径用, 生产代码 (AI / 玩家 cast) 走 can_use_skill_on() 自己挑目标。
 static func _resolve_target_ref(
 	ref: String,
 	action_caster: CharacterActor,
 	scene_caster: CharacterActor,
 	ally_actors: Array[CharacterActor],
-	enemy_actors: Array[CharacterActor]
+	enemy_actors: Array[CharacterActor],
+	environments: Array[EnvironmentActor]
 ) -> String:
 	if ref == "auto":
 		# action_caster 的敌方列表 = 所有非同队
@@ -370,6 +376,11 @@ static func _resolve_target_ref(
 				best_dist = dist
 				best = c
 		return best.get_id() if best != null else ""
+	if ref.begins_with("environment_"):
+		var env_idx := int(ref.substr(12))
+		if env_idx >= 0 and env_idx < environments.size():
+			return environments[env_idx].get_id()
+		return ""
 	var resolved := _resolve_actor_ref(ref, scene_caster, ally_actors, enemy_actors)
 	return resolved.get_id() if resolved != null else ""
 
