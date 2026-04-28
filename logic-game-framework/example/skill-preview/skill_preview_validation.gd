@@ -47,6 +47,22 @@ static func ability_occupy_ms(cfg: AbilityConfig) -> int:
 	return int(occupy)
 
 
+## 只读 cooldown 配置时长。当前 hex battle 技能用 TimedCooldownCost(type="timed_cooldown")
+## 表达冷却；这里仅给 SkillPreview UI 做提示，不参与释放判定。
+static func ability_cooldown_ms(cfg: AbilityConfig) -> int:
+	if cfg == null:
+		return 0
+	var cooldown: float = 0.0
+	for au in cfg.active_use_components:
+		for cost in au.costs:
+			if cost == null or cost.type != "timed_cooldown":
+				continue
+			var duration_value: Variant = cost.get("_duration")
+			if duration_value != null:
+				cooldown = maxf(cooldown, float(duration_value))
+	return int(cooldown)
+
+
 ## 扫一条 track, 找到第一个 occupy 冲突, 返回错误描述; 无冲突返回 ""。
 ##
 ## "冲突" = track 里有两条 keyframe 满足:

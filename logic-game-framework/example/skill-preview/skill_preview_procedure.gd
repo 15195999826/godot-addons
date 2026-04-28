@@ -136,6 +136,9 @@ func tick_once() -> void:
 
 	# 先 fire 已到时的 keyframe; activate event 在本帧内被 ability_set 接收, 接着的 tick_executions
 	# 也会处理刚被 grant 的 ability。这样 t=0 keyframe 不会比"显式 grant" baseline 慢一帧。
+	# 但 fire 前必须先把 tag_container 的 logic_time 同步到本帧, 否则 cooldown 到期边界会
+	# 用上一帧时间做条件检查, 然后同帧稍后才过期。
+	_sync_participant_tag_logic_time(cur_logic_time)
 	_fire_due_keyframes(cur_logic_time)
 
 	# 合并两件事到同一循环:跑 ability tick + 探测 executing ability。
@@ -229,6 +232,13 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		if target_id != "":
 			event["target_actor_id"] = target_id
 		actor.ability_set.receive_event(event, world)
+
+
+func _sync_participant_tag_logic_time(now_ms: float) -> void:
+	for pid in _participant_ids:
+		var actor := _get_actor(pid)
+		if actor is CharacterActor:
+			(actor as CharacterActor).ability_set.tag_container.tick(0.0, now_ms)
 
 
 ## 扫 world.get_actors() 里是否有飞行中的投射物。

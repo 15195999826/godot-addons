@@ -7,7 +7,8 @@ extends Node
 
 
 func _init() -> void:
-	TestFramework.register_test("ability_occupy_ms returns max(timeline, cooldown)", _test_occupy_strike)
+	TestFramework.register_test("ability_occupy_ms returns timeline duration", _test_occupy_strike)
+	TestFramework.register_test("ability_cooldown_ms returns timed cooldown", _test_cooldown_strike)
 	TestFramework.register_test("ability_occupy_ms returns 0 for null cfg", _test_occupy_null)
 	TestFramework.register_test("find_track_occupy_violation: empty/single keyframe → no error", _test_violation_empty)
 	TestFramework.register_test("find_track_occupy_violation: same skill within occupy → error", _test_violation_overlap)
@@ -49,6 +50,14 @@ func _test_occupy_strike() -> void:
 
 func _test_occupy_null() -> void:
 	TestFramework.assert_equal(0, SkillPreviewValidation.ability_occupy_ms(null))
+
+
+# ========== ability_cooldown_ms ==========
+
+func _test_cooldown_strike() -> void:
+	TestFramework.assert_equal(2000, SkillPreviewValidation.ability_cooldown_ms(HexBattleStrike.ABILITY))
+	TestFramework.assert_equal(3000, SkillPreviewValidation.ability_cooldown_ms(HexBattleSwiftStrike.ABILITY))
+	TestFramework.assert_equal(0, SkillPreviewValidation.ability_cooldown_ms(null))
 
 
 # ========== find_track_occupy_violation ==========

@@ -64,6 +64,8 @@ const SPT_ACTOR_LABEL_W := 148
 const SPT_ROW_H := 42
 const SPT_KF_BTN_W := 22
 const SPT_KF_BTN_H := 24
+const SPT_RELEASE_SPAN_H := 14
+const SPT_COOLDOWN_BAR_H := 4
 const SPT_MIN_AUTO_MS := 1000
 const SPT_AUTO_BUFFER_MS := 200
 const KEYFRAME_POPUP_SIZE := Vector2i(392, 300)
@@ -730,7 +732,7 @@ func _build_track_row(actor_idx: int) -> HBoxContainer:
 	# STOP 而非 PASS: 自己处理空白点击 add keyframe; KeyframeButton 子节点默认 STOP
 	# 优先吃事件, 命中 button 时不会传到这里。
 	track_area.mouse_filter = Control.MOUSE_FILTER_STOP
-	track_area.draw.connect(_draw_track_baseline.bind(track_area))
+	track_area.draw.connect(_draw_track_row.bind(actor_idx, track_area))
 	# 每条 keyframe 一个 Button 子节点; position 由 _layout_keyframes_for_row 后期填。
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	for k in track.size():
@@ -747,12 +749,41 @@ func _build_track_row(actor_idx: int) -> HBoxContainer:
 	return row
 
 
-## TrackArea 中线 (baseline)。bind track_area 因为 draw 信号自身不带 sender 上下文。
-func _draw_track_baseline(track_area: Control) -> void:
+## TrackArea: duration span / cooldown bar / baseline。draw 信号自身不带 sender 上下文。
+func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 	var w := track_area.size.x
 	var h := track_area.size.y
 	if w <= 0.0 or h <= 0.0:
 		return
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	var max_ms := _spt_max_ms()
+	for kf_variant in track:
+		var kf: Dictionary = kf_variant as Dictionary
+		var time_ms := int(kf.get("time_ms", 0))
+		var skill_cfg := HexBattleSkillIndex.get_by_id(str(kf.get("skill", "")))
+		if skill_cfg == null:
+			continue
+		var occupy_ms := SkillPreviewValidation.ability_occupy_ms(skill_cfg)
+		var cooldown_ms := SkillPreviewValidation.ability_cooldown_ms(skill_cfg)
+		if occupy_ms > 0:
+			var span_start := _track_x_for_time(time_ms, max_ms, w)
+			var span_end := _track_x_for_time(time_ms + occupy_ms, max_ms, w)
+			var span_rect := Rect2(
+				Vector2(span_start, (h - SPT_RELEASE_SPAN_H) * 0.5),
+				Vector2(maxf(2.0, span_end - span_start), SPT_RELEASE_SPAN_H)
+			)
+			track_area.draw_rect(span_rect, _actor_track_color(actor_idx, 0.24), true)
+			track_area.draw_rect(span_rect, _actor_track_color(actor_idx, 0.7), false, 1.0)
+		if cooldown_ms > occupy_ms:
+			var cooldown_start := _track_x_for_time(time_ms + occupy_ms, max_ms, w)
+			var cooldown_end := _track_x_for_time(time_ms + cooldown_ms, max_ms, w)
+			var cooldown_rect := Rect2(
+				Vector2(cooldown_start, h - 9.0),
+				Vector2(maxf(2.0, cooldown_end - cooldown_start), SPT_COOLDOWN_BAR_H)
+			)
+			track_area.draw_rect(cooldown_rect, Color(0.95, 0.55, 0.08, 0.55), true)
 	var y := h * 0.5
 	track_area.draw_line(Vector2(0, y), Vector2(w, y), Color("D8DEE8"), 1)
 
@@ -775,6 +806,10 @@ func _build_keyframe_button(actor_idx: int, kf_idx: int) -> Button:
 		bg = Color("DBEAFE"); border = Color("2563EB")
 	else:
 		bg = Color("FECACA"); border = Color("B23B3B")
+	var warning := _keyframe_timing_warning(actor_idx, kf_idx)
+	if not warning.is_empty():
+		var warning_type := str(warning.get("type", ""))
+		border = Color("DC2626") if warning_type == "cooldown" else Color("D97706")
 	btn.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 4, 0, 0))
 	btn.add_theme_stylebox_override("hover", _outlined_sb(bg.lightened(0.1), border, 4, 0, 0))
 	btn.add_theme_stylebox_override("pressed", _outlined_sb(bg.darkened(0.1), border, 4, 0, 0))
@@ -808,7 +843,87 @@ func _keyframe_tooltip(actor_idx: int, kf_idx: int) -> String:
 		var resolved_idx := _resolve_target_actor_idx_for_ui(actor_idx, target)
 		if resolved_idx >= 0:
 			target_str += " -> %s" % _role_id_for(resolved_idx)
-	return "%s @ %dms -> %s" % [skill_name, time_ms, target_str]
+	var timing_parts: Array[String] = []
+	var occupy_ms := SkillPreviewValidation.ability_occupy_ms(skill_cfg)
+	var cooldown_ms := SkillPreviewValidation.ability_cooldown_ms(skill_cfg)
+	if occupy_ms > 0:
+		timing_parts.append("duration %dms" % occupy_ms)
+	if cooldown_ms > 0:
+		timing_parts.append("cooldown %dms" % cooldown_ms)
+	var lines: Array[String] = ["%s @ %dms -> %s" % [skill_name, time_ms, target_str]]
+	if not timing_parts.is_empty():
+		lines.append(", ".join(timing_parts))
+	var warning := _keyframe_timing_warning(actor_idx, kf_idx)
+	if not warning.is_empty():
+		lines.append("Warning: %s" % str(warning.get("message", "")))
+	return "\n".join(lines)
+
+
+func _keyframe_timing_warning(actor_idx: int, kf_idx: int) -> Dictionary:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return {}
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return {}
+	var current: Dictionary = track[kf_idx] as Dictionary
+	var current_t := int(current.get("time_ms", 0))
+	var current_skill := str(current.get("skill", ""))
+	for other_idx in track.size():
+		if other_idx == kf_idx:
+			continue
+		var other: Dictionary = track[other_idx] as Dictionary
+		var other_t := int(other.get("time_ms", 0))
+		if other_t > current_t:
+			continue
+		var other_skill := str(other.get("skill", ""))
+		var other_cfg := HexBattleSkillIndex.get_by_id(other_skill)
+		if other_cfg == null:
+			continue
+		var cooldown_ms := SkillPreviewValidation.ability_cooldown_ms(other_cfg)
+		if other_skill == current_skill and cooldown_ms > 0 \
+				and current_t > other_t and current_t < other_t + cooldown_ms:
+			return {
+				"type": "cooldown",
+				"message": "%s cooldown ready at %dms" % [current_skill, other_t + cooldown_ms],
+			}
+	for release_idx in track.size():
+		if release_idx == kf_idx:
+			continue
+		var release_kf: Dictionary = track[release_idx] as Dictionary
+		var release_t := int(release_kf.get("time_ms", 0))
+		if release_t > current_t:
+			continue
+		var release_skill := str(release_kf.get("skill", ""))
+		var release_cfg := HexBattleSkillIndex.get_by_id(release_skill)
+		if release_cfg == null:
+			continue
+		var occupy_ms := SkillPreviewValidation.ability_occupy_ms(release_cfg)
+		if occupy_ms > 0 and current_t < release_t + occupy_ms:
+			return {
+				"type": "overlap",
+				"message": "%s starts inside %s release window (%d-%dms)" % [
+					current_skill, release_skill, release_t, release_t + occupy_ms,
+				],
+			}
+	return {}
+
+
+func _actor_track_color(actor_idx: int, alpha: float) -> Color:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return Color(0.45, 0.5, 0.6, alpha)
+	var data: Dictionary = _actors[actor_idx]
+	if data["role"] == "caster":
+		return Color(0.09, 0.64, 0.29, alpha)
+	if data["team"] == "A":
+		return Color(0.15, 0.39, 0.92, alpha)
+	return Color(0.7, 0.23, 0.23, alpha)
+
+
+func _track_x_for_time(time_ms: int, max_ms: int, width: float) -> float:
+	if max_ms <= 0:
+		return 0.0
+	var ratio := clampf(float(time_ms) / float(max_ms), 0.0, 1.0)
+	return ratio * width
 
 
 ## 重排 track_area 内所有 KeyframeButton 的 position/size, 不创建/删除节点。
