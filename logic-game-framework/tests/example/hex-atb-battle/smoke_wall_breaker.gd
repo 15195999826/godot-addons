@@ -143,7 +143,7 @@ func _count_damage_events_for(replay: Dictionary, target_id: String) -> int:
 	# DamageEvent.kind 是字符串字面量 "damage" (battle_events.gd:39),
 	# 没有专门的 const 常量, 这里直接对照字面量。
 	var count := 0
-	var frames: Array = replay.get("frames", [])
+	var frames: Array = replay.get("timeline", [])
 	for frame in frames:
 		var events: Array = (frame as Dictionary).get("events", [])
 		for ev in events:
@@ -158,7 +158,7 @@ func _count_damage_events_for(replay: Dictionary, target_id: String) -> int:
 
 
 func _replay_has_wall_hp_drop(replay: Dictionary, wall_id: String) -> bool:
-	var frames: Array = replay.get("frames", [])
+	var frames: Array = replay.get("timeline", [])
 	for frame in frames:
 		var events: Array = (frame as Dictionary).get("events", [])
 		for ev in events:
