@@ -12,6 +12,35 @@
 
 ---
 
+## [Unreleased] — 2026-04-28 SkillPreview 多 keyframe 修复
+
+### Fixed
+
+- **`SkillPreviewProcedure._fire_due_keyframes`** 同 actor 同 `ability_config` 多 keyframe 现在复用 ability instance(`find_ability_by_config_id` 命中已 grant 的 instance, 没有才 `Ability.new + grant_ability`)。改造前每个 keyframe 都 `grant_ability`, 后续 keyframe 的 ABILITY_ACTIVATE_EVENT 会被 `CooldownCondition` silently reject(cooldown tag 是 ability_set 级 owner-scoped), 用户配置 t=0/300/600 三发 Strike 实际只第一发命中。复用后 cooldown 行为与单 instance 真实施法一致, 严格遵守。
+- **`SkillPreviewTimeline` UI 编辑期约束**: 同 actor 同 skill 的 keyframe 必须间隔 ≥ `occupy = max(timeline.total_duration, cooldown_ms)`, 否则 `next_free_time_ms_in_track` bump 到下一个空闲 100ms 边界。`_on_keyframe_skill_changed` 切技能时也重算 time。`_find_preview_setup_error` 加兜底校验, 拦从 preset 加载的违规 timeline。改造前 UI 只防"完全相同 time_ms"冲突, 用户能排出会被 procedure silently reject 的 timeline。
+
+### Added
+
+- **`SkillPreviewValidation`** (新 class, `addons/logic-game-framework/example/skill-preview/skill_preview_validation.gd`) 把 occupy / 冲突计算抽成纯函数(`ability_occupy_ms` / `find_track_occupy_violation` / `next_free_time_ms_in_track`), 注入式 skill_resolver, 便于单元测试 headless 调用。
+- **`HexBattleCooldownSystem.TimedCooldownCost.get_duration()`** public getter, 让 SkillPreviewValidation 不直接 access `_duration`。
+- **逻辑层 smoke 扩充** (主仓 `tests/`): 新增 5 个 SkillPreviewProcedure smoke —
+  - `smoke_skill_preview_proc_multi_kf_legal` (3 发 Strike 间隔 2100ms, 验证 grant 仅 1 次 + 复用同 ability instance)
+  - `smoke_skill_preview_proc_multi_kf_illegal` (间隔 < cooldown, procedure 不崩 + cooldown reject 路径)
+  - `smoke_skill_preview_proc_multi_kf_diff_skills` (Strike + SwiftStrike 交错, cooldown namespace 隔离)
+  - `smoke_skill_preview_proc_concurrent_actors` (3 actor 同 t=0, 按 setup 顺序 deterministic)
+  - `smoke_skill_preview_proc_target_dies_mid_timeline` (target 中途死亡 procedure 不崩)
+- **`addons/logic-game-framework/tests/skill_preview_validation_test.gd`** SkillPreviewValidation 单元测试, 7 test 已登记到 `run_tests.gd::TEST_PATHS`。
+
+### 验证
+
+| 场景 | 改造前 | 改造后 |
+|---|---|---|
+| caster t=0/300/600 三发 Strike (multi_kf, < cooldown) | 1 damage (后两发 silently reject) | UI 阻止排出此配置; procedure 兜底仍 1 damage 不崩 |
+| caster t=0/2100/4200 三发 Strike (multi_kf, ≥ cooldown) | 1 damage (旧逻辑每次重 grant 都被 reject) | 3 damage + 仅 1 次 grant + 全部复用同 ability_4 |
+| LGF run_tests | 59 PASS | 66 PASS (新 7 测试) |
+
+---
+
 ## [Unreleased] — 2026-04-27 SkillPreview 多 actor 时间轴模型
 
 ### Added

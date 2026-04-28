@@ -196,6 +196,14 @@ func _mark_in_combat(actor_id: String, active: bool) -> void:
 ## drain 队首所有 time_ms <= now_ms 的 keyframe, 各自 grant + activate。
 ## 事件 logicTime 写 keyframe.time_ms (deterministic intent), 不写 now_ms;
 ## 例: keyframe time_ms=850, 实际在 now=900ms tick 触发, 事件 logicTime 仍记 850。
+##
+## 同 actor 同 ability_config 多 keyframe 复用同一 Ability instance: 第二次 fire 时
+## find_ability_by_config_id 命中已 grant 的 instance 直接发 ABILITY_ACTIVATE_EVENT,
+## 不再 Ability.new + grant_ability。这样:
+## 1. cooldown tag (cooldown:<config_id>) 是 ability_set 级 owner-scoped, 多 instance
+##    会互相干扰; 复用后 cooldown 行为与单 instance 一致, 严格遵守。
+## 2. 不会重复 emit ABILITY_GRANTED_EVENT, 避免误触发监听 GRANTED_SELF 的 passive。
+## UI 层已禁止把同 skill 排在间隔 < occupy 的窗口, procedure 不再二次拦截。
 func _fire_due_keyframes(now_ms: float) -> void:
 	var world := _get_world()
 	while not _pending_keyframes.is_empty() and float(_pending_keyframes[0]["time_ms"]) <= now_ms:
@@ -207,8 +215,10 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		var ability_cfg: AbilityConfig = kf["ability_config"]
 		if ability_cfg == null:
 			continue
-		var ability := Ability.new(ability_cfg, actor.get_id())
-		actor.ability_set.grant_ability(ability, world)
+		var ability := actor.ability_set.find_ability_by_config_id(ability_cfg.config_id)
+		if ability == null:
+			ability = Ability.new(ability_cfg, actor.get_id())
+			actor.ability_set.grant_ability(ability, world)
 		var event := {
 			"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
 			"abilityInstanceId": ability.id,

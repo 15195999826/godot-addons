@@ -25,6 +25,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/resolvers/resolvers_test.gd",
 	"res://addons/logic-game-framework/tests/core/timeline/timeline_test.gd",
 	"res://addons/logic-game-framework/tests/core/timeline/timeline_loop_test.gd",
+	"res://addons/logic-game-framework/tests/skill_preview_validation_test.gd",
 ]
 
 # 测试框架实例

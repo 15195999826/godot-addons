@@ -34,7 +34,11 @@ class TimedCooldownCost:
 	func _init(duration: float) -> void:
 		type = "timed_cooldown"
 		_duration = duration
-	
+
+	## Cooldown 时长 (ms)。SkillPreview UI 用它算 occupy 防 keyframe 重叠。
+	func get_duration() -> float:
+		return _duration
+
 	func can_pay(_ctx: AbilityLifecycleContext, _event: Dictionary, _game_state: Variant) -> bool:
 		# 冷却消耗总是可以支付（条件检查在 CooldownCondition 中）
 		return true

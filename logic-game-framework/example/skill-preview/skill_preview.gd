@@ -1530,8 +1530,8 @@ func _add_keyframe_at(actor_idx: int, requested_ms: int) -> int:
 		_set_status("No active skill registered")
 		return -1
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
-	# 同 actor 同 time 阻止: 从 requested_ms 起找下一个空闲 100 边界。
-	var time_ms := _next_free_time_ms_in_track(track, requested_ms)
+	# 同 actor 同 time 阻止 + 同 skill occupy 阻止: 从 requested_ms 起找下一个空闲边界。
+	var time_ms := _next_free_time_ms_in_track(track, skill_id, requested_ms)
 	track.append({
 		"time_ms": time_ms,
 		"skill": skill_id,
@@ -1560,23 +1560,17 @@ func _remove_keyframe(actor_idx: int, kf_idx: int) -> void:
 	_queue_inspector_rebuild()
 
 
-## time_ms 改动: 同 actor 同 time 冲突时 push 到下一个 100 边界并提示。
+## time_ms 改动: 同 actor 同 time / 同 skill occupy 重叠时 push 到下一个空闲边界并提示。
 ## 返回最终生效的 time_ms (popup 端用返回值同步自身 SpinBox, 避免 conflict bump
 ## 后显示旧值)。
 func _on_keyframe_time_changed(actor_idx: int, kf_idx: int, requested_ms: int) -> int:
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	if kf_idx < 0 or kf_idx >= track.size():
 		return requested_ms
-	var conflict := false
-	for i in track.size():
-		if i == kf_idx:
-			continue
-		if int((track[i] as Dictionary).get("time_ms", 0)) == requested_ms:
-			conflict = true
-			break
-	var final_ms := requested_ms
-	if conflict:
-		final_ms = _next_free_time_ms_in_track(track, requested_ms + 100, kf_idx)
+	var skill_id := str((track[kf_idx] as Dictionary).get("skill", ""))
+	# next_free 自带"同 time" + "同 skill occupy" 双重检测; 直接调一次拿合法位置。
+	var final_ms := _next_free_time_ms_in_track(track, skill_id, requested_ms, kf_idx)
+	if final_ms != requested_ms:
 		_set_status("Time conflict — bumped to %dms" % final_ms)
 	(track[kf_idx] as Dictionary)["time_ms"] = final_ms
 	_queue_inspector_rebuild()
@@ -1588,6 +1582,13 @@ func _on_keyframe_skill_changed(actor_idx: int, kf_idx: int, skill_id: String) -
 	if kf_idx < 0 or kf_idx >= track.size():
 		return
 	(track[kf_idx] as Dictionary)["skill"] = skill_id
+	# 切到 occupy 更长的 skill 时, 当前 time_ms 可能与同 actor 其它同 skill keyframe
+	# 撞 occupy 窗口, 重算并 bump。time_ms 不变就是合法的, next_free 直接返回原值。
+	var current_ms := int((track[kf_idx] as Dictionary).get("time_ms", 0))
+	var bumped_ms := _next_free_time_ms_in_track(track, skill_id, current_ms, kf_idx)
+	if bumped_ms != current_ms:
+		(track[kf_idx] as Dictionary)["time_ms"] = bumped_ms
+		_set_status("Skill change — time bumped to %dms (occupy)" % bumped_ms)
 	_queue_inspector_rebuild()
 
 
@@ -1603,22 +1604,19 @@ func _on_keyframe_target_field_changed(actor_idx: int, kf_idx: int, field: Strin
 	_queue_inspector_rebuild()
 
 
-## 在 track 里找一个不冲突的 time_ms (从 start 起, 100 步进上扫)。
-## skip_kf_idx: 排除自己 (用于改 time 时不算自己冲突)。
-func _next_free_time_ms_in_track(track: Array, start_ms: int, skip_kf_idx: int = -1) -> int:
-	var t := max(0, start_ms - (start_ms % 100))
-	for _i in range(0, 600):  # 最多扫 60s
-		var occupied := false
-		for j in track.size():
-			if j == skip_kf_idx:
-				continue
-			if int((track[j] as Dictionary).get("time_ms", 0)) == t:
-				occupied = true
-				break
-		if not occupied:
-			return t
-		t += 100
-	return t
+## SkillPreviewTimeline 在 track 里找下一个空闲 time_ms。
+##
+## 算 occupy / 找冲突的纯逻辑住在 SkillPreviewValidation, 这里只是注入
+## skill_resolver = HexBattleSkillIndex.get_by_id, 不让 UI 文件再依赖
+## TimelineRegistry / HexBattleCooldownSystem。
+func _next_free_time_ms_in_track(
+	track: Array, candidate_skill_id: String, start_ms: int, skip_kf_idx: int = -1
+) -> int:
+	var resolver := func(sid: String) -> AbilityConfig:
+		return HexBattleSkillIndex.get_by_id(sid)
+	return SkillPreviewValidation.next_free_time_ms_in_track(
+		track, candidate_skill_id, resolver, start_ms, skip_kf_idx
+	)
 
 
 func _make_actor_spin(
@@ -2077,6 +2075,8 @@ func _finish_with_status(s: String) -> void:
 
 
 func _find_preview_setup_error() -> String:
+	var skill_resolver := func(sid: String) -> AbilityConfig:
+		return HexBattleSkillIndex.get_by_id(sid)
 	for actor_idx in _actors.size():
 		var actor_data: Dictionary = _actors[actor_idx]
 		var track: Array = actor_data.get("track", []) as Array
@@ -2099,6 +2099,12 @@ func _find_preview_setup_error() -> String:
 				return "%s @ %dms target does not match skill tags" % [
 					_role_id_for(actor_idx), time_ms,
 				]
+		# Occupy 兜底: 编辑期已通过 next_free 阻止, 但加载 preset 等绕过路径仍要拦。
+		var occupy_err := SkillPreviewValidation.find_track_occupy_violation(
+			track, _role_id_for(actor_idx), skill_resolver
+		)
+		if occupy_err != "":
+			return occupy_err
 	return ""
 
 
