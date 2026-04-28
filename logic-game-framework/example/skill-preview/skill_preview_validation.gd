@@ -3,16 +3,28 @@
 ## SkillPreviewTimeline UI 编辑期 / START 兜底校验用的算 occupy / 找冲突的纯逻辑。
 ## 抽出来便于单元测试调用 (UI scene 不能在 headless 里实例化, 但 static helper 可以)。
 ##
-## occupy = 一个 skill 的 timeline 演完所需时间 (ms) = timeline.total_duration
+## occupy = 一个 skill instance 的 timeline 演完所需时间 (ms) = timeline.total_duration
 ##
-## 关注点划分:
-## - UI occupy 只管"上一发演完没有"(timeline 时长), 防止用户排出物理上重叠的 keyframe;
-## - "能否释放"(cooldown / mp / hp 等 condition / cost) 由 LGF ActiveUseComponent
-##   在 fire 时检查, 失败 push AbilityActivateFailed 事件, 前端 console 渲染。
+## 关注点划分 (重要):
 ##
-## 这意味着用户能在 UI 里排出"间隔=timeline 但 < cooldown"的 timeline, START 跑
-## 起来后会看到 console 标红"@500ms 释放失败: 冷却中"。这是设计意图: preview 替代
-## AI 决策, 但下游施法管道 (含 cost/condition 检查) 跟真战斗 100% 一致。
+## 1. UI 仅防 "**同一 ability instance** 的 timeline 重叠": 同 actor 同 skill 两条
+##    keyframe 间隔 < timeline 等于让同一 instance 的 timeline 没演完就被重启,
+##    在 LGF Ability 模型里是有意义的非法配置 (procedure 复用 instance, 不会真
+##    并发跑两份 timeline)。这是 UI 唯一拦的约束。
+##
+## 2. UI **不**拦 "同 actor 不同 skill 同时段并发": LGF Ability._execution_instances
+##    本身就是 Array, 同 actor 同 ability 的多 instance / 不同 ability 的多 instance
+##    都允许并发 tick。SkillPreview 替代 ATB+AI 决策层, 真战里 ATB 一次只给 actor
+##    一个行动机会是决策层产物, 不是施法管道契约。preview 用户想看 "caster 在 t=0
+##    同时甩 Strike + SwiftStrike" 是合法预览意图, 不该被 UI 堵死。
+##
+## 3. UI **不**拦 "能否释放" (cooldown / mp / hp 等 condition / cost): 这是真战
+##    施法管道的责任。LGF ActiveUseComponent 在 fire 时检查, 失败 push
+##    AbilityActivateFailed 事件, 前端 console 渲染。用户能排出"间隔 ≥ timeline
+##    但 < cooldown"的 timeline, START 跑起来后看到 console 标红"⛔ 释放失败:
+##    冷却中"。
+##
+## 设计意图: preview 替代决策层, 下游施法管道与真战 100% 一致。
 class_name SkillPreviewValidation
 
 
@@ -34,7 +46,8 @@ static func ability_occupy_ms(cfg: AbilityConfig) -> int:
 ## 扫一条 track, 找到第一个 occupy 冲突, 返回错误描述; 无冲突返回 ""。
 ##
 ## "冲突" = track 里有两条 keyframe 满足:
-##   1. skill 相同 (cooldown tag 是 cooldown:<config_id> namespace, 不同 skill 不互斥)
+##   1. skill 相同 (procedure 复用同 config_id 的 ability instance, 同 instance
+##      timeline 演完前重启视为非法; 不同 skill 是不同 instance 各自 tick, 允许并发)
 ##   2. |t_a - t_b| < occupy(skill)
 ##
 ## skill_resolver: func(skill_id: String) -> AbilityConfig

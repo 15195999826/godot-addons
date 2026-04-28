@@ -104,7 +104,10 @@ func _test_violation_legal_gap() -> void:
 func _test_violation_diff_skills() -> void:
 	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
-	# 不同 skill 即使 time 重合也不冲突 (cooldown tag namespace 隔离)
+	# 不同 skill = 不同 ability instance, LGF 原生支持同 actor 多 instance 并发 tick
+	# (Ability._execution_instances 本身是 Array)。preview 替代 ATB 决策层, 不该把
+	# "actor 一次一招"这种决策层串行约束塞进 UI; 用户可以合法预览同 actor 不同 skill
+	# 同时段并发执行的效果 (e.g. "caster 在 t=0 同时甩 Strike + SwiftStrike")。
 	var track: Array = [
 		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
 		{"time_ms": 100, "skill": HexBattleSwiftStrike.CONFIG_ID},
