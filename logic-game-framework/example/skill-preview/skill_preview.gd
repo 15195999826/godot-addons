@@ -30,6 +30,7 @@
 ##     #             target: {mode: "auto"|"enemy_index"|"ally_index"|"fixed_pos",
 ##     #                      index: int, q: int, r: int}}
 ##   }。role=="caster" 唯一且必是 team A。
+##   environments: Array[Dictionary] —— 每条 {type: "stone_wall", pos: [q,r]}
 ##   map:      {radius: int, orientation: "pointy"|"flat", hex_size: float}
 ##   controls: {max_ticks, speed}
 extends Node
@@ -37,6 +38,7 @@ extends Node
 
 const PRESET_DIR := "user://skill_preview_presets"
 const BUILTIN_PRESET_DIR := "res://addons/logic-game-framework/example/skill-preview/presets"
+const ENV_STONE_WALL := "stone_wall"
 
 const CLASS_NAMES: Array[String] = [
 	"WARRIOR", "PRIEST", "ARCHER", "MAGE", "BERSERKER", "ASSASSIN",
@@ -112,6 +114,7 @@ const KEYFRAME_POPUP_SIZE := Vector2i(392, 300)
 
 ## 数据模型: caster 永远在 [0] 位置,其后跟随 dummies
 var _actors: Array[Dictionary] = []
+var _environments: Array[Dictionary] = []
 
 ## 常驻响应式栈
 var _world: SkillPreviewWorldGI
@@ -136,6 +139,7 @@ var _keyframe_popup: PopupPanel = null
 ## PopupMenu 上下文(右键点的格子 / actor idx)
 var _popup_hex: HexCoord = null
 var _popup_actor_idx: int = -1
+var _popup_environment_idx: int = -1
 
 ## 约定字段 -> actor_id 映射: 编辑态按数据模型 idx 分配稳定 id(caster / ally_N / enemy_N)。
 ## 每次 _reset_world_to_model 重新生成并写入 add_actor 前的 _display_name 提示;
@@ -149,6 +153,7 @@ var _popup_actor_idx: int = -1
 ## 插入/删除走数组同步操作,_role_id_to_actor_id 在每次结构变化后整体重建。
 var _role_id_to_actor_id: Dictionary[String, String] = {}
 var _actor_ids: Array[String] = []
+var _environment_ids: Array[String] = []
 
 ## 最近一次战斗的总帧数, 从 timeline.meta.totalFrames 缓存。
 ## 不能从 _world.get_active_battle() 读 —— battle_finished emit 之前
@@ -543,6 +548,25 @@ func _add_actor_at_next_free(team: String) -> void:
 	_add_actor("dummy", team, "WARRIOR", start_q, 0)
 
 
+func _add_stone_wall(q: int, r: int) -> void:
+	var coord := HexCoord.new(q, r)
+	if not _can_place_environment_at_for(coord, -1):
+		_set_status("StoneWall placement blocked at (%d, %d)" % [q, r])
+		_log("[color=yellow]StoneWall placement blocked at (%d, %d)[/color]" % [q, r])
+		return
+	_environments.append({
+		"type": ENV_STONE_WALL,
+		"pos": [coord.q, coord.r],
+	})
+	if _is_playing:
+		return
+	var idx := _environments.size() - 1
+	if _spawn_one_environment(idx):
+		_set_status("StoneWall placed at (%d, %d)" % [q, r])
+	else:
+		_environments.remove_at(idx)
+
+
 func _nearest_free_coord_for(start_q: int, start_r: int, team: String, actor_idx: int) -> HexCoord:
 	var preferred_direction := 1 if team == "B" else -1
 	var start_coord := HexCoord.new(start_q, start_r)
@@ -569,7 +593,20 @@ func _can_place_actor_at_for(coord: HexCoord, actor_idx: int) -> bool:
 	if UGridMap.model != null and not UGridMap.model.has_tile(coord):
 		return false
 	var occupant_idx := _find_actor_idx_at(coord.q, coord.r)
-	return occupant_idx == -1 or occupant_idx == actor_idx
+	if occupant_idx != -1 and occupant_idx != actor_idx:
+		return false
+	return _find_environment_idx_at(coord.q, coord.r) == -1
+
+
+func _can_place_environment_at_for(coord: HexCoord, environment_idx: int) -> bool:
+	if coord == null or not coord.is_valid():
+		return false
+	if UGridMap.model != null and not UGridMap.model.has_tile(coord):
+		return false
+	if _find_actor_idx_at(coord.q, coord.r) != -1:
+		return false
+	var occupant_idx := _find_environment_idx_at(coord.q, coord.r)
+	return occupant_idx == -1 or occupant_idx == environment_idx
 
 
 func _remove_actor_at(idx: int) -> void:
@@ -597,9 +634,29 @@ func _remove_actor_at(idx: int) -> void:
 	_rebuild_inspector()
 
 
+func _remove_environment_at(idx: int) -> void:
+	if idx < 0 or idx >= _environments.size():
+		return
+	if not _is_playing and idx < _environment_ids.size():
+		var env_id := _environment_ids[idx]
+		if env_id != "":
+			_world.remove_actor(env_id)
+		_environment_ids.remove_at(idx)
+	_environments.remove_at(idx)
+	_set_status("StoneWall removed")
+
+
 func _find_actor_idx_at(q: int, r: int) -> int:
 	for i in _actors.size():
 		var pos: Array = _actors[i]["pos"]
+		if int(pos[0]) == q and int(pos[1]) == r:
+			return i
+	return -1
+
+
+func _find_environment_idx_at(q: int, r: int) -> int:
+	for i in _environments.size():
+		var pos: Array = _environments[i]["pos"]
 		if int(pos[0]) == q and int(pos[1]) == r:
 			return i
 	return -1
@@ -1807,9 +1864,12 @@ func _reset_world_to_model_unguarded() -> void:
 	_world.reset()
 	_role_id_to_actor_id.clear()
 	_actor_ids.clear()
+	_environment_ids.clear()
 
 	_world.configure_grid(_build_grid_config())
 	if _sanitize_actor_positions():
+		_queue_inspector_rebuild()
+	if _sanitize_environment_positions():
 		_queue_inspector_rebuild()
 	var collision_detector := MobaCollisionDetector.new()
 	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
@@ -1817,6 +1877,8 @@ func _reset_world_to_model_unguarded() -> void:
 
 	for i in _actors.size():
 		_spawn_one_actor(i)
+	for i in _environments.size():
+		_spawn_one_environment(i)
 
 
 func _sanitize_actor_positions() -> bool:
@@ -1833,6 +1895,41 @@ func _sanitize_actor_positions() -> bool:
 		_actors[i]["pos"] = [adjusted.q, adjusted.r]
 		changed = true
 	return changed
+
+
+func _sanitize_environment_positions() -> bool:
+	var changed := false
+	for i in _environments.size():
+		var data: Dictionary = _environments[i]
+		var pos: Array = data["pos"]
+		var coord := HexCoord.new(int(pos[0]), int(pos[1]))
+		if _can_place_environment_at_for(coord, i):
+			continue
+		var adjusted := _nearest_free_environment_coord_for(coord.q, coord.r, i)
+		if not adjusted.is_valid():
+			continue
+		_environments[i]["pos"] = [adjusted.q, adjusted.r]
+		changed = true
+	return changed
+
+
+func _nearest_free_environment_coord_for(start_q: int, start_r: int, environment_idx: int) -> HexCoord:
+	var start_coord := HexCoord.new(start_q, start_r)
+	if _can_place_environment_at_for(start_coord, environment_idx):
+		return start_coord
+	for distance in range(1, 12):
+		var candidates: Array[HexCoord] = [
+			HexCoord.new(start_q + distance, start_r),
+			HexCoord.new(start_q - distance, start_r),
+			HexCoord.new(start_q, start_r + distance),
+			HexCoord.new(start_q, start_r - distance),
+			HexCoord.new(start_q + distance, start_r - distance),
+			HexCoord.new(start_q - distance, start_r + distance),
+		]
+		for coord in candidates:
+			if _can_place_environment_at_for(coord, environment_idx):
+				return coord
+	return HexCoord.invalid()
 
 
 ## 把 _actors[idx] 这一条数据模型 commit 到 world: 创建 CharacterActor + hydrate 字段
@@ -1871,6 +1968,32 @@ func _spawn_one_actor(idx: int) -> void:
 	if idx >= _actor_ids.size():
 		_actor_ids.resize(idx + 1)
 	_actor_ids[idx] = cchar.get_id()
+
+
+func _spawn_one_environment(idx: int) -> bool:
+	var data: Dictionary = _environments[idx]
+	var env_type := str(data.get("type", ENV_STONE_WALL))
+	if env_type != ENV_STONE_WALL:
+		push_warning("[SkillPreview] unknown environment type: %s" % env_type)
+		return false
+	var pos: Array = data["pos"]
+	var coord := HexCoord.new(int(pos[0]), int(pos[1]))
+	if _world.grid == null or not _world.grid.has_tile(coord):
+		push_warning("[SkillPreview] environment out of grid: %s @ (%d, %d)" % [env_type, coord.q, coord.r])
+		return false
+
+	var env_actor := HexBattleStoneWall.create()
+	env_actor.hex_position = coord.duplicate()
+	_world.add_actor(env_actor)
+	if not _world.grid.place_occupant(coord, env_actor):
+		_world.remove_actor(env_actor.get_id())
+		push_warning("[SkillPreview] environment placement failed: %s @ (%d, %d)" % [env_type, coord.q, coord.r])
+		return false
+	if idx >= _environment_ids.size():
+		_environment_ids.resize(idx + 1)
+	_environment_ids[idx] = env_actor.get_id()
+	_world.actor_position_changed.emit(env_actor.get_id(), coord, coord)
+	return true
 
 
 ## 删 idx 后 enemy_3 → enemy_2 这种重编号会让 _role_id_to_actor_id 出现 stale entry,
@@ -1965,6 +2088,20 @@ func _apply_grid_change() -> void:
 		if _world.grid != null and _world.grid.has_tile(coord):
 			_world.grid.place_occupant(coord, actor)
 		_world.actor_position_changed.emit(actor_id, coord, coord)
+	for i in _environment_ids.size():
+		var env_id := _environment_ids[i]
+		if env_id == "":
+			continue
+		var env_actor := _world.get_actor(env_id) as EnvironmentActor
+		if env_actor == null:
+			continue
+		var coord: HexCoord = env_actor.hex_position
+		if coord == null or not coord.is_valid():
+			continue
+		if _world.grid != null and _world.grid.has_tile(coord):
+			if not _world.grid.place_occupant(coord, env_actor):
+				push_warning("[SkillPreview] environment re-place failed after grid change: %s" % env_id)
+		_world.actor_position_changed.emit(env_id, coord, coord)
 
 
 ## 数据模型 idx → 逻辑 role id (caster / ally_N / enemy_N)。
@@ -2037,6 +2174,7 @@ func _input(event: InputEvent) -> void:
 		return
 	_popup_hex = coord
 	_popup_actor_idx = _find_actor_idx_at(coord.q, coord.r)
+	_popup_environment_idx = _find_environment_idx_at(coord.q, coord.r)
 	_show_hex_popup()
 	get_viewport().set_input_as_handled()
 
@@ -2050,10 +2188,13 @@ func _show_hex_popup() -> void:
 		_hex_popup.add_item("Caster 位置", 100)
 	elif _popup_actor_idx > 0:
 		_hex_popup.add_item("🗑  删除此 actor", 11)
+	elif _popup_environment_idx >= 0:
+		_hex_popup.add_item("删除 StoneWall", 21)
 	else:
 		_hex_popup.add_item("⚔  加敌方 actor (team B)", 1)
 		_hex_popup.add_item("💚 加友方 actor (team A)", 2)
 		_hex_popup.add_item("🎯 移动 caster 到此", 3)
+		_hex_popup.add_item("添加 StoneWall", 20)
 	var local_mouse := Vector2i(get_viewport().get_mouse_position())
 	_hex_popup.popup_on_parent(Rect2i(local_mouse, Vector2i(1, 1)))
 
@@ -2105,6 +2246,7 @@ func _on_hex_popup_window_input(event: InputEvent) -> void:
 	_hex_popup.hide()
 	_popup_hex = coord
 	_popup_actor_idx = _find_actor_idx_at(coord.q, coord.r)
+	_popup_environment_idx = _find_environment_idx_at(coord.q, coord.r)
 	# 等一帧让 hide 真正完成再 show, 避免 hide+show 同帧的潜在 race。
 	call_deferred("_show_hex_popup")
 
@@ -2117,6 +2259,8 @@ func _on_popup_id_pressed(id: int) -> void:
 		2: _add_actor("dummy", "A", "WARRIOR", q, r)
 		3: _move_caster_to(q, r)
 		11: _remove_actor_at(_popup_actor_idx)
+		20: _add_stone_wall(q, r)
+		21: _remove_environment_at(_popup_environment_idx)
 
 
 func _on_speed_changed(v: float) -> void:
@@ -2657,6 +2801,7 @@ func _on_preset_load_selected(idx: int) -> void:
 ##        "passives": [String], "track": [Keyframe]},
 ##       ...
 ##     ],
+##     "environments": [{"type":"stone_wall", "pos":[q,r]}],
 ##     "controls": {"max_ticks", "speed"}
 ##   }
 ##   Keyframe = {"time_ms": int, "skill": String,
@@ -2673,10 +2818,48 @@ func _serialize_ui_state() -> Dictionary:
 			"hex_size": float(_map_hex_size_input.value),
 		},
 		"actors": _actors.duplicate(true),
+		"environments": _environments.duplicate(true),
 		"controls": {
 			"max_ticks": int(_max_ticks_input.value),
 			"speed": _speed_input.value,
 		},
+	}
+
+
+func _build_scene_config() -> Dictionary:
+	var allies: Array[Dictionary] = []
+	var enemies: Array[Dictionary] = []
+	for i in _actors.size():
+		var actor_data: Dictionary = _actors[i]
+		var pos: Array = actor_data["pos"]
+		var payload := {
+			"class": str(actor_data.get("class", "WARRIOR")),
+			"pos": [int(pos[0]), int(pos[1])],
+			"hp": float(actor_data.get("hp", 100.0)),
+			"atk": float(actor_data.get("atk", 0.0)),
+		}
+		if i == 0:
+			continue
+		if str(actor_data.get("team", "B")) == "A":
+			allies.append(payload)
+		else:
+			enemies.append(payload)
+	var caster_pos: Array = (_actors[0] as Dictionary)["pos"]
+	return {
+		"map": {
+			"radius": int(_map_radius_input.value),
+			"orientation": "flat" if _map_orientation_option.selected == 1 else "pointy",
+			"hex_size": float(_map_hex_size_input.value),
+		},
+		"caster": {
+			"class": str((_actors[0] as Dictionary).get("class", "WARRIOR")),
+			"pos": [int(caster_pos[0]), int(caster_pos[1])],
+			"hp": float((_actors[0] as Dictionary).get("hp", 100.0)),
+			"atk": float((_actors[0] as Dictionary).get("atk", 0.0)),
+		},
+		"allies": allies,
+		"enemies": enemies,
+		"environment": _environments.duplicate(true),
 	}
 
 
@@ -2730,6 +2913,19 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 			"pos": [0, 0], "hp": 0.0, "atk": 0.0,
 			"passives": [] as Array[String],
 			"track": [] as Array[Dictionary],
+		})
+
+	var loaded_environments: Array = d.get("environments", [])
+	_environments = []
+	for env_variant in loaded_environments:
+		var env_data := env_variant as Dictionary
+		var env_pos: Array = env_data.get("pos", [0, 0])
+		var env_type := str(env_data.get("type", ENV_STONE_WALL))
+		if env_type != ENV_STONE_WALL:
+			continue
+		_environments.append({
+			"type": ENV_STONE_WALL,
+			"pos": [int(env_pos[0]), int(env_pos[1])],
 		})
 	_rebuild_inspector()
 

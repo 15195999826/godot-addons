@@ -133,8 +133,8 @@ func _on_grid_cell_changed(_coord: HexCoord, _change_type: String) -> void:
 ## 未放置到网格的 actor（如未 place_occupant 前）位置为 Vector3.ZERO，
 ## 由后续 actor_position_changed signal 更新。
 ##
-## 只为 CharacterActor 建 view —— ProjectileActor 等非可视单位（体型 / 飞行物）
-## 由 BattleAnimator 消费 event_timeline 自行出场，不在 WorldView 生命周期里。
+## 只为 CharacterActor / EnvironmentActor 建 view —— ProjectileActor 等非可视单位
+## （体型 / 飞行物）由 BattleAnimator 消费 event_timeline 自行出场，不在 WorldView 生命周期里。
 func _spawn_unit_view(actor_id: String) -> void:
 	if _unit_views.has(actor_id):
 		return
@@ -142,7 +142,7 @@ func _spawn_unit_view(actor_id: String) -> void:
 	if world == null:
 		return
 	var actor := world.get_actor(actor_id)
-	if actor == null or not (actor is CharacterActor):
+	if actor == null or not (actor is CharacterActor or actor is EnvironmentActor):
 		return
 
 	var view := FrontendUnitView.new()
@@ -166,8 +166,17 @@ func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 			max_hp = cchar.attribute_set.max_hp
 			cur_hp = cchar.attribute_set.hp
 		hex_pos = cchar.hex_position
+	elif actor is EnvironmentActor:
+		var env_actor := actor as EnvironmentActor
+		team = -1
+		if env_actor.attribute_set != null:
+			max_hp = env_actor.attribute_set.max_hp
+			cur_hp = env_actor.attribute_set.hp
+		hex_pos = env_actor.hex_position
 
 	view.initialize(actor.get_id(), actor.get_display_name(), team, max_hp, cur_hp)
+	if actor is EnvironmentActor:
+		view.set_environment_style((actor as EnvironmentActor).environment_kind)
 	if hex_pos != null and hex_pos.is_valid():
 		view.set_world_position(_hex_to_world(hex_pos))
 
