@@ -41,8 +41,6 @@ var _name_label_view: FrontendNameLabelView
 
 var _actor_id: String = ""
 var _team: int = 0
-var _is_alive: bool = true
-var _flash_progress: float = 0.0
 var _target_position: Vector3 = Vector3.ZERO
 var _death_tween: Tween
 var _environment_kind: String = ""
@@ -88,7 +86,6 @@ func _create_mesh() -> void:
 func initialize(p_actor_id: String, display_name: String, team: int, max_hp: float, current_hp: float) -> void:
 	_actor_id = p_actor_id
 	_team = team
-	_is_alive = current_hp > 0
 	_update_team_color()
 
 	# 用初始 state 同步给子 view,避免每个子 view 各自 initialize 接口爆炸
@@ -99,7 +96,7 @@ func initialize(p_actor_id: String, display_name: String, team: int, max_hp: flo
 	initial_state.visual_hp = current_hp
 	initial_state.target_hp = current_hp
 	initial_state.max_hp = max_hp
-	initial_state.is_alive = _is_alive
+	initial_state.is_alive = current_hp > 0
 	_hp_bar_view.update_from_state(initial_state)
 	_shield_bar_view.update_from_state(initial_state)
 	_buff_row_view.update_from_state(initial_state)
@@ -129,29 +126,14 @@ func get_actor_id() -> String:
 	return _actor_id
 
 
-## 给 smoke 测试 / 调试用的子 view 访问器(避免外部 poke 内部字段)。
-func get_hp_bar_view() -> FrontendHpBarView:
-	return _hp_bar_view
-
-
-func get_shield_bar_view() -> FrontendShieldBarView:
-	return _shield_bar_view
-
-
+## 给 smoke 测试用,避免 poke 内部 _buff_label 字段。
 func get_buff_row_view() -> FrontendBuffRowView:
 	return _buff_row_view
-
-
-func get_name_label_view() -> FrontendNameLabelView:
-	return _name_label_view
 
 
 ## 同步可覆盖 state(hp / flash / tint / buffs)。一次性动画(死亡 / 复活)走
 ## play_death / revive 公共方法,不在这里推断 transition。
 func update_state(new_state: FrontendActorRenderState) -> void:
-	_is_alive = new_state.is_alive
-	_flash_progress = new_state.flash_progress
-
 	_hp_bar_view.update_from_state(new_state)
 	_shield_bar_view.update_from_state(new_state)
 	_buff_row_view.update_from_state(new_state)
@@ -167,27 +149,23 @@ func set_world_position(new_world_pos: Vector3) -> void:
 
 # ========== 内部方法 ==========
 
-## 更新队伍颜色
+## team 0 → 蓝, 1 → 红, 其他(含 environment) → 棕。
+func _get_team_base_color() -> Color:
+	if _team == 0:
+		return Color(0.2, 0.6, 1.0)
+	if _team == 1:
+		return Color(1.0, 0.3, 0.3)
+	return Color(0.45, 0.42, 0.36)
+
+
 func _update_team_color() -> void:
 	if _base_material:
-		if _team == 0:
-			_base_material.albedo_color = Color(0.2, 0.6, 1.0)  # 蓝色
-		elif _team == 1:
-			_base_material.albedo_color = Color(1.0, 0.3, 0.3)  # 红色
-		else:
-			_base_material.albedo_color = Color(0.45, 0.42, 0.36)
+		_base_material.albedo_color = _get_team_base_color()
 
 
-## 更新闪白效果
 func _update_flash_effect(flash_progress: float) -> void:
 	if _base_material:
-		var base_color := Color(0.45, 0.42, 0.36)
-		if _team == 0:
-			base_color = Color(0.2, 0.6, 1.0)
-		elif _team == 1:
-			base_color = Color(1.0, 0.3, 0.3)
-		var flash_color := Color.WHITE
-		_base_material.albedo_color = base_color.lerp(flash_color, flash_progress)
+		_base_material.albedo_color = _get_team_base_color().lerp(Color.WHITE, flash_progress)
 
 
 ## 更新染色

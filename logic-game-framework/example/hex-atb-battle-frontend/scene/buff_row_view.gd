@@ -1,12 +1,10 @@
 ## BuffRowView - buff 头顶图标行子组件
 ##
-## UnitView 的 attached visual 之一,响应 update_from_state 同步 actor.buffs 数组,
+## UnitView 的 attached visual,响应 update_from_state 同步 actor.buffs 数组,
 ## 维护一行"小色块 + 文字摘要"展示 buff 状态。
 ##
 ## 入场动画(0.15s scale.x 0→1)只在 ADD 时触发;数值变化(stacks-1 / shield 吸收)
 ## 静默更新文字,不弹动画(避免 Poison tick / 频繁吸收引起的视觉吵闹)。
-##
-## 实现行为完全沿用从 UnitView._sync_buff_row 搬过来的逻辑,无视觉变更。
 class_name FrontendBuffRowView
 extends Node3D
 
