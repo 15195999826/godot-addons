@@ -4,7 +4,7 @@
 ## 战斗推进由 HexBattleProcedure 承担 —— 参见 hex_battle_procedure.gd。
 ##
 ## 现有 HexBattle(example/hex-atb-battle/hex_battle.gd) 保留为 thin 兼容子类,
-## 不破坏现有调用端 (SkillPreviewBattle / main.gd / SimulationManager 等)。
+## 不破坏现有调用端 (scenario harness / main.gd / SimulationManager 等)。
 class_name HexWorldGameplayInstance
 extends WorldGameplayInstance
 

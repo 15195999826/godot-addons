@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b8tlmkflegalv1"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/tests/example/skill-preview/smoke_skill_preview_proc_multi_kf_legal.gd" id="1"]
+
+[node name="SmokeMkfLegal" type="Node"]
+script = ExtResource("1")
