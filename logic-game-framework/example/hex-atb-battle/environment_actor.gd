@@ -36,14 +36,6 @@ func _init(p_environment_kind: String, p_collision_profile: CollisionProfile) ->
 	ability_set = BattleAbilitySet.create_battle_ability_set(get_id(), attribute_set)
 
 
-## ID 被 add_actor 分配后, 同步 ability_set 和 attribute_set 的 owner 引用
-func _on_id_assigned() -> void:
-	if ability_set != null:
-		ability_set.owner_actor_id = get_id()
-	if attribute_set != null:
-		attribute_set.actor_id = get_id()
-
-
 # ========== HexBattleActor 合同实现 ==========
 
 func get_attribute_set() -> HexBattleActorAttributeSet:
@@ -60,8 +52,6 @@ func _get_config_id() -> String:
 # ========== 序列化 ==========
 
 func serialize() -> Dictionary:
-	var base := serialize_base()
+	var base := super.serialize()
 	base["environment_kind"] = environment_kind
-	base["hex_position"] = hex_position.to_dict() if hex_position.is_valid() else {}
-	base["attribute_set"] = attribute_set._raw.serialize()
 	return base

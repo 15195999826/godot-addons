@@ -22,13 +22,3 @@ var damage_taken_on_blocked_push: float = 1.0
 var damage_dealt_to_pusher: float = 1.0
 var pushable: bool = false
 var blocks_path: bool = true
-
-
-## 默认 wall profile: 用于"撞地图边界"等没有具体 actor 的场景。
-static func default_wall() -> CollisionProfile:
-	var p := CollisionProfile.new()
-	p.damage_taken_on_blocked_push = 0.0  # 边界本身不受伤
-	p.damage_dealt_to_pusher = 1.0
-	p.pushable = false
-	p.blocks_path = true
-	return p

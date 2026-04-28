@@ -57,12 +57,6 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 	ai_strategy = AIStrategyFactory.get_strategy(character_class)
 
 
-## ID 被 add_actor 分配后, 同步 ability_set 和 attribute_set 的 owner 引用
-func _on_id_assigned() -> void:
-	ability_set.owner_actor_id = get_id()
-	attribute_set.actor_id = get_id()
-
-
 ## 装备技能 (在 HexBattle 初始化时调用)
 func equip_abilities() -> void:
 	var move_ability := Ability.new(HexBattleMove.ABILITY, get_id())
@@ -179,9 +173,7 @@ func get_attribute_snapshot() -> Dictionary:
 # ========== 序列化 ==========
 
 func serialize() -> Dictionary:
-	var base := serialize_base()
+	var base := super.serialize()
 	base["character_class"] = HexBattleClassConfig.class_to_string(character_class)
-	base["hex_position"] = hex_position.to_dict() if hex_position.is_valid() else {}
 	base["atb_gauge"] = _atb_gauge
-	base["attribute_set"] = attribute_set._raw.serialize()
 	return base

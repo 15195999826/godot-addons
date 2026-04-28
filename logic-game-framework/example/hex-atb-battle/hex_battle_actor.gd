@@ -1,20 +1,7 @@
-## HexBattleActor - 六边形战斗 Actor 基类
+## HexBattleActor - 六边形战斗 Actor 基类 (CharacterActor / EnvironmentActor 共用)。
 ##
-## 任何能占格、能受伤、能死亡的 hex 战斗实体的公共基类。
-## 子类:
-##   - CharacterActor (角色: ATB / AI / 职业技能)
-##   - EnvironmentActor (环境: 石墙 / 木桶 / 巨石 ...)
-##
-## 公共合同:
-##   - hex_position: 占格坐标
-##   - ability_set: 用于挂 ability/buff/passive (战斗管线平权)
-##   - get_attribute_set(): 子类返回自己的强类型 attribute_set; 公共代码读 hp / max_hp
-##   - is_dead / check_death: 死亡检测
-##
-## 设计决策:
-##   - 不持 attribute_set 字段, 由子类各自持强类型字段, 经 get_attribute_set() 暴露公共合同。
-##     这避免 GDScript 子类重声明同名 var 的 shadow 陷阱, 让专属代码 (Strike 读 atk)
-##     仍可用 actor.attribute_set.atk, 公共代码 (DamageUtils 读 hp) 走 actor.get_attribute_set().hp。
+## 不持 attribute_set 字段: 子类各自持强类型字段, 经 get_attribute_set() 暴露 hp/max_hp 视图。
+## 这样专属代码 (Strike 读 atk) 仍可用 actor.attribute_set.atk 而不被 base shadow。
 class_name HexBattleActor
 extends Actor
 
@@ -42,12 +29,15 @@ func get_attribute_set() -> HexBattleActorAttributeSet:
 
 # ========== 生命周期 ==========
 
+## ID 被 add_actor 分配后, 同步 ability_set / attribute_set 内引用的 owner_id。
+func _on_id_assigned() -> void:
+	ability_set.owner_actor_id = get_id()
+	get_attribute_set().actor_id = get_id()
+
+
 ## 检查是否死亡; 返回是否首次进入死亡态。
 func check_death() -> bool:
-	var attrs := get_attribute_set()
-	if attrs == null:
-		return false
-	if attrs.hp <= 0 and not _is_dead:
+	if get_attribute_set().hp <= 0 and not _is_dead:
 		_is_dead = true
 		return true
 	return false
@@ -81,8 +71,6 @@ func _get_position() -> Vector3:
 ## 默认 attribute snapshot: 公共属性 (子类可扩展)
 func get_attribute_snapshot() -> Dictionary:
 	var attrs := get_attribute_set()
-	if attrs == null:
-		return {}
 	return {
 		"hp": attrs.hp,
 		"max_hp": attrs.max_hp,
@@ -92,8 +80,6 @@ func get_attribute_snapshot() -> Dictionary:
 ## 默认 ability snapshot
 func get_ability_snapshot() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
-	if ability_set == null:
-		return result
 	for ability in ability_set.get_abilities():
 		result.append({
 			"instance_id": ability.id,
@@ -104,18 +90,23 @@ func get_ability_snapshot() -> Array[Dictionary]:
 
 ## 默认 tag snapshot
 func get_tag_snapshot() -> Dictionary:
-	if ability_set == null:
-		return {}
 	return ability_set.get_all_tags()
 
 
 ## 默认录像回调 (子类可追加自定义订阅)
 func setup_recording(ctx: RecordingContext) -> Array[Callable]:
 	var unsubscribes: Array[Callable] = []
-	var attrs := get_attribute_set()
-	if attrs != null:
-		unsubscribes.append_array(RecordingUtils.record_attribute_changes(attrs, ctx))
-	if ability_set != null:
-		unsubscribes.append_array(RecordingUtils.record_ability_set_changes(ability_set, ctx))
+	unsubscribes.append_array(RecordingUtils.record_attribute_changes(get_attribute_set(), ctx))
+	unsubscribes.append_array(RecordingUtils.record_ability_set_changes(ability_set, ctx))
 	unsubscribes.append_array(RecordingUtils.record_actor_lifecycle(self, ctx))
 	return unsubscribes
+
+
+# ========== 序列化 ==========
+
+## 公共序列化字段 (id / type / hex_position / attribute_set raw); 子类 super.serialize() 后追加专属字段。
+func serialize() -> Dictionary:
+	var base := serialize_base()
+	base["hex_position"] = hex_position.to_dict() if hex_position.is_valid() else {}
+	base["attribute_set"] = get_attribute_set()._raw.serialize()
+	return base

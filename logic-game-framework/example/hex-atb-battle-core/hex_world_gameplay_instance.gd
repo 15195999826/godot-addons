@@ -82,9 +82,7 @@ func get_ability_set_for_actor(actor_id: String) -> BattleAbilitySet:
 
 
 ## 获取所有存活角色的 ID 列表 (用于 EventProcessor.process_post_event)。
-##
-## 隔离边界: M1 阶段 EnvironmentActor 不响应 PostEvent 广播 (石墙没有反伤被动等)。
-## 未来若有"被打就燃烧"等环境 passive 需求, 拆出 get_alive_battle_actor_ids 给 PostEvent。
+## 隔离边界: 仅返回 character; environment 不响应 PostEvent 广播。
 func get_alive_actor_ids() -> Array[String]:
 	var result: Array[String] = []
 	for actor in get_actors():
@@ -100,16 +98,6 @@ func get_alive_actors() -> Array[CharacterActor]:
 	for actor in get_actors():
 		if actor is CharacterActor and not (actor as CharacterActor).is_dead():
 			result.append(actor as CharacterActor)
-	return result
-
-
-## 获取所有存活的 HexBattleActor (含 character + environment)。
-## 用于"格子占用统计"、"碰撞检测"等需要看到所有占格 actor 的场景。
-func get_alive_battle_actors() -> Array[HexBattleActor]:
-	var result: Array[HexBattleActor] = []
-	for actor in get_actors():
-		if actor is HexBattleActor and not (actor as HexBattleActor).is_dead():
-			result.append(actor as HexBattleActor)
 	return result
 
 
