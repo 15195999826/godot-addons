@@ -18,28 +18,28 @@ func _init() -> void:
 
 func _test_parent_attrs_on_character() -> void:
 	var attrs := HexBattleCharacterAttributeSet.new("test")
-	TestFramework.assert_near(100.0, attrs.hp, "Character.hp inherits parent default")
-	TestFramework.assert_near(100.0, attrs.max_hp, "Character.max_hp inherits parent default")
+	TestFramework.assert_near(attrs.hp, 100.0, 0.0001, "Character.hp inherits parent default")
+	TestFramework.assert_near(attrs.max_hp, 100.0, 0.0001, "Character.max_hp inherits parent default")
 
 
 func _test_parent_attrs_on_environment() -> void:
 	var attrs := HexBattleEnvironmentAttributeSet.new("test")
-	TestFramework.assert_near(100.0, attrs.hp, "Environment.hp inherits parent default")
-	TestFramework.assert_near(100.0, attrs.max_hp, "Environment.max_hp inherits parent default")
+	TestFramework.assert_near(attrs.hp, 100.0, 0.0001, "Environment.hp inherits parent default")
+	TestFramework.assert_near(attrs.max_hp, 100.0, 0.0001, "Environment.max_hp inherits parent default")
 
 
 func _test_clamp_on_character() -> void:
 	var attrs := HexBattleCharacterAttributeSet.new("test")
 	attrs.set_max_hp_base(50.0)
 	attrs.set_hp_base(999.0)
-	TestFramework.assert_near(50.0, attrs.hp, "hp clamped by max_hp on Character (parent clamp inherited)")
+	TestFramework.assert_near(attrs.hp, 50.0, 0.0001, "hp clamped by max_hp on Character (parent clamp inherited)")
 
 
 func _test_clamp_on_environment() -> void:
 	var attrs := HexBattleEnvironmentAttributeSet.new("test")
 	attrs.set_max_hp_base(50.0)
 	attrs.set_hp_base(999.0)
-	TestFramework.assert_near(50.0, attrs.hp, "hp clamped by max_hp on Environment (parent clamp inherited)")
+	TestFramework.assert_near(attrs.hp, 50.0, 0.0001, "hp clamped by max_hp on Environment (parent clamp inherited)")
 
 
 func _test_env_lacks_character_attrs() -> void:
@@ -61,4 +61,4 @@ func _test_undefined_modifier_warning() -> void:
 	)
 	attrs._raw.add_modifier(modifier)  # 期望 warning + return, 不 crash
 	# 通过断言"hp/max_hp 仍是默认值"验证整体没崩
-	TestFramework.assert_near(100.0, attrs.hp, "Environment instance still functional after invalid modifier")
+	TestFramework.assert_near(attrs.hp, 100.0, 0.0001, "Environment instance still functional after invalid modifier")
