@@ -7,10 +7,14 @@
 ##
 ## 关注点划分 (重要):
 ##
-## 1. UI 仅防 "**同一 ability instance** 的 timeline 重叠": 同 actor 同 skill 两条
-##    keyframe 间隔 < timeline 等于让同一 instance 的 timeline 没演完就被重启,
-##    在 LGF Ability 模型里是有意义的非法配置 (procedure 复用 instance, 不会真
-##    并发跑两份 timeline)。这是 UI 唯一拦的约束。
+## 1. UI 仅防 "**同一 ability instance** 的 timeline 重叠": 同 actor 同 skill
+##    两条 keyframe 间隔 < timeline 在 SkillPreview 视为非法 —— 这是产品约束,
+##    不是 LGF core 契约。LGF Ability.activate_new_execution_instance 实际会
+##    append 新 _execution_instances, ActiveUseComponent 也没有 existing-execution
+##    guard, 框架技术上允许同一 ability 多 execution 并发 (DOT/HOT loop 就是这么
+##    用的)。但 SkillPreviewProcedure._fire_due_keyframes 选择复用同 config_id
+##    instance (commit 831ae32 去重 grant), 在这个 procedure 实现下"同 skill
+##    timeline 演完前重启"语义错乱, 故 UI 拦。换 procedure 实现这条约束就可改。
 ##
 ## 2. UI **不**拦 "同 actor 不同 skill 同时段并发": LGF Ability._execution_instances
 ##    本身就是 Array, 同 actor 同 ability 的多 instance / 不同 ability 的多 instance
@@ -46,8 +50,9 @@ static func ability_occupy_ms(cfg: AbilityConfig) -> int:
 ## 扫一条 track, 找到第一个 occupy 冲突, 返回错误描述; 无冲突返回 ""。
 ##
 ## "冲突" = track 里有两条 keyframe 满足:
-##   1. skill 相同 (procedure 复用同 config_id 的 ability instance, 同 instance
-##      timeline 演完前重启视为非法; 不同 skill 是不同 instance 各自 tick, 允许并发)
+##   1. skill 相同 — SkillPreview 产品约束: procedure 复用同 config_id instance,
+##      演完前重启在该 procedure 实现下语义错乱 (不是 LGF 框架禁止并发, 见类
+##      顶部注释); 不同 skill 是不同 instance, 允许并发
 ##   2. |t_a - t_b| < occupy(skill)
 ##
 ## skill_resolver: func(skill_id: String) -> AbilityConfig

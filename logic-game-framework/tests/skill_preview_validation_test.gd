@@ -111,20 +111,20 @@ func _test_violation_diff_skills() -> void:
 	var track: Array = [
 		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
 		{"time_ms": 100, "skill": HexBattleSwiftStrike.CONFIG_ID},
-		{"time_ms": 200, "skill": HexBattleStrike.CONFIG_ID},  # 跟 t=0 Strike 冲突 (200 < 2000)
+		{"time_ms": 200, "skill": HexBattleStrike.CONFIG_ID},  # 跟 t=0 Strike 冲突 (200 < occupy 500)
 	]
 	# 这条 track 里 (0, 200) 同 skill 冲突, 不同 skill (0, 100) 不冲突。报第一个错误。
 	var err := SkillPreviewValidation.find_track_occupy_violation(track, "caster", resolver)
 	TestFramework.assert_true(err != "")
 	TestFramework.assert_true("200ms" in err)
-	# 纯不同 skill, 任意时间间隔都不冲突 (cooldown:<config_id> namespace 隔离)
+	# 纯不同 skill, 任意时间间隔都不冲突 (不同 ability instance 各自 tick)
 	var track_pure_diff: Array = [
 		{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID},
 		{"time_ms": 100, "skill": HexBattleSwiftStrike.CONFIG_ID},
 	]
 	TestFramework.assert_equal("",
 		SkillPreviewValidation.find_track_occupy_violation(track_pure_diff, "caster", resolver))
-	# 同 skill 第二组: SwiftStrike 之间 100 vs 200 = 100 < occupy 3000, 期望报错
+	# 同 skill 第二组: SwiftStrike 之间 100 vs 200 = 100 < occupy 400 (timeline), 期望报错
 	var track_swift_overlap: Array = [
 		{"time_ms": 100, "skill": HexBattleSwiftStrike.CONFIG_ID},
 		{"time_ms": 200, "skill": HexBattleSwiftStrike.CONFIG_ID},
