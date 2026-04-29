@@ -56,7 +56,7 @@ const INSPECTOR_MARGIN := 12.0
 const SKILL_PREVIEW_WINDOW_SIZE := Vector2i(1920, 1080)
 const SKILL_PREVIEW_MIN_WINDOW_SIZE := Vector2i(1600, 900)
 const SKILL_PREVIEW_WINDOW_MARGIN := Vector2i(80, 120)
-const CONTROL_DOCK_WIDTH := 340.0
+const CONTROL_DOCK_WIDTH := 420.0
 const CONTROL_DOCK_HEIGHT := 156.0
 const CHARACTER_PANEL_WIDTH := 420.0
 const DETAILS_POPUP_WIDTH := 380.0
@@ -100,12 +100,12 @@ const SPT_MS_TO_PX := 0.32
 const SPT_SELECTED_BORDER := Color("0F172A")
 const SPT_WARNING_COOLDOWN := Color("DC2626")
 const SPT_WARNING_OVERLAP := Color("D97706")
-const SPT_GHOST_COLOR := Color(0.07, 0.09, 0.15, 0.58)
-const SPT_EDITOR_BG := Color("111827")
-const SPT_EDITOR_PANEL := Color("1F2937")
-const SPT_EDITOR_ROW := Color("17202C")
-const SPT_EDITOR_GRID := Color(1.0, 1.0, 1.0, 0.08)
-const SPT_EDITOR_GRID_MAJOR := Color(1.0, 1.0, 1.0, 0.18)
+const SPT_GHOST_COLOR := Color(0.04, 0.06, 0.08, 0.62)
+const SPT_EDITOR_BG := Color("0B1117")
+const SPT_EDITOR_PANEL := Color("141F2A")
+const SPT_EDITOR_ROW := Color("101820")
+const SPT_EDITOR_GRID := Color(0.68, 0.78, 0.84, 0.08)
+const SPT_EDITOR_GRID_MAJOR := Color(0.78, 0.88, 0.92, 0.18)
 const SPT_EDITOR_TEXT := Color("E5E7EB")
 const SPT_EDITOR_TEXT_SOFT := Color("94A3B8")
 const SPT_CURSOR_COLOR := Color("FACC15")
@@ -149,7 +149,8 @@ const HEX_DRAG_HOLD_SECONDS := 0.16
 
 @onready var _character_panel: PanelContainer = %CharacterPanel
 @onready var _character_panel_mode_label: Label = %CharacterPanelModeLabel
-@onready var _character_panel_body: VBoxContainer = %CharacterPanelBody
+@onready var _character_roster_body: VBoxContainer = %CharacterRosterBody
+@onready var _character_inspector_body: VBoxContainer = %CharacterInspectorBody
 
 @onready var _hex_popup: PopupMenu = %HexPopupMenu
 
@@ -426,9 +427,9 @@ func _setup_camera_and_env() -> void:
 	world_env.name = "WorldEnvironment"
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.2, 0.2, 0.3)
+	env.background_color = Color("15191D")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.4, 0.4, 0.5)
+	env.ambient_light_color = Color("4B5563")
 	env.ambient_light_energy = 0.5
 	world_env.environment = env
 	add_child(world_env)
@@ -1443,16 +1444,18 @@ func _refresh_details_popup() -> void:
 
 
 func _refresh_character_panel() -> void:
-	if _character_panel == null or _character_panel_body == null:
+	if _character_panel == null or _character_roster_body == null or _character_inspector_body == null:
 		return
-	for child in _character_panel_body.get_children():
+	for child in _character_roster_body.get_children():
+		child.queue_free()
+	for child in _character_inspector_body.get_children():
 		child.queue_free()
 	_clear_selection_if_invalid()
 	if _character_panel_mode_label != null:
 		_character_panel_mode_label.text = _character_panel_mode_text()
 
-	_character_panel_body.add_child(_build_character_roster_section())
-	_character_panel_body.add_child(_build_character_selection_inspector())
+	_character_roster_body.add_child(_build_character_roster_section())
+	_character_inspector_body.add_child(_build_character_selection_inspector())
 
 	var editable := not _playback_mode and not _is_playing
 	_character_panel.modulate = Color(1.0, 1.0, 1.0, 1.0 if editable else 0.78)
@@ -1470,14 +1473,16 @@ func _character_panel_mode_text() -> String:
 func _build_character_roster_section() -> PanelContainer:
 	var panel := _make_character_panel_card(Color("FFFFFF"), Color("273449"))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 4)
+	box.add_theme_constant_override("separation", 8)
 	panel.add_child(box)
-	var title := Label.new()
-	title.text = "Roster"
-	title.add_theme_font_override("font", _clay_font_bold())
-	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
-	title.add_theme_font_size_override("font_size", 12)
-	box.add_child(title)
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	box.add_child(header)
+	header.add_child(_make_character_section_title("Roster"))
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(spacer)
+	header.add_child(_make_character_chip("%d actors" % _actors.size(), Color("111A23"), Color("2C3948")))
 	if _actors.is_empty():
 		box.add_child(_make_character_hint_label("No actors"))
 	else:
@@ -1503,14 +1508,9 @@ func _build_character_selection_inspector() -> PanelContainer:
 func _build_character_empty_selection_panel() -> PanelContainer:
 	var panel := _make_character_panel_card(Color("F8FAFC"), Color("273449"))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 5)
+	box.add_theme_constant_override("separation", 8)
 	panel.add_child(box)
-	var title := Label.new()
-	title.text = "Inspector"
-	title.add_theme_font_override("font", _clay_font_bold())
-	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
-	title.add_theme_font_size_override("font_size", 12)
-	box.add_child(title)
+	box.add_child(_make_character_section_title("Inspector"))
 	box.add_child(_make_character_hint_label("Select an actor or keyframe"))
 	return panel
 
@@ -1518,14 +1518,9 @@ func _build_character_empty_selection_panel() -> PanelContainer:
 func _build_character_selected_keyframe_panel() -> PanelContainer:
 	var panel := _make_character_panel_card(Color("F8FAFC"), Color("F59E0B"))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
+	box.add_theme_constant_override("separation", 9)
 	panel.add_child(box)
-	var title := Label.new()
-	title.text = "Inspector · Keyframe"
-	title.add_theme_font_override("font", _clay_font_bold())
-	title.add_theme_color_override("font_color", Color("FDBA74"))
-	title.add_theme_font_size_override("font_size", 12)
-	box.add_child(title)
+	box.add_child(_make_character_section_title("Inspector · Keyframe", Color("FDBA74")))
 	var details := _build_keyframe_detail_panel()
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_child(details)
@@ -1535,13 +1530,9 @@ func _build_character_selected_keyframe_panel() -> PanelContainer:
 func _build_character_selected_actor_panel(idx: int) -> PanelContainer:
 	var panel := _make_character_panel_card(Color("F8FAFC"), _actor_track_color(idx, 1.0))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
+	box.add_theme_constant_override("separation", 9)
 	panel.add_child(box)
-	var title := Label.new()
-	title.text = "Inspector · %s" % _actor_timeline_label(idx)
-	title.add_theme_font_override("font", _clay_font_bold())
-	title.add_theme_color_override("font_color", CLAY_TEXT)
-	title.add_theme_font_size_override("font_size", 12)
+	var title := _make_character_section_title("Inspector · %s" % _actor_timeline_label(idx), CLAY_TEXT)
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	box.add_child(title)
 	box.add_child(_build_character_hp_row(idx))
@@ -1555,12 +1546,9 @@ func _build_character_selected_actor_panel(idx: int) -> PanelContainer:
 func _build_character_hex_context_panel() -> PanelContainer:
 	var panel := _make_character_panel_card(Color("FFFFFF"), Color("273449"))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
+	box.add_theme_constant_override("separation", 8)
 	panel.add_child(box)
-	var title := Label.new()
-	title.text = "Empty Hex"
-	title.add_theme_font_override("font", _clay_font_bold())
-	box.add_child(title)
+	box.add_child(_make_character_section_title("Empty Hex", CLAY_TEXT))
 	if _selected_hex != null:
 		box.add_child(_make_detail_label("Coord", "(%d, %d)" % [_selected_hex.q, _selected_hex.r]))
 		box.add_child(_make_character_hint_label("Right-click the hex to add an actor or wall."))
@@ -1570,20 +1558,18 @@ func _build_character_hex_context_panel() -> PanelContainer:
 func _build_character_environment_context_panel() -> PanelContainer:
 	var panel := _make_character_panel_card(Color("FFFFFF"), Color("273449"))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
+	box.add_theme_constant_override("separation", 8)
 	panel.add_child(box)
 	if _selected_environment_idx < 0 or _selected_environment_idx >= _environments.size():
 		box.add_child(_make_character_hint_label("No environment selected"))
 		return panel
 	var data: Dictionary = _environments[_selected_environment_idx]
-	var title := Label.new()
-	title.text = "Wall"
-	title.add_theme_font_override("font", _clay_font_bold())
-	box.add_child(title)
+	box.add_child(_make_character_section_title("Wall", CLAY_TEXT))
 	var pos: Array = data.get("pos", [0, 0])
 	box.add_child(_make_detail_label("Coord", "(%d, %d)" % [int(pos[0]), int(pos[1])]))
 	var remove_btn := Button.new()
 	remove_btn.text = "Remove Wall"
+	_style_danger_button(remove_btn)
 	remove_btn.pressed.connect(func() -> void:
 		if _selected_environment_idx >= 0 and _selected_environment_idx < _environments.size():
 			_remove_environment_at(_selected_environment_idx)
@@ -1597,13 +1583,13 @@ func _build_character_actor_card(idx: int) -> PanelContainer:
 	var border := _actor_track_color(idx, 1.0) if highlighted else Color("334155")
 	var bg := Color("F8FAFC") if highlighted else Color("FFFFFF")
 	var panel := _make_character_panel_card(bg, border)
-	panel.custom_minimum_size = Vector2(0, 58)
+	panel.custom_minimum_size = Vector2(0, 64)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 3)
+	box.add_theme_constant_override("separation", 5)
 	panel.add_child(box)
 
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 5)
+	header.add_theme_constant_override("separation", 6)
 	box.add_child(header)
 
 	var select_btn := Button.new()
@@ -1614,10 +1600,11 @@ func _build_character_actor_card(idx: int) -> PanelContainer:
 	select_btn.tooltip_text = "Select actor"
 	select_btn.set_meta("always_enabled", true)
 	select_btn.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
-	select_btn.add_theme_stylebox_override("hover", _clay_sb(Color("1E293B"), 3, 2, 1, 0, 0))
-	select_btn.add_theme_stylebox_override("pressed", _clay_sb(Color("172554"), 3, 2, 1, 0, 0))
+	select_btn.add_theme_stylebox_override("hover", _clay_sb(Color("18242F"), 3, 2, 1, 0, 0))
+	select_btn.add_theme_stylebox_override("pressed", _clay_sb(Color("12313A"), 3, 2, 1, 0, 0))
 	select_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	select_btn.add_theme_font_size_override("font_size", 13)
+	select_btn.add_theme_font_override("font", _clay_font_bold())
 	select_btn.add_theme_color_override("font_color", CLAY_TEXT)
 	select_btn.add_theme_color_override("font_hover_color", Color("FFFFFF"))
 	select_btn.add_theme_color_override("font_pressed_color", Color("FFFFFF"))
@@ -1655,6 +1642,7 @@ func _build_character_hp_compact_row(idx: int) -> HBoxContainer:
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(0, 6)
 	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_hp_bar(bar)
 	row.add_child(bar)
 	var value := Label.new()
 	value.text = "%d/%d" % [int(stats.get("hp", 0.0)), int(stats.get("max_hp", 0.0))]
@@ -1682,6 +1670,7 @@ func _build_character_hp_row(idx: int) -> HBoxContainer:
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(0, 10)
 	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_hp_bar(bar)
 	row.add_child(bar)
 	var value := Label.new()
 	value.text = "%d / %d" % [int(stats.get("hp", 0.0)), int(stats.get("max_hp", 0.0))]
@@ -1706,6 +1695,7 @@ func _build_character_actor_editor(idx: int) -> VBoxContainer:
 	if str(data.get("role", "")) != "caster":
 		var remove_btn := Button.new()
 		remove_btn.text = "Remove Actor"
+		_style_danger_button(remove_btn)
 		remove_btn.pressed.connect(func() -> void:
 			if idx > 0 and idx < _actors.size():
 				_remove_actor_at(idx)
@@ -1755,25 +1745,26 @@ func _make_character_panel_card(bg: Color, border: Color) -> PanelContainer:
 
 
 func _character_panel_card_sb(bg: Color, border: Color) -> StyleBoxFlat:
-	var sb := _clay_sb(_character_card_bg(bg, border), 0, 8, 7, 0, 0)
+	var sb := _clay_sb(_character_card_bg(bg, border), 6, 10, 8, 0, 0)
 	sb.border_color = _character_card_border_color(border)
 	if border == Color("273449"):
-		sb.content_margin_left = 0
-		sb.content_margin_right = 0
-		sb.content_margin_top = 7
-		sb.content_margin_bottom = 5
+		sb.content_margin_left = 2
+		sb.content_margin_right = 2
+		sb.content_margin_top = 9
+		sb.content_margin_bottom = 9
 		sb.border_width_top = 1
 	elif border == Color("334155"):
-		sb.content_margin_left = 8
-		sb.content_margin_right = 6
-		sb.content_margin_top = 5
-		sb.content_margin_bottom = 7
-		sb.border_width_bottom = 1
-	else:
-		sb.content_margin_left = 9
-		sb.content_margin_right = 7
+		sb.content_margin_left = 10
+		sb.content_margin_right = 8
 		sb.content_margin_top = 7
 		sb.content_margin_bottom = 8
+		sb.border_width_left = 2
+		sb.border_width_top = 1
+	else:
+		sb.content_margin_left = 10
+		sb.content_margin_right = 8
+		sb.content_margin_top = 8
+		sb.content_margin_bottom = 9
 		sb.border_width_left = 3
 		sb.border_width_top = 1
 		sb.border_width_bottom = 1
@@ -1784,29 +1775,40 @@ func _character_card_bg(bg: Color, border: Color) -> Color:
 	if border == Color("273449"):
 		return Color(0.0, 0.0, 0.0, 0.0)
 	if border == Color("334155"):
-		return Color(0.0, 0.0, 0.0, 0.0)
+		return CLAY_SURFACE_LOW
 	if border == Color("F59E0B"):
-		return Color("1C1917")
+		return Color("1D1710")
 	if border == Color("DC2626") or border == Color("B23B3B"):
-		return Color("1E1418")
+		return Color("1D1215")
 	if border == Color("22C55E"):
-		return Color("0F1D17")
+		return Color("0D1A13")
 	if bg == Color("F8FAFC"):
 		return Color(
-			0.06 + border.r * 0.07,
-			0.08 + border.g * 0.07,
-			0.11 + border.b * 0.07,
+			0.055 + border.r * 0.065,
+			0.075 + border.g * 0.065,
+			0.09 + border.b * 0.065,
 			1.0
 		)
-	return Color("111827")
+	return CLAY_SURFACE_LOW
 
 
 func _character_card_border_color(border: Color) -> Color:
 	if border == Color("273449"):
-		return Color("273449")
+		return CLAY_BORDER_SOFT
 	if border == Color("334155"):
 		return Color("334155")
 	return border
+
+
+func _make_character_section_title(text: String, color: Color = CLAY_TEXT_SOFT) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_override("font", _clay_font_bold())
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", color)
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return label
 
 
 func _make_character_chip(text: String, bg: Color, border: Color) -> Label:
@@ -1815,7 +1817,7 @@ func _make_character_chip(text: String, bg: Color, border: Color) -> Label:
 	label.add_theme_font_override("font", _clay_font_bold())
 	label.add_theme_font_size_override("font_size", 10)
 	label.add_theme_color_override("font_color", Color("E5E7EB"))
-	label.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 4, 5, 2))
+	label.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 4, 6, 2))
 	return label
 
 
@@ -1826,6 +1828,29 @@ func _make_character_hint_label(text: String) -> Label:
 	label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
 	label.add_theme_font_size_override("font_size", 12)
 	return label
+
+
+func _style_hp_bar(bar: ProgressBar) -> void:
+	var max_hp := maxf(1.0, float(bar.max_value))
+	var ratio := clampf(float(bar.value) / max_hp, 0.0, 1.0)
+	var fill := CLAY_SUCCESS
+	if ratio <= 0.3:
+		fill = CLAY_DANGER
+	elif ratio <= 0.6:
+		fill = CLAY_WARNING
+	bar.add_theme_stylebox_override("background", _clay_sb(Color("070B10"), 3, 0, 0, 0, 0))
+	bar.add_theme_stylebox_override("fill", _clay_sb(fill, 3, 0, 0, 0, 0))
+
+
+func _style_danger_button(btn: Button) -> void:
+	btn.add_theme_stylebox_override("normal", _outlined_sb(Color("241216"), Color("7F1D1D"), 5, 10, 6))
+	btn.add_theme_stylebox_override("hover", _outlined_sb(Color("33161B"), CLAY_DANGER, 5, 10, 6))
+	btn.add_theme_stylebox_override("pressed", _outlined_sb(Color("450A0A"), Color("FCA5A5"), 5, 10, 6))
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.add_theme_font_override("font", _clay_font_bold())
+	btn.add_theme_color_override("font_color", Color("FECACA"))
+	btn.add_theme_color_override("font_hover_color", Color("FEE2E2"))
+	btn.add_theme_color_override("font_pressed_color", Color("FFFFFF"))
 
 
 func _is_character_actor_selected(idx: int) -> bool:
@@ -2154,14 +2179,18 @@ func _make_detail_label(label_text: String, value_text: String) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var label := Label.new()
-	label.text = label_text
+	label.text = label_text.to_upper()
 	label.custom_minimum_size = Vector2(88, 0)
+	label.add_theme_font_override("font", _clay_font_bold())
+	label.add_theme_font_size_override("font_size", 11)
 	label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
 	row.add_child(label)
 	var value := Label.new()
 	value.text = value_text
 	value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	value.add_theme_font_size_override("font_size", 13)
+	value.add_theme_color_override("font_color", CLAY_TEXT)
 	row.add_child(value)
 	return row
 
@@ -2213,6 +2242,7 @@ func _build_keyframe_detail_panel() -> Control:
 			box.add_child(ready_btn)
 	var delete_btn := Button.new()
 	delete_btn.text = "Delete Keyframe"
+	_style_danger_button(delete_btn)
 	delete_btn.pressed.connect(func() -> void: _remove_keyframe(actor_idx, kf_idx))
 	box.add_child(delete_btn)
 	return box
@@ -2319,9 +2349,9 @@ func _build_timeline_actor_label(actor_idx: int) -> Button:
 	actor_label.custom_minimum_size = Vector2(SPT_ACTOR_LABEL_W, SPT_ROW_H)
 	actor_label.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	actor_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	actor_label.add_theme_stylebox_override("normal", _outlined_sb(SPT_EDITOR_PANEL, _actor_track_color(actor_idx, 0.85), 0, 10, 6))
-	actor_label.add_theme_stylebox_override("hover", _outlined_sb(Color("2A3A50"), _actor_track_color(actor_idx, 1.0), 0, 10, 6))
-	actor_label.add_theme_stylebox_override("pressed", _outlined_sb(Color("1E3A5F"), Color("93C5FD"), 0, 10, 6))
+	actor_label.add_theme_stylebox_override("normal", _outlined_sb(SPT_EDITOR_PANEL, _actor_track_color(actor_idx, 0.85), 5, 10, 6))
+	actor_label.add_theme_stylebox_override("hover", _outlined_sb(Color("1A2835"), _actor_track_color(actor_idx, 1.0), 5, 10, 6))
+	actor_label.add_theme_stylebox_override("pressed", _outlined_sb(Color("12313A"), Color("7DD3FC"), 5, 10, 6))
 	actor_label.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	actor_label.add_theme_color_override("font_color", SPT_EDITOR_TEXT)
 	actor_label.add_theme_color_override("font_hover_color", Color("FFFFFF"))
@@ -2333,7 +2363,7 @@ func _build_timeline_actor_label(actor_idx: int) -> Button:
 			_inspector_tabs.current_tab = 0
 	)
 	if _is_character_actor_selected(actor_idx):
-		actor_label.add_theme_stylebox_override("normal", _outlined_sb(Color("1E3A5F"), _actor_track_color(actor_idx, 1.0), 0, 10, 6))
+		actor_label.add_theme_stylebox_override("normal", _outlined_sb(Color("12313A"), _actor_track_color(actor_idx, 1.0), 5, 10, 6))
 	return actor_label
 
 
@@ -2474,11 +2504,11 @@ func _build_keyframe_button(actor_idx: int, kf_idx: int) -> Button:
 	var border: Color
 	var data: Dictionary = _actors[actor_idx]
 	if data["role"] == "caster":
-		bg = Color("166534"); border = Color("86EFAC")
+		bg = Color("14532D"); border = Color("86EFAC")
 	elif data["team"] == "A":
-		bg = Color("1D4ED8"); border = Color("93C5FD")
+		bg = Color("164E63"); border = Color("7DD3FC")
 	else:
-		bg = Color("991B1B"); border = Color("FCA5A5")
+		bg = Color("7F1D1D"); border = Color("FCA5A5")
 	var warning := _keyframe_timing_warning(actor_idx, kf_idx)
 	if not warning.is_empty():
 		var warning_type := str(warning.get("type", ""))
@@ -3181,6 +3211,7 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 		var rm := Button.new()
 		rm.text = "Remove Actor"
 		rm.tooltip_text = "Remove actor"
+		_style_danger_button(rm)
 		rm.pressed.connect(func() -> void: _remove_actor_at(idx))
 		box.add_child(rm)
 	return panel
@@ -3565,9 +3596,12 @@ func _build_actor_detail_field(label_text: String, editor: Control) -> HBoxConta
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var label := Label.new()
-	label.text = label_text
+	label.text = label_text.to_upper()
 	label.custom_minimum_size = Vector2(72, 0)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_override("font", _clay_font_bold())
+	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
 	row.add_child(label)
 	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(editor)
@@ -5010,11 +5044,21 @@ func _log(line: String) -> void:
 # Control Panel Theme
 # ============================================================================
 
-const CLAY_BG := Color("0B1220")
-const CLAY_SURFACE := Color("111827")
+const CLAY_BG := Color("090D12")
+const CLAY_SURFACE := Color("101820")
+const CLAY_SURFACE_LOW := Color("0B1117")
+const CLAY_SURFACE_RAISED := Color("141F2A")
+const CLAY_FIELD := Color("0C131A")
+const CLAY_BORDER := Color("263240")
+const CLAY_BORDER_SOFT := Color("1A2430")
+const CLAY_ACCENT := Color("38BDF8")
 const CLAY_TEXT := Color("E5E7EB")
 const CLAY_TEXT_SOFT := Color("94A3B8")
-const CLAY_SHADOW := Color(0, 0, 0, 0.22)
+const CLAY_TEXT_MUTED := Color("64748B")
+const CLAY_SHADOW := Color(0, 0, 0, 0.34)
+const CLAY_DANGER := Color("EF4444")
+const CLAY_WARNING := Color("F59E0B")
+const CLAY_SUCCESS := Color("22C55E")
 
 ## 每个 section 保留轻量色标，避免整面板变成同一种颜色。
 const SECTION_COLORS := {
@@ -5093,8 +5137,8 @@ func _build_clay_theme() -> Theme:
 	t.default_font_size = 14
 
 	# PanelContainer (LeftPanel, BottomPanel)
-	var panel_sb := _clay_sb(CLAY_SURFACE, 8, 12, 12, 2, 8)
-	panel_sb.border_color = Color("273449")
+	var panel_sb := _clay_sb(CLAY_SURFACE, 8, 12, 12, 2, 10)
+	panel_sb.border_color = CLAY_BORDER
 	panel_sb.border_width_left = 1
 	panel_sb.border_width_right = 1
 	panel_sb.border_width_top = 1
@@ -5102,11 +5146,11 @@ func _build_clay_theme() -> Theme:
 	t.set_stylebox("panel", "PanelContainer", panel_sb)
 
 	# Button
-	var btn_bg := Color("1F2937")
-	var btn_hover := Color("263447")
-	var btn_pressed := Color("334155")
+	var btn_bg := Color("18222D")
+	var btn_hover := Color("223040")
+	var btn_pressed := Color("28384A")
 	var btn_normal := _clay_sb(btn_bg, 6, 10, 6, 0, 0)
-	btn_normal.border_color = Color("334155")
+	btn_normal.border_color = CLAY_BORDER
 	btn_normal.border_width_left = 1
 	btn_normal.border_width_right = 1
 	btn_normal.border_width_top = 1
@@ -5121,37 +5165,37 @@ func _build_clay_theme() -> Theme:
 	t.set_stylebox("hover",    "Button", btn_hover_sb)
 	t.set_stylebox("pressed",  "Button",
 		_clay_sb(btn_pressed, 6, 10, 6, 0, 0))
-	t.set_stylebox("disabled", "Button", _clay_sb(Color("182132"), 6, 10, 6, 0, 0))
+	t.set_stylebox("disabled", "Button", _clay_sb(Color("151C25"), 6, 10, 6, 0, 0))
 	t.set_stylebox("focus",    "Button", StyleBoxEmpty.new())
 	t.set_color("font_color",          "Button", CLAY_TEXT)
 	t.set_color("font_hover_color",    "Button", Color("FFFFFF"))
 	t.set_color("font_pressed_color",  "Button", CLAY_TEXT)
-	t.set_color("font_disabled_color", "Button", CLAY_TEXT_SOFT)
+	t.set_color("font_disabled_color", "Button", CLAY_TEXT_MUTED)
 
 	# CheckBox
-	t.set_stylebox("normal",  "CheckBox", _outlined_sb(Color("172033"), Color("334155"), 6, 6, 3))
-	t.set_stylebox("hover",   "CheckBox", _outlined_sb(Color("1E293B"), Color("60A5FA"), 6, 6, 3))
-	t.set_stylebox("pressed", "CheckBox", _outlined_sb(Color("1E3A8A"), Color("93C5FD"), 6, 6, 3))
+	t.set_stylebox("normal",  "CheckBox", _outlined_sb(CLAY_FIELD, CLAY_BORDER, 5, 6, 3))
+	t.set_stylebox("hover",   "CheckBox", _outlined_sb(CLAY_SURFACE_RAISED, CLAY_ACCENT, 5, 6, 3))
+	t.set_stylebox("pressed", "CheckBox", _outlined_sb(Color("12313A"), CLAY_ACCENT, 5, 6, 3))
 	t.set_stylebox("focus",   "CheckBox", StyleBoxEmpty.new())
 	t.set_color("font_color", "CheckBox", CLAY_TEXT)
 	t.set_color("font_hover_color", "CheckBox", CLAY_TEXT)
 	t.set_color("font_pressed_color", "CheckBox", START_PRESSED)
 
 	# OptionButton
-	t.set_stylebox("normal",  "OptionButton", _outlined_sb(Color("172033"), Color("475569"), 6, 9, 5))
-	t.set_stylebox("hover",   "OptionButton", _outlined_sb(Color("1E293B"), Color("60A5FA"), 6, 9, 5))
-	t.set_stylebox("pressed", "OptionButton", _outlined_sb(Color("1E3A8A"), Color("93C5FD"), 6, 9, 5))
-	t.set_stylebox("disabled", "OptionButton", _outlined_sb(Color("182132"), Color("334155"), 6, 9, 5))
+	t.set_stylebox("normal",  "OptionButton", _outlined_sb(CLAY_FIELD, Color("3B4A5E"), 5, 9, 5))
+	t.set_stylebox("hover",   "OptionButton", _outlined_sb(CLAY_SURFACE_RAISED, CLAY_ACCENT, 5, 9, 5))
+	t.set_stylebox("pressed", "OptionButton", _outlined_sb(Color("12313A"), Color("7DD3FC"), 5, 9, 5))
+	t.set_stylebox("disabled", "OptionButton", _outlined_sb(Color("151C25"), CLAY_BORDER, 5, 9, 5))
 	t.set_stylebox("focus",   "OptionButton", StyleBoxEmpty.new())
 	t.set_color("font_color", "OptionButton", CLAY_TEXT)
 	t.set_color("font_hover_color", "OptionButton", Color("FFFFFF"))
 	t.set_color("font_pressed_color", "OptionButton", Color("FFFFFF"))
-	t.set_color("font_disabled_color", "OptionButton", CLAY_TEXT_SOFT)
+	t.set_color("font_disabled_color", "OptionButton", CLAY_TEXT_MUTED)
 
 	# SpinBox 内部 LineEdit
-	t.set_stylebox("normal",   "LineEdit", _outlined_sb(Color("172033"), Color("475569"), 6, 8, 5))
-	t.set_stylebox("focus",    "LineEdit", _outlined_sb(Color("172554"), Color("60A5FA"), 6, 8, 5))
-	t.set_stylebox("read_only","LineEdit", _outlined_sb(Color("182132"), Color("334155"), 6, 8, 5))
+	t.set_stylebox("normal",   "LineEdit", _outlined_sb(CLAY_FIELD, Color("3B4A5E"), 5, 8, 5))
+	t.set_stylebox("focus",    "LineEdit", _outlined_sb(Color("10242D"), CLAY_ACCENT, 5, 8, 5))
+	t.set_stylebox("read_only","LineEdit", _outlined_sb(Color("151C25"), CLAY_BORDER, 5, 8, 5))
 	t.set_color("font_color",  "LineEdit", CLAY_TEXT)
 	t.set_color("caret_color", "LineEdit", CLAY_TEXT)
 
@@ -5159,22 +5203,26 @@ func _build_clay_theme() -> Theme:
 	t.set_color("font_color", "Label", CLAY_TEXT)
 
 	# ItemList / ScrollContainer
-	t.set_stylebox("panel",      "ItemList",         _clay_sb(Color("0F172A"), 6, 8, 6, 0, 0))
+	t.set_stylebox("panel",      "ItemList",         _clay_sb(CLAY_FIELD, 5, 8, 6, 0, 0))
 	t.set_stylebox("focus",      "ItemList",         StyleBoxEmpty.new())
-	t.set_stylebox("selected",   "ItemList",         _clay_sb(Color("1E3A8A"), 6, 6, 3, 0, 0))
+	t.set_stylebox("selected",   "ItemList",         _clay_sb(Color("12313A"), 5, 6, 3, 0, 0))
 	t.set_color("font_color",              "ItemList", CLAY_TEXT)
 	t.set_color("font_selected_color",     "ItemList", CLAY_TEXT)
 
 	# PopupMenu (右键菜单)
-	t.set_stylebox("panel",         "PopupMenu", _clay_sb(CLAY_SURFACE, 8, 8, 6, 2, 8))
-	t.set_stylebox("hover",         "PopupMenu", _clay_sb(Color("1E293B"), 6, 10, 4, 0, 0))
+	t.set_stylebox("panel",         "PopupMenu", _clay_sb(CLAY_SURFACE, 7, 8, 6, 2, 10))
+	t.set_stylebox("hover",         "PopupMenu", _clay_sb(CLAY_SURFACE_RAISED, 5, 10, 4, 0, 0))
 	t.set_color("font_color",       "PopupMenu", CLAY_TEXT)
 	t.set_color("font_hover_color", "PopupMenu", CLAY_TEXT)
 	t.set_color("font_separator_color", "PopupMenu", CLAY_TEXT_SOFT)
 
+	# ProgressBar
+	t.set_stylebox("background", "ProgressBar", _clay_sb(Color("070B10"), 3, 0, 0, 0, 0))
+	t.set_stylebox("fill",       "ProgressBar", _clay_sb(CLAY_SUCCESS, 3, 0, 0, 0, 0))
+
 	# HSeparator (细分隔 — 我们主要不用,保留 fallback)
 	var sep_sb := StyleBoxLine.new()
-	sep_sb.color = Color("273449")
+	sep_sb.color = CLAY_BORDER_SOFT
 	sep_sb.thickness = 1
 	t.set_stylebox("separator", "HSeparator", sep_sb)
 
@@ -5225,9 +5273,9 @@ func _style_actor_add_buttons() -> void:
 
 
 func _style_subtle_button(btn: Button) -> void:
-	btn.add_theme_stylebox_override("normal", _outlined_sb(Color("1F2937"), Color("475569"), 6, 10, 6))
-	btn.add_theme_stylebox_override("hover", _outlined_sb(Color("1E293B"), Color("60A5FA"), 6, 10, 6))
-	btn.add_theme_stylebox_override("pressed", _outlined_sb(Color("1E3A8A"), Color("93C5FD"), 6, 10, 6))
+	btn.add_theme_stylebox_override("normal", _outlined_sb(Color("18222D"), Color("3B4A5E"), 5, 10, 6))
+	btn.add_theme_stylebox_override("hover", _outlined_sb(CLAY_SURFACE_RAISED, CLAY_ACCENT, 5, 10, 6))
+	btn.add_theme_stylebox_override("pressed", _outlined_sb(Color("12313A"), Color("7DD3FC"), 5, 10, 6))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_color_override("font_color", CLAY_TEXT)
 	btn.add_theme_color_override("font_hover_color", CLAY_TEXT)
@@ -5277,11 +5325,11 @@ func _style_start_button() -> void:
 func _style_reset_button() -> void:
 	var btn := _reset_button
 	btn.add_theme_stylebox_override("normal",
-		_outlined_sb(Color("1F2937"), Color("475569"), 6, 14, 9))
+		_outlined_sb(Color("18222D"), Color("3B4A5E"), 5, 14, 9))
 	btn.add_theme_stylebox_override("hover",
-		_outlined_sb(Color("263447"), Color("60A5FA"), 6, 14, 9))
+		_outlined_sb(CLAY_SURFACE_RAISED, CLAY_ACCENT, 5, 14, 9))
 	btn.add_theme_stylebox_override("pressed",
-		_outlined_sb(Color("334155"), Color("93C5FD"), 6, 14, 9))
+		_outlined_sb(Color("12313A"), Color("7DD3FC"), 5, 14, 9))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_font_override("font", _clay_font_bold())
 	btn.add_theme_font_size_override("font_size", 14)
@@ -5291,23 +5339,34 @@ func _style_reset_button() -> void:
 
 
 func _style_character_panel() -> void:
+	if _character_panel != null:
+		var panel_sb := _clay_sb(Color("0C1117"), 8, 12, 12, 2, 12)
+		panel_sb.border_color = CLAY_BORDER
+		panel_sb.border_width_left = 1
+		panel_sb.border_width_right = 1
+		panel_sb.border_width_top = 1
+		panel_sb.border_width_bottom = 1
+		_character_panel.add_theme_stylebox_override("panel", panel_sb)
 	var title := get_node_or_null("ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelHeader/CharacterPanelTitle") as Label
 	if title != null:
 		title.add_theme_font_override("font", _clay_font_bold())
 		title.add_theme_font_size_override("font_size", 16)
 		title.add_theme_color_override("font_color", CLAY_TEXT)
-	if _character_panel_body != null:
-		_character_panel_body.add_theme_constant_override("separation", 6)
+	if _character_roster_body != null:
+		_character_roster_body.add_theme_constant_override("separation", 8)
+	if _character_inspector_body != null:
+		_character_inspector_body.add_theme_constant_override("separation", 8)
 	if _character_panel_mode_label != null:
 		_character_panel_mode_label.add_theme_font_override("font", _clay_font_bold())
 		_character_panel_mode_label.add_theme_font_size_override("font_size", 11)
-		_character_panel_mode_label.add_theme_color_override("font_color", Color("60A5FA"))
-		_character_panel_mode_label.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+		_character_panel_mode_label.add_theme_color_override("font_color", Color("BAE6FD"))
+		_character_panel_mode_label.add_theme_stylebox_override("normal",
+			_outlined_sb(Color("082F3A"), Color("155E75"), 4, 7, 2))
 
 
 func _style_status_label() -> void:
-	var sb := _clay_sb(Color("0F172A"), 6, 9, 6, 0, 0)
-	sb.border_color = Color("273449")
+	var sb := _clay_sb(CLAY_FIELD, 5, 9, 6, 0, 0)
+	sb.border_color = CLAY_BORDER_SOFT
 	sb.border_width_left = 1
 	sb.border_width_right = 1
 	sb.border_width_top = 1
@@ -5342,9 +5401,9 @@ func _apply_passive_style(cb: CheckBox, selected: bool) -> void:
 		cb.add_theme_color_override("font_hover_pressed_color", PASSIVE_SELECTED_TEXT)
 	else:
 		cb.add_theme_stylebox_override("normal", _clay_sb(Color(0.0, 0.0, 0.0, 0.0), 0, 4, 2, 0, 0))
-		cb.add_theme_stylebox_override("hover", _clay_sb(Color("172033"), 3, 4, 2, 0, 0))
-		cb.add_theme_stylebox_override("pressed", _clay_sb(Color("1E293B"), 3, 4, 2, 0, 0))
-		cb.add_theme_stylebox_override("hover_pressed", _clay_sb(Color("172033"), 3, 4, 2, 0, 0))
+		cb.add_theme_stylebox_override("hover", _clay_sb(CLAY_SURFACE_RAISED, 3, 4, 2, 0, 0))
+		cb.add_theme_stylebox_override("pressed", _clay_sb(Color("12313A"), 3, 4, 2, 0, 0))
+		cb.add_theme_stylebox_override("hover_pressed", _clay_sb(CLAY_SURFACE_RAISED, 3, 4, 2, 0, 0))
 		cb.add_theme_color_override("font_color", CLAY_TEXT)
 		cb.add_theme_color_override("font_hover_color", Color("FFFFFF"))
 		cb.add_theme_color_override("font_pressed_color", Color("FFFFFF"))

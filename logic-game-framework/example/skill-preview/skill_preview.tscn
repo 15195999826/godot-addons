@@ -384,13 +384,30 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Setup"
 
-[node name="CharacterPanelScroll" type="ScrollContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox"]
+[node name="CharacterPanelSplit" type="VSplitContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+split_offset = 288
+
+[node name="CharacterRosterScroll" type="ScrollContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelSplit"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 220)
 horizontal_scroll_mode = 0
 
-[node name="CharacterPanelBody" type="VBoxContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelScroll"]
+[node name="CharacterRosterBody" type="VBoxContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelSplit/CharacterRosterScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="CharacterInspectorScroll" type="ScrollContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelSplit"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 260)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="CharacterInspectorBody" type="VBoxContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelSplit/CharacterInspectorScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
