@@ -52,12 +52,16 @@ const TARGET_MODE_NAMES: Array[String] = [
 
 const TICK_INTERVAL_MS := 100
 const INSPECTOR_MARGIN := 12.0
-const CONTROL_DOCK_WIDTH := 300.0
-const CONTROL_DOCK_HEIGHT := 136.0
+const SKILL_PREVIEW_WINDOW_SIZE := Vector2i(1920, 1080)
+const SKILL_PREVIEW_MIN_WINDOW_SIZE := Vector2i(1600, 900)
+const SKILL_PREVIEW_WINDOW_MARGIN := Vector2i(80, 120)
+const CONTROL_DOCK_WIDTH := 340.0
+const CONTROL_DOCK_HEIGHT := 156.0
+const CHARACTER_PANEL_WIDTH := 420.0
 const DETAILS_POPUP_WIDTH := 380.0
 const WORKSPACE_GAP := 12.0
 const DRAWER_COLLAPSED_HEIGHT := 44.0
-const DRAWER_EXPANDED_HEIGHT := 280.0
+const DRAWER_EXPANDED_HEIGHT := 420.0
 const CONTROL_DOCK_COLLAPSED_WIDTH := 0.0
 const WORKSPACE_MODE_SETUP := "setup"
 const WORKSPACE_MODE_TIMELINE := "timeline"
@@ -75,20 +79,31 @@ const KF_TIME_STEP_MS := 100
 
 # SkillPreviewTimeline (SPT) tab 视觉常量
 # 命名前缀 SPT 与 LGF core TimelineRegistry / Ability timeline 概念区分。
-const SPT_ACTOR_LABEL_W := 148
-const SPT_ROW_H := 64
-const SPT_KF_BTN_W := 22
-const SPT_KF_BTN_H := 24
-const SPT_RELEASE_SPAN_H := 14
+const SPT_ACTOR_LABEL_W := 220
+const SPT_ROW_H := 78
+const SPT_RULER_H := 34
+const SPT_RULER_LABEL_W := 58.0
+const SPT_RULER_LABEL_H := 16.0
+const SPT_KF_BTN_W := 92
+const SPT_KF_BTN_H := 30
+const SPT_RELEASE_SPAN_H := 18
 const SPT_COOLDOWN_BAR_H := 4
 const SPT_MIN_AUTO_MS := 5000
 const SPT_AUTO_BUFFER_MS := 1000
-const SPT_MIN_TRACK_W := 960.0
+const SPT_MIN_TRACK_W := 1500.0
 const SPT_MS_TO_PX := 0.32
 const SPT_SELECTED_BORDER := Color("0F172A")
 const SPT_WARNING_COOLDOWN := Color("DC2626")
 const SPT_WARNING_OVERLAP := Color("D97706")
 const SPT_GHOST_COLOR := Color(0.07, 0.09, 0.15, 0.58)
+const SPT_EDITOR_BG := Color("111827")
+const SPT_EDITOR_PANEL := Color("1F2937")
+const SPT_EDITOR_ROW := Color("17202C")
+const SPT_EDITOR_GRID := Color(1.0, 1.0, 1.0, 0.08)
+const SPT_EDITOR_GRID_MAJOR := Color(1.0, 1.0, 1.0, 0.18)
+const SPT_EDITOR_TEXT := Color("E5E7EB")
+const SPT_EDITOR_TEXT_SOFT := Color("94A3B8")
+const SPT_CURSOR_COLOR := Color("FACC15")
 
 
 # ========== Scene 节点 (unique names) ==========
@@ -124,6 +139,10 @@ const SPT_GHOST_COLOR := Color(0.07, 0.09, 0.15, 0.58)
 @onready var _console_toggle_button: Button = %ConsoleToggleButton
 @onready var _console_summary_label: Label = %ConsoleSummaryLabel
 @onready var _console_log: RichTextLabel = %ConsoleLog
+
+@onready var _character_panel: PanelContainer = %CharacterPanel
+@onready var _character_panel_mode_label: Label = %CharacterPanelModeLabel
+@onready var _character_panel_body: VBoxContainer = %CharacterPanelBody
 
 @onready var _hex_popup: PopupMenu = %HexPopupMenu
 
@@ -162,9 +181,14 @@ var _spt_drag_actor_idx: int = -1
 var _spt_drag_kf_idx: int = -1
 var _spt_drag_requested_ms: int = 0
 var _spt_drag_track_area: Control = null
+var _spt_cursor_actor_idx: int = -1
+var _spt_cursor_time_ms: int = 0
 
 var _timeline_tracks_container: VBoxContainer = null
 var _timeline_warning_list: VBoxContainer = null
+var _timeline_add_button: Button = null
+var _timeline_delete_button: Button = null
+var _timeline_status_label: Label = null
 var _drawer_tabs: TabContainer = null
 var _drawer_timeline_tab: VBoxContainer = null
 var _drawer_log_tab: VBoxContainer = null
@@ -211,6 +235,8 @@ var _map_change_timer: Timer = null
 # ========== 生命周期 ==========
 
 func _ready() -> void:
+	_apply_skill_preview_window_size()
+	call_deferred("_apply_skill_preview_window_size")
 	_apply_clay_theme()
 	_update_workspace_layout()
 	get_viewport().size_changed.connect(_update_workspace_layout)
@@ -235,6 +261,31 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_process_stage_camera_input(delta)
+
+
+func _apply_skill_preview_window_size() -> void:
+	if OS.has_feature("web") or DisplayServer.get_name() == "headless":
+		return
+	var window := get_window()
+	if window == null:
+		return
+	var screen_idx := DisplayServer.window_get_current_screen()
+	var screen_size := DisplayServer.screen_get_size(screen_idx)
+	var screen_pos := DisplayServer.screen_get_position(screen_idx)
+	var target_size := Vector2i(
+		mini(SKILL_PREVIEW_WINDOW_SIZE.x, maxi(900, screen_size.x - SKILL_PREVIEW_WINDOW_MARGIN.x)),
+		mini(SKILL_PREVIEW_WINDOW_SIZE.y, maxi(640, screen_size.y - SKILL_PREVIEW_WINDOW_MARGIN.y))
+	)
+	window.mode = Window.MODE_WINDOWED
+	window.min_size = Vector2i(
+		mini(SKILL_PREVIEW_MIN_WINDOW_SIZE.x, target_size.x),
+		mini(SKILL_PREVIEW_MIN_WINDOW_SIZE.y, target_size.y)
+	)
+	window.size = target_size
+	window.position = screen_pos + Vector2i(
+		int((screen_size.x - target_size.x) * 0.5),
+		int((screen_size.y - target_size.y) * 0.5)
+	)
 
 
 func _init_world_stack() -> void:
@@ -413,18 +464,59 @@ func _init_timeline_workspace_shell() -> void:
 
 
 func _build_drawer_timeline_tab() -> void:
+	_drawer_timeline_tab.add_theme_stylebox_override(
+		"panel",
+		_clay_sb(SPT_EDITOR_BG, 8, 8, 8, 0, 0)
+	)
 	var toolbar := HBoxContainer.new()
 	toolbar.name = "TimelineToolbar"
 	toolbar.add_theme_constant_override("separation", 8)
+	toolbar.add_theme_stylebox_override("panel", _clay_sb(SPT_EDITOR_PANEL, 6, 9, 7, 0, 0))
 	_drawer_timeline_tab.add_child(toolbar)
 
 	var title := Label.new()
 	title.text = "Timeline"
 	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", SPT_EDITOR_TEXT)
 	toolbar.add_child(title)
+
+	toolbar.add_child(_make_timeline_legend_chip(
+		"Release",
+		Color("14532D"),
+		Color("22C55E"),
+		"Skill execution window"
+	))
+	toolbar.add_child(_make_timeline_legend_chip(
+		"Cooldown",
+		Color("334155"),
+		Color("94A3B8"),
+		"Same skill cannot be reused before this ends"
+	))
+
+	var add_btn := _make_timeline_tool_button("Add", "Create a keyframe at the current timeline cursor")
+	add_btn.pressed.connect(_on_timeline_add_keyframe_pressed)
+	toolbar.add_child(add_btn)
+	_timeline_add_button = add_btn
+
+	var delete_btn := _make_timeline_tool_button("Del", "Delete selected keyframe")
+	delete_btn.pressed.connect(func() -> void:
+		if _selected_spt_actor_idx >= 0 and _selected_spt_kf_idx >= 0:
+			_remove_keyframe(_selected_spt_actor_idx, _selected_spt_kf_idx)
+	)
+	toolbar.add_child(delete_btn)
+	_timeline_delete_button = delete_btn
+
+	var divider := VSeparator.new()
+	toolbar.add_child(divider)
+
+	var step_label := Label.new()
+	step_label.text = "Step %dms" % KF_TIME_STEP_MS
+	step_label.add_theme_color_override("font_color", SPT_EDITOR_TEXT_SOFT)
+	toolbar.add_child(step_label)
 
 	var span_label := Label.new()
 	span_label.text = "Span"
+	span_label.add_theme_color_override("font_color", SPT_EDITOR_TEXT_SOFT)
 	toolbar.add_child(span_label)
 
 	var span_input := SpinBox.new()
@@ -440,7 +532,7 @@ func _build_drawer_timeline_tab() -> void:
 	var auto_label := Label.new()
 	auto_label.name = "TimelineAutoSpan"
 	auto_label.text = "auto = 1000 ms"
-	auto_label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	auto_label.add_theme_color_override("font_color", SPT_EDITOR_TEXT_SOFT)
 	toolbar.add_child(auto_label)
 	_spt_max_auto_label = auto_label
 
@@ -448,11 +540,12 @@ func _build_drawer_timeline_tab() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	toolbar.add_child(spacer)
 
-	var add_btn := Button.new()
-	add_btn.text = "+ Keyframe"
-	add_btn.tooltip_text = "Add keyframe to selected actor"
-	add_btn.pressed.connect(_on_timeline_add_keyframe_pressed)
-	toolbar.add_child(add_btn)
+	var status_label := Label.new()
+	status_label.text = "Status: Editing"
+	status_label.add_theme_color_override("font_color", Color("60A5FA"))
+	status_label.add_theme_font_override("font", _clay_font_bold())
+	toolbar.add_child(status_label)
+	_timeline_status_label = status_label
 
 	var timeline_scroll := ScrollContainer.new()
 	timeline_scroll.name = "TimelineScroll"
@@ -460,6 +553,7 @@ func _build_drawer_timeline_tab() -> void:
 	timeline_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	timeline_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	timeline_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	timeline_scroll.add_theme_stylebox_override("panel", _clay_sb(SPT_EDITOR_BG, 6, 0, 0, 0, 0))
 	_drawer_timeline_tab.add_child(timeline_scroll)
 
 	var timeline_content := VBoxContainer.new()
@@ -474,16 +568,18 @@ func _build_drawer_timeline_tab() -> void:
 	timeline_content.add_child(ruler_row)
 
 	var ruler_spacer := Control.new()
-	ruler_spacer.custom_minimum_size = Vector2(SPT_ACTOR_LABEL_W, 0)
+	ruler_spacer.custom_minimum_size = Vector2(SPT_ACTOR_LABEL_W, SPT_RULER_H)
 	ruler_row.add_child(ruler_spacer)
 
 	var ruler := Control.new()
 	ruler.name = "TimelineRuler"
-	ruler.custom_minimum_size = Vector2(_spt_track_width(), 18)
+	ruler.custom_minimum_size = Vector2(_spt_track_width(), SPT_RULER_H)
 	ruler.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ruler.draw.connect(func() -> void: _draw_spt_ruler_on(ruler))
+	ruler.resized.connect(func() -> void: _rebuild_spt_ruler_labels(ruler))
 	ruler_row.add_child(ruler)
 	_spt_ruler = ruler
+	call_deferred("_rebuild_spt_ruler_labels", ruler)
 
 	var tracks := VBoxContainer.new()
 	tracks.name = "TimelineTracksContainer"
@@ -491,6 +587,41 @@ func _build_drawer_timeline_tab() -> void:
 	tracks.add_theme_constant_override("separation", 4)
 	timeline_content.add_child(tracks)
 	_spt_tracks_container = tracks
+
+
+func _make_timeline_tool_button(text: String, tooltip: String) -> Button:
+	var btn := Button.new()
+	btn.text = text
+	btn.tooltip_text = tooltip
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.custom_minimum_size = Vector2(42, 30)
+	btn.add_theme_stylebox_override("normal", _outlined_sb(Color("243142"), Color("334155"), 5, 7, 4))
+	btn.add_theme_stylebox_override("hover", _outlined_sb(Color("2F4056"), Color("60A5FA"), 5, 7, 4))
+	btn.add_theme_stylebox_override("pressed", _outlined_sb(Color("1D4ED8"), Color("93C5FD"), 5, 7, 4))
+	btn.add_theme_stylebox_override("disabled", _outlined_sb(Color("1F2937"), Color("334155"), 5, 7, 4))
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.add_theme_color_override("font_color", SPT_EDITOR_TEXT)
+	btn.add_theme_color_override("font_hover_color", Color("FFFFFF"))
+	btn.add_theme_color_override("font_pressed_color", Color("FFFFFF"))
+	btn.add_theme_color_override("font_disabled_color", Color("64748B"))
+	return btn
+
+
+func _make_timeline_legend_chip(
+	text: String, fill: Color, border: Color, tooltip: String
+) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.tooltip_text = tooltip
+	panel.add_theme_stylebox_override("panel", _outlined_sb(fill, border, 5, 7, 3))
+	var label := Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_override("font", _clay_font_bold())
+	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_color_override("font_color", Color("E5E7EB"))
+	panel.add_child(label)
+	return panel
 
 
 func _build_drawer_scene_tab() -> void:
@@ -644,6 +775,7 @@ func _set_workspace_mode(mode: String) -> void:
 	if _inspector_tabs != null:
 		_inspector_tabs.current_tab = 0
 	_update_timeline_mode_buttons()
+	_refresh_character_panel()
 	_update_workspace_layout()
 	if mode == WORKSPACE_MODE_TIMELINE:
 		_rebuild_spt_ui()
@@ -655,10 +787,73 @@ func _on_inspector_tab_changed(tab_idx: int) -> void:
 
 
 func _update_timeline_mode_buttons() -> void:
-	pass
+	_clear_spt_cursor_if_invalid()
+	var editable := not _playback_mode and not _is_playing
+	var target_actor_idx := _timeline_add_target_actor_idx()
+	var target_time_ms := _timeline_add_target_time_ms(target_actor_idx)
+	if _timeline_add_button != null:
+		var can_add := editable and target_actor_idx >= 0 and target_actor_idx < _actors.size()
+		_timeline_add_button.disabled = not can_add
+		if can_add:
+			_timeline_add_button.text = "Add @ %dms" % target_time_ms
+			_timeline_add_button.tooltip_text = "Create keyframe on %s at %dms" % [
+				_role_id_for(target_actor_idx), target_time_ms,
+			]
+		else:
+			_timeline_add_button.text = "Add"
+			_timeline_add_button.tooltip_text = "Select an actor track before adding"
+	if _timeline_delete_button != null:
+		_timeline_delete_button.disabled = not editable \
+				or _selected_spt_actor_idx < 0 \
+				or _selected_spt_kf_idx < 0
+	if _timeline_status_label != null:
+		_timeline_status_label.text = _timeline_status_text()
+
+
+func _timeline_add_target_actor_idx() -> int:
+	if _spt_cursor_actor_idx >= 0 and _spt_cursor_actor_idx < _actors.size():
+		return _spt_cursor_actor_idx
+	if _selected_kind == SELECT_KEYFRAME \
+			and _selected_spt_actor_idx >= 0 \
+			and _selected_spt_actor_idx < _actors.size():
+		return _selected_spt_actor_idx
+	if _selected_kind == SELECT_ACTOR \
+			and _selected_actor_idx >= 0 \
+			and _selected_actor_idx < _actors.size():
+		return _selected_actor_idx
+	return -1
+
+
+func _timeline_add_target_time_ms(actor_idx: int) -> int:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return 0
+	if _spt_cursor_actor_idx == actor_idx:
+		return _spt_cursor_time_ms
+	return _next_keyframe_time_for(actor_idx)
+
+
+func _timeline_status_text() -> String:
+	if _is_playing or _playback_mode:
+		return "Playback"
+	if _selected_spt_actor_idx >= 0 \
+			and _selected_spt_actor_idx < _actors.size() \
+			and _selected_spt_kf_idx >= 0:
+		var track: Array = (_actors[_selected_spt_actor_idx] as Dictionary).get("track", []) as Array
+		if _selected_spt_kf_idx < track.size():
+			var kf: Dictionary = track[_selected_spt_kf_idx] as Dictionary
+			var skill_id := str(kf.get("skill", ""))
+			var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+			var skill_name := skill_cfg.display_name if skill_cfg != null else skill_id
+			return "Selected %s @ %dms" % [skill_name, int(kf.get("time_ms", 0))]
+	if _spt_cursor_actor_idx >= 0 and _spt_cursor_actor_idx < _actors.size():
+		return "Cursor %s @ %dms" % [_role_id_for(_spt_cursor_actor_idx), _spt_cursor_time_ms]
+	if _selected_spt_actor_idx >= 0 and _selected_spt_actor_idx < _actors.size():
+		return "Selected %s" % _role_id_for(_selected_spt_actor_idx)
+	return "Ready"
 
 
 func _refresh_runtime_layout() -> void:
+	_refresh_character_panel()
 	_update_workspace_layout()
 
 
@@ -680,11 +875,12 @@ func _update_workspace_layout() -> void:
 	_left_panel.offset_bottom = INSPECTOR_MARGIN + CONTROL_DOCK_HEIGHT
 
 	_console_panel.offset_left = INSPECTOR_MARGIN
-	_console_panel.offset_right = -INSPECTOR_MARGIN
+	_console_panel.offset_right = -(_right_reserved_width() + WORKSPACE_GAP + INSPECTOR_MARGIN)
 	_console_panel.offset_bottom = -INSPECTOR_MARGIN
 	_console_panel.offset_top = -(_drawer_height() + INSPECTOR_MARGIN)
 	_layout_drawer_toggle_button()
 	_layout_control_toggle_button()
+	_layout_character_panel()
 	_layout_details_popup()
 	# 不在 layout 切换时 reframe camera —— Start/Replay/Reset 都会过这条路径,
 	# 用户不希望相机被动归位。初始 frame 在 _setup_camera_and_env 做一次,
@@ -719,6 +915,23 @@ func _layout_control_toggle_button() -> void:
 	_control_toggle_button.offset_bottom = INSPECTOR_MARGIN + 86.0
 
 
+func _layout_character_panel() -> void:
+	if _character_panel == null:
+		return
+	_character_panel.anchor_left = 1.0
+	_character_panel.anchor_right = 1.0
+	_character_panel.anchor_top = 0.0
+	_character_panel.anchor_bottom = 1.0
+	var top_gap := INSPECTOR_MARGIN
+	if not _controls_collapsed:
+		top_gap += CONTROL_DOCK_HEIGHT + WORKSPACE_GAP
+	_character_panel.offset_right = -INSPECTOR_MARGIN
+	_character_panel.offset_left = -INSPECTOR_MARGIN - CHARACTER_PANEL_WIDTH
+	_character_panel.offset_top = top_gap
+	_character_panel.offset_bottom = -INSPECTOR_MARGIN
+	_character_panel.custom_minimum_size = Vector2(CHARACTER_PANEL_WIDTH, 0.0)
+
+
 func _layout_details_popup() -> void:
 	if _details_popup == null:
 		return
@@ -748,6 +961,8 @@ func _current_control_width() -> float:
 
 func _right_reserved_width() -> float:
 	var reserved_width := _current_control_width()
+	if _character_panel != null and _character_panel.visible:
+		reserved_width = maxf(reserved_width, CHARACTER_PANEL_WIDTH)
 	if _details_popup != null and _details_popup.visible:
 		reserved_width = maxf(reserved_width, DETAILS_POPUP_WIDTH)
 	return reserved_width
@@ -857,6 +1072,7 @@ func _is_mouse_over_blocking_ui() -> bool:
 	return (
 		_is_mouse_inside_control(_left_panel)
 		or _is_mouse_inside_control(_console_panel)
+		or _is_mouse_inside_control(_character_panel)
 		or _is_mouse_inside_control(_details_popup)
 	)
 
@@ -1084,10 +1300,15 @@ func _rebuild_actors_ui() -> void:
 		child.queue_free()
 	_clear_selection_if_invalid()
 	_refresh_details_popup()
+	_refresh_character_panel()
 
 
 func _refresh_details_popup() -> void:
 	if _details_popup == null or _details_popup_body == null:
+		return
+	if _character_panel != null:
+		_clear_selection_if_invalid()
+		_details_popup.visible = false
 		return
 	for child in _details_popup_body.get_children():
 		child.queue_free()
@@ -1100,6 +1321,449 @@ func _refresh_details_popup() -> void:
 	_details_popup_body.add_child(details)
 	_details_popup.visible = true
 	_layout_details_popup()
+
+
+func _refresh_character_panel() -> void:
+	if _character_panel == null or _character_panel_body == null:
+		return
+	for child in _character_panel_body.get_children():
+		child.queue_free()
+	_clear_selection_if_invalid()
+	if _character_panel_mode_label != null:
+		_character_panel_mode_label.text = _character_panel_mode_text()
+
+	if _selected_kind == SELECT_KEYFRAME:
+		_character_panel_body.add_child(_build_character_selected_keyframe_panel())
+	elif _selected_kind == SELECT_HEX:
+		_character_panel_body.add_child(_build_character_hex_context_panel())
+	elif _selected_kind == SELECT_ENVIRONMENT:
+		_character_panel_body.add_child(_build_character_environment_context_panel())
+
+	var list_title := Label.new()
+	list_title.text = "Roster"
+	list_title.add_theme_font_override("font", _clay_font_bold())
+	list_title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	_character_panel_body.add_child(list_title)
+
+	if _actors.is_empty():
+		_character_panel_body.add_child(_make_character_hint_label("No actors"))
+	else:
+		for i in _actors.size():
+			_character_panel_body.add_child(_build_character_actor_card(i))
+
+	var editable := not _playback_mode and not _is_playing
+	_character_panel.modulate = Color(1.0, 1.0, 1.0, 1.0 if editable else 0.78)
+	_set_controls_editable(_character_panel, editable)
+
+
+func _character_panel_mode_text() -> String:
+	if _playback_mode:
+		return "Playback"
+	if _workspace_mode == WORKSPACE_MODE_TIMELINE:
+		return "Timeline"
+	return "Setup"
+
+
+func _build_character_selected_keyframe_panel() -> PanelContainer:
+	var panel := _make_character_panel_card(Color("F8FAFC"), Color("F59E0B"))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 7)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "Selected Keyframe"
+	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", Color("92400E"))
+	box.add_child(title)
+	var details := _build_keyframe_detail_panel()
+	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_child(details)
+	return panel
+
+
+func _build_character_hex_context_panel() -> PanelContainer:
+	var panel := _make_character_panel_card(Color("FFFFFF"), Color("CBD5E1"))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "Empty Hex"
+	title.add_theme_font_override("font", _clay_font_bold())
+	box.add_child(title)
+	if _selected_hex != null:
+		box.add_child(_make_detail_label("Coord", "(%d, %d)" % [_selected_hex.q, _selected_hex.r]))
+		box.add_child(_make_character_hint_label("Right-click the hex to add an actor or wall."))
+	return panel
+
+
+func _build_character_environment_context_panel() -> PanelContainer:
+	var panel := _make_character_panel_card(Color("FFFFFF"), Color("CBD5E1"))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	panel.add_child(box)
+	if _selected_environment_idx < 0 or _selected_environment_idx >= _environments.size():
+		box.add_child(_make_character_hint_label("No environment selected"))
+		return panel
+	var data: Dictionary = _environments[_selected_environment_idx]
+	var title := Label.new()
+	title.text = "Wall"
+	title.add_theme_font_override("font", _clay_font_bold())
+	box.add_child(title)
+	var pos: Array = data.get("pos", [0, 0])
+	box.add_child(_make_detail_label("Coord", "(%d, %d)" % [int(pos[0]), int(pos[1])]))
+	var remove_btn := Button.new()
+	remove_btn.text = "Remove Wall"
+	remove_btn.pressed.connect(func() -> void:
+		if _selected_environment_idx >= 0 and _selected_environment_idx < _environments.size():
+			_remove_environment_at(_selected_environment_idx)
+	)
+	box.add_child(remove_btn)
+	return panel
+
+
+func _build_character_actor_card(idx: int) -> PanelContainer:
+	var highlighted := _is_character_actor_selected(idx)
+	var expanded := _should_expand_character_actor_card(idx)
+	var border := _actor_track_color(idx, 1.0) if highlighted else Color("D8DEE8")
+	var bg := Color("F8FAFC") if highlighted else Color("FFFFFF")
+	var panel := _make_character_panel_card(bg, border)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 7)
+	panel.add_child(box)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 7)
+	box.add_child(header)
+
+	var select_btn := Button.new()
+	select_btn.text = _actor_timeline_label(idx)
+	select_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	select_btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	select_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	select_btn.tooltip_text = "Select actor"
+	select_btn.set_meta("always_enabled", true)
+	select_btn.pressed.connect(func() -> void:
+		if idx >= 0 and idx < _actors.size():
+			_select_actor_at(idx)
+	)
+	header.add_child(select_btn)
+
+	var data: Dictionary = _actors[idx]
+	header.add_child(_make_character_chip(_actor_role_label(data), _actor_track_color(idx, 0.14), _actor_track_color(idx, 0.8)))
+	header.add_child(_make_character_chip(str(data.get("team", "?")), _team_chip_bg(str(data.get("team", "A"))), _team_chip_border(str(data.get("team", "A")))))
+
+	box.add_child(_build_character_hp_row(idx))
+
+	var pos: Array = data.get("pos", [0, 0])
+	var meta := Label.new()
+	meta.text = "pos (%d, %d)  ·  %d keyframes" % [
+		int(pos[0]), int(pos[1]), (data.get("track", []) as Array).size(),
+	]
+	meta.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	meta.add_theme_font_size_override("font_size", 12)
+	box.add_child(meta)
+
+	if expanded:
+		if _playback_mode:
+			box.add_child(_build_character_runtime_section(idx))
+		else:
+			box.add_child(_build_character_actor_editor(idx))
+	return panel
+
+
+func _should_expand_character_actor_card(idx: int) -> bool:
+	if idx < 0 or idx >= _actors.size():
+		return false
+	if _selected_kind == SELECT_ACTOR:
+		return _selected_actor_idx == idx
+	return false
+
+
+func _build_character_hp_row(idx: int) -> HBoxContainer:
+	var stats := _actor_stats_for_panel(idx)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var hp_label := Label.new()
+	hp_label.text = "HP"
+	hp_label.custom_minimum_size = Vector2(28, 0)
+	hp_label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	row.add_child(hp_label)
+	var bar := ProgressBar.new()
+	bar.min_value = 0.0
+	bar.max_value = maxf(1.0, float(stats.get("max_hp", 1.0)))
+	bar.value = clampf(float(stats.get("hp", 0.0)), 0.0, bar.max_value)
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(0, 10)
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(bar)
+	var value := Label.new()
+	value.text = "%d / %d" % [int(stats.get("hp", 0.0)), int(stats.get("max_hp", 0.0))]
+	value.custom_minimum_size = Vector2(64, 0)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(value)
+	return row
+
+
+func _build_character_actor_editor(idx: int) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+
+	var data: Dictionary = _actors[idx]
+	var class_opt := OptionButton.new()
+	class_opt.fit_to_longest_item = false
+	for cls in CLASS_NAMES:
+		class_opt.add_item(cls)
+	class_opt.selected = max(0, CLASS_NAMES.find(str(data.get("class", "WARRIOR"))))
+	class_opt.item_selected.connect(func(i: int) -> void:
+		if idx < 0 or idx >= _actors.size():
+			return
+		_actors[idx]["class"] = CLASS_NAMES[i]
+		if not _is_playing:
+			_apply_actor_class_change(idx)
+		_queue_inspector_rebuild()
+	)
+	box.add_child(_build_actor_detail_field("Class", class_opt))
+
+	var pos: Array = data.get("pos", [0, 0])
+	box.add_child(_build_actor_detail_field("Q", _make_actor_spin(idx, "q", float(pos[0]), -20, 20, false, 0)))
+	box.add_child(_build_actor_detail_field("R", _make_actor_spin(idx, "r", float(pos[1]), -20, 20, false, 0)))
+	box.add_child(_build_actor_detail_field("HP", _make_actor_spin(idx, "hp", float(data.get("hp", 0.0)), 0, 9999, true, 0)))
+	box.add_child(_build_actor_detail_field("ATK", _make_actor_spin(idx, "atk", float(data.get("atk", 0.0)), 0, 9999, true, 0)))
+	box.add_child(_build_actor_passive_section(idx))
+	box.add_child(_build_character_track_controls(idx))
+
+	if str(data.get("role", "")) != "caster":
+		var remove_btn := Button.new()
+		remove_btn.text = "Remove Actor"
+		remove_btn.pressed.connect(func() -> void:
+			if idx > 0 and idx < _actors.size():
+				_remove_actor_at(idx)
+		)
+		box.add_child(remove_btn)
+	return box
+
+
+func _build_character_track_controls(idx: int) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	var title := Label.new()
+	title.text = "Skill Track"
+	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	box.add_child(title)
+
+	var track: Array = (_actors[idx] as Dictionary).get("track", []) as Array
+	if track.is_empty():
+		box.add_child(_make_character_hint_label("No actions"))
+	else:
+		for kf_idx in track.size():
+			box.add_child(_build_keyframe_summary_row(idx, kf_idx))
+
+	var add_btn := Button.new()
+	add_btn.text = "+ Add Action"
+	add_btn.pressed.connect(func() -> void:
+		if idx < 0 or idx >= _actors.size():
+			return
+		var new_idx := _add_keyframe_at(idx, _next_keyframe_time_for(idx))
+		if new_idx >= 0:
+			_select_spt_keyframe(idx, new_idx)
+			_apply_timeline_workspace_layout()
+	)
+	box.add_child(add_btn)
+	return box
+
+
+func _build_character_runtime_section(idx: int) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	var chips := HBoxContainer.new()
+	chips.add_theme_constant_override("separation", 5)
+	var statuses := _actor_status_labels(idx)
+	if statuses.is_empty():
+		chips.add_child(_make_character_chip("No status", Color("F8FAFC"), Color("CBD5E1")))
+	else:
+		for status_text in statuses:
+			chips.add_child(_make_character_chip(status_text, _status_chip_bg(status_text), _status_chip_border(status_text)))
+	box.add_child(chips)
+
+	var history_title := Label.new()
+	history_title.text = "Damage History"
+	history_title.add_theme_font_override("font", _clay_font_bold())
+	history_title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	box.add_child(history_title)
+	var history := _actor_history_lines(idx, 5)
+	if history.is_empty():
+		box.add_child(_make_character_hint_label("No damage or heal events"))
+	else:
+		for line in history:
+			var label := Label.new()
+			label.text = line
+			label.add_theme_font_size_override("font_size", 12)
+			label.add_theme_color_override("font_color", CLAY_TEXT)
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			box.add_child(label)
+	return box
+
+
+func _make_character_panel_card(bg: Color, border: Color) -> PanelContainer:
+	var panel := PanelContainer.new()
+	var sb := _outlined_sb(bg, border, 8, 10, 9)
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return panel
+
+
+func _make_character_chip(text: String, bg: Color, border: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_override("font", _clay_font_bold())
+	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_color_override("font_color", border.darkened(0.35))
+	label.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 5, 7, 3))
+	return label
+
+
+func _make_character_hint_label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	label.add_theme_font_size_override("font_size", 12)
+	return label
+
+
+func _is_character_actor_selected(idx: int) -> bool:
+	if _selected_kind == SELECT_ACTOR:
+		return _selected_actor_idx == idx
+	if _selected_kind == SELECT_KEYFRAME:
+		return _selected_spt_actor_idx == idx
+	return false
+
+
+func _actor_id_for_idx(idx: int) -> String:
+	if idx < 0 or idx >= _actor_ids.size():
+		return ""
+	return _actor_ids[idx]
+
+
+func _character_actor_for_idx(idx: int) -> CharacterActor:
+	var actor_id := _actor_id_for_idx(idx)
+	if actor_id == "" or _world == null:
+		return null
+	return _world.get_actor(actor_id) as CharacterActor
+
+
+func _actor_stats_for_panel(idx: int) -> Dictionary:
+	var actor := _character_actor_for_idx(idx)
+	if actor != null and actor.attribute_set != null:
+		return {
+			"hp": actor.attribute_set.hp,
+			"max_hp": actor.attribute_set.max_hp,
+			"atk": actor.attribute_set.atk,
+		}
+	if idx < 0 or idx >= _actors.size():
+		return {"hp": 0.0, "max_hp": 0.0, "atk": 0.0}
+	var data: Dictionary = _actors[idx]
+	var max_hp := float(data.get("hp", 0.0))
+	if max_hp <= 0.0:
+		max_hp = 100.0
+	return {
+		"hp": max_hp,
+		"max_hp": max_hp,
+		"atk": float(data.get("atk", 0.0)),
+	}
+
+
+func _actor_status_labels(idx: int) -> Array[String]:
+	var labels: Array[String] = []
+	var stats := _actor_stats_for_panel(idx)
+	if float(stats.get("hp", 0.0)) <= 0.0:
+		labels.append("Defeated")
+	var actor := _character_actor_for_idx(idx)
+	if actor == null:
+		return labels
+	var tags := actor.get_tag_snapshot()
+	for tag_variant in tags.keys():
+		var tag := str(tag_variant)
+		var lower_tag := tag.to_lower()
+		if lower_tag.contains("cooldown") and not labels.has("Cooldown"):
+			labels.append("Cooldown")
+		elif lower_tag.contains("poison") and not labels.has("Poison"):
+			labels.append("Poison")
+		elif (lower_tag.contains("shield") or lower_tag.contains("ward")) and not labels.has("Shield"):
+			labels.append("Shield")
+		elif lower_tag.contains("inspire") and not labels.has("Inspire"):
+			labels.append("Inspire")
+	return labels
+
+
+func _actor_history_lines(idx: int, limit: int) -> Array[String]:
+	var actor_id := _actor_id_for_idx(idx)
+	var lines: Array[String] = []
+	if actor_id == "" or _last_timeline.is_empty():
+		return lines
+	for entry_variant in _last_timeline.get("timeline", []):
+		var entry := entry_variant as Dictionary
+		var ms := int(entry.get("frame", 0)) * TICK_INTERVAL_MS
+		for ev_variant in entry.get("events", []):
+			var ev := ev_variant as Dictionary
+			var kind := str(ev.get("kind", ""))
+			match kind:
+				"damage":
+					if str(ev.get("target_actor_id", "")) == actor_id:
+						lines.append("%05dms  -%.1f damage from %s" % [
+							ms,
+							float(ev.get("damage", 0.0)),
+							_role_label_for_actor_id(str(ev.get("source_actor_id", ""))),
+						])
+				"heal":
+					if str(ev.get("target_actor_id", "")) == actor_id:
+						lines.append("%05dms  +%.1f heal" % [
+							ms,
+							float(ev.get("heal_amount", 0.0)),
+						])
+				"death":
+					if str(ev.get("actor_id", "")) == actor_id:
+						lines.append("%05dms  defeated" % ms)
+	var result: Array[String] = []
+	for i in range(maxi(0, lines.size() - limit), lines.size()):
+		result.append(lines[i])
+	return result
+
+
+func _team_chip_bg(team: String) -> Color:
+	return Color("DBEAFE") if team == "A" else Color("FEE2E2")
+
+
+func _team_chip_border(team: String) -> Color:
+	return Color("2563EB") if team == "A" else Color("B23B3B")
+
+
+func _status_chip_bg(status_text: String) -> Color:
+	match status_text:
+		"Defeated":
+			return Color("FEE2E2")
+		"Poison":
+			return Color("DCFCE7")
+		"Shield":
+			return Color("DBEAFE")
+		"Cooldown":
+			return Color("FEF3C7")
+		_:
+			return Color("F8FAFC")
+
+
+func _status_chip_border(status_text: String) -> Color:
+	match status_text:
+		"Defeated":
+			return Color("DC2626")
+		"Poison":
+			return Color("16A34A")
+		"Shield":
+			return Color("2563EB")
+		"Cooldown":
+			return Color("D97706")
+		_:
+			return Color("CBD5E1")
 
 
 func _close_details_popup() -> void:
@@ -1127,6 +1791,8 @@ func _select_actor_at(idx: int, rebuild: bool = true) -> void:
 	_selected_hex = _actor_coord(_selected_actor_idx)
 	_selected_spt_actor_idx = idx
 	_selected_spt_kf_idx = -1
+	if _spt_cursor_actor_idx != idx:
+		_set_spt_cursor(idx, _next_keyframe_time_for(idx), false)
 	_details_popup_user_closed = false
 	if rebuild:
 		_rebuild_inspector()
@@ -1141,6 +1807,7 @@ func _select_environment_at(idx: int, rebuild: bool = true) -> void:
 	_selected_environment_idx = idx
 	_selected_spt_actor_idx = -1
 	_selected_spt_kf_idx = -1
+	_set_spt_cursor(-1, 0, false)
 	if idx >= 0 and idx < _environments.size():
 		var pos: Array = (_environments[idx] as Dictionary).get("pos", [0, 0])
 		_selected_hex = HexCoord.new(int(pos[0]), int(pos[1]))
@@ -1158,6 +1825,7 @@ func _clear_selection(rebuild: bool = true) -> void:
 	_selected_environment_idx = -1
 	_selected_spt_actor_idx = -1
 	_selected_spt_kf_idx = -1
+	_set_spt_cursor(-1, 0, false)
 	_details_popup_user_closed = false
 	if rebuild:
 		_rebuild_inspector()
@@ -1180,6 +1848,7 @@ func _select_hex_at(coord: HexCoord, rebuild: bool = true) -> void:
 		_selected_environment_idx = -1
 		_selected_spt_actor_idx = -1
 		_selected_spt_kf_idx = -1
+		_set_spt_cursor(-1, 0, false)
 		_details_popup_user_closed = false
 	if rebuild:
 		_rebuild_inspector()
@@ -1205,6 +1874,7 @@ func _clear_selection_if_invalid() -> void:
 	if _selected_spt_actor_idx >= _actors.size():
 		_selected_spt_actor_idx = -1
 		_selected_spt_kf_idx = -1
+	_clear_spt_cursor_if_invalid()
 
 
 func _build_details_panel() -> Control:
@@ -1369,12 +2039,14 @@ func _rebuild_inspector() -> void:
 
 func _rebuild_spt_ui() -> void:
 	_inspector_rebuild_queued = false
+	_clear_spt_cursor_if_invalid()
 	if _spt_max_auto_label != null:
 		_spt_max_auto_label.text = "auto = %d ms" % _compute_auto_max_ms()
 	var track_w := _spt_track_width()
 	if _spt_ruler != null:
-		_spt_ruler.custom_minimum_size = Vector2(track_w, 18)
+		_spt_ruler.custom_minimum_size = Vector2(track_w, SPT_RULER_H)
 		_spt_ruler.queue_redraw()
+		_rebuild_spt_ruler_labels(_spt_ruler)
 	if _timeline_tracks_container != null:
 		_timeline_tracks_container.custom_minimum_size = Vector2(track_w, 0)
 	_rebuild_spt_track_container(_spt_tracks_container, true)
@@ -1398,32 +2070,19 @@ func _rebuild_spt_track_container(container: VBoxContainer, include_actor_label:
 func _build_track_row(actor_idx: int, include_actor_label: bool = true) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.custom_minimum_size = Vector2(0, SPT_ROW_H)
-	row.add_theme_constant_override("separation", 4)
+	row.add_theme_constant_override("separation", 0)
+	row.add_theme_stylebox_override("panel", _outlined_sb(SPT_EDITOR_ROW, Color("243142"), 0, 0, 0))
 
 	if include_actor_label:
-		var actor_label := Button.new()
-		actor_label.text = _actor_timeline_label(actor_idx)
-		actor_label.tooltip_text = "Select actor"
-		actor_label.custom_minimum_size = Vector2(SPT_ACTOR_LABEL_W, 0)
-		actor_label.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		actor_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		actor_label.add_theme_stylebox_override("normal", _outlined_sb(Color("F8FAFC"), Color("D8DEE8"), 4, 8, 4))
-		actor_label.add_theme_stylebox_override("hover", _outlined_sb(Color("EAF2FF"), Color("7AA7F7"), 4, 8, 4))
-		actor_label.add_theme_stylebox_override("pressed", _outlined_sb(Color("CFE1FF"), Color("2563EB"), 4, 8, 4))
-		actor_label.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-		actor_label.pressed.connect(func() -> void:
-			_select_actor(actor_idx)
-			if _inspector_tabs != null:
-				_inspector_tabs.current_tab = 0
-		)
-		row.add_child(actor_label)
+		row.add_child(_build_timeline_actor_label(actor_idx))
 
 	var track_area := Control.new()
 	track_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	track_area.custom_minimum_size = Vector2(_spt_track_width(), SPT_ROW_H)
-	# STOP 而非 PASS: 自己处理空白点击 add keyframe; KeyframeButton 子节点默认 STOP
+	# STOP 而非 PASS: 自己处理空白处单击选轨 / 双击新增; KeyframeButton 子节点默认 STOP
 	# 优先吃事件, 命中 button 时不会传到这里。
 	track_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	track_area.tooltip_text = "Click sets the Add cursor; double-click creates a keyframe at that time"
 	track_area.draw.connect(_draw_track_row.bind(actor_idx, track_area))
 	# 每条 keyframe 一个 Button 子节点; position 由 _layout_keyframes_for_row 后期填。
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
@@ -1441,6 +2100,40 @@ func _build_track_row(actor_idx: int, include_actor_label: bool = true) -> HBoxC
 	return row
 
 
+func _build_timeline_actor_label(actor_idx: int) -> Button:
+	var actor_label := Button.new()
+	actor_label.text = "%d  %s  %s" % [actor_idx, _actor_role_icon(actor_idx), _actor_timeline_label(actor_idx)]
+	actor_label.tooltip_text = "Select actor"
+	actor_label.custom_minimum_size = Vector2(SPT_ACTOR_LABEL_W, SPT_ROW_H)
+	actor_label.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	actor_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	actor_label.add_theme_stylebox_override("normal", _outlined_sb(SPT_EDITOR_PANEL, _actor_track_color(actor_idx, 0.85), 0, 10, 6))
+	actor_label.add_theme_stylebox_override("hover", _outlined_sb(Color("2A3A50"), _actor_track_color(actor_idx, 1.0), 0, 10, 6))
+	actor_label.add_theme_stylebox_override("pressed", _outlined_sb(Color("1E3A5F"), Color("93C5FD"), 0, 10, 6))
+	actor_label.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	actor_label.add_theme_color_override("font_color", SPT_EDITOR_TEXT)
+	actor_label.add_theme_color_override("font_hover_color", Color("FFFFFF"))
+	actor_label.add_theme_color_override("font_pressed_color", Color("FFFFFF"))
+	actor_label.add_theme_font_override("font", _clay_font_bold())
+	actor_label.pressed.connect(func() -> void:
+		_select_actor(actor_idx)
+		if _inspector_tabs != null:
+			_inspector_tabs.current_tab = 0
+	)
+	if _is_character_actor_selected(actor_idx):
+		actor_label.add_theme_stylebox_override("normal", _outlined_sb(Color("1E3A5F"), _actor_track_color(actor_idx, 1.0), 0, 10, 6))
+	return actor_label
+
+
+func _actor_role_icon(actor_idx: int) -> String:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return "?"
+	var data: Dictionary = _actors[actor_idx]
+	if str(data.get("role", "")) == "caster":
+		return "Caster"
+	return "Ally" if str(data.get("team", "B")) == "A" else "Enemy"
+
+
 ## TrackArea: duration span / cooldown bar / baseline。draw 信号自身不带 sender 上下文。
 func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 	var w := track_area.size.x
@@ -1451,6 +2144,20 @@ func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 		return
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	var max_ms := _spt_max_ms()
+	track_area.draw_rect(Rect2(Vector2.ZERO, Vector2(w, h)), SPT_EDITOR_ROW, true)
+	if actor_idx == _selected_spt_actor_idx:
+		track_area.draw_rect(Rect2(Vector2.ZERO, Vector2(w, h)), _actor_track_color(actor_idx, 0.08), true)
+	var tick_step := _pick_tick_step(max_ms)
+	var tick := 0
+	while tick <= max_ms:
+		var tick_x := _track_x_for_time(tick, max_ms, w)
+		track_area.draw_line(
+			Vector2(tick_x, 0.0),
+			Vector2(tick_x, h),
+			SPT_EDITOR_GRID_MAJOR if tick % (tick_step * 2) == 0 else SPT_EDITOR_GRID,
+			1.0
+		)
+		tick += tick_step
 	for kf_variant in track:
 		var kf: Dictionary = kf_variant as Dictionary
 		var time_ms := int(kf.get("time_ms", 0))
@@ -1472,50 +2179,74 @@ func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 			var cooldown_start := _track_x_for_time(time_ms + occupy_ms, max_ms, w)
 			var cooldown_end := _track_x_for_time(time_ms + cooldown_ms, max_ms, w)
 			var cooldown_rect := Rect2(
-				Vector2(cooldown_start, h - 9.0),
-				Vector2(maxf(2.0, cooldown_end - cooldown_start), SPT_COOLDOWN_BAR_H)
+				Vector2(cooldown_start, h - 17.0),
+				Vector2(maxf(2.0, cooldown_end - cooldown_start), 14.0)
 			)
-			track_area.draw_rect(cooldown_rect, Color(0.95, 0.55, 0.08, 0.55), true)
+			track_area.draw_rect(cooldown_rect, Color(0.65, 0.68, 0.75, 0.2), true)
+			track_area.draw_rect(cooldown_rect, Color(0.65, 0.68, 0.75, 0.38), false, 1.0)
 	var y := h * 0.5
-	track_area.draw_line(Vector2(0, y), Vector2(w, y), Color("D8DEE8"), 1)
+	track_area.draw_line(Vector2(0, y), Vector2(w, y), Color(1.0, 1.0, 1.0, 0.22), 1)
+	if _spt_cursor_actor_idx == actor_idx:
+		var cursor_x := _track_x_for_time(_spt_cursor_time_ms, max_ms, w)
+		track_area.draw_line(Vector2(cursor_x, 3.0), Vector2(cursor_x, h - 3.0), SPT_CURSOR_COLOR, 2.0)
+		track_area.draw_circle(Vector2(cursor_x, y), 4.0, SPT_CURSOR_COLOR)
 	if _spt_dragging and _spt_drag_actor_idx == actor_idx:
 		var ghost_x := _track_x_for_time(_spt_drag_requested_ms, max_ms, w)
-		track_area.draw_line(Vector2(ghost_x, 4.0), Vector2(ghost_x, h - 4.0), SPT_GHOST_COLOR, 2.0)
-		track_area.draw_circle(Vector2(ghost_x, y), 4.0, SPT_GHOST_COLOR)
+		track_area.draw_line(Vector2(ghost_x, 4.0), Vector2(ghost_x, h - 4.0), Color("FFFFFF"), 2.0)
+		track_area.draw_circle(Vector2(ghost_x, y), 4.0, Color("FFFFFF"))
 
 
-## Keyframe 色块按钮: 颜色按 actor team 区分(caster=绿/A=蓝/B=红); 不显文本, 信息走
-## tooltip。点击/拖拽会同步右侧 Details。
+## Keyframe 色块按钮: 颜色按 actor team 区分(caster=绿/A=蓝/B=红);
+## 按钮正文显示技能名, 详细时间/目标走 tooltip。点击/拖拽会同步右侧 Details。
 func _build_keyframe_button(actor_idx: int, kf_idx: int) -> Button:
 	var btn := Button.new()
 	btn.set_meta("kf_idx", kf_idx)
 	btn.size = Vector2(SPT_KF_BTN_W, SPT_KF_BTN_H)
 	btn.custom_minimum_size = Vector2(SPT_KF_BTN_W, SPT_KF_BTN_H)
 	btn.tooltip_text = _keyframe_tooltip(actor_idx, kf_idx)
+	btn.text = _keyframe_button_text(actor_idx, kf_idx)
+	btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	btn.focus_mode = Control.FOCUS_NONE
 
 	var bg: Color
 	var border: Color
 	var data: Dictionary = _actors[actor_idx]
 	if data["role"] == "caster":
-		bg = Color("BBF7D0"); border = Color("16A34A")
+		bg = Color("166534"); border = Color("86EFAC")
 	elif data["team"] == "A":
-		bg = Color("DBEAFE"); border = Color("2563EB")
+		bg = Color("1D4ED8"); border = Color("93C5FD")
 	else:
-		bg = Color("FECACA"); border = Color("B23B3B")
+		bg = Color("991B1B"); border = Color("FCA5A5")
 	var warning := _keyframe_timing_warning(actor_idx, kf_idx)
 	if not warning.is_empty():
 		var warning_type := str(warning.get("type", ""))
 		border = _spt_warning_color(warning_type)
 	if actor_idx == _selected_spt_actor_idx and kf_idx == _selected_spt_kf_idx:
-		border = SPT_SELECTED_BORDER
+		border = Color("FFFFFF")
 	btn.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 4, 0, 0))
 	btn.add_theme_stylebox_override("hover", _outlined_sb(bg.lightened(0.1), border, 4, 0, 0))
 	btn.add_theme_stylebox_override("pressed", _outlined_sb(bg.darkened(0.1), border, 4, 0, 0))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	btn.add_theme_font_override("font", _clay_font_bold())
+	btn.add_theme_font_size_override("font_size", 11)
+	btn.add_theme_color_override("font_color", Color("FFFFFF"))
+	btn.add_theme_color_override("font_hover_color", Color("FFFFFF"))
+	btn.add_theme_color_override("font_pressed_color", Color("FFFFFF"))
 	btn.gui_input.connect(func(event: InputEvent) -> void:
 		_on_keyframe_button_gui_input(actor_idx, int(btn.get_meta("kf_idx", -1)), btn, event)
 	)
 	return btn
+
+
+func _keyframe_button_text(actor_idx: int, kf_idx: int) -> String:
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return "?"
+	var skill_id := str((track[kf_idx] as Dictionary).get("skill", ""))
+	var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+	if skill_cfg == null:
+		return skill_id
+	return skill_cfg.display_name
 
 
 ## tooltip 文本: "Strike @ 600ms → enemy_0"。target 模式简写。
@@ -1752,6 +2483,48 @@ func _time_for_track_x(x: float, width: float) -> int:
 	return int(round(ratio * float(_spt_max_ms()) / float(KF_TIME_STEP_MS))) * KF_TIME_STEP_MS
 
 
+func _set_spt_cursor(actor_idx: int, time_ms: int, redraw: bool = true) -> void:
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		_spt_cursor_actor_idx = -1
+		_spt_cursor_time_ms = 0
+	else:
+		_spt_cursor_actor_idx = actor_idx
+		_spt_cursor_time_ms = clampi(time_ms, 0, _spt_max_ms())
+	if redraw:
+		_queue_spt_track_redraw()
+	_update_timeline_mode_buttons()
+
+
+func _clear_spt_cursor_if_invalid() -> void:
+	if _spt_cursor_actor_idx < 0:
+		_spt_cursor_actor_idx = -1
+		_spt_cursor_time_ms = 0
+		return
+	if _spt_cursor_actor_idx >= _actors.size():
+		_spt_cursor_actor_idx = -1
+		_spt_cursor_time_ms = 0
+		return
+	_spt_cursor_time_ms = clampi(_spt_cursor_time_ms, 0, _spt_max_ms())
+
+
+func _queue_spt_track_redraw() -> void:
+	var containers: Array[VBoxContainer] = []
+	if _spt_tracks_container != null:
+		containers.append(_spt_tracks_container)
+	if _timeline_tracks_container != null:
+		containers.append(_timeline_tracks_container)
+	for container in containers:
+		for row_variant in container.get_children():
+			var row := row_variant as Control
+			if row == null:
+				continue
+			row.queue_redraw()
+			for child_variant in row.get_children():
+				var child := child_variant as Control
+				if child != null:
+					child.queue_redraw()
+
+
 func _set_spt_selection(actor_idx: int, kf_idx: int) -> void:
 	_selected_spt_actor_idx = actor_idx
 	_selected_spt_kf_idx = kf_idx
@@ -1760,6 +2533,10 @@ func _set_spt_selection(actor_idx: int, kf_idx: int) -> void:
 		_selected_actor_idx = -1
 		_selected_environment_idx = -1
 		_details_popup_user_closed = false
+		if actor_idx < _actors.size():
+			var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+			if kf_idx < track.size():
+				_set_spt_cursor(actor_idx, int((track[kf_idx] as Dictionary).get("time_ms", 0)), false)
 	elif actor_idx >= 0:
 		_select_actor_at(actor_idx, false)
 
@@ -1875,15 +2652,20 @@ func _move_keyframe_to_ready_time(actor_idx: int, kf_idx: int) -> void:
 
 
 func _on_timeline_add_keyframe_pressed() -> void:
-	var actor_idx := _selected_spt_actor_idx
-	if actor_idx < 0:
-		actor_idx = _selected_actor_idx
+	var actor_idx := _timeline_add_target_actor_idx()
 	if actor_idx < 0 or actor_idx >= _actors.size():
-		actor_idx = 0
-	var new_idx := _add_keyframe_at(actor_idx, _next_keyframe_time_for(actor_idx))
+		_set_status("Select an actor track before adding")
+		return
+	var requested_ms := _timeline_add_target_time_ms(actor_idx)
+	var new_idx := _add_keyframe_at(actor_idx, requested_ms)
 	if new_idx >= 0:
 		_select_spt_keyframe(actor_idx, new_idx)
-		_set_status("Added keyframe to %s" % _role_id_for(actor_idx))
+		var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+		var final_ms := requested_ms
+		if new_idx < track.size():
+			final_ms = int((track[new_idx] as Dictionary).get("time_ms", requested_ms))
+		_set_spt_cursor(actor_idx, final_ms, false)
+		_set_status("Added keyframe to %s at %dms" % [_role_id_for(actor_idx), final_ms])
 
 
 func _next_keyframe_time_for(actor_idx: int) -> int:
@@ -1909,7 +2691,7 @@ func _build_kf_form_row(label_text: String, editor: Control) -> HBoxContainer:
 	return row
 
 
-## TrackArea 空白处左键按点击位置新增 keyframe, 并把精确编辑交给右侧 Details。
+## TrackArea 空白处单击只移动 Add cursor; 双击才按点击位置新增 keyframe。
 func _on_track_area_clicked(actor_idx: int, track_area: Control, event: InputEvent) -> void:
 	if _is_playing:
 		return
@@ -1923,10 +2705,19 @@ func _on_track_area_clicked(actor_idx: int, track_area: Control, event: InputEve
 	if actor_idx < 0 or actor_idx >= _actors.size():
 		return  # row 在 free 队列中, actor 已变 — 忽略点击
 	var raw_ms := _time_for_track_x(mb.position.x, track_area.size.x)
+	_set_spt_cursor(actor_idx, raw_ms)
+	if not mb.double_click:
+		_select_actor_at(actor_idx)
+		_set_status(
+			"Cursor set on %s at %dms" % [_role_id_for(actor_idx), raw_ms]
+		)
+		get_viewport().set_input_as_handled()
+		return
 	var new_idx := _add_keyframe_at(actor_idx, raw_ms)
 	if new_idx >= 0:
 		_select_spt_keyframe(actor_idx, new_idx)
 		_set_status("Added keyframe at %dms" % raw_ms)
+	get_viewport().set_input_as_handled()
 
 
 ## auto-fit: 取所有 keyframe 最大 time_ms + buffer, 并保证不低于 1000ms 防空 track 退化。
@@ -1977,15 +2768,63 @@ func _draw_spt_ruler_on(ruler: Control) -> void:
 	var max_ms := _spt_max_ms()
 	var step := _pick_tick_step(max_ms)
 	var w := ruler.size.x
+	var h := ruler.size.y
 	if w <= 0.0:
 		return
-	var font := _clay_font()
+	ruler.draw_rect(Rect2(Vector2.ZERO, ruler.size), SPT_EDITOR_BG, true)
 	var t := 0
 	while t <= max_ms:
 		var x := int(float(t) / float(max_ms) * w)
-		ruler.draw_line(Vector2(x, 4), Vector2(x, 14), CLAY_TEXT_SOFT, 1)
-		ruler.draw_string(font, Vector2(x + 2, 13), "%d" % t, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, CLAY_TEXT_SOFT)
+		var is_major := t % (step * 2) == 0
+		ruler.draw_line(
+			Vector2(x, SPT_RULER_LABEL_H + 4.0),
+			Vector2(x, h - 4.0),
+			SPT_EDITOR_GRID_MAJOR if is_major else SPT_EDITOR_GRID,
+			1.0
+		)
 		t += step
+
+
+func _rebuild_spt_ruler_labels(ruler: Control) -> void:
+	if ruler == null or not is_instance_valid(ruler):
+		return
+	if ruler.is_queued_for_deletion():
+		return
+	for child_variant in ruler.get_children():
+		var child := child_variant as Node
+		if child != null:
+			ruler.remove_child(child)
+			child.queue_free()
+	var max_ms := _spt_max_ms()
+	var step := _pick_tick_step(max_ms) * 2
+	var w := ruler.size.x
+	if w <= 0.0 or max_ms <= 0:
+		return
+	var t := 0
+	while t <= max_ms:
+		var tick_x := float(t) / float(max_ms) * w
+		var label := Label.new()
+		label.text = _format_spt_ruler_time(t)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.custom_minimum_size = Vector2(SPT_RULER_LABEL_W, SPT_RULER_LABEL_H)
+		label.size = Vector2(SPT_RULER_LABEL_W, SPT_RULER_LABEL_H)
+		label.position = Vector2(
+			clampf(tick_x - SPT_RULER_LABEL_W * 0.5, 0.0, maxf(0.0, w - SPT_RULER_LABEL_W)),
+			1.0
+		)
+		label.add_theme_font_override("font", _clay_font_bold())
+		label.add_theme_font_size_override("font_size", 11)
+		label.add_theme_color_override("font_color", SPT_EDITOR_TEXT_SOFT)
+		ruler.add_child(label)
+		t += step
+
+
+func _format_spt_ruler_time(ms: int) -> String:
+	if ms >= 1000 and ms % 1000 == 0:
+		return "%ds" % int(ms / 1000)
+	return "%dms" % ms
 
 
 func _actor_role_label(data: Dictionary) -> String:
@@ -2603,6 +3442,10 @@ func _make_actor_spin(
 				_actors[actor_idx]["hp"] = v
 				if not _is_playing:
 					_apply_actor_hp_change(actor_idx, v)
+			"atk":
+				_actors[actor_idx]["atk"] = v
+				if not _is_playing:
+					_apply_actor_atk_change(actor_idx, v)
 	)
 	return s
 
@@ -2823,6 +3666,16 @@ func _apply_actor_hp_change(idx: int, hp: float) -> void:
 	var view := _world_view.get_unit_view(actor_id)
 	if view != null:
 		view.initialize(actor_id, actor.get_display_name(), actor.get_team_id(), hp, hp)
+
+
+func _apply_actor_atk_change(idx: int, atk: float) -> void:
+	if idx >= _actor_ids.size():
+		return
+	var actor_id := _actor_ids[idx]
+	var actor := _world.get_actor(actor_id) as CharacterActor
+	if actor == null or actor.attribute_set == null:
+		return
+	actor.attribute_set.set_atk_base(atk)
 
 
 ## 增量改 actor class: CharacterActor class 是构造参数(影响 ability_set 默认 grant +
@@ -3726,6 +4579,7 @@ func _set_status(s: String) -> void:
 	_status_label.text = "Status: " + s
 	if _console_summary_label != null:
 		_console_summary_label.text = s
+	_update_timeline_mode_buttons()
 
 
 func _on_console_toggle_pressed() -> void:
@@ -3771,6 +4625,9 @@ func _set_inspector_editable(editable: bool) -> void:
 	if _details_popup != null:
 		_details_popup.modulate = Color(1.0, 1.0, 1.0, 1.0 if editable else 0.72)
 		_set_controls_editable(_details_popup, editable)
+	if _character_panel != null:
+		_character_panel.modulate = Color(1.0, 1.0, 1.0, 1.0 if editable else 0.78)
+		_set_controls_editable(_character_panel, editable)
 	_speed_input.editable = true
 	_speed_input.get_line_edit().editable = true
 	_refresh_runtime_layout()
@@ -3847,6 +4704,7 @@ func _apply_clay_theme() -> void:
 	_style_actor_add_buttons()
 	_style_start_button()
 	_style_reset_button()
+	_style_character_panel()
 	_style_status_label()
 	_style_console()
 
@@ -4088,6 +4946,22 @@ func _style_reset_button() -> void:
 	btn.add_theme_color_override("font_color", CLAY_TEXT)
 	btn.add_theme_color_override("font_hover_color", CLAY_TEXT)
 	btn.add_theme_color_override("font_pressed_color", CLAY_TEXT)
+
+
+func _style_character_panel() -> void:
+	var title := get_node_or_null("ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelHeader/CharacterPanelTitle") as Label
+	if title != null:
+		title.add_theme_font_override("font", _clay_font_bold())
+		title.add_theme_font_size_override("font_size", 16)
+		title.add_theme_color_override("font_color", CLAY_TEXT)
+	if _character_panel_mode_label != null:
+		_character_panel_mode_label.add_theme_font_override("font", _clay_font_bold())
+		_character_panel_mode_label.add_theme_font_size_override("font_size", 11)
+		_character_panel_mode_label.add_theme_color_override("font_color", START_PRESSED)
+		_character_panel_mode_label.add_theme_stylebox_override(
+			"normal",
+			_outlined_sb(Color("EAF2FF"), Color("7AA7F7"), 5, 7, 3)
+		)
 
 
 func _style_status_label() -> void:

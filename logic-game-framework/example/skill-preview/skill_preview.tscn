@@ -353,6 +353,49 @@ size_flags_vertical = 3
 bbcode_enabled = true
 scroll_following = true
 
+; =============== Characters (right) ===============
+[node name="CharacterPanel" type="PanelContainer" parent="ConfigUI/Root"]
+unique_name_in_owner = true
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -372.0
+offset_top = 160.0
+offset_right = -12.0
+offset_bottom = -56.0
+
+[node name="CharacterPanelVBox" type="VBoxContainer" parent="ConfigUI/Root/CharacterPanel"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="CharacterPanelHeader" type="HBoxContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CharacterPanelTitle" type="Label" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Characters"
+
+[node name="CharacterPanelModeLabel" type="Label" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Setup"
+
+[node name="CharacterPanelScroll" type="ScrollContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="CharacterPanelBody" type="VBoxContainer" parent="ConfigUI/Root/CharacterPanel/CharacterPanelVBox/CharacterPanelScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
 ; =============== Popup (hex context menu) ===============
 [node name="HexPopupMenu" type="PopupMenu" parent="ConfigUI"]
 unique_name_in_owner = true
