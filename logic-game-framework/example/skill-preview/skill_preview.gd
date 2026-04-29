@@ -4211,7 +4211,11 @@ func _on_hex_popup_window_input(event: InputEvent) -> void:
 	# 不同 hex: 关旧 popup, 在新 hex 重弹。
 	_hex_popup.hide()
 	_select_hex_at(coord)
-	_open_hex_context_menu(coord)
+	_popup_hex = coord
+	_popup_actor_idx = _find_actor_idx_at(coord.q, coord.r)
+	_popup_environment_idx = _find_environment_idx_at(coord.q, coord.r)
+	# 等一帧让 hide 真正完成再 show, 避免 hide+show 同帧的 popup modal race。
+	call_deferred("_show_hex_popup")
 
 
 func _on_popup_id_pressed(id: int) -> void:
