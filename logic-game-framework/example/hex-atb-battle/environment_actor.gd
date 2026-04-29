@@ -20,9 +20,6 @@ var environment_kind: String = ""
 ## 强类型 attribute_set: 当前只继承公共 hp / max_hp; 未来可扩展 mass / hardness 等专属属性。
 var attribute_set: HexBattleEnvironmentAttributeSet
 
-## 碰撞物理参数 (普通字段, 不进 attribute_set)
-var collision_profile: CollisionProfile
-
 
 # ========== 初始化 ==========
 

@@ -167,6 +167,18 @@ func get_neighbors() -> Array[HexCoord]:
 	return result
 
 
+## 返回从 self 到 other 的邻居方向 (0-5), 若不相邻返回 -1。
+## 用于知道 caster/target 相对位置后求"推开方向"。
+func direction_to_neighbor(other: HexCoord) -> int:
+	var dq := other.q - q
+	var dr := other.r - r
+	for i in range(6):
+		var d := DIRECTIONS[i]
+		if d.x == dq and d.y == dr:
+			return i
+	return -1
+
+
 # ========== 范围 ==========
 
 ## 获取指定范围内的所有坐标 (包含自身)

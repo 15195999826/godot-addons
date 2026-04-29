@@ -277,6 +277,123 @@ class DeathEvent extends GameEvent.Base:
 		return d.get("kind") == "death"
 
 
+# ========== ActorDisplacedEvent ==========
+##
+## 强制位移 (forced displacement) — 区别于自愿 MoveComplete:
+##   - knockback / pull / scatter 都走这个事件
+##   - 仅当 actor 真的移动时 push (from_hex != to_hex)
+##   - 目标格被挡住没移动时不 push 此事件, 走 PushBlockedEvent
+##
+class ActorDisplacedEvent extends GameEvent.Base:
+	var actor_id: String = ""
+	var from_hex: Dictionary = {}
+	var to_hex: Dictionary = {}
+	var displacement_kind: String = ""  # "knockback" | (future) "pull" | "scatter"
+	var source_actor_id: String = ""
+
+	func _init() -> void:
+		kind = "actor_displaced"
+
+	static func create(
+		p_actor_id: String,
+		p_from_hex: Dictionary,
+		p_to_hex: Dictionary,
+		p_displacement_kind: String,
+		p_source_actor_id: String
+	) -> ActorDisplacedEvent:
+		var e := ActorDisplacedEvent.new()
+		e.actor_id = p_actor_id
+		e.from_hex = p_from_hex
+		e.to_hex = p_to_hex
+		e.displacement_kind = p_displacement_kind
+		e.source_actor_id = p_source_actor_id
+		return e
+
+	func to_dict() -> Dictionary:
+		return {
+			"kind": kind,
+			"actor_id": actor_id,
+			"from_hex": from_hex,
+			"to_hex": to_hex,
+			"displacement_kind": displacement_kind,
+			"source_actor_id": source_actor_id,
+		}
+
+	static func from_dict(d: Dictionary) -> ActorDisplacedEvent:
+		var e := ActorDisplacedEvent.new()
+		e.actor_id = d.get("actor_id", "") as String
+		e.from_hex = d.get("from_hex", {}) as Dictionary
+		e.to_hex = d.get("to_hex", {}) as Dictionary
+		e.displacement_kind = d.get("displacement_kind", "") as String
+		e.source_actor_id = d.get("source_actor_id", "") as String
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == "actor_displaced"
+
+
+# ========== PushBlockedEvent ==========
+##
+## 推 / 击退被阻挡 — target 沿 push 方向尝试位移, 但路径上撞到不可越过的物体或地图边界。
+## 与 ActorDisplacedEvent 互补:
+##   - 完全没移动 (撞到正前方): 仅 PushBlockedEvent
+##   - 移动若干格后撞到 (N>1 链式推): ActorDisplacedEvent + PushBlockedEvent
+## 字段双坐标 (from_hex 是 target 实际停在哪, attempted_to_hex 是若不挡能到达的格子),
+## 让 replay / frontend / scenario 不必重算坐标。
+##
+class PushBlockedEvent extends GameEvent.Base:
+	var target_actor_id: String = ""
+	var from_hex: Dictionary = {}             # target 实际停在的位置
+	var attempted_to_hex: Dictionary = {}     # 若不挡, 推算到达的目标格
+	var blocked_by: String = ""               # "edge" | "actor"
+	var blocker_actor_id: String = ""         # 当 blocked_by == "actor" 时的 blocker id, 否则 ""
+	var source_actor_id: String = ""
+
+	func _init() -> void:
+		kind = "push_blocked"
+
+	static func create(
+		p_target_actor_id: String,
+		p_from_hex: Dictionary,
+		p_attempted_to_hex: Dictionary,
+		p_blocked_by: String,
+		p_blocker_actor_id: String,
+		p_source_actor_id: String
+	) -> PushBlockedEvent:
+		var e := PushBlockedEvent.new()
+		e.target_actor_id = p_target_actor_id
+		e.from_hex = p_from_hex
+		e.attempted_to_hex = p_attempted_to_hex
+		e.blocked_by = p_blocked_by
+		e.blocker_actor_id = p_blocker_actor_id
+		e.source_actor_id = p_source_actor_id
+		return e
+
+	func to_dict() -> Dictionary:
+		return {
+			"kind": kind,
+			"target_actor_id": target_actor_id,
+			"from_hex": from_hex,
+			"attempted_to_hex": attempted_to_hex,
+			"blocked_by": blocked_by,
+			"blocker_actor_id": blocker_actor_id,
+			"source_actor_id": source_actor_id,
+		}
+
+	static func from_dict(d: Dictionary) -> PushBlockedEvent:
+		var e := PushBlockedEvent.new()
+		e.target_actor_id = d.get("target_actor_id", "") as String
+		e.from_hex = d.get("from_hex", {}) as Dictionary
+		e.attempted_to_hex = d.get("attempted_to_hex", {}) as Dictionary
+		e.blocked_by = d.get("blocked_by", "") as String
+		e.blocker_actor_id = d.get("blocker_actor_id", "") as String
+		e.source_actor_id = d.get("source_actor_id", "") as String
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == "push_blocked"
+
+
 # ========== 辅助函数 ==========
 
 static func _damage_type_to_string(p_damage_type: DamageType) -> String:

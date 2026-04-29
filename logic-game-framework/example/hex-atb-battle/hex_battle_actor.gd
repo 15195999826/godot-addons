@@ -14,6 +14,11 @@ var ability_set: BattleAbilitySet
 ## 当前格子坐标 (HexCoord.invalid() 表示未放置)
 var hex_position: HexCoord = HexCoord.invalid()
 
+## 碰撞 / 被推时的结算数据 — 子类 _init 末尾负责填默认值。
+## CharacterActor 默认走 CollisionProfile.default_character();
+## EnvironmentActor 通过构造参数传入特定 profile (stone_wall / barrel ...)
+var collision_profile: CollisionProfile
+
 ## 死亡标志 (走数据驱动: hp <= 0 时 check_death 设置)
 var _is_dead: bool = false
 

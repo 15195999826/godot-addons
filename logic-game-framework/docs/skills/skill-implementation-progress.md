@@ -3,7 +3,7 @@
 > 实施 [`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md) 16 个示范技能的进度快照。
 > 每完成一个技能就更新本文档。配合 `lgf-new-logic-skill` skill 使用 —— 实现新技能前先读这里的「pattern 速查」找最近的参考实现。
 
-最后更新：2026-04-28
+最后更新：2026-04-29
 
 ---
 
@@ -11,13 +11,13 @@
 
 | Tier | 进度 | 说明 |
 |---|---|---|
-| Tier 1 — MVP | 🟡 3 / 6 | 核心 pattern 验证 |
+| Tier 1 — MVP | 🟡 4 / 6 | 核心 pattern 验证 |
 | Tier 2 — 中级 | 🟡 4 / 6 | 多原语组合 |
 | Tier 3 — 高级 | 🟡 1 / 4 | 跨系统 |
-| **合计** | **8 / 16** | |
+| **合计** | **9 / 16** | |
 
-**当前焦点** ：暂无；上一个落地的是 EnvironmentActor 子系统 + AttributeSet 继承 (M1，2026-04-28)。
-**下一个建议**：Knockback Punch (Tier 1 #4) — 现已具备 EnvironmentActor 基础设施,可启动方案稿讨论。
+**当前焦点** ：暂无；上一个落地的是 Knockback Punch (Tier 1 #4，forced displacement 基础设施 + 击退拳实现，2026-04-29)。
+**下一个建议**：Expose (Tier 1 #5) — 易伤标记, PreEvent modify_intent 增伤 + duration buff, 完成 Tier 1 阶段 4/6→5/6。
 
 ---
 
@@ -39,7 +39,7 @@
 | 1 | Strike | 🔵 已落地 | strike | `skills/strike.gd` | `strike_scenario.gd` |
 | 2 | Poison | 🔵 已落地 | poison | `skills/poison.gd` + `buffs/poison_buff.gd` + `actions/poison_tick_action.gd` | `poison_scenario.gd` |
 | 3 | Ward | 🔵 V1 已落地 | ward | `skills/ward.gd` + `buffs/ward_buff.gd` + `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` + `actions/apply_shield_action.gd` | `shield_basic_absorb` / `shield_full_absorb_no_thorns` / `shield_priority_order` |
-| 4 | Knockback Punch | ⚫ 未做 | — | — | — |
+| 4 | Knockback Punch | 🔵 已落地 | knockback_punch | `skills/knockback_punch.gd` + `actions/push_action.gd` + `events/battle_events.gd` (ActorDisplacedEvent + PushBlockedEvent) | `tests/example/hex-atb-battle/smoke_knockback_punch.gd` (7 cases) |
 | 5 | Expose | ⚫ 未做 | — | — | — |
 | 6 | Execute | ⚫ 未做 | — | — | — |
 
@@ -103,12 +103,12 @@
 | 增益 buff（攻击力 / 暴击等） | inspire_buff | apply_buff_action + AttributeModifierComponent |
 | On Death 反应 | deathrattle_aoe | PostEvent on death event + 死亡 actor 上下文可用 |
 | 移动 / 寻路 | move | start_move / apply_move 两阶段 action |
+| forced displacement (击退/拉拽/推开) | knockback_punch | PushAction raycast N 格 + CollisionProfile 数据驱动结算 + ActorDisplacedEvent / PushBlockedEvent 拆事件;`distance` / `displacement_kind` 参数化让 pull / wind_torrent / N>1 直接复用 |
 
 ### 还没有落地参考的 pattern（做的时候记得回来填）
 
 | 想做什么 | design 对应技能 | 备注 |
 |---|---|---|
-| hex 推 / 拉 / 位移 | Knockback Punch (#4) | UGridMap 方向计算 + 碰撞额外伤害 |
 | 易伤 / 增伤 debuff | Expose (#5) | 对比 Poison：不直接扣血而是改受伤 |
 | 条件分支伤害 / 斩杀 | Execute (#6) | Condition + 分支 Action |
 | 链锁 / 跳目标 | Chain Lightning (#9) | 动态目标选择 + visited 用 local var |
@@ -137,7 +137,7 @@ design 文档写的时候 LGF 框架还在演进，落地时部分 pattern 调�
 ## 📌 阶段标记（按 design 文档第八节 roadmap）
 
 - [x] **阶段 1** — 核心 pattern（Strike / Poison / Ward）✅
-- [ ] **阶段 2** — 机制词典扩展（Expose / Knockback / Execute / Fireball）—— Fireball 已做，剩 3 个
+- [ ] **阶段 2** — 机制词典扩展（Expose / Knockback / Execute / Fireball）—— Fireball + Knockback 已做，剩 Expose / Execute
 - [ ] **阶段 3** — 复杂组合（Decimating Smash / Thorns / Chain Lightning / Mend）—— Decimating ≈ Crushing Blow / Thorns / Mend ≈ Holy Heal 已做，剩 Chain Lightning
 - [ ] **阶段 4** — 框架深度（Shadow Step / Deathrattle / Stance / Demon Form / Summon Totem）—— Deathrattle 已做，剩 4 个
 

@@ -497,10 +497,12 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 	func start(config: Dictionary = {}) -> void:
 		_state = "running"
 
-		# 地图
+		# 地图: 同时填本 instance 的 grid 字段, 让 actions (PushAction / ApplyMoveAction 等)
+		# 通过 battle.grid.has_tile / get_occupant 走通; 与 HexWorldGameplayInstance.configure_grid 对齐。
 		var grid_config: GridMapConfig = config.get("map_config")
 		if grid_config != null:
 			UGridMap.configure(grid_config)
+			grid = UGridMap.model
 
 		# 投射物系统
 		var collision_detector := MobaCollisionDetector.new()

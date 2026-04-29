@@ -55,6 +55,7 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 	attribute_set.set_speed_base(stats["speed"])
 	ability_set = BattleAbilitySet.create_battle_ability_set(get_id(), attribute_set)
 	ai_strategy = AIStrategyFactory.get_strategy(character_class)
+	collision_profile = CollisionProfile.default_character()
 
 
 ## 装备技能 (在 HexBattle 初始化时调用)

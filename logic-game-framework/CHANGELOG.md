@@ -12,6 +12,88 @@
 
 ---
 
+## [Unreleased] — 2026-04-29 Knockback Punch (Tier 1 #4) + forced displacement 基础设施
+
+实现 design 卡 Tier 1 #4 KnockbackPunch (击退拳): 近战伤害 + 沿 caster→target 方向推 1 格。
+撞墙 / 撞 actor / 撞地图边界三种结局, 走 CollisionProfile 字段 (M1 已落地) 数据驱动结算。
+
+设计意图: 把 forced displacement (knockback / pull / scatter) 从隐式 hardcode 提到通用 Action +
+通用事件, 让未来 N>1 链式推 / wind_torrent / pull / scatter 等变体直接复用相同骨架。
+PushAction 的 raycast 已支持 N>1, V1 KnockbackPunch 仅传 distance=1。
+
+### Added
+
+- **`HexBattlePushAction`** (`example/hex-atb-battle/actions/push_action.gd`) — 通用 forced
+  displacement Action。raycast N 格沿方向推进, 撞 occupant / edge 停下并按 CollisionProfile
+  结算碰撞伤害。constructor 参数 `distance` (默认 1) 和 `displacement_kind` (默认 "knockback")
+  让未来 pull / scatter / N>1 变体零代码复用。**碰撞伤害 contract**: deterministic 无暴击,
+  不走 PreDamageEvent, 但走 `HexBattleDamageUtils.apply_damage` + `broadcast_post_damage`
+  (ShieldComponent / death / thorns 仍生效)。`source_actor_id = caster` (gameplay attribution)。
+  case 6 兜底: 若上一步 DamageAction 已击杀 target, 整段 push 跳过。
+- **`HexBattleKnockbackPunch`** (`example/hex-atb-battle/skills/knockback_punch.gd`) — Tier 1 #4
+  设计卡的最小落地。Timeline HIT @ 300ms: DamageAction(atk) → PushAction(distance=1, "knockback")。
+  cooldown 4000ms, range 1, ALLOWED_TARGET_KINDS=["Character"] (V1 不直接 push environment, 由
+  WallBreaker pattern 验证打 env; KP 验证 forced displacement pattern)。
+- **`BattleEvents.ActorDisplacedEvent`** (`example/hex-atb-battle-core/events/battle_events.gd`,
+  kind="actor_displaced") — forced displacement 事件, 区别于自愿 `MoveCompleteEvent`。字段:
+  `actor_id / from_hex / to_hex / displacement_kind / source_actor_id`。仅当 actor 真的移动时
+  push (from != to)。前端动画 / replay / scenario 可按 `displacement_kind` 区分 knockback / pull /
+  scatter。
+- **`BattleEvents.PushBlockedEvent`** (kind="push_blocked") — push 路径被 occupant / edge 挡住时
+  push。字段: `target_actor_id / from_hex (实际停在哪) / attempted_to_hex (本想到达的格) /
+  blocked_by ("edge"|"actor") / blocker_actor_id ("" if edge) / source_actor_id`。双坐标避免
+  replay / frontend / scenario 重算坐标。N>1 移动后撞: ActorDisplacedEvent + PushBlockedEvent
+  都 push (语义独立)。
+- **`HexCoord.direction_to_neighbor(other) -> int`** (`addons/ultra-grid-map/core/hex_coord.gd`)
+  返回从 self 到 other 的邻居方向 (0-5), 不相邻返 -1。让 PushAction 可以从 caster/target
+  位置直接求"推开方向"。未来 shadow_step / pull / line AoE 等空间技能复用。
+- **`CollisionProfile.default_character()` / `.default_wall()`** static factories
+  (`example/hex-atb-battle/environment/collision_profile.gd`)。CharacterActor 默认 profile
+  taken=1 / dealt=1 / pushable=true / blocks_path=true; default_wall 兜底"撞地图边界" 这种没
+  blocker actor 的场景, dealt_to_pusher=1。
+- **Smoke `smoke_knockback_punch`** (`tests/example/hex-atb-battle/smoke_knockback_punch.gd`)
+  覆盖 7 case: free push / edge / stone_wall blocker / character blocker / out-of-range /
+  direct env target rejected / killed-by-base-damage / collision deterministic (20 trials)。
+
+### Changed
+
+- **`HexBattleActor`** 上提 `collision_profile: CollisionProfile` 字段为基类公共字段。
+  CharacterActor 在 `_init` 末尾填 `CollisionProfile.default_character()`; EnvironmentActor 通过
+  既有 `_init(profile)` 构造参数填。PushAction 不分支 character/env, 统一查 `actor.collision_profile`。
+  数据驱动: 未来 character 职业差异 (轻甲 pushable / 重甲不动) 直接改 profile 数值。
+- **`EnvironmentActor`** 删除独占 `collision_profile` 字段 (移到基类)。`_init` 接口不变。
+- **`HexBattleSkillScenarioHarness._PreviewInstance.start`** — `UGridMap.configure(grid_config)`
+  之后补 `grid = UGridMap.model`, 让 `battle.grid.has_tile / get_occupant / move_occupant` 在
+  scenario 中可用 (与 `HexWorldGameplayInstance.configure_grid` 对齐)。修复 PushAction /
+  ApplyMoveAction 等依赖 `battle.grid` 的代码在 harness scenario 下空指针。
+
+### 设计决策摘要
+
+- **collision_profile 上提到 HexBattleActor 基类 (而非 PushAction 内部分支 character/env)**:
+  数据驱动, 未来 push/pull/scatter/wind_torrent 全部统一查 `actor.collision_profile`, 零分支。
+- **走 metadata `ALLOWED_TARGET_KINDS=["Character"]` 而非 ["Character","Environment"]**:
+  V1 不允许直接 push 环境物 (`pushable=false` 的反冲语义留给 V2)。Environment 仍可作为
+  blocker 出现, 通过 PushAction 内部 occupant 检查处理。
+- **拆 ActorDisplacedEvent + PushBlockedEvent 而非单事件 + cause 字段**: 命名诚实,
+  前端动画可分开播 (displaced=平移动画 / blocked=撞击震屏)。N>1 移动后撞两个事件并存。
+- **碰撞伤害不走 PreDamageEvent (M1)**: deterministic 无 modifier 介入, 避免 Expose 等
+  错误地放大 collision damage。未来若需 Expose 影响 collision, 再扩 `HexBattleDamageUtils`
+  显式入口。
+- **`source_actor_id = caster` (gameplay attribution)**: thorns 反给 caster, kill credit 归
+  caster, blocker 受的 collision damage 也归 caster。语义统一, 不引入"blocker 莫名其妙变伤害源"
+  的混乱。
+
+### 验证
+
+| 测试 | 结果 |
+|---|---|
+| `smoke_knockback_punch` 7 case | 7/7 PASS (含 collision deterministic 20 trials) |
+| `smoke_wall_breaker` (回归 EnvironmentActor 路径) | 2/2 PASS |
+| `smoke_skill_scenarios` (14 scenarios 回归) | 14/14 PASS |
+| `tests/run_tests.tscn` (LGF 单元测试) | 73/73 PASS |
+
+---
+
 ## [Unreleased] — 2026-04-28 EnvironmentActor 子系统 + AttributeSet 继承 (M1)
 
 引入 hex-atb-battle 中间基类 `HexBattleActor`,拆出两个子类 `CharacterActor` / `EnvironmentActor`,
