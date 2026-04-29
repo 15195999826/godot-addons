@@ -338,12 +338,13 @@ class ActorDisplacedEvent extends GameEvent.Base:
 ## 与 ActorDisplacedEvent 互补:
 ##   - 完全没移动 (撞到正前方): 仅 PushBlockedEvent
 ##   - 移动若干格后撞到 (N>1 链式推): ActorDisplacedEvent + PushBlockedEvent
-## 字段双坐标 (from_hex 是 target 实际停在哪, attempted_to_hex 是若不挡能到达的格子),
-## 让 replay / frontend / scenario 不必重算坐标。
+## 字段语义与 ActorDisplacedEvent 对齐: actor_id = 被推的 target;
+## stopped_at_hex = target 实际停在哪 (= ActorDisplacedEvent.to_hex 当二者同时 fire);
+## attempted_to_hex = 若不挡能到达的格子。replay / frontend / scenario 不必重算坐标。
 ##
 class PushBlockedEvent extends GameEvent.Base:
-	var target_actor_id: String = ""
-	var from_hex: Dictionary = {}             # target 实际停在的位置
+	var actor_id: String = ""                 # 被推的 target
+	var stopped_at_hex: Dictionary = {}       # target 实际停在的位置
 	var attempted_to_hex: Dictionary = {}     # 若不挡, 推算到达的目标格
 	var blocked_by: String = ""               # "edge" | "actor"
 	var blocker_actor_id: String = ""         # 当 blocked_by == "actor" 时的 blocker id, 否则 ""
@@ -353,16 +354,16 @@ class PushBlockedEvent extends GameEvent.Base:
 		kind = "push_blocked"
 
 	static func create(
-		p_target_actor_id: String,
-		p_from_hex: Dictionary,
+		p_actor_id: String,
+		p_stopped_at_hex: Dictionary,
 		p_attempted_to_hex: Dictionary,
 		p_blocked_by: String,
 		p_blocker_actor_id: String,
 		p_source_actor_id: String
 	) -> PushBlockedEvent:
 		var e := PushBlockedEvent.new()
-		e.target_actor_id = p_target_actor_id
-		e.from_hex = p_from_hex
+		e.actor_id = p_actor_id
+		e.stopped_at_hex = p_stopped_at_hex
 		e.attempted_to_hex = p_attempted_to_hex
 		e.blocked_by = p_blocked_by
 		e.blocker_actor_id = p_blocker_actor_id
@@ -372,8 +373,8 @@ class PushBlockedEvent extends GameEvent.Base:
 	func to_dict() -> Dictionary:
 		return {
 			"kind": kind,
-			"target_actor_id": target_actor_id,
-			"from_hex": from_hex,
+			"actor_id": actor_id,
+			"stopped_at_hex": stopped_at_hex,
 			"attempted_to_hex": attempted_to_hex,
 			"blocked_by": blocked_by,
 			"blocker_actor_id": blocker_actor_id,
@@ -382,8 +383,8 @@ class PushBlockedEvent extends GameEvent.Base:
 
 	static func from_dict(d: Dictionary) -> PushBlockedEvent:
 		var e := PushBlockedEvent.new()
-		e.target_actor_id = d.get("target_actor_id", "") as String
-		e.from_hex = d.get("from_hex", {}) as Dictionary
+		e.actor_id = d.get("actor_id", "") as String
+		e.stopped_at_hex = d.get("stopped_at_hex", {}) as Dictionary
 		e.attempted_to_hex = d.get("attempted_to_hex", {}) as Dictionary
 		e.blocked_by = d.get("blocked_by", "") as String
 		e.blocker_actor_id = d.get("blocker_actor_id", "") as String

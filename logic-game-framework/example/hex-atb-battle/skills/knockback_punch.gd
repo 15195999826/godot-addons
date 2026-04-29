@@ -69,7 +69,7 @@ static var ABILITY := (
 			HexBattlePushAction.new(
 				HexBattleTargetSelectors.current_target(),
 				KNOCKBACK_DISTANCE,
-				"knockback"
+				HexBattlePushAction.KIND_KNOCKBACK
 			),
 		])
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
