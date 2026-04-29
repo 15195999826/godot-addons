@@ -25,7 +25,7 @@
 ##
 ## 数据模型 (v2):
 ##   actors: Array[Dictionary] —— 每条 {
-##     role: "caster"|"dummy", team: "A"|"B", class, pos: [q,r], hp, atk,
+##     role: "caster"|"dummy", team: "A"|"B", pos: [q,r], hp, atk,
 ##     passives: Array[String],   # config_id 列表
 ##     track:    Array[Dictionary],
 ##     # keyframe = {time_ms: int, skill: String,
@@ -41,10 +41,11 @@ extends Node
 const PRESET_DIR := "user://skill_preview_presets"
 const BUILTIN_PRESET_DIR := "res://addons/logic-game-framework/example/skill-preview/presets"
 const ENV_STONE_WALL := "stone_wall"
-
-const CLASS_NAMES: Array[String] = [
-	"WARRIOR", "PRIEST", "ARCHER", "MAGE", "BERSERKER", "ASSASSIN",
-]
+const PREVIEW_ACTOR_CLASS := HexBattleClassConfig.CharacterClass.WARRIOR
+const PREVIEW_DEFAULT_HP := 100.0
+const PREVIEW_DEFAULT_ATK := 50.0
+const PREVIEW_DEFAULT_DEF := 0.0
+const PREVIEW_DEFAULT_SPEED := 0.0
 
 const TARGET_MODE_NAMES: Array[String] = [
 	"auto", "enemy_index", "ally_index", "fixed_pos",
@@ -61,7 +62,7 @@ const CHARACTER_PANEL_WIDTH := 420.0
 const DETAILS_POPUP_WIDTH := 380.0
 const WORKSPACE_GAP := 12.0
 const DRAWER_COLLAPSED_HEIGHT := 44.0
-const DRAWER_EXPANDED_HEIGHT := 420.0
+const DRAWER_EXPANDED_HEIGHT := 360.0
 const CONTROL_DOCK_COLLAPSED_WIDTH := 0.0
 const WORKSPACE_MODE_SETUP := "setup"
 const WORKSPACE_MODE_TIMELINE := "timeline"
@@ -80,14 +81,18 @@ const KF_TIME_STEP_MS := 100
 # SkillPreviewTimeline (SPT) tab 视觉常量
 # 命名前缀 SPT 与 LGF core TimelineRegistry / Ability timeline 概念区分。
 const SPT_ACTOR_LABEL_W := 220
-const SPT_ROW_H := 78
+const SPT_ROW_H := 84
 const SPT_RULER_H := 34
 const SPT_RULER_LABEL_W := 58.0
 const SPT_RULER_LABEL_H := 16.0
 const SPT_KF_BTN_W := 92
 const SPT_KF_BTN_H := 30
-const SPT_RELEASE_SPAN_H := 18
+const SPT_RELEASE_SPAN_H := 14
 const SPT_COOLDOWN_BAR_H := 4
+const SPT_KF_LANE_CENTER_Y := 25.0
+const SPT_RELEASE_LANE_Y := 45.0
+const SPT_COOLDOWN_LANE_Y := 62.0
+const SPT_RESULT_LANE_Y := 78.0
 const SPT_MIN_AUTO_MS := 5000
 const SPT_AUTO_BUFFER_MS := 1000
 const SPT_MIN_TRACK_W := 1500.0
@@ -104,6 +109,8 @@ const SPT_EDITOR_GRID_MAJOR := Color(1.0, 1.0, 1.0, 0.18)
 const SPT_EDITOR_TEXT := Color("E5E7EB")
 const SPT_EDITOR_TEXT_SOFT := Color("94A3B8")
 const SPT_CURSOR_COLOR := Color("FACC15")
+
+const HEX_DRAG_HOLD_SECONDS := 0.16
 
 
 # ========== Scene 节点 (unique names) ==========
@@ -159,6 +166,8 @@ var _world_view: FrontendWorldView
 var _animator: FrontendBattleAnimator
 var _camera_rig: LomoCameraRig
 var _player_controller: LomoPlayerController
+var _hex_selection_cursor: MeshInstance3D = null
+var _hex_selection_cursor_material: StandardMaterial3D = null
 
 ## true: 战斗 procedure 运行中 / animator 播放中, 禁止编辑 UI 修改 world
 var _is_playing: bool = false
@@ -181,13 +190,20 @@ var _spt_drag_actor_idx: int = -1
 var _spt_drag_kf_idx: int = -1
 var _spt_drag_requested_ms: int = 0
 var _spt_drag_track_area: Control = null
+var _spt_drag_grab_offset_x: float = 0.0
 var _spt_cursor_actor_idx: int = -1
 var _spt_cursor_time_ms: int = 0
+var _hex_drag_pending: bool = false
+var _hex_dragging: bool = false
+var _hex_drag_actor_idx: int = -1
+var _hex_drag_hold_elapsed: float = 0.0
+var _hex_drag_last_coord: HexCoord = null
 
 var _timeline_tracks_container: VBoxContainer = null
 var _timeline_warning_list: VBoxContainer = null
 var _timeline_add_button: Button = null
 var _timeline_delete_button: Button = null
+var _timeline_warnings_button: Button = null
 var _timeline_status_label: Label = null
 var _drawer_tabs: TabContainer = null
 var _drawer_timeline_tab: VBoxContainer = null
@@ -208,7 +224,7 @@ var _popup_environment_idx: int = -1
 ## 真实 actor id 由 WorldGI.add_actor 分配(形如 world_N:Character_M), 通过
 ## display_name 反查的 _role_id_to_actor_id 维护供 queue_preview 使用。
 ##
-## 增量编辑路径(_remove_actor_at / class 切换)需要从 _actors[idx] 反查 actor_id,
+## 增量编辑路径(_remove_actor_at / 位置与数值变更)需要从 _actors[idx] 反查 actor_id,
 ## 但 _role_id_for(idx) 在 idx 变化后会重新编号(删 enemy_2 后 enemy_3 → enemy_2),
 ## 用 role_id 反查会拿到错位的 actor。因此并行维护 _actor_ids: Array[String] 与
 ## _actors 同 idx 对齐, 保存每条数据模型项当前对应的 world actor_id。
@@ -251,7 +267,7 @@ func _ready() -> void:
 	_reset_world_to_model()
 	_apply_setup_inspector_layout()
 	_set_console_expanded(false)
-	_set_status("Ready — 右键点格子编辑摆位")
+	_set_status("Ready — 长按角色格拖拽摆位")
 	_log_welcome()
 
 
@@ -261,6 +277,23 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_process_stage_camera_input(delta)
+	_process_hex_drag_hold(delta)
+
+
+func _process_hex_drag_hold(delta: float) -> void:
+	if not _hex_drag_pending:
+		return
+	if _is_playing or not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_clear_hex_drag_state()
+		return
+	_hex_drag_hold_elapsed += delta
+	if _hex_drag_hold_elapsed < HEX_DRAG_HOLD_SECONDS:
+		return
+	_hex_drag_pending = false
+	_hex_dragging = _hex_drag_actor_idx >= 0 and _hex_drag_actor_idx < _actors.size()
+	if _hex_dragging:
+		_set_status("Dragging %s — drop on an empty hex" % _role_id_for(_hex_drag_actor_idx))
+		_drag_actor_to_hover_hex()
 
 
 func _apply_skill_preview_window_size() -> void:
@@ -307,6 +340,7 @@ func _init_world_stack() -> void:
 	_animator.playback_ended.connect(_on_playback_ended)
 
 	_add_pick_ground()
+	_init_hex_selection_cursor()
 
 
 ## LomoPlayerController 的 raycast 需要 Y≈0 平面有 collider 才能命中 "ground"。
@@ -323,6 +357,46 @@ func _add_pick_ground() -> void:
 	col.position = Vector3(0.0, -0.05, 0.0)
 	body.add_child(col)
 	add_child(body)
+
+
+func _init_hex_selection_cursor() -> void:
+	_hex_selection_cursor = MeshInstance3D.new()
+	_hex_selection_cursor.name = "SelectedHexCursor"
+	_hex_selection_cursor.visible = false
+	_hex_selection_cursor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_hex_selection_cursor_material = StandardMaterial3D.new()
+	_hex_selection_cursor_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_hex_selection_cursor_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_hex_selection_cursor_material.albedo_color = Color(1.0, 0.82, 0.12, 0.32)
+	_hex_selection_cursor_material.emission_enabled = true
+	_hex_selection_cursor_material.emission = Color(1.0, 0.72, 0.08)
+	_hex_selection_cursor_material.emission_energy_multiplier = 0.45
+	_hex_selection_cursor.material_override = _hex_selection_cursor_material
+	add_child(_hex_selection_cursor)
+	_update_hex_selection_cursor()
+
+
+func _update_hex_selection_cursor() -> void:
+	if _hex_selection_cursor == null or not is_instance_valid(_hex_selection_cursor):
+		return
+	if _selected_hex == null or not _selected_hex.is_valid():
+		_hex_selection_cursor.visible = false
+		return
+	if UGridMap.model == null or not UGridMap.model.has_tile(_selected_hex):
+		_hex_selection_cursor.visible = false
+		return
+	var cfg := UGridMap.model.get_config()
+	var mesh := CylinderMesh.new()
+	mesh.radial_segments = 6
+	mesh.rings = 1
+	mesh.height = 0.035
+	mesh.top_radius = cfg.size * 0.92
+	mesh.bottom_radius = cfg.size * 0.92
+	_hex_selection_cursor.mesh = mesh
+	var pixel := UGridMap.coord_to_world(_selected_hex)
+	_hex_selection_cursor.position = Vector3(pixel.x, 0.03, pixel.y)
+	_hex_selection_cursor.rotation.y = PI / 6.0 if cfg.orientation == GridMapConfig.Orientation.FLAT else 0.0
+	_hex_selection_cursor.visible = true
 
 
 ## 相机 / 光 / 环境 —— 原先委托 FrontendBattleReplayScene 做, 切到 WorldView 后
@@ -506,6 +580,13 @@ func _build_drawer_timeline_tab() -> void:
 	toolbar.add_child(delete_btn)
 	_timeline_delete_button = delete_btn
 
+	var warnings_btn := _make_timeline_tool_button("Warnings 0", "Open timeline warnings")
+	warnings_btn.pressed.connect(func() -> void:
+		_set_drawer_tab("Warnings")
+	)
+	toolbar.add_child(warnings_btn)
+	_timeline_warnings_button = warnings_btn
+
 	var divider := VSeparator.new()
 	toolbar.add_child(divider)
 
@@ -636,7 +717,16 @@ func _build_drawer_scene_tab() -> void:
 	var scene_vbox := get_node_or_null("ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs/Scene/SceneVBox") as VBoxContainer
 	if scene_vbox == null:
 		return
-	_reparent_control(scene_vbox, scene_scroll)
+	var scene_shell := HBoxContainer.new()
+	scene_shell.name = "SceneFormShell"
+	scene_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scene_scroll.add_child(scene_shell)
+	_reparent_control(scene_vbox, scene_shell)
+	scene_vbox.custom_minimum_size = Vector2(560.0, 0.0)
+	scene_vbox.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var scene_spacer := Control.new()
+	scene_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scene_shell.add_child(scene_spacer)
 
 
 func _build_drawer_run_tab() -> void:
@@ -651,8 +741,21 @@ func _build_drawer_run_tab() -> void:
 	title.text = "Run Config"
 	title.add_theme_font_override("font", _clay_font_bold())
 	run_tab.add_child(title)
-	_reparent_control(_max_ticks_input.get_parent() as Control, run_tab)
-	_reparent_control(_speed_input.get_parent() as Control, run_tab)
+	var run_shell := HBoxContainer.new()
+	run_shell.name = "RunFormShell"
+	run_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	run_tab.add_child(run_shell)
+	var run_form := VBoxContainer.new()
+	run_form.name = "RunForm"
+	run_form.custom_minimum_size = Vector2(520.0, 0.0)
+	run_form.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	run_form.add_theme_constant_override("separation", 8)
+	run_shell.add_child(run_form)
+	_reparent_control(_max_ticks_input.get_parent() as Control, run_form)
+	_reparent_control(_speed_input.get_parent() as Control, run_form)
+	var run_spacer := Control.new()
+	run_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	run_shell.add_child(run_spacer)
 
 
 func _reparent_control(control: Control, new_parent: Control) -> void:
@@ -806,6 +909,15 @@ func _update_timeline_mode_buttons() -> void:
 		_timeline_delete_button.disabled = not editable \
 				or _selected_spt_actor_idx < 0 \
 				or _selected_spt_kf_idx < 0
+	if _timeline_warnings_button != null:
+		var warning_count := _collect_spt_warnings().size()
+		_timeline_warnings_button.text = "Warnings %d" % warning_count
+		_timeline_warnings_button.tooltip_text = "No timeline warnings" if warning_count == 0 else "Open %d timeline warnings" % warning_count
+		_timeline_warnings_button.disabled = false
+		var warning_bg := Color("243142") if warning_count == 0 else Color("451A03")
+		var warning_border := Color("334155") if warning_count == 0 else Color("F59E0B")
+		_timeline_warnings_button.add_theme_stylebox_override("normal", _outlined_sb(warning_bg, warning_border, 5, 7, 4))
+		_timeline_warnings_button.add_theme_stylebox_override("hover", _outlined_sb(warning_bg.lightened(0.1), warning_border, 5, 7, 4))
 	if _timeline_status_label != null:
 		_timeline_status_label.text = _timeline_status_text()
 
@@ -1089,14 +1201,14 @@ func _init_default_actors() -> void:
 	var default_active_id := _default_active_skill_id()
 	_actors = [
 		{
-			"role": "caster", "team": "A", "class": "WARRIOR",
-			"pos": [0, 0], "hp": 0.0, "atk": 0.0,
+			"role": "caster", "team": "A",
+			"pos": [0, 0], "hp": PREVIEW_DEFAULT_HP, "atk": PREVIEW_DEFAULT_ATK,
 			"passives": [] as Array[String],
 			"track": [_make_default_keyframe(default_active_id)] if default_active_id != "" else [] as Array[Dictionary],
 		},
 		{
-			"role": "dummy", "team": "B", "class": "WARRIOR",
-			"pos": [2, 0], "hp": 100.0, "atk": 0.0,
+			"role": "dummy", "team": "B",
+			"pos": [2, 0], "hp": PREVIEW_DEFAULT_HP, "atk": PREVIEW_DEFAULT_ATK,
 			"passives": [] as Array[String],
 			"track": [] as Array[Dictionary],
 		},
@@ -1124,14 +1236,14 @@ static func _make_default_keyframe(skill_id: String) -> Dictionary:
 
 # ========== 数据模型操作 ==========
 
-func _add_actor(role: String, team: String, cls: String, q: int, r: int) -> void:
+func _add_actor(role: String, team: String, q: int, r: int) -> void:
 	var coord := _nearest_free_coord_for(q, r, team, -1)
 	if not coord.is_valid():
 		_set_status("No free hex available")
 		return
 	_actors.append({
-		"role": role, "team": team, "class": cls,
-		"pos": [coord.q, coord.r], "hp": 100.0, "atk": 0.0,
+		"role": role, "team": team,
+		"pos": [coord.q, coord.r], "hp": PREVIEW_DEFAULT_HP, "atk": PREVIEW_DEFAULT_ATK,
 		"passives": [] as Array[String],
 		"track": [] as Array[Dictionary],
 	})
@@ -1145,7 +1257,7 @@ func _add_actor(role: String, team: String, cls: String, q: int, r: int) -> void
 
 func _add_actor_at_next_free(team: String) -> void:
 	var start_q := 2 if team == "B" else -1
-	_add_actor("dummy", team, "WARRIOR", start_q, 0)
+	_add_actor("dummy", team, start_q, 0)
 
 
 func _add_stone_wall(q: int, r: int) -> void:
@@ -1279,17 +1391,24 @@ func _find_environment_idx_at(q: int, r: int) -> int:
 	return -1
 
 
-func _move_caster_to(q: int, r: int) -> void:
-	var coord := _nearest_free_coord_for(q, r, _actors[0]["team"] as String, 0)
+func _move_actor_to_coord(idx: int, target_coord: HexCoord) -> bool:
+	if idx < 0 or idx >= _actors.size():
+		return false
+	if target_coord == null or not target_coord.is_valid():
+		return false
+	var coord := target_coord
 	if not coord.is_valid():
 		_set_status("No free hex available")
-		return
-	_actors[0]["pos"] = [coord.q, coord.r]
-	_select_actor_at(0, false)
+		return false
+	if not _can_place_actor_at_for(coord, idx):
+		return false
+	(_actors[idx] as Dictionary)["pos"] = [coord.q, coord.r]
+	_select_actor_at(idx, false)
 	_rebuild_inspector()
 	if _is_playing:
-		return
-	_apply_actor_position_change(0, coord.q, coord.r)
+		return true
+	_apply_actor_position_change(idx, coord.q, coord.r)
+	return true
 
 
 # ========== UI: Details ==========
@@ -1332,24 +1451,8 @@ func _refresh_character_panel() -> void:
 	if _character_panel_mode_label != null:
 		_character_panel_mode_label.text = _character_panel_mode_text()
 
-	if _selected_kind == SELECT_KEYFRAME:
-		_character_panel_body.add_child(_build_character_selected_keyframe_panel())
-	elif _selected_kind == SELECT_HEX:
-		_character_panel_body.add_child(_build_character_hex_context_panel())
-	elif _selected_kind == SELECT_ENVIRONMENT:
-		_character_panel_body.add_child(_build_character_environment_context_panel())
-
-	var list_title := Label.new()
-	list_title.text = "Roster"
-	list_title.add_theme_font_override("font", _clay_font_bold())
-	list_title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
-	_character_panel_body.add_child(list_title)
-
-	if _actors.is_empty():
-		_character_panel_body.add_child(_make_character_hint_label("No actors"))
-	else:
-		for i in _actors.size():
-			_character_panel_body.add_child(_build_character_actor_card(i))
+	_character_panel_body.add_child(_build_character_roster_section())
+	_character_panel_body.add_child(_build_character_selection_inspector())
 
 	var editable := not _playback_mode and not _is_playing
 	_character_panel.modulate = Color(1.0, 1.0, 1.0, 1.0 if editable else 0.78)
@@ -1364,15 +1467,64 @@ func _character_panel_mode_text() -> String:
 	return "Setup"
 
 
+func _build_character_roster_section() -> PanelContainer:
+	var panel := _make_character_panel_card(Color("FFFFFF"), Color("273449"))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "Roster"
+	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	title.add_theme_font_size_override("font_size", 12)
+	box.add_child(title)
+	if _actors.is_empty():
+		box.add_child(_make_character_hint_label("No actors"))
+	else:
+		for i in _actors.size():
+			box.add_child(_build_character_actor_card(i))
+	return panel
+
+
+func _build_character_selection_inspector() -> PanelContainer:
+	match _selected_kind:
+		SELECT_KEYFRAME:
+			return _build_character_selected_keyframe_panel()
+		SELECT_ACTOR:
+			if _selected_actor_idx >= 0 and _selected_actor_idx < _actors.size():
+				return _build_character_selected_actor_panel(_selected_actor_idx)
+		SELECT_HEX:
+			return _build_character_hex_context_panel()
+		SELECT_ENVIRONMENT:
+			return _build_character_environment_context_panel()
+	return _build_character_empty_selection_panel()
+
+
+func _build_character_empty_selection_panel() -> PanelContainer:
+	var panel := _make_character_panel_card(Color("F8FAFC"), Color("273449"))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 5)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "Inspector"
+	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	title.add_theme_font_size_override("font_size", 12)
+	box.add_child(title)
+	box.add_child(_make_character_hint_label("Select an actor or keyframe"))
+	return panel
+
+
 func _build_character_selected_keyframe_panel() -> PanelContainer:
 	var panel := _make_character_panel_card(Color("F8FAFC"), Color("F59E0B"))
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 7)
+	box.add_theme_constant_override("separation", 6)
 	panel.add_child(box)
 	var title := Label.new()
-	title.text = "Selected Keyframe"
+	title.text = "Inspector · Keyframe"
 	title.add_theme_font_override("font", _clay_font_bold())
-	title.add_theme_color_override("font_color", Color("92400E"))
+	title.add_theme_color_override("font_color", Color("FDBA74"))
+	title.add_theme_font_size_override("font_size", 12)
 	box.add_child(title)
 	var details := _build_keyframe_detail_panel()
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1380,8 +1532,28 @@ func _build_character_selected_keyframe_panel() -> PanelContainer:
 	return panel
 
 
+func _build_character_selected_actor_panel(idx: int) -> PanelContainer:
+	var panel := _make_character_panel_card(Color("F8FAFC"), _actor_track_color(idx, 1.0))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "Inspector · %s" % _actor_timeline_label(idx)
+	title.add_theme_font_override("font", _clay_font_bold())
+	title.add_theme_color_override("font_color", CLAY_TEXT)
+	title.add_theme_font_size_override("font_size", 12)
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	box.add_child(title)
+	box.add_child(_build_character_hp_row(idx))
+	if _playback_mode:
+		box.add_child(_build_character_runtime_section(idx))
+	else:
+		box.add_child(_build_character_actor_editor(idx))
+	return panel
+
+
 func _build_character_hex_context_panel() -> PanelContainer:
-	var panel := _make_character_panel_card(Color("FFFFFF"), Color("CBD5E1"))
+	var panel := _make_character_panel_card(Color("FFFFFF"), Color("273449"))
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	panel.add_child(box)
@@ -1396,7 +1568,7 @@ func _build_character_hex_context_panel() -> PanelContainer:
 
 
 func _build_character_environment_context_panel() -> PanelContainer:
-	var panel := _make_character_panel_card(Color("FFFFFF"), Color("CBD5E1"))
+	var panel := _make_character_panel_card(Color("FFFFFF"), Color("273449"))
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 	panel.add_child(box)
@@ -1422,16 +1594,16 @@ func _build_character_environment_context_panel() -> PanelContainer:
 
 func _build_character_actor_card(idx: int) -> PanelContainer:
 	var highlighted := _is_character_actor_selected(idx)
-	var expanded := _should_expand_character_actor_card(idx)
-	var border := _actor_track_color(idx, 1.0) if highlighted else Color("D8DEE8")
+	var border := _actor_track_color(idx, 1.0) if highlighted else Color("334155")
 	var bg := Color("F8FAFC") if highlighted else Color("FFFFFF")
 	var panel := _make_character_panel_card(bg, border)
+	panel.custom_minimum_size = Vector2(0, 58)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 7)
+	box.add_theme_constant_override("separation", 3)
 	panel.add_child(box)
 
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 7)
+	header.add_theme_constant_override("separation", 5)
 	box.add_child(header)
 
 	var select_btn := Button.new()
@@ -1441,9 +1613,17 @@ func _build_character_actor_card(idx: int) -> PanelContainer:
 	select_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	select_btn.tooltip_text = "Select actor"
 	select_btn.set_meta("always_enabled", true)
+	select_btn.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	select_btn.add_theme_stylebox_override("hover", _clay_sb(Color("1E293B"), 3, 2, 1, 0, 0))
+	select_btn.add_theme_stylebox_override("pressed", _clay_sb(Color("172554"), 3, 2, 1, 0, 0))
+	select_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	select_btn.add_theme_font_size_override("font_size", 13)
+	select_btn.add_theme_color_override("font_color", CLAY_TEXT)
+	select_btn.add_theme_color_override("font_hover_color", Color("FFFFFF"))
+	select_btn.add_theme_color_override("font_pressed_color", Color("FFFFFF"))
 	select_btn.pressed.connect(func() -> void:
 		if idx >= 0 and idx < _actors.size():
-			_select_actor_at(idx)
+			_select_actor_grid_cell(idx)
 	)
 	header.add_child(select_btn)
 
@@ -1451,31 +1631,39 @@ func _build_character_actor_card(idx: int) -> PanelContainer:
 	header.add_child(_make_character_chip(_actor_role_label(data), _actor_track_color(idx, 0.14), _actor_track_color(idx, 0.8)))
 	header.add_child(_make_character_chip(str(data.get("team", "?")), _team_chip_bg(str(data.get("team", "A"))), _team_chip_border(str(data.get("team", "A")))))
 
-	box.add_child(_build_character_hp_row(idx))
+	box.add_child(_build_character_hp_compact_row(idx))
 
 	var pos: Array = data.get("pos", [0, 0])
 	var meta := Label.new()
-	meta.text = "pos (%d, %d)  ·  %d keyframes" % [
+	meta.text = "(%d, %d)  ·  %d keyframes" % [
 		int(pos[0]), int(pos[1]), (data.get("track", []) as Array).size(),
 	]
 	meta.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
-	meta.add_theme_font_size_override("font_size", 12)
+	meta.add_theme_font_size_override("font_size", 11)
 	box.add_child(meta)
-
-	if expanded:
-		if _playback_mode:
-			box.add_child(_build_character_runtime_section(idx))
-		else:
-			box.add_child(_build_character_actor_editor(idx))
 	return panel
 
 
-func _should_expand_character_actor_card(idx: int) -> bool:
-	if idx < 0 or idx >= _actors.size():
-		return false
-	if _selected_kind == SELECT_ACTOR:
-		return _selected_actor_idx == idx
-	return false
+func _build_character_hp_compact_row(idx: int) -> HBoxContainer:
+	var stats := _actor_stats_for_panel(idx)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var bar := ProgressBar.new()
+	bar.min_value = 0.0
+	bar.max_value = maxf(1.0, float(stats.get("max_hp", 1.0)))
+	bar.value = clampf(float(stats.get("hp", 0.0)), 0.0, bar.max_value)
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(0, 6)
+	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(bar)
+	var value := Label.new()
+	value.text = "%d/%d" % [int(stats.get("hp", 0.0)), int(stats.get("max_hp", 0.0))]
+	value.custom_minimum_size = Vector2(54, 0)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	value.add_theme_font_size_override("font_size", 11)
+	row.add_child(value)
+	return row
 
 
 func _build_character_hp_row(idx: int) -> HBoxContainer:
@@ -1508,28 +1696,12 @@ func _build_character_actor_editor(idx: int) -> VBoxContainer:
 	box.add_theme_constant_override("separation", 6)
 
 	var data: Dictionary = _actors[idx]
-	var class_opt := OptionButton.new()
-	class_opt.fit_to_longest_item = false
-	for cls in CLASS_NAMES:
-		class_opt.add_item(cls)
-	class_opt.selected = max(0, CLASS_NAMES.find(str(data.get("class", "WARRIOR"))))
-	class_opt.item_selected.connect(func(i: int) -> void:
-		if idx < 0 or idx >= _actors.size():
-			return
-		_actors[idx]["class"] = CLASS_NAMES[i]
-		if not _is_playing:
-			_apply_actor_class_change(idx)
-		_queue_inspector_rebuild()
-	)
-	box.add_child(_build_actor_detail_field("Class", class_opt))
-
 	var pos: Array = data.get("pos", [0, 0])
-	box.add_child(_build_actor_detail_field("Q", _make_actor_spin(idx, "q", float(pos[0]), -20, 20, false, 0)))
-	box.add_child(_build_actor_detail_field("R", _make_actor_spin(idx, "r", float(pos[1]), -20, 20, false, 0)))
-	box.add_child(_build_actor_detail_field("HP", _make_actor_spin(idx, "hp", float(data.get("hp", 0.0)), 0, 9999, true, 0)))
-	box.add_child(_build_actor_detail_field("ATK", _make_actor_spin(idx, "atk", float(data.get("atk", 0.0)), 0, 9999, true, 0)))
+	box.add_child(_make_detail_label("Position", "(%d, %d)" % [int(pos[0]), int(pos[1])]))
+	box.add_child(_make_character_hint_label("Long-press the actor hex to move it."))
+	box.add_child(_build_actor_detail_field("HP", _make_actor_spin(idx, "hp", float(data.get("hp", PREVIEW_DEFAULT_HP)), 1, 9999, true, 0)))
+	box.add_child(_build_actor_detail_field("ATK", _make_actor_spin(idx, "atk", float(data.get("atk", PREVIEW_DEFAULT_ATK)), 0, 9999, true, 0)))
 	box.add_child(_build_actor_passive_section(idx))
-	box.add_child(_build_character_track_controls(idx))
 
 	if str(data.get("role", "")) != "caster":
 		var remove_btn := Button.new()
@@ -1542,36 +1714,6 @@ func _build_character_actor_editor(idx: int) -> VBoxContainer:
 	return box
 
 
-func _build_character_track_controls(idx: int) -> VBoxContainer:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 4)
-	var title := Label.new()
-	title.text = "Skill Track"
-	title.add_theme_font_override("font", _clay_font_bold())
-	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
-	box.add_child(title)
-
-	var track: Array = (_actors[idx] as Dictionary).get("track", []) as Array
-	if track.is_empty():
-		box.add_child(_make_character_hint_label("No actions"))
-	else:
-		for kf_idx in track.size():
-			box.add_child(_build_keyframe_summary_row(idx, kf_idx))
-
-	var add_btn := Button.new()
-	add_btn.text = "+ Add Action"
-	add_btn.pressed.connect(func() -> void:
-		if idx < 0 or idx >= _actors.size():
-			return
-		var new_idx := _add_keyframe_at(idx, _next_keyframe_time_for(idx))
-		if new_idx >= 0:
-			_select_spt_keyframe(idx, new_idx)
-			_apply_timeline_workspace_layout()
-	)
-	box.add_child(add_btn)
-	return box
-
-
 func _build_character_runtime_section(idx: int) -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
@@ -1579,7 +1721,7 @@ func _build_character_runtime_section(idx: int) -> VBoxContainer:
 	chips.add_theme_constant_override("separation", 5)
 	var statuses := _actor_status_labels(idx)
 	if statuses.is_empty():
-		chips.add_child(_make_character_chip("No status", Color("F8FAFC"), Color("CBD5E1")))
+		chips.add_child(_make_character_chip("No status", Color("1F2937"), Color("475569")))
 	else:
 		for status_text in statuses:
 			chips.add_child(_make_character_chip(status_text, _status_chip_bg(status_text), _status_chip_border(status_text)))
@@ -1606,19 +1748,74 @@ func _build_character_runtime_section(idx: int) -> VBoxContainer:
 
 func _make_character_panel_card(bg: Color, border: Color) -> PanelContainer:
 	var panel := PanelContainer.new()
-	var sb := _outlined_sb(bg, border, 8, 10, 9)
+	var sb := _character_panel_card_sb(bg, border)
 	panel.add_theme_stylebox_override("panel", sb)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return panel
+
+
+func _character_panel_card_sb(bg: Color, border: Color) -> StyleBoxFlat:
+	var sb := _clay_sb(_character_card_bg(bg, border), 0, 8, 7, 0, 0)
+	sb.border_color = _character_card_border_color(border)
+	if border == Color("273449"):
+		sb.content_margin_left = 0
+		sb.content_margin_right = 0
+		sb.content_margin_top = 7
+		sb.content_margin_bottom = 5
+		sb.border_width_top = 1
+	elif border == Color("334155"):
+		sb.content_margin_left = 8
+		sb.content_margin_right = 6
+		sb.content_margin_top = 5
+		sb.content_margin_bottom = 7
+		sb.border_width_bottom = 1
+	else:
+		sb.content_margin_left = 9
+		sb.content_margin_right = 7
+		sb.content_margin_top = 7
+		sb.content_margin_bottom = 8
+		sb.border_width_left = 3
+		sb.border_width_top = 1
+		sb.border_width_bottom = 1
+	return sb
+
+
+func _character_card_bg(bg: Color, border: Color) -> Color:
+	if border == Color("273449"):
+		return Color(0.0, 0.0, 0.0, 0.0)
+	if border == Color("334155"):
+		return Color(0.0, 0.0, 0.0, 0.0)
+	if border == Color("F59E0B"):
+		return Color("1C1917")
+	if border == Color("DC2626") or border == Color("B23B3B"):
+		return Color("1E1418")
+	if border == Color("22C55E"):
+		return Color("0F1D17")
+	if bg == Color("F8FAFC"):
+		return Color(
+			0.06 + border.r * 0.07,
+			0.08 + border.g * 0.07,
+			0.11 + border.b * 0.07,
+			1.0
+		)
+	return Color("111827")
+
+
+func _character_card_border_color(border: Color) -> Color:
+	if border == Color("273449"):
+		return Color("273449")
+	if border == Color("334155"):
+		return Color("334155")
+	return border
 
 
 func _make_character_chip(text: String, bg: Color, border: Color) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_override("font", _clay_font_bold())
-	label.add_theme_font_size_override("font_size", 11)
-	label.add_theme_color_override("font_color", border.darkened(0.35))
-	label.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 5, 7, 3))
+	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_color_override("font_color", Color("E5E7EB"))
+	label.add_theme_stylebox_override("normal", _outlined_sb(bg, border, 4, 5, 2))
 	return label
 
 
@@ -1665,11 +1862,11 @@ func _actor_stats_for_panel(idx: int) -> Dictionary:
 	var data: Dictionary = _actors[idx]
 	var max_hp := float(data.get("hp", 0.0))
 	if max_hp <= 0.0:
-		max_hp = 100.0
+		max_hp = PREVIEW_DEFAULT_HP
 	return {
 		"hp": max_hp,
 		"max_hp": max_hp,
-		"atk": float(data.get("atk", 0.0)),
+		"atk": float(data.get("atk", PREVIEW_DEFAULT_ATK)),
 	}
 
 
@@ -1731,39 +1928,39 @@ func _actor_history_lines(idx: int, limit: int) -> Array[String]:
 
 
 func _team_chip_bg(team: String) -> Color:
-	return Color("DBEAFE") if team == "A" else Color("FEE2E2")
+	return Color("1E3A8A") if team == "A" else Color("7F1D1D")
 
 
 func _team_chip_border(team: String) -> Color:
-	return Color("2563EB") if team == "A" else Color("B23B3B")
+	return Color("60A5FA") if team == "A" else Color("F87171")
 
 
 func _status_chip_bg(status_text: String) -> Color:
 	match status_text:
 		"Defeated":
-			return Color("FEE2E2")
+			return Color("7F1D1D")
 		"Poison":
-			return Color("DCFCE7")
+			return Color("14532D")
 		"Shield":
-			return Color("DBEAFE")
+			return Color("1E3A8A")
 		"Cooldown":
-			return Color("FEF3C7")
+			return Color("78350F")
 		_:
-			return Color("F8FAFC")
+			return Color("1F2937")
 
 
 func _status_chip_border(status_text: String) -> Color:
 	match status_text:
 		"Defeated":
-			return Color("DC2626")
+			return Color("F87171")
 		"Poison":
-			return Color("16A34A")
+			return Color("4ADE80")
 		"Shield":
-			return Color("2563EB")
+			return Color("60A5FA")
 		"Cooldown":
-			return Color("D97706")
+			return Color("F59E0B")
 		_:
-			return Color("CBD5E1")
+			return Color("475569")
 
 
 func _close_details_popup() -> void:
@@ -1778,7 +1975,14 @@ func _open_details_popup() -> void:
 
 
 func _select_actor(idx: int) -> void:
-	_select_actor_at(idx)
+	_select_actor_grid_cell(idx)
+
+
+func _select_actor_grid_cell(idx: int, rebuild: bool = true) -> void:
+	if idx < 0 or idx >= _actors.size():
+		_clear_selection(rebuild)
+		return
+	_select_hex_at(_actor_coord(idx), rebuild)
 
 
 func _select_actor_at(idx: int, rebuild: bool = true) -> void:
@@ -1794,6 +1998,7 @@ func _select_actor_at(idx: int, rebuild: bool = true) -> void:
 	if _spt_cursor_actor_idx != idx:
 		_set_spt_cursor(idx, _next_keyframe_time_for(idx), false)
 	_details_popup_user_closed = false
+	_update_hex_selection_cursor()
 	if rebuild:
 		_rebuild_inspector()
 
@@ -1814,6 +2019,7 @@ func _select_environment_at(idx: int, rebuild: bool = true) -> void:
 	else:
 		_selected_hex = null
 	_details_popup_user_closed = false
+	_update_hex_selection_cursor()
 	if rebuild:
 		_rebuild_inspector()
 
@@ -1827,6 +2033,7 @@ func _clear_selection(rebuild: bool = true) -> void:
 	_selected_spt_kf_idx = -1
 	_set_spt_cursor(-1, 0, false)
 	_details_popup_user_closed = false
+	_update_hex_selection_cursor()
 	if rebuild:
 		_rebuild_inspector()
 
@@ -1850,6 +2057,7 @@ func _select_hex_at(coord: HexCoord, rebuild: bool = true) -> void:
 		_selected_spt_kf_idx = -1
 		_set_spt_cursor(-1, 0, false)
 		_details_popup_user_closed = false
+		_update_hex_selection_cursor()
 	if rebuild:
 		_rebuild_inspector()
 
@@ -1859,21 +2067,25 @@ func _clear_selection_if_invalid() -> void:
 		SELECT_ACTOR:
 			if _selected_actor_idx < 0 or _selected_actor_idx >= _actors.size():
 				_selected_kind = SELECT_NONE
+				_selected_hex = null
 				_selected_actor_idx = -1
 		SELECT_ENVIRONMENT:
 			if _selected_environment_idx < 0 or _selected_environment_idx >= _environments.size():
 				_selected_kind = SELECT_NONE
+				_selected_hex = null
 				_selected_environment_idx = -1
 		SELECT_KEYFRAME:
 			_clear_spt_selection_if_invalid()
 			if _selected_spt_actor_idx < 0 or _selected_spt_kf_idx < 0:
 				_selected_kind = SELECT_NONE
+				_selected_hex = null
 		SELECT_HEX:
 			if _selected_hex == null or not _selected_hex.is_valid():
 				_selected_kind = SELECT_NONE
 	if _selected_spt_actor_idx >= _actors.size():
 		_selected_spt_actor_idx = -1
 		_selected_spt_kf_idx = -1
+	_update_hex_selection_cursor()
 	_clear_spt_cursor_if_invalid()
 
 
@@ -2147,6 +2359,7 @@ func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 	track_area.draw_rect(Rect2(Vector2.ZERO, Vector2(w, h)), SPT_EDITOR_ROW, true)
 	if actor_idx == _selected_spt_actor_idx:
 		track_area.draw_rect(Rect2(Vector2.ZERO, Vector2(w, h)), _actor_track_color(actor_idx, 0.08), true)
+	_draw_spt_track_lanes(track_area, w, h)
 	var tick_step := _pick_tick_step(max_ms)
 	var tick := 0
 	while tick <= max_ms:
@@ -2170,7 +2383,7 @@ func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 			var span_start := _track_x_for_time(time_ms, max_ms, w)
 			var span_end := _track_x_for_time(time_ms + occupy_ms, max_ms, w)
 			var span_rect := Rect2(
-				Vector2(span_start, (h - SPT_RELEASE_SPAN_H) * 0.5),
+				Vector2(span_start, SPT_RELEASE_LANE_Y),
 				Vector2(maxf(2.0, span_end - span_start), SPT_RELEASE_SPAN_H)
 			)
 			track_area.draw_rect(span_rect, _actor_track_color(actor_idx, 0.24), true)
@@ -2179,12 +2392,13 @@ func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 			var cooldown_start := _track_x_for_time(time_ms + occupy_ms, max_ms, w)
 			var cooldown_end := _track_x_for_time(time_ms + cooldown_ms, max_ms, w)
 			var cooldown_rect := Rect2(
-				Vector2(cooldown_start, h - 17.0),
-				Vector2(maxf(2.0, cooldown_end - cooldown_start), 14.0)
+				Vector2(cooldown_start, SPT_COOLDOWN_LANE_Y),
+				Vector2(maxf(2.0, cooldown_end - cooldown_start), 10.0)
 			)
 			track_area.draw_rect(cooldown_rect, Color(0.65, 0.68, 0.75, 0.2), true)
 			track_area.draw_rect(cooldown_rect, Color(0.65, 0.68, 0.75, 0.38), false, 1.0)
-	var y := h * 0.5
+	_draw_spt_runtime_markers(actor_idx, track_area, max_ms, w)
+	var y := SPT_KF_LANE_CENTER_Y
 	track_area.draw_line(Vector2(0, y), Vector2(w, y), Color(1.0, 1.0, 1.0, 0.22), 1)
 	if _spt_cursor_actor_idx == actor_idx:
 		var cursor_x := _track_x_for_time(_spt_cursor_time_ms, max_ms, w)
@@ -2194,6 +2408,54 @@ func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 		var ghost_x := _track_x_for_time(_spt_drag_requested_ms, max_ms, w)
 		track_area.draw_line(Vector2(ghost_x, 4.0), Vector2(ghost_x, h - 4.0), Color("FFFFFF"), 2.0)
 		track_area.draw_circle(Vector2(ghost_x, y), 4.0, Color("FFFFFF"))
+
+
+func _draw_spt_track_lanes(track_area: Control, w: float, h: float) -> void:
+	track_area.draw_rect(Rect2(Vector2(0.0, 0.0), Vector2(w, 47.0)), Color(0.04, 0.07, 0.10, 0.22), true)
+	track_area.draw_rect(Rect2(Vector2(0.0, 48.0), Vector2(w, 38.0)), Color(0.0, 0.0, 0.0, 0.12), true)
+	track_area.draw_line(Vector2(0.0, 48.0), Vector2(w, 48.0), Color(1.0, 1.0, 1.0, 0.08), 1.0)
+	track_area.draw_line(Vector2(0.0, 70.0), Vector2(w, 70.0), Color(1.0, 1.0, 1.0, 0.06), 1.0)
+	track_area.draw_line(Vector2(0.0, 86.0), Vector2(w, 86.0), Color(1.0, 1.0, 1.0, 0.06), 1.0)
+	track_area.draw_line(Vector2(0.0, h - 1.0), Vector2(w, h - 1.0), Color(1.0, 1.0, 1.0, 0.08), 1.0)
+
+
+func _draw_spt_runtime_markers(actor_idx: int, track_area: Control, max_ms: int, w: float) -> void:
+	var actor_id := _actor_id_for_idx(actor_idx)
+	if actor_id == "" or _last_timeline.is_empty():
+		return
+	for entry_variant in _last_timeline.get("timeline", []):
+		var entry := entry_variant as Dictionary
+		var frame_ms := int(entry.get("frame", 0)) * TICK_INTERVAL_MS
+		var x := _track_x_for_time(frame_ms, max_ms, w)
+		for event_variant in entry.get("events", []):
+			var ev := event_variant as Dictionary
+			var marker_color := _runtime_marker_color_for_actor(actor_id, ev)
+			if marker_color.a <= 0.0:
+				continue
+			track_area.draw_circle(Vector2(x, SPT_RESULT_LANE_Y), 3.5, marker_color)
+			track_area.draw_line(
+				Vector2(x, SPT_RESULT_LANE_Y - 5.0),
+				Vector2(x, SPT_RESULT_LANE_Y + 5.0),
+				marker_color,
+				1.0
+			)
+
+
+func _runtime_marker_color_for_actor(actor_id: String, ev: Dictionary) -> Color:
+	match str(ev.get("kind", "")):
+		"damage":
+			if str(ev.get("target_actor_id", "")) == actor_id:
+				return Color("F87171")
+		"heal":
+			if str(ev.get("target_actor_id", "")) == actor_id:
+				return Color("34D399")
+		"death":
+			if str(ev.get("actor_id", "")) == actor_id:
+				return Color("EF4444")
+		"abilityTriggered", "executionActivated":
+			if str(ev.get("actor_id", "")) == actor_id or str(ev.get("source_actor_id", "")) == actor_id:
+				return Color("60A5FA")
+	return Color(0.0, 0.0, 0.0, 0.0)
 
 
 ## Keyframe 色块按钮: 颜色按 actor team 区分(caster=绿/A=蓝/B=红);
@@ -2381,7 +2643,6 @@ func _layout_keyframes_for_row(actor_idx: int, track_area: Control) -> void:
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	var max_ms := _spt_max_ms()
 	var w := track_area.size.x
-	var h := track_area.size.y
 	for k in track.size():
 		if k >= track_area.get_child_count():
 			break
@@ -2394,7 +2655,8 @@ func _layout_keyframes_for_row(actor_idx: int, track_area: Control) -> void:
 		var lane := _keyframe_lane_for_time(track, k)
 		var lane_count := _keyframe_lane_count_at_time(track, t)
 		var group_h := float(lane_count) * float(SPT_KF_BTN_H) + float(maxi(0, lane_count - 1)) * 2.0
-		var y := int((h - group_h) * 0.5 + float(lane) * (float(SPT_KF_BTN_H) + 2.0))
+		var lane_top := maxf(2.0, SPT_KF_LANE_CENTER_Y - group_h * 0.5)
+		var y := int(lane_top + float(lane) * (float(SPT_KF_BTN_H) + 2.0))
 		btn.position = Vector2(x, y)
 		btn.size = Vector2(SPT_KF_BTN_W, SPT_KF_BTN_H)
 
@@ -2439,26 +2701,46 @@ func _on_keyframe_button_gui_input(
 			_spt_drag_kf_idx = kf_idx
 			_spt_drag_requested_ms = int((track[kf_idx] as Dictionary).get("time_ms", 0))
 			_spt_drag_track_area = btn.get_parent() as Control
+			_spt_drag_grab_offset_x = clampf(mb.position.x, 0.0, float(SPT_KF_BTN_W))
 			if _spt_drag_track_area != null:
 				_spt_drag_track_area.queue_redraw()
 		else:
-			if _is_dragging_keyframe(actor_idx, kf_idx):
-				var final_ms := _on_keyframe_time_changed(actor_idx, kf_idx, _spt_drag_requested_ms)
-				_select_spt_keyframe(actor_idx, kf_idx)
-				if final_ms != _spt_drag_requested_ms:
-					_set_status("Moved to %dms: same skill release window is occupied" % final_ms)
-			_clear_spt_drag_state()
-			_rebuild_spt_ui()
+			_commit_spt_drag()
 	elif event is InputEventMouseMotion:
 		if not _is_dragging_keyframe(actor_idx, kf_idx):
 			return
-		var track_area := btn.get_parent() as Control
-		if track_area == null or track_area.size.x <= 0.0:
-			return
-		var local_x := track_area.get_local_mouse_position().x
-		_spt_drag_requested_ms = _time_for_track_x(local_x, track_area.size.x)
-		track_area.queue_redraw()
-		_rebuild_actors_ui()
+		_update_spt_drag_from_viewport()
+
+
+func _update_spt_drag_from_viewport() -> void:
+	if not _spt_dragging:
+		return
+	var track_area := _spt_drag_track_area
+	if track_area == null or not is_instance_valid(track_area):
+		return
+	if track_area.size.x <= 0.0:
+		return
+	var mouse_pos := get_viewport().get_mouse_position()
+	var local_x := mouse_pos.x - track_area.get_global_rect().position.x
+	var button_x := local_x - _spt_drag_grab_offset_x
+	_spt_drag_requested_ms = _time_for_keyframe_button_x(button_x, track_area.size.x)
+	track_area.queue_redraw()
+	_rebuild_actors_ui()
+
+
+func _commit_spt_drag() -> void:
+	if not _spt_dragging:
+		return
+	var actor_idx := _spt_drag_actor_idx
+	var kf_idx := _spt_drag_kf_idx
+	var requested_ms := _spt_drag_requested_ms
+	if _is_dragging_keyframe(actor_idx, kf_idx):
+		var final_ms := _on_keyframe_time_changed(actor_idx, kf_idx, requested_ms)
+		_select_spt_keyframe(actor_idx, kf_idx)
+		if final_ms != requested_ms:
+			_set_status("Moved to %dms: same skill release window is occupied" % final_ms)
+	_clear_spt_drag_state()
+	_rebuild_spt_ui()
 
 
 func _clear_spt_drag_state() -> void:
@@ -2468,6 +2750,7 @@ func _clear_spt_drag_state() -> void:
 	_spt_drag_kf_idx = -1
 	_spt_drag_requested_ms = 0
 	_spt_drag_track_area = null
+	_spt_drag_grab_offset_x = 0.0
 	if redraw_area != null and is_instance_valid(redraw_area):
 		redraw_area.queue_redraw()
 
@@ -2480,6 +2763,12 @@ func _time_for_track_x(x: float, width: float) -> int:
 	if width <= 0.0:
 		return 0
 	var ratio := clampf(x / width, 0.0, 1.0)
+	return int(round(ratio * float(_spt_max_ms()) / float(KF_TIME_STEP_MS))) * KF_TIME_STEP_MS
+
+
+func _time_for_keyframe_button_x(x: float, width: float) -> int:
+	var usable_w := maxf(1.0, width - float(SPT_KF_BTN_W))
+	var ratio := clampf(x / usable_w, 0.0, 1.0)
 	return int(round(ratio * float(_spt_max_ms()) / float(KF_TIME_STEP_MS))) * KF_TIME_STEP_MS
 
 
@@ -2534,9 +2823,11 @@ func _set_spt_selection(actor_idx: int, kf_idx: int) -> void:
 		_selected_environment_idx = -1
 		_details_popup_user_closed = false
 		if actor_idx < _actors.size():
+			_selected_hex = _actor_coord(actor_idx)
 			var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 			if kf_idx < track.size():
 				_set_spt_cursor(actor_idx, int((track[kf_idx] as Dictionary).get("time_ms", 0)), false)
+		_update_hex_selection_cursor()
 	elif actor_idx >= 0:
 		_select_actor_at(actor_idx, false)
 
@@ -2584,8 +2875,8 @@ func _rebuild_spt_warning_list() -> void:
 		focus_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		var warning_type := str(warning.get("type", ""))
 		var border := _spt_warning_color(warning_type)
-		focus_btn.add_theme_stylebox_override("normal", _outlined_sb(Color("FFFFFF"), border, 5, 8, 5))
-		focus_btn.add_theme_stylebox_override("hover", _outlined_sb(Color("FFF7ED"), border, 5, 8, 5))
+		focus_btn.add_theme_stylebox_override("normal", _outlined_sb(Color("1F2937"), border, 5, 8, 5))
+		focus_btn.add_theme_stylebox_override("hover", _outlined_sb(Color("2A3445"), border, 5, 8, 5))
 		focus_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 		focus_btn.pressed.connect(func() -> void:
 			_apply_timeline_workspace_layout()
@@ -2599,6 +2890,17 @@ func _rebuild_spt_warning_list() -> void:
 			fix_btn.tooltip_text = "Move to ready time"
 			fix_btn.pressed.connect(func() -> void: _move_keyframe_to_ready_time(actor_idx, kf_idx))
 			row.add_child(fix_btn)
+		var source_idx := int(warning.get("source_idx", -1))
+		if source_idx >= 0:
+			var source_btn := Button.new()
+			source_btn.text = "Source"
+			source_btn.tooltip_text = "Select conflicting keyframe"
+			source_btn.pressed.connect(func() -> void:
+				_apply_timeline_workspace_layout()
+				_select_spt_keyframe(actor_idx, source_idx)
+				_rebuild_spt_ui()
+			)
+			row.add_child(source_btn)
 		_timeline_warning_list.add_child(row)
 
 
@@ -2834,8 +3136,7 @@ func _actor_role_label(data: Dictionary) -> String:
 
 
 func _actor_timeline_label(idx: int) -> String:
-	var data: Dictionary = _actors[idx]
-	return "%s · %s" % [_role_id_for(idx), str(data.get("class", "?"))]
+	return _role_id_for(idx)
 
 
 func _actor_detail_title(idx: int) -> String:
@@ -2845,8 +3146,8 @@ func _actor_detail_title(idx: int) -> String:
 func _build_actor_detail_panel(idx: int) -> PanelContainer:
 	var data: Dictionary = _actors[idx]
 	var panel := PanelContainer.new()
-	var panel_sb := _clay_sb(Color("F8FAFC"), 8, 10, 10, 0, 0)
-	panel_sb.border_color = Color("D8DEE8")
+	var panel_sb := _clay_sb(Color("111827"), 8, 10, 10, 0, 0)
+	panel_sb.border_color = Color("273449")
 	panel_sb.border_width_left = 1
 	panel_sb.border_width_right = 1
 	panel_sb.border_width_top = 1
@@ -2866,24 +3167,9 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 	title.add_theme_font_override("font", _clay_font_bold())
 	box.add_child(title)
 
-	var class_opt := OptionButton.new()
-	class_opt.fit_to_longest_item = false
-	for cls in CLASS_NAMES:
-		class_opt.add_item(cls)
-	class_opt.selected = max(0, CLASS_NAMES.find(data["class"]))
-	class_opt.tooltip_text = "Actor class"
-	class_opt.item_selected.connect(func(i: int) -> void:
-		_actors[idx]["class"] = CLASS_NAMES[i]
-		if not _is_playing:
-			_apply_actor_class_change(idx)
-		_queue_inspector_rebuild()
-	)
-	box.add_child(_build_actor_detail_field("Class", class_opt))
-
 	var pos: Array = data["pos"]
-	box.add_child(_build_actor_detail_field("Q", _make_actor_spin(idx, "q", pos[0], -20, 20, false, 0)))
-	box.add_child(_build_actor_detail_field("R", _make_actor_spin(idx, "r", pos[1], -20, 20, false, 0)))
-	box.add_child(_build_actor_detail_field("HP", _make_actor_spin(idx, "hp", data["hp"], 0, 9999, true, 0)))
+	box.add_child(_make_detail_label("Position", "(%d, %d)" % [int(pos[0]), int(pos[1])]))
+	box.add_child(_build_actor_detail_field("HP", _make_actor_spin(idx, "hp", float(data.get("hp", PREVIEW_DEFAULT_HP)), 1, 9999, true, 0)))
 
 	# Passives 段: 每 actor 自己的 passive 选择 (来源 HexBattleSkillIndex.passives())。
 	# 与 Skill Track 解耦 —— passive 在战斗 start() 一次性 grant, 不进 timeline。
@@ -2902,11 +3188,12 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 
 func _build_actor_passive_section(actor_idx: int) -> Control:
 	var section := VBoxContainer.new()
-	section.add_theme_constant_override("separation", 4)
+	section.add_theme_constant_override("separation", 2)
 	var title := Label.new()
 	title.text = "Passives"
 	title.add_theme_font_override("font", _clay_font_bold())
 	title.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	title.add_theme_font_size_override("font_size", 12)
 	section.add_child(title)
 
 	var current_ids: Array = (_actors[actor_idx] as Dictionary).get("passives", []) as Array
@@ -2914,6 +3201,7 @@ func _build_actor_passive_section(actor_idx: int) -> Control:
 		var cb := CheckBox.new()
 		cb.text = "%s (%s)" % [cfg.display_name, cfg.config_id]
 		cb.button_pressed = current_ids.has(cfg.config_id)
+		cb.add_theme_font_size_override("font_size", 12)
 		_apply_passive_style(cb, cb.button_pressed)
 		var passive_id: String = cfg.config_id  # capture for closure
 		cb.toggled.connect(func(pressed: bool) -> void:
@@ -3420,24 +3708,6 @@ func _make_actor_spin(
 	s.tooltip_text = field.to_upper()
 	s.value_changed.connect(func(v: float) -> void:
 		match field:
-			"q", "r":
-				var pos: Array = _actors[actor_idx]["pos"]
-				var next_q := int(v) if field == "q" else int(pos[0])
-				var next_r := int(v) if field == "r" else int(pos[1])
-				var actor_data: Dictionary = _actors[actor_idx]
-				var coord := _nearest_free_coord_for(next_q, next_r, actor_data["team"] as String, actor_idx)
-				if not coord.is_valid():
-					_set_status("No free hex available")
-					_queue_inspector_rebuild()
-					return
-				_actors[actor_idx]["pos"] = [coord.q, coord.r]
-				if _selected_kind == SELECT_ACTOR and _selected_actor_idx == actor_idx:
-					_selected_hex = coord
-				if not _is_playing:
-					_apply_actor_position_change(actor_idx, coord.q, coord.r)
-				if coord.q != next_q or coord.r != next_r:
-					_set_status("Position occupied — moved to nearest free hex")
-					_queue_inspector_rebuild()
 			"hp":
 				_actors[actor_idx]["hp"] = v
 				if not _is_playing:
@@ -3468,7 +3738,7 @@ func _make_actor_spin(
 ##
 ## 编辑期面板 / 右键 / spinbox 全部走 event→update 的增量 mutation
 ## (_add_actor / _remove_actor_at / _apply_actor_position_change /
-## _apply_actor_hp_change / _apply_actor_class_change / _apply_grid_change),
+## _apply_actor_hp_change / _apply_actor_atk_change / _apply_grid_change),
 ## 不走 reset。增量路径不重建已有 view, 避免"加一个 actor 所有棋子从 (0,0) 滑回"
 ## 的视觉抖动。
 ##
@@ -3498,6 +3768,7 @@ func _reset_world_to_model_unguarded() -> void:
 		_spawn_one_actor(i)
 	for i in _environments.size():
 		_spawn_one_environment(i)
+	_update_hex_selection_cursor()
 
 
 func _sanitize_actor_positions() -> bool:
@@ -3553,6 +3824,9 @@ func _nearest_free_environment_coord_for(start_q: int, start_r: int, environment
 
 ## 把 _actors[idx] 这一条数据模型 commit 到 world: 创建 CharacterActor + hydrate 字段
 ## + add_actor + place_occupant + 同步 _actor_ids/_role_id_to_actor_id 索引。
+## CharacterActor 构造函数仍要求一个 class enum；SkillPreview 固定用内部
+## PREVIEW_ACTOR_CLASS 只为拿到 CharacterActor 基础能力容器，随后用 preview
+## 显式 stats 覆盖职业默认值，并且不调用 equip_abilities()，避免注入职业技能/被动。
 ##
 ## 调用前 _world.grid 必须已 configure(_reset_world_to_model_unguarded 在循环前已 configure;
 ## 增量 _add_actor 路径依赖 _ready 时跑过的初始 rebuild)。idx 必须等于 _actors.size()-1
@@ -3563,13 +3837,14 @@ func _spawn_one_actor(idx: int) -> void:
 	var team_int: int = 0 if a["team"] == "A" else 1
 	var max_hp: float = 100.0 if a["hp"] <= 0.0 else a["hp"]
 
-	var cchar := CharacterActor.new(HexBattleClassConfig.string_to_class(a["class"] as String))
+	var cchar := CharacterActor.new(PREVIEW_ACTOR_CLASS)
 	cchar._display_name = role_id
 	cchar.set_team_id(team_int)
 	cchar.attribute_set.set_max_hp_base(max_hp)
 	cchar.attribute_set.set_hp_base(max_hp)
-	if a.get("atk", 0.0) > 0.0:
-		cchar.attribute_set.set_atk_base(float(a["atk"]))
+	cchar.attribute_set.set_atk_base(float(a.get("atk", PREVIEW_DEFAULT_ATK)))
+	cchar.attribute_set.set_def_base(PREVIEW_DEFAULT_DEF)
+	cchar.attribute_set.set_speed_base(PREVIEW_DEFAULT_SPEED)
 
 	var pos: Array = a["pos"]
 	var coord := HexCoord.new(int(pos[0]), int(pos[1]))
@@ -3616,8 +3891,7 @@ func _spawn_one_environment(idx: int) -> bool:
 
 
 ## 删 idx 后 enemy_3 → enemy_2 这种重编号会让 _role_id_to_actor_id 出现 stale entry,
-## 同时 class 切换走 remove + add 会复用同一 idx 但 actor_id 变。这里用 _actor_ids
-## 作真理来源整体重建 dict, 调方负责调用前先把 _actor_ids 维护好。
+## 这里用 _actor_ids 作真理来源整体重建 dict, 调方负责调用前先把 _actor_ids 维护好。
 func _rebuild_role_id_mapping() -> void:
 	_role_id_to_actor_id.clear()
 	for i in _actor_ids.size():
@@ -3678,20 +3952,6 @@ func _apply_actor_atk_change(idx: int, atk: float) -> void:
 	actor.attribute_set.set_atk_base(atk)
 
 
-## 增量改 actor class: CharacterActor class 是构造参数(影响 ability_set 默认 grant +
-## attribute 默认值), 不可动态切。删旧 actor + 重 spawn 同 idx, 让 _spawn_one_actor
-## 重新读 _actors[idx]["class"]。idx 不变 → role_id 不变, _spawn_one_actor 内部
-## 自会覆盖 _role_id_to_actor_id[role_id] 为新 actor_id, 无需额外重建映射。
-func _apply_actor_class_change(idx: int) -> void:
-	if idx >= _actor_ids.size():
-		return
-	var actor_id := _actor_ids[idx]
-	if actor_id != "":
-		_world.remove_actor(actor_id)
-	_actor_ids[idx] = ""
-	_spawn_one_actor(idx)
-
-
 ## 增量改 grid 配置 (radius / orientation / hex_size): configure_grid 重建 model
 ## (UGridMap.configure 创建新 GridMapModel, 旧 occupant 数据全丢) -> emit
 ## grid_configured -> WorldView 重渲网格。然后遍历 _actor_ids 重新 place_occupant
@@ -3731,6 +3991,7 @@ func _apply_grid_change() -> void:
 			if not _world.grid.place_occupant(coord, env_actor):
 				push_warning("[SkillPreview] environment re-place failed after grid change: %s" % env_id)
 		_world.actor_position_changed.emit(env_id, coord, coord)
+	_update_hex_selection_cursor()
 
 
 ## 数据模型 idx → 逻辑 role id (caster / ally_N / enemy_N)。
@@ -3768,9 +4029,32 @@ func _build_grid_config() -> GridMapConfig:
 func _input(event: InputEvent) -> void:
 	if _is_playing:
 		return
+	if _spt_dragging:
+		if event is InputEventMouseMotion:
+			_update_spt_drag_from_viewport()
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseButton:
+			var drag_mb := event as InputEventMouseButton
+			if drag_mb.button_index == MOUSE_BUTTON_LEFT and not drag_mb.pressed:
+				_update_spt_drag_from_viewport()
+				_commit_spt_drag()
+				get_viewport().set_input_as_handled()
+				return
+	if event is InputEventMouseMotion:
+		if _hex_dragging:
+			_drag_actor_to_hover_hex()
+			get_viewport().set_input_as_handled()
+		return
 	if not (event is InputEventMouseButton):
 		return
 	var mb := event as InputEventMouseButton
+	if mb.button_index == MOUSE_BUTTON_LEFT:
+		if mb.pressed:
+			_on_stage_left_pressed()
+		else:
+			_on_stage_left_released()
+		return
 	if not mb.pressed:
 		return
 	if _is_mouse_over_blocking_ui():
@@ -3778,15 +4062,70 @@ func _input(event: InputEvent) -> void:
 	var coord := _hex_coord_under_mouse()
 	if coord == null:
 		return
-	if mb.button_index == MOUSE_BUTTON_LEFT:
-		_select_hex_at(coord)
-		get_viewport().set_input_as_handled()
-		return
 	if mb.button_index != MOUSE_BUTTON_RIGHT:
 		return
+	_clear_hex_drag_state()
 	_select_hex_at(coord)
 	_open_hex_context_menu(coord)
 	get_viewport().set_input_as_handled()
+
+
+func _on_stage_left_pressed() -> void:
+	if _is_mouse_over_blocking_ui():
+		return
+	var coord := _hex_coord_under_mouse()
+	if coord == null:
+		return
+	_select_hex_at(coord)
+	var actor_idx := _find_actor_idx_at(coord.q, coord.r)
+	if actor_idx >= 0:
+		_hex_drag_pending = true
+		_hex_dragging = false
+		_hex_drag_actor_idx = actor_idx
+		_hex_drag_hold_elapsed = 0.0
+		_hex_drag_last_coord = coord.duplicate()
+	else:
+		_clear_hex_drag_state()
+	get_viewport().set_input_as_handled()
+
+
+func _on_stage_left_released() -> void:
+	if _hex_dragging:
+		_drag_actor_to_hover_hex()
+		var actor_idx := _hex_drag_actor_idx
+		_clear_hex_drag_state()
+		if actor_idx >= 0 and actor_idx < _actors.size():
+			var coord := _actor_coord(actor_idx)
+			_set_status("%s moved to (%d, %d)" % [_role_id_for(actor_idx), coord.q, coord.r])
+		get_viewport().set_input_as_handled()
+		return
+	if _hex_drag_pending:
+		_clear_hex_drag_state()
+		get_viewport().set_input_as_handled()
+
+
+func _drag_actor_to_hover_hex() -> void:
+	if not _hex_dragging or _hex_drag_actor_idx < 0 or _hex_drag_actor_idx >= _actors.size():
+		return
+	if _is_mouse_over_blocking_ui():
+		return
+	var coord := _hex_coord_under_mouse()
+	if coord == null or not coord.is_valid():
+		return
+	if _hex_drag_last_coord != null and _hex_drag_last_coord.is_valid() and _hex_drag_last_coord.equals(coord):
+		return
+	if not _can_place_actor_at_for(coord, _hex_drag_actor_idx):
+		return
+	if _move_actor_to_coord(_hex_drag_actor_idx, coord):
+		_hex_drag_last_coord = coord.duplicate()
+
+
+func _clear_hex_drag_state() -> void:
+	_hex_drag_pending = false
+	_hex_dragging = false
+	_hex_drag_actor_idx = -1
+	_hex_drag_hold_elapsed = 0.0
+	_hex_drag_last_coord = null
 
 
 func _hex_coord_under_mouse() -> HexCoord:
@@ -3842,7 +4181,6 @@ func _show_hex_popup() -> void:
 		_hex_popup.add_item("Add Enemy", 1)
 		_hex_popup.add_item("Add Ally", 2)
 		_hex_popup.add_item("Add StoneWall", 20)
-		_hex_popup.add_item("Move Caster Here", 3)
 	var local_mouse := Vector2i(get_viewport().get_mouse_position())
 	_hex_popup.popup_on_parent(Rect2i(local_mouse, Vector2i(1, 1)))
 
@@ -3862,6 +4200,7 @@ func _on_hex_popup_window_input(event: InputEvent) -> void:
 		return
 	if _is_playing:
 		return
+	_clear_hex_drag_state()
 	var coord := _hex_coord_under_mouse()
 	if coord == null:
 		return
@@ -3879,9 +4218,8 @@ func _on_popup_id_pressed(id: int) -> void:
 	var q := _popup_hex.q
 	var r := _popup_hex.r
 	match id:
-		1: _add_actor("dummy", "B", "WARRIOR", q, r)
-		2: _add_actor("dummy", "A", "WARRIOR", q, r)
-		3: _move_caster_to(q, r)
+		1: _add_actor("dummy", "B", q, r)
+		2: _add_actor("dummy", "A", q, r)
 		11: _remove_actor_at(_popup_actor_idx)
 		20: _add_stone_wall(q, r)
 		21: _remove_environment_at(_popup_environment_idx)
@@ -4205,7 +4543,7 @@ const EVENT_DIVIDER := "[color=#6B4F3E]━━━━━━━━━━━━━�
 
 func _log_welcome() -> void:
 	_log(EVENT_DIVIDER)
-	_log("  [color=#FF6B6B][b]Skill Preview[/b][/color]  [color=#6B4F3E]· 右键格子摆位 · START 模拟[/color]")
+	_log("  [color=#FF6B6B][b]Skill Preview[/b][/color]  [color=#6B4F3E]· 长按角色格拖拽 · 右键格子添加 · START 模拟[/color]")
 	_log(EVENT_DIVIDER)
 
 
@@ -4426,7 +4764,7 @@ func _on_preset_load_selected(idx: int) -> void:
 ##     "version": 2,
 ##     "map": {"radius", "orientation", "hex_size"},
 ##     "actors": [
-##       {"role", "team", "class", "pos":[q,r], "hp", "atk",
+##       {"role", "team", "pos":[q,r], "hp", "atk",
 ##        "passives": [String], "track": [Keyframe]},
 ##       ...
 ##     ],
@@ -4462,10 +4800,9 @@ func _build_scene_config() -> Dictionary:
 		var actor_data: Dictionary = _actors[i]
 		var pos: Array = actor_data["pos"]
 		var payload := {
-			"class": str(actor_data.get("class", "WARRIOR")),
 			"pos": [int(pos[0]), int(pos[1])],
-			"hp": float(actor_data.get("hp", 100.0)),
-			"atk": float(actor_data.get("atk", 0.0)),
+			"hp": float(actor_data.get("hp", PREVIEW_DEFAULT_HP)),
+			"atk": float(actor_data.get("atk", PREVIEW_DEFAULT_ATK)),
 		}
 		if i == 0:
 			continue
@@ -4481,10 +4818,9 @@ func _build_scene_config() -> Dictionary:
 			"hex_size": float(_map_hex_size_input.value),
 		},
 		"caster": {
-			"class": str((_actors[0] as Dictionary).get("class", "WARRIOR")),
 			"pos": [int(caster_pos[0]), int(caster_pos[1])],
-			"hp": float((_actors[0] as Dictionary).get("hp", 100.0)),
-			"atk": float((_actors[0] as Dictionary).get("atk", 0.0)),
+			"hp": float((_actors[0] as Dictionary).get("hp", PREVIEW_DEFAULT_HP)),
+			"atk": float((_actors[0] as Dictionary).get("atk", PREVIEW_DEFAULT_ATK)),
 		},
 		"allies": allies,
 		"enemies": enemies,
@@ -4526,20 +4862,22 @@ func _deserialize_ui_state(d: Dictionary) -> void:
 					"r": int(target_dict.get("r", 0)),
 				},
 			})
+		var hp_value := float(a.get("hp", PREVIEW_DEFAULT_HP))
+		if hp_value <= 0.0:
+			hp_value = PREVIEW_DEFAULT_HP
 		_actors.append({
 			"role": a.get("role", "dummy"),
 			"team": a.get("team", "B"),
-			"class": a.get("class", "WARRIOR"),
 			"pos": [int(pos[0]), int(pos[1])],
-			"hp": float(a.get("hp", 100.0)),
-			"atk": float(a.get("atk", 0.0)),
+			"hp": hp_value,
+			"atk": float(a.get("atk", PREVIEW_DEFAULT_ATK)),
 			"passives": passives_str,
 			"track": track_norm,
 		})
 	if _actors.is_empty() or _actors[0]["role"] != "caster":
 		_actors.insert(0, {
-			"role": "caster", "team": "A", "class": "WARRIOR",
-			"pos": [0, 0], "hp": 0.0, "atk": 0.0,
+			"role": "caster", "team": "A",
+			"pos": [0, 0], "hp": PREVIEW_DEFAULT_HP, "atk": PREVIEW_DEFAULT_ATK,
 			"passives": [] as Array[String],
 			"track": [] as Array[Dictionary],
 		})
@@ -4668,30 +5006,30 @@ func _log(line: String) -> void:
 # Control Panel Theme
 # ============================================================================
 
-const CLAY_BG := Color("F1F5F9")
-const CLAY_SURFACE := Color("FFFFFF")
-const CLAY_TEXT := Color("111827")
-const CLAY_TEXT_SOFT := Color("64748B")
-const CLAY_SHADOW := Color(15, 23, 42, 0.08)
+const CLAY_BG := Color("0B1220")
+const CLAY_SURFACE := Color("111827")
+const CLAY_TEXT := Color("E5E7EB")
+const CLAY_TEXT_SOFT := Color("94A3B8")
+const CLAY_SHADOW := Color(0, 0, 0, 0.22)
 
 ## 每个 section 保留轻量色标，避免整面板变成同一种颜色。
 const SECTION_COLORS := {
-	"TitlePreset": Color("F8FAFC"),
-	"TitleMap": Color("F8FAFC"),
-	"TitleSkill": Color("F8FAFC"),
-	"TitleActors": Color("F8FAFC"),
-	"TitleTarget": Color("F8FAFC"),
-	"TitleCtrl": Color("F8FAFC"),
+	"TitlePreset": Color("172033"),
+	"TitleMap": Color("172033"),
+	"TitleSkill": Color("172033"),
+	"TitleActors": Color("172033"),
+	"TitleTarget": Color("172033"),
+	"TitleCtrl": Color("172033"),
 }
 
 const START_COLOR := Color("2563EB")
 const START_HOVER := Color("1D4ED8")
 const START_PRESSED := Color("1E40AF")
-const PASSIVE_SELECTED_BG := Color("DCFCE7")
-const PASSIVE_SELECTED_HOVER := Color("BBF7D0")
-const PASSIVE_SELECTED_PRESSED := Color("86EFAC")
-const PASSIVE_SELECTED_BORDER := Color("22C55E")
-const PASSIVE_SELECTED_TEXT := Color("14532D")
+const PASSIVE_SELECTED_BG := Color("064E3B")
+const PASSIVE_SELECTED_HOVER := Color("065F46")
+const PASSIVE_SELECTED_PRESSED := Color("047857")
+const PASSIVE_SELECTED_BORDER := Color("34D399")
+const PASSIVE_SELECTED_TEXT := Color("D1FAE5")
 const CONSOLE_BG := Color("111827")
 const CONSOLE_FG := Color("E5E7EB")
 
@@ -4752,7 +5090,7 @@ func _build_clay_theme() -> Theme:
 
 	# PanelContainer (LeftPanel, BottomPanel)
 	var panel_sb := _clay_sb(CLAY_SURFACE, 8, 12, 12, 2, 8)
-	panel_sb.border_color = Color("D8DEE8")
+	panel_sb.border_color = Color("273449")
 	panel_sb.border_width_left = 1
 	panel_sb.border_width_right = 1
 	panel_sb.border_width_top = 1
@@ -4760,17 +5098,17 @@ func _build_clay_theme() -> Theme:
 	t.set_stylebox("panel", "PanelContainer", panel_sb)
 
 	# Button
-	var btn_bg := Color("F8FAFC")
-	var btn_hover := Color("EEF2F7")
-	var btn_pressed := Color("E2E8F0")
+	var btn_bg := Color("1F2937")
+	var btn_hover := Color("263447")
+	var btn_pressed := Color("334155")
 	var btn_normal := _clay_sb(btn_bg, 6, 10, 6, 0, 0)
-	btn_normal.border_color = Color("CBD5E1")
+	btn_normal.border_color = Color("334155")
 	btn_normal.border_width_left = 1
 	btn_normal.border_width_right = 1
 	btn_normal.border_width_top = 1
 	btn_normal.border_width_bottom = 1
 	var btn_hover_sb := _clay_sb(btn_hover, 6, 10, 6, 0, 0)
-	btn_hover_sb.border_color = Color("B6C2D2")
+	btn_hover_sb.border_color = Color("475569")
 	btn_hover_sb.border_width_left = 1
 	btn_hover_sb.border_width_right = 1
 	btn_hover_sb.border_width_top = 1
@@ -4779,37 +5117,37 @@ func _build_clay_theme() -> Theme:
 	t.set_stylebox("hover",    "Button", btn_hover_sb)
 	t.set_stylebox("pressed",  "Button",
 		_clay_sb(btn_pressed, 6, 10, 6, 0, 0))
-	t.set_stylebox("disabled", "Button", _clay_sb(Color("E5E7EB"), 6, 10, 6, 0, 0))
+	t.set_stylebox("disabled", "Button", _clay_sb(Color("182132"), 6, 10, 6, 0, 0))
 	t.set_stylebox("focus",    "Button", StyleBoxEmpty.new())
 	t.set_color("font_color",          "Button", CLAY_TEXT)
-	t.set_color("font_hover_color",    "Button", Color("0F172A"))
+	t.set_color("font_hover_color",    "Button", Color("FFFFFF"))
 	t.set_color("font_pressed_color",  "Button", CLAY_TEXT)
 	t.set_color("font_disabled_color", "Button", CLAY_TEXT_SOFT)
 
 	# CheckBox
-	t.set_stylebox("normal",  "CheckBox", _outlined_sb(Color("FFFFFF"), Color("C8D1DF"), 6, 6, 3))
-	t.set_stylebox("hover",   "CheckBox", _outlined_sb(Color("EAF2FF"), Color("7AA7F7"), 6, 6, 3))
-	t.set_stylebox("pressed", "CheckBox", _outlined_sb(Color("CFE1FF"), Color("2563EB"), 6, 6, 3))
+	t.set_stylebox("normal",  "CheckBox", _outlined_sb(Color("172033"), Color("334155"), 6, 6, 3))
+	t.set_stylebox("hover",   "CheckBox", _outlined_sb(Color("1E293B"), Color("60A5FA"), 6, 6, 3))
+	t.set_stylebox("pressed", "CheckBox", _outlined_sb(Color("1E3A8A"), Color("93C5FD"), 6, 6, 3))
 	t.set_stylebox("focus",   "CheckBox", StyleBoxEmpty.new())
 	t.set_color("font_color", "CheckBox", CLAY_TEXT)
 	t.set_color("font_hover_color", "CheckBox", CLAY_TEXT)
 	t.set_color("font_pressed_color", "CheckBox", START_PRESSED)
 
 	# OptionButton
-	t.set_stylebox("normal",  "OptionButton", _outlined_sb(Color("FFFFFF"), Color("9CAFC7"), 6, 9, 5))
-	t.set_stylebox("hover",   "OptionButton", _outlined_sb(Color("EAF2FF"), Color("5C91F2"), 6, 9, 5))
-	t.set_stylebox("pressed", "OptionButton", _outlined_sb(Color("CFE1FF"), Color("2563EB"), 6, 9, 5))
-	t.set_stylebox("disabled", "OptionButton", _outlined_sb(Color("EEF2F7"), Color("CBD5E1"), 6, 9, 5))
+	t.set_stylebox("normal",  "OptionButton", _outlined_sb(Color("172033"), Color("475569"), 6, 9, 5))
+	t.set_stylebox("hover",   "OptionButton", _outlined_sb(Color("1E293B"), Color("60A5FA"), 6, 9, 5))
+	t.set_stylebox("pressed", "OptionButton", _outlined_sb(Color("1E3A8A"), Color("93C5FD"), 6, 9, 5))
+	t.set_stylebox("disabled", "OptionButton", _outlined_sb(Color("182132"), Color("334155"), 6, 9, 5))
 	t.set_stylebox("focus",   "OptionButton", StyleBoxEmpty.new())
 	t.set_color("font_color", "OptionButton", CLAY_TEXT)
-	t.set_color("font_hover_color", "OptionButton", START_PRESSED)
-	t.set_color("font_pressed_color", "OptionButton", START_PRESSED)
+	t.set_color("font_hover_color", "OptionButton", Color("FFFFFF"))
+	t.set_color("font_pressed_color", "OptionButton", Color("FFFFFF"))
 	t.set_color("font_disabled_color", "OptionButton", CLAY_TEXT_SOFT)
 
 	# SpinBox 内部 LineEdit
-	t.set_stylebox("normal",   "LineEdit", _outlined_sb(Color("FFFFFF"), Color("9CAFC7"), 6, 8, 5))
-	t.set_stylebox("focus",    "LineEdit", _outlined_sb(Color("EAF2FF"), Color("2563EB"), 6, 8, 5))
-	t.set_stylebox("read_only","LineEdit", _outlined_sb(Color("EEF2F7"), Color("CBD5E1"), 6, 8, 5))
+	t.set_stylebox("normal",   "LineEdit", _outlined_sb(Color("172033"), Color("475569"), 6, 8, 5))
+	t.set_stylebox("focus",    "LineEdit", _outlined_sb(Color("172554"), Color("60A5FA"), 6, 8, 5))
+	t.set_stylebox("read_only","LineEdit", _outlined_sb(Color("182132"), Color("334155"), 6, 8, 5))
 	t.set_color("font_color",  "LineEdit", CLAY_TEXT)
 	t.set_color("caret_color", "LineEdit", CLAY_TEXT)
 
@@ -4817,22 +5155,22 @@ func _build_clay_theme() -> Theme:
 	t.set_color("font_color", "Label", CLAY_TEXT)
 
 	# ItemList / ScrollContainer
-	t.set_stylebox("panel",      "ItemList",         _clay_sb(Color("FFFFFF"), 6, 8, 6, 0, 0))
+	t.set_stylebox("panel",      "ItemList",         _clay_sb(Color("0F172A"), 6, 8, 6, 0, 0))
 	t.set_stylebox("focus",      "ItemList",         StyleBoxEmpty.new())
-	t.set_stylebox("selected",   "ItemList",         _clay_sb(Color("DBEAFE"), 6, 6, 3, 0, 0))
+	t.set_stylebox("selected",   "ItemList",         _clay_sb(Color("1E3A8A"), 6, 6, 3, 0, 0))
 	t.set_color("font_color",              "ItemList", CLAY_TEXT)
 	t.set_color("font_selected_color",     "ItemList", CLAY_TEXT)
 
 	# PopupMenu (右键菜单)
 	t.set_stylebox("panel",         "PopupMenu", _clay_sb(CLAY_SURFACE, 8, 8, 6, 2, 8))
-	t.set_stylebox("hover",         "PopupMenu", _clay_sb(Color("EFF6FF"), 6, 10, 4, 0, 0))
+	t.set_stylebox("hover",         "PopupMenu", _clay_sb(Color("1E293B"), 6, 10, 4, 0, 0))
 	t.set_color("font_color",       "PopupMenu", CLAY_TEXT)
 	t.set_color("font_hover_color", "PopupMenu", CLAY_TEXT)
 	t.set_color("font_separator_color", "PopupMenu", CLAY_TEXT_SOFT)
 
 	# HSeparator (细分隔 — 我们主要不用,保留 fallback)
 	var sep_sb := StyleBoxLine.new()
-	sep_sb.color = Color("E2E8F0")
+	sep_sb.color = Color("273449")
 	sep_sb.thickness = 1
 	t.set_stylebox("separator", "HSeparator", sep_sb)
 
@@ -4865,16 +5203,16 @@ func _style_section_title(lbl: Label) -> void:
 func _style_inspector_tabs() -> void:
 	if _inspector_tabs == null:
 		return
-	_inspector_tabs.add_theme_stylebox_override("panel", _clay_sb(Color("FFFFFF"), 6, 8, 8, 0, 0))
+	_inspector_tabs.add_theme_stylebox_override("panel", _clay_sb(Color("0F172A"), 6, 8, 8, 0, 0))
 	_inspector_tabs.add_theme_stylebox_override("tab_selected",
-		_outlined_sb(Color("D7E6FF"), Color("2563EB"), 6, 8, 6))
+		_outlined_sb(Color("1E3A8A"), Color("60A5FA"), 6, 8, 6))
 	_inspector_tabs.add_theme_stylebox_override("tab_hovered",
-		_outlined_sb(Color("EAF2FF"), Color("7AA7F7"), 6, 8, 6))
+		_outlined_sb(Color("1E293B"), Color("60A5FA"), 6, 8, 6))
 	_inspector_tabs.add_theme_stylebox_override("tab_unselected",
-		_outlined_sb(Color("FFFFFF"), Color("D5DDE8"), 6, 8, 6))
-	_inspector_tabs.add_theme_color_override("font_selected_color", START_PRESSED)
-	_inspector_tabs.add_theme_color_override("font_unselected_color", Color("334155"))
-	_inspector_tabs.add_theme_color_override("font_hovered_color", Color("0F172A"))
+		_outlined_sb(Color("111827"), Color("273449"), 6, 8, 6))
+	_inspector_tabs.add_theme_color_override("font_selected_color", Color("FFFFFF"))
+	_inspector_tabs.add_theme_color_override("font_unselected_color", Color("94A3B8"))
+	_inspector_tabs.add_theme_color_override("font_hovered_color", Color("E5E7EB"))
 
 
 func _style_actor_add_buttons() -> void:
@@ -4883,18 +5221,18 @@ func _style_actor_add_buttons() -> void:
 
 
 func _style_subtle_button(btn: Button) -> void:
-	btn.add_theme_stylebox_override("normal", _outlined_sb(Color("FFFFFF"), Color("9CAFC7"), 6, 10, 6))
-	btn.add_theme_stylebox_override("hover", _outlined_sb(Color("EAF2FF"), Color("5C91F2"), 6, 10, 6))
-	btn.add_theme_stylebox_override("pressed", _outlined_sb(Color("CFE1FF"), Color("2563EB"), 6, 10, 6))
+	btn.add_theme_stylebox_override("normal", _outlined_sb(Color("1F2937"), Color("475569"), 6, 10, 6))
+	btn.add_theme_stylebox_override("hover", _outlined_sb(Color("1E293B"), Color("60A5FA"), 6, 10, 6))
+	btn.add_theme_stylebox_override("pressed", _outlined_sb(Color("1E3A8A"), Color("93C5FD"), 6, 10, 6))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_color_override("font_color", CLAY_TEXT)
 	btn.add_theme_color_override("font_hover_color", CLAY_TEXT)
 
 
 func _style_floating_toggle_button(btn: Button) -> void:
-	btn.add_theme_stylebox_override("normal", _clay_sb(Color("FFFFFF"), 6, 8, 4, 1, 5))
-	btn.add_theme_stylebox_override("hover", _clay_sb(Color("EAF2FF"), 6, 8, 4, 1, 6))
-	btn.add_theme_stylebox_override("pressed", _clay_sb(Color("CFE1FF"), 6, 8, 4, 0, 0))
+	btn.add_theme_stylebox_override("normal", _clay_sb(Color("111827"), 6, 8, 4, 1, 5))
+	btn.add_theme_stylebox_override("hover", _clay_sb(Color("1E293B"), 6, 8, 4, 1, 6))
+	btn.add_theme_stylebox_override("pressed", _clay_sb(Color("1E3A8A"), 6, 8, 4, 0, 0))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_font_override("font", _clay_font_bold())
 	btn.add_theme_color_override("font_color", CLAY_TEXT)
@@ -4935,11 +5273,11 @@ func _style_start_button() -> void:
 func _style_reset_button() -> void:
 	var btn := _reset_button
 	btn.add_theme_stylebox_override("normal",
-		_outlined_sb(Color("FFFFFF"), Color("CBD5E1"), 6, 14, 9))
+		_outlined_sb(Color("1F2937"), Color("475569"), 6, 14, 9))
 	btn.add_theme_stylebox_override("hover",
-		_outlined_sb(Color("F8FAFC"), Color("94A3B8"), 6, 14, 9))
+		_outlined_sb(Color("263447"), Color("60A5FA"), 6, 14, 9))
 	btn.add_theme_stylebox_override("pressed",
-		_outlined_sb(Color("E2E8F0"), Color("94A3B8"), 6, 14, 9))
+		_outlined_sb(Color("334155"), Color("93C5FD"), 6, 14, 9))
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	btn.add_theme_font_override("font", _clay_font_bold())
 	btn.add_theme_font_size_override("font_size", 14)
@@ -4954,19 +5292,18 @@ func _style_character_panel() -> void:
 		title.add_theme_font_override("font", _clay_font_bold())
 		title.add_theme_font_size_override("font_size", 16)
 		title.add_theme_color_override("font_color", CLAY_TEXT)
+	if _character_panel_body != null:
+		_character_panel_body.add_theme_constant_override("separation", 6)
 	if _character_panel_mode_label != null:
 		_character_panel_mode_label.add_theme_font_override("font", _clay_font_bold())
 		_character_panel_mode_label.add_theme_font_size_override("font_size", 11)
-		_character_panel_mode_label.add_theme_color_override("font_color", START_PRESSED)
-		_character_panel_mode_label.add_theme_stylebox_override(
-			"normal",
-			_outlined_sb(Color("EAF2FF"), Color("7AA7F7"), 5, 7, 3)
-		)
+		_character_panel_mode_label.add_theme_color_override("font_color", Color("60A5FA"))
+		_character_panel_mode_label.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
 
 
 func _style_status_label() -> void:
-	var sb := _clay_sb(Color("F8FAFC"), 6, 9, 6, 0, 0)
-	sb.border_color = Color("E2E8F0")
+	var sb := _clay_sb(Color("0F172A"), 6, 9, 6, 0, 0)
+	sb.border_color = Color("273449")
 	sb.border_width_left = 1
 	sb.border_width_right = 1
 	sb.border_width_top = 1
@@ -4976,40 +5313,38 @@ func _style_status_label() -> void:
 	_status_label.add_theme_font_size_override("font_size", 12)
 
 
-## Passive CheckBox 选中/未选中视觉: 选中 = 浅绿底 + 深绿字,
-## 未选中 = 默认白底。直接 override 每个状态 stylebox 让渲染顺序无歧义。
+## Passive CheckBox 选中/未选中视觉: 保持紧凑行, 不再画成一排厚按钮。
+## 直接 override 每个状态 stylebox 让渲染顺序无歧义。
 ##
 ## passive 选择只 mutate _actors[idx]["passives"] 数据模型, 编辑期 world 不感知
 ## passive (passive 是战斗 start() 时 grant 给 actor), 因此勾选/取消勾选不需要
 ## 触发 world mutation。
 func _apply_passive_style(cb: CheckBox, selected: bool) -> void:
 	if selected:
-		var sb := _clay_sb(PASSIVE_SELECTED_BG, 6, 6, 3, 0, 0)
+		var sb := _clay_sb(PASSIVE_SELECTED_BG, 3, 4, 2, 0, 0)
 		sb.border_color = PASSIVE_SELECTED_BORDER
 		sb.border_width_left = 1
-		sb.border_width_right = 1
-		sb.border_width_top = 1
 		sb.border_width_bottom = 1
 		cb.add_theme_stylebox_override("normal", sb)
 		cb.add_theme_stylebox_override("hover",
-			_outlined_sb(PASSIVE_SELECTED_HOVER, PASSIVE_SELECTED_BORDER, 6, 6, 3))
+			_outlined_sb(PASSIVE_SELECTED_HOVER, PASSIVE_SELECTED_BORDER, 3, 4, 2))
 		cb.add_theme_stylebox_override("pressed",
-			_outlined_sb(PASSIVE_SELECTED_PRESSED, PASSIVE_SELECTED_BORDER, 6, 6, 3))
+			_outlined_sb(PASSIVE_SELECTED_PRESSED, PASSIVE_SELECTED_BORDER, 3, 4, 2))
 		cb.add_theme_stylebox_override("hover_pressed",
-			_outlined_sb(PASSIVE_SELECTED_HOVER, PASSIVE_SELECTED_BORDER, 6, 6, 3))
+			_outlined_sb(PASSIVE_SELECTED_HOVER, PASSIVE_SELECTED_BORDER, 3, 4, 2))
 		cb.add_theme_color_override("font_color", PASSIVE_SELECTED_TEXT)
 		cb.add_theme_color_override("font_hover_color", PASSIVE_SELECTED_TEXT)
 		cb.add_theme_color_override("font_pressed_color", PASSIVE_SELECTED_TEXT)
 		cb.add_theme_color_override("font_hover_pressed_color", PASSIVE_SELECTED_TEXT)
 	else:
-		cb.remove_theme_stylebox_override("normal")
-		cb.remove_theme_stylebox_override("hover")
-		cb.remove_theme_stylebox_override("pressed")
-		cb.remove_theme_stylebox_override("hover_pressed")
-		cb.remove_theme_color_override("font_color")
-		cb.remove_theme_color_override("font_hover_color")
-		cb.remove_theme_color_override("font_pressed_color")
-		cb.remove_theme_color_override("font_hover_pressed_color")
+		cb.add_theme_stylebox_override("normal", _clay_sb(Color(0.0, 0.0, 0.0, 0.0), 0, 4, 2, 0, 0))
+		cb.add_theme_stylebox_override("hover", _clay_sb(Color("172033"), 3, 4, 2, 0, 0))
+		cb.add_theme_stylebox_override("pressed", _clay_sb(Color("1E293B"), 3, 4, 2, 0, 0))
+		cb.add_theme_stylebox_override("hover_pressed", _clay_sb(Color("172033"), 3, 4, 2, 0, 0))
+		cb.add_theme_color_override("font_color", CLAY_TEXT)
+		cb.add_theme_color_override("font_hover_color", Color("FFFFFF"))
+		cb.add_theme_color_override("font_pressed_color", Color("FFFFFF"))
+		cb.add_theme_color_override("font_hover_pressed_color", Color("FFFFFF"))
 
 
 ## Console: 深紫底 + 亮字, 对比 vibrant 主面板
