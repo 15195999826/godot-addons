@@ -12,6 +12,43 @@
 
 ---
 
+## [Unreleased] — 2026-04-30 RTS 自动战斗示例（连续坐标 + navmesh）
+
+新增第二个 LGF 示例 `example/rts-auto-battle/`：连续 `Vector2` 坐标（500×500 px）+ Godot `NavigationServer2D` 寻路 + 实时 `attack_cooldown` 节奏，与既有 hex-atb-battle 的 hex grid + ATB 累积形成对比，验证 LGF 核心抽象（`WorldGameplayInstance` / `BattleProcedure` / `Actor` / `AbilitySet` / `EventProcessor`）对不同节奏 / 坐标系 / 寻路体系的复用面。
+
+不修改 LGF core / stdlib，所有新代码进 `example/rts-auto-battle/`，三层架构对齐 hex 例子（core / logic / frontend / tests）。
+
+### Added
+
+- **`example/rts-auto-battle/`** — 4v4 自动战斗最小可玩闭环。两兵种 melee / ranged，AI 找最近敌人 → set nav target → 进 attack_range 后 cooldown 触发 basic attack。中央 (200..300, 200..300) 障碍迫使绕路接敌
+  - `core/rts_world_gameplay_instance.gd` — `WorldGameplayInstance` 子类，连续坐标，注入 `NavigationRegion2D`
+  - `core/rts_auto_battle_procedure.gd` — `BattleProcedure` 子类，连续 tick 推进 cooldown / AI / nav，`_check_battle_end` 一方全灭判胜负，`MAX_TICKS=1000` 安全上限
+  - `logic/rts_battle_actor.gd` + `logic/rts_character_actor.gd` — actor 公共合同 + 兵种特化（持 `attribute_set` / `ability_set` / `attack_cooldown_remaining` / `current_target_id`）
+  - `logic/config/rts_unit_attribute_set.gd` — RTS 单位属性集（hp / max_hp / atk / def / move_speed / attack_speed / attack_range），直接 extends `BaseGeneratedAttributeSet` 用 `_raw.apply_config` 注册，**不走 LGF 代码生成路径**避免动 `example/attributes/attributes_config.gd`
+  - `logic/config/rts_unit_class_config.gd` — UnitClass enum + per-class StatBlock（MELEE: hp 200, atk 25, attack_range 24；RANGED: hp 120, atk 18, attack_range 120）
+  - `logic/components/rts_nav_agent.gd` — `Node2D` 包 `NavigationAgent2D`，每 tick 推单位向 `get_next_path_position()` 走 `move_speed × dt`，并把 position 写回 actor.position_2d；自带 `path_length_traveled` / `max_y_deviation` 给 AC2 绕路断言用
+  - `logic/ai/rts_basic_ai.gd` — 每 tick 决策（idle / approach / in_range），`current_target` 200ms 刷新一次避免 nav rebuild 抖动；与 hex 的 ATB 派生 AIStrategy 不同，直接 RefCounted helper
+  - `logic/actions/rts_basic_attack_action.gd` — 静态 helper（不继承 BaseAction，basic attack 不值得 ExecutionContext+TargetSelector 全套）。仍走 `EventProcessor.process_pre_event` / `process_post_event` 管线，`pre_damage` event 给 buff / passive 留 hook
+  - `logic/rts_battle_events.gd` — RTS 例子专属 event kind（`rts_pre_damage` / `rts_post_damage` / `rts_attack_resolved` / `rts_actor_died`）
+  - `logic/logger/rts_battle_logger.gd` — 战斗事件捕获器，给 smoke 做兵种行为断言
+  - `frontend/scene/rts_battle_map.gd` — 编程式构造 `NavigationRegion2D` + `NavigationPolygon`：3×3 网格 8 个凸四边形显式拼出可走区域（跳过中央障碍格）。注意：相邻 polygon 必须**精确共享端点对**才能被 `NavigationServer2D` 连成可达图，最初版"大条带"切法因端点不重合导致路径在障碍前 198 px 处断开
+  - `frontend/visualizers/rts_unit_visualizer.gd` — 最简 stub：`Node2D` + `Polygon2D`（8 边形）按 team_id 染色 + Label 贴 hp。不做动画 / 攻击特效 / 相机控制
+  - `frontend/demo_rts_frontend.{gd,tscn}` — 编辑器 F6 入口；headless 也能跑
+  - `tests/battle/smoke_rts_auto_battle.{gd,tscn}` — acceptance gate smoke。4v4 跑到判胜负，断言兵种行为（melee 距离 ≤ 24×1.05；ranged 至少 1 次距离 > 24）+ 至少 1 个起点在障碍 y 范围的单位 max_y_deviation ≥ 30（绕路证据）
+  - `tests/battle/smoke_navigation.{gd,tscn}` / `smoke_ai.{gd,tscn}` / `smoke_attack.{gd,tscn}` — phase smoke
+  - `tests/frontend/smoke_frontend_main.{gd,tscn}` — 验证 8 个 visualizer 节点在 headless 下构建成功
+
+### Changed
+
+- `example/README.md` 新增（之前 example/ 没有 index 文件），列出 hex / rts 两个示例的对比表
+
+### Notes
+
+- LGF core / stdlib 未变更
+- AC1-AC4 全过；AC5（hex demo regression）残余风险：headless 退出时 signal 11 segfault 不影响 battle 完成度，与 RTS 改动无关，归既有 LGF leak 范畴
+
+---
+
 ## [Unreleased] — 2026-04-29 Knockback Punch (Tier 1 #4) + forced displacement 基础设施
 
 实现 design 卡 Tier 1 #4 KnockbackPunch (击退拳): 近战伤害 + 沿 caster→target 方向推 1 格。
