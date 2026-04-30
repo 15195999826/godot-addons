@@ -2,7 +2,7 @@
 
 ## 范围 / 前置
 
-- **动的文件**：`example/hex-atb-battle/utils/hex_battle_damage_utils.gd`（删 1 行 + 新增 `_clear_grid_footprint` 静态方法）
+- **动的文件**：`example/hex-atb-battle/logic/utils/hex_battle_damage_utils.gd`（删 1 行 + 新增 `_clear_grid_footprint` 静态方法）
 - **依赖的前轮决策**：
   - 阶段 0（`2026-04-19-world-as-single-instance.md` line 247）原则："死亡处理：战斗里 hp → 0 时，**发 death event 到 event_collector，但不 `world.remove_actor(id)`**。上层（游戏规则层）决定'死了是消失还是留尸体'。"
   - 阶段 3（`2026-04-20-skill-preview-reactive.md` D5）遗留：`damage_utils.apply_damage` 的 remove_actor 让 skill_preview 在战斗期间死者 view 立刻消失，死亡动画来不及播。当时的论证留了两条出路 ——（a）改 `world.remove_actor` 语义（延迟 emit）；（b）做 ReplayPlayer 临时 world 兜底。两条都太重，被推到下一阶段。
@@ -132,8 +132,8 @@ skill_preview F6 编辑器手动验证（死亡 tween 缩小+下沉+visible=fals
 | # | 调用方 | 用途 | 性质 |
 |---|---|---|---|
 | 1 | `stdlib/systems/projectile_system.gd:131` | 投射物落地后从 world 拿走 | 投射物不是角色，飞完就该走 |
-| 2 | `example/skill-preview/skill_preview.gd:315` | 编辑态右键删 actor | 玩家显式编辑 |
-| 3 | `example/skill-preview/skill_preview.gd:562` | preset 加载 / class 切换 | 编辑态显式重建 |
+| 2 | `example/hex-atb-battle/skill-preview/skill_preview.gd:315` | 编辑态右键删 actor | 玩家显式编辑 |
+| 3 | `example/hex-atb-battle/skill-preview/skill_preview.gd:562` | preset 加载 / class 切换 | 编辑态显式重建 |
 | — | `SkillPreviewWorldGI.reset()` 走 `_actors.clear()` + emit | 战前清场 | 等价"全员离场" |
 
 四条都符合"actor 永久离开 world"语义，跟死亡留尸体原则不冲突。

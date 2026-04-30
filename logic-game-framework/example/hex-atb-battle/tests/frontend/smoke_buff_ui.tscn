@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bcqdk0qaclj6w"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/tests/frontend/smoke_buff_ui.gd" id="1_smoke"]
+
+[node name="SmokeBuffUI" type="Node"]
+script = ExtResource("1_smoke")

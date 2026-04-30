@@ -2,7 +2,7 @@
 extends Node
 
 
-const SKILL_PREVIEW_SCENE := preload("res://addons/logic-game-framework/example/skill-preview/skill_preview.tscn")
+const SKILL_PREVIEW_SCENE := preload("res://addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview.tscn")
 
 
 var _preview: Node = null

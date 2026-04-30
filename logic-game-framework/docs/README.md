@@ -49,7 +49,7 @@ var damage_with_callback = HexBattleDamageAction.new(
 
 | 文档 | 描述 |
 |------|------|
-| [逻辑层到表演层数据传递](../example/hex-atb-battle/docs/logic-to-presentation-guide.md) | StageCue 事件、Timeline 配置、数据流架构 |
+| [逻辑层到表演层数据传递](../example/hex-atb-battle/logic/docs/logic-to-presentation-guide.md) | StageCue 事件、Timeline 配置、数据流架构 |
 
 ## 重要约定
 
@@ -335,21 +335,24 @@ addons/logic-game-framework/
 以 `hex-atb-battle` 示例项目为例，采用以下三层结构：
 
 ```
-addons/logic-game-framework/example/
-├── hex-atb-battle-core/        # 共享数据层（Core Layer）
+addons/logic-game-framework/example/hex-atb-battle/
+├── core/                       # 共享数据层（Core Layer）
 │   └── events/                 # 强类型事件定义
 │       └── battle_events.gd    # BattleEvents（DamageEvent, HealEvent 等）
 │
-├── hex-atb-battle/             # 逻辑层（Logic Layer）
+├── logic/                      # 逻辑层（Logic Layer）
 │   ├── actions/                # 游戏特定 Action（伤害、治疗、移动）
 │   ├── skills/                 # 技能配置
 │   ├── battle.gd               # 战斗状态管理
 │   └── utils/                  # 逻辑层辅助类
 │
-└── hex-atb-battle-frontend/    # 表演层（Presentation Layer）
-    ├── visualizers/            # 事件可视化器（伤害数字、动画）
-    ├── battle_player.gd        # 回放播放器
-    └── scenes/                 # 3D 场景、UI
+├── frontend/                   # 表演层（Presentation Layer）
+│   ├── visualizers/            # 事件可视化器（伤害数字、动画）
+│   ├── battle_player.gd        # 回放播放器
+│   └── scenes/                 # 3D 场景、UI
+│
+├── skill-preview/              # 技能预览子模式（沙盒战斗）
+└── tests/                      # 该游戏专属冒烟与契约测试
 ```
 
 ### 设计原则 🎯
@@ -597,7 +600,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 #### 表演层：消费事件
 
 ```gdscript
-# hex-atb-battle-frontend/visualizers/damage_visualizer.gd
+# hex-atb-battle/frontend/visualizers/damage_visualizer.gd
 class_name DamageVisualizer
 extends BaseVisualizer
 

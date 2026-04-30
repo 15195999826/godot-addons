@@ -12,7 +12,7 @@
 
 **`HexBattleDamageUtils.apply_damage` 是项目层唯一的伤害集中点**。所有产生伤害的 Action（`DamageAction` / `ReflectDamageAction` / 中毒 / 反伤 / 未来的 AoE...）都走它，不要绕开。
 
-源码：[`addons/.../hex-atb-battle/utils/hex_battle_damage_utils.gd`](../../addons/logic-game-framework/example/hex-atb-battle/utils/hex_battle_damage_utils.gd)
+源码：[`addons/.../hex-atb-battle/utils/hex_battle_damage_utils.gd`](../../addons/logic-game-framework/example/hex-atb-battle/logic/utils/hex_battle_damage_utils.gd)
 
 ---
 
@@ -133,4 +133,4 @@ class DamageEvent extends GameEvent.Base:
 - [shield-system.md](shield-system.md) — 护盾系统的设计、消耗顺序、叠加策略
 - LGF 事件系统：[`addons/logic-game-framework/core/events/`](../../addons/logic-game-framework/core/events/)
 - LGF 架构总览：[`addons/logic-game-framework/CLAUDE.md`](../../addons/logic-game-framework/CLAUDE.md)
-- 伤害事件定义：[`addons/.../hex-atb-battle-core/events/battle_events.gd`](../../addons/logic-game-framework/example/hex-atb-battle-core/events/battle_events.gd)
+- 伤害事件定义：[`addons/.../hex-atb-battle/core/events/battle_events.gd`](../../addons/logic-game-framework/example/hex-atb-battle/core/events/battle_events.gd)

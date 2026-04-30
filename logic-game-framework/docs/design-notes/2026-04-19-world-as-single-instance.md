@@ -1,7 +1,7 @@
 # 世界即唯一 Instance：从"战斗 owns 世界"到"世界 owns 战斗"
 
 **日期**：2026-04-19（**最近更新 2026-04-26**：阶段 4 作废 + 阶段 5 完成）
-**范围**：`core/entity/*`、`example/hex-atb-battle-core/*`、`example/hex-atb-battle-frontend/*`、`stdlib/replay/*`；主仓库的 `scripts/SkillPreviewBattle.gd`、`scenes/`、`tests/`
+**范围**：`core/entity/*`、`example/hex-atb-battle/core/*`、`example/hex-atb-battle/frontend/*`、`stdlib/replay/*`；主仓库的 `scripts/SkillPreviewBattle.gd`、`scenes/`、`tests/`
 **类型**：架构级设计文档（多阶段实施中，见下方进度表）
 
 ---

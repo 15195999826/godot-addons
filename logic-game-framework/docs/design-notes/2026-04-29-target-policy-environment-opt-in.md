@@ -2,9 +2,9 @@
 
 **状态**: Draft v4 (架构原则收敛: 走 metadata, 不引入新 condition)
 **日期**: 2026-04-29
-**范围**: `addons/logic-game-framework/example/hex-atb-battle/` (sample 层)
+**范围**: `addons/logic-game-framework/example/hex-atb-battle/logic/` (sample 层)
 **前置**: M1 EnvironmentActor 子系统 (8f643cb / c057c5e), 现有 `target_selectors.gd`, `can_use_skill_on()`
-**依赖**: `2026-04-29-skill-preview-battle-migration.md` — 迁移完成后, 本 plan 的 harness 改动落在 `addons/logic-game-framework/example/hex-atb-battle/scenario/skill_scenario_harness.gd`, 不再动主仓 `scripts/`。
+**依赖**: `2026-04-29-skill-preview-battle-migration.md` — 迁移完成后, 本 plan 的 harness 改动落在 `addons/logic-game-framework/example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd`, 不再动主仓 `scripts/`。
 
 ---
 
@@ -98,11 +98,11 @@ WallBreaker (新技能, 验证)
 
 | 步 | 动作 | 文件 |
 |---|---|---|
-| 1 | 加 metadata key: `const ALLOWED_TARGET_KINDS := "allowedTargetKinds"` | `example/hex-atb-battle/config/skill_meta_keys.gd` |
-| 2 | `can_use_skill_on` 加 4-5 行 `allowed_target_kinds` 检查; 签名 target 类型放宽到 `HexBattleActor` | `example/hex-atb-battle-core/hex_world_gameplay_instance.gd` |
-| 3 | 写 WallBreaker 验证技能: 单体伤害, `meta(ALLOWED_TARGET_KINDS, ["Character", "Environment"])`. 复用 `CurrentTarget` selector + `DamageAction`. | `example/hex-atb-battle/skills/wall_breaker.gd` |
-| 4 | 最小改 headless harness `HexBattleSkillScenarioHarness`: 扩 `run_with_actions` / `_target_cfg_to_ref` / `_resolve_target_ref` 三处, 支持 target ref `"environment_N"` 和 `target_cfg.mode = "environment_index"` | `example/hex-atb-battle/scenario/skill_scenario_harness.gd` |
-| 5 | smoke 测试: 见下"验证"段; submodule commit + 主仓库 bump pointer | `tests/example/hex-atb-battle/smoke_wall_breaker.tscn/.gd` |
+| 1 | 加 metadata key: `const ALLOWED_TARGET_KINDS := "allowedTargetKinds"` | `example/hex-atb-battle/logic/config/skill_meta_keys.gd` |
+| 2 | `can_use_skill_on` 加 4-5 行 `allowed_target_kinds` 检查; 签名 target 类型放宽到 `HexBattleActor` | `example/hex-atb-battle/core/hex_world_gameplay_instance.gd` |
+| 3 | 写 WallBreaker 验证技能: 单体伤害, `meta(ALLOWED_TARGET_KINDS, ["Character", "Environment"])`. 复用 `CurrentTarget` selector + `DamageAction`. | `example/hex-atb-battle/logic/skills/wall_breaker.gd` |
+| 4 | 最小改 headless harness `HexBattleSkillScenarioHarness`: 扩 `run_with_actions` / `_target_cfg_to_ref` / `_resolve_target_ref` 三处, 支持 target ref `"environment_N"` 和 `target_cfg.mode = "environment_index"` | `example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd` |
+| 5 | smoke 测试: 见下"验证"段; submodule commit + 主仓库 bump pointer | `example/hex-atb-battle/tests/battle/smoke_wall_breaker.tscn/.gd` |
 
 每步验证后再走下一步.
 

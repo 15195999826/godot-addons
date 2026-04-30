@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b8tlpvmfix2pq"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_timeline.gd" id="1_smoke"]
+
+[node name="SmokeSkillPreviewTimeline" type="Node"]
+script = ExtResource("1_smoke")

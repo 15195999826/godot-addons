@@ -12,7 +12,7 @@ const MENU_NAME := "LGFramework"
 const MENU_ITEM_GENERATE := 1
 const MENU_ITEM_RUN_TEST := 2
 const GENERATOR_SCRIPT := "res://addons/logic-game-framework/scripts/attribute_set_generator_script.gd"
-const TEST_SCENE := "res://addons/logic-game-framework/example/hex-atb-battle/demo_headless.tscn"
+const TEST_SCENE := "res://addons/logic-game-framework/example/hex-atb-battle/logic/demo_headless.tscn"
 
 # Log 和 IdGenerator 已移至 lomolib 插件
 const AUTOLOAD_GAME_WORLD := "GameWorld"

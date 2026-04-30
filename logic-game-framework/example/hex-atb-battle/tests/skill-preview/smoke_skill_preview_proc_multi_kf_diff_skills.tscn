@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b8tlmkfdiffskillsv1"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_proc_multi_kf_diff_skills.gd" id="1"]
+
+[node name="SmokeMkfDiffSkills" type="Node"]
+script = ExtResource("1")

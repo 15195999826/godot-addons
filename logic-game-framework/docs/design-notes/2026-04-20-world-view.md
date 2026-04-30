@@ -1,7 +1,7 @@
 # WorldView + BattleAnimator：Frontend 的响应式订阅层
 
 **日期**：2026-04-20
-**范围**：`example/hex-atb-battle-frontend/world_view.gd`、`example/hex-atb-battle-frontend/battle_animator.gd`、`tests/smoke_world_view.{gd,tscn}`；轻微 deprecation 标注 `example/hex-atb-battle-frontend/scene/battle_replay_scene.gd`
+**范围**：`example/hex-atb-battle/frontend/world_view.gd`、`example/hex-atb-battle/frontend/battle_animator.gd`、`tests/smoke_world_view.{gd,tscn}`；轻微 deprecation 标注 `example/hex-atb-battle/frontend/scene/battle_replay_scene.gd`
 **类型**：阶段 2 落地记录（承 [2026-04-19-world-as-single-instance.md](2026-04-19-world-as-single-instance.md)）
 
 ---

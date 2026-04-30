@@ -28,9 +28,9 @@ graph TB
     end
 
     subgraph "Example"
-        Core[hex-atb-battle-core<br/>Shared Events + WorldGI base]
-        HexDemo[hex-atb-battle<br/>Demo Game Logic + HexDemoWorldGI]
-        Frontend[hex-atb-battle-frontend<br/>Presentation Layer]
+        Core[hex-atb-battle/core<br/>Shared Events + WorldGI base]
+        HexDemo[hex-atb-battle/logic<br/>Demo Game Logic + HexDemoWorldGI]
+        Frontend[hex-atb-battle/frontend<br/>Presentation Layer]
     end
 
     World --> Entity

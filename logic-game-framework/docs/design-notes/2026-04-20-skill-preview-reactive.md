@@ -3,12 +3,12 @@
 ## 范围 / 前置
 
 - **动的文件**：
-  - `example/skill-preview/skill_preview_procedure.gd`（新）
-  - `example/skill-preview/skill_preview_world.gd`（新）
-  - `example/skill-preview/skill_preview.gd`（大改）
-  - `example/hex-atb-battle-core/hex_world_gameplay_instance.gd`（+1 字段）
-  - `example/hex-atb-battle/hex_battle.gd`（-1 字段）
-  - `example/hex-atb-battle/actions/*.gd` × 7、`target_selectors.gd`、`utils/*.gd` × 2 —— 把 `battle: HexBattle` 改 `HexWorldGameplayInstance`
+  - `example/hex-atb-battle/skill-preview/skill_preview_procedure.gd`（新）
+  - `example/hex-atb-battle/skill-preview/skill_preview_world.gd`（新）
+  - `example/hex-atb-battle/skill-preview/skill_preview.gd`（大改）
+  - `example/hex-atb-battle/core/hex_world_gameplay_instance.gd`（+1 字段）
+  - `example/hex-atb-battle/logic/hex_battle.gd`（-1 字段）
+  - `example/hex-atb-battle/logic/actions/*.gd` × 7、`target_selectors.gd`、`utils/*.gd` × 2 —— 把 `battle: HexBattle` 改 `HexWorldGameplayInstance`
   - 主仓库 `tests/smoke_skill_preview_reactive.tscn/gd`（新）
 - **依赖的前轮决策**：
   - 阶段 1（`2026-04-19-world-as-single-instance.md`）把 `HexBattle` 拆成 `HexWorldGameplayInstance`（持久状态） + `HexBattleProcedure`（短命过程），`HexBattle` 仅作兼容门面。
@@ -276,7 +276,7 @@ type-check 要留给**真正**只在某些子类才有意义的字段（比如 H
 - **战斗期死亡 view 消失**（D5）：阶段 4 `ReplayPlayer` 路径或 framework 级"WorldView 战斗期冻结"开关可根治。
 - **console event log 不同步推进**（D4）：`FrontendBattleAnimator` 加 `frame_changed` 转发即可同步。
 - **AI 目录 `battle: HexBattle` 类型标注**（P4）：等 WorldGI 直接驱动 AI 的需求落地再改。
-- **`FrontendBattleReplayScene` 仍被 `main.tscn` / `example/hex-atb-battle-frontend/main.gd` / Web 桥接用**：阶段 4 录像 v3 + ReplayPlayer 替换，阶段 5 正式切 main.tscn。
+- **`FrontendBattleReplayScene` 仍被 `main.tscn` / `example/hex-atb-battle/frontend/main.gd` / Web 桥接用**：阶段 4 录像 v3 + ReplayPlayer 替换，阶段 5 正式切 main.tscn。
 - **map SpinBox 编辑态全量重建**：`_map_radius_input / _map_orientation_option / _map_hex_size_input` 的 value_changed 现在直连 `_rebuild_world_from_model`，拖 spin 每一步都走 reset → configure_grid → add_system(ProjectileSystem new) → register_all_timelines → 每个 actor re-instantiate。对本 phase 无关键影响（改一次 spin 一次重建可接受），但连续拖动会有抖动。阶段 4/5 对编辑态 UX 不满意时补 150ms debounce Timer 或拆"只重配 grid + 重 place 现有 actor"的轻路径。
 - **stringly-typed "caster" / "ally_N" / "enemy_N" / "auto" / "fixed_pos" / "A" / "B"**：散落于 `skill_preview.gd._role_id_for / _resolve_target_actor_id / _add_actor`，本 phase 大改 start 路径是抽 const 的机会但没做（preset JSON 向后兼容问题，需一次性 migrate）。阶段 4/5 心疼顺手抽。
 - **`SkillPreviewBattle` 与 `SkillPreviewProcedure` 的 "tick-to-done" 逻辑两份**：scenario runner 继续走 `SkillPreviewBattle.run_with_actions`（主仓库 `scripts/` 下），内含几乎同构的"no executing + no flying projectile"判定与 `_broadcast_projectile_events` 内联。本 phase 不动 —— scenario runner 的独立 GameWorld 生命周期假设已稳。未来如果 scenario runner 也切到 WorldGI 路径，可与 SkillPreviewProcedure 合并。

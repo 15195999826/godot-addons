@@ -4,7 +4,7 @@
 
 涉及文件：
 
-- `addons/logic-game-framework/example/hex-atb-battle-frontend/`
+- `addons/logic-game-framework/example/hex-atb-battle/frontend/`
   - `main.gd` / `main.tscn`：唯一生产视觉入口，要切到响应式 wire
   - `scene/battle_replay_scene.gd`：要删
   - `ui/replay_controls.gd`：rename → `ui/playback_controls.gd`（见 D4）
@@ -30,13 +30,13 @@
 
 | 类型 | 文件 | 现状 | 处理 |
 |---|---|---|---|
-| 生产入口 | `example/hex-atb-battle-frontend/main.gd` | 唯一调用 `load_replay` 的视觉入口 | 改写为响应式 wire |
-| 自身定义 | `example/hex-atb-battle-frontend/scene/battle_replay_scene.gd` | A 层 destructive 入口 | 删 |
+| 生产入口 | `example/hex-atb-battle/frontend/main.gd` | 唯一调用 `load_replay` 的视觉入口 | 改写为响应式 wire |
+| 自身定义 | `example/hex-atb-battle/frontend/scene/battle_replay_scene.gd` | A 层 destructive 入口 | 删 |
 | 测试（在跑） | `tests/smoke_frontend_main.gd`（主仓） | 通过 main.tscn 间接拿 BattleReplayScene 节点 | 配套改节点路径 + 断言保持 |
 | 测试（孤儿） | `tests/frontend/test_replay_flow.gd` | 不在 `run_tests.gd::TEST_PATHS`，无 .tscn 入口 | 删 |
 | 测试（孤儿） | `tests/frontend/test_3d_visualization.gd` | 同上 | 删 |
 | 测试（孤儿） | `tests/frontend/test_compilation.gd` | 同上 | 删 |
-| 文档 | `example/hex-atb-battle-frontend/README.md` | 流程图 + sample code 用到 | 同步更新 |
+| 文档 | `example/hex-atb-battle/frontend/README.md` | 流程图 + sample code 用到 | 同步更新 |
 | 文档 | 各 design-note + skill `example-app-presentation.md` / `example-app-overview.md` | 历史描述 | design-note 留作历史；skill 文档同步类名 |
 
 `SimulationManager.gd` 的两个 Web 桥接（`godot_run_battle` / `godot_preview_skill`）**只产出录像 JSON 字符串给 JS 端消费，Godot 内部不渲染**，不在老路径下线范围内。
@@ -45,8 +45,8 @@
 
 | 文件 | 处理 |
 |---|---|
-| `example/hex-atb-battle-frontend/ui/replay_controls.gd` | rename → `ui/playback_controls.gd`，`class_name FrontendReplayControls` → `FrontendPlaybackControls` |
-| `example/hex-atb-battle-frontend/main.gd` | 引用同步更新 |
+| `example/hex-atb-battle/frontend/ui/replay_controls.gd` | rename → `ui/playback_controls.gd`，`class_name FrontendReplayControls` → `FrontendPlaybackControls` |
+| `example/hex-atb-battle/frontend/main.gd` | 引用同步更新 |
 | `tests/frontend/test_compilation.gd` | 孤儿测试，整个删（见上一表） |
 
 UI 控件（暂停/播放/重置/速度）逻辑是表演层通用的，跟 destructive 路径无关，但既然本轮在动这一带，顺手改名对齐 Playback 命名约定（见 D4）。
@@ -95,7 +95,7 @@ handoff 已确认 v3 split（`world_snapshot` + `event_timeline`）不做。`PRO
 
 ### Step 2 — 重写 `main.gd` 响应式 wire
 
-**参考样板**：`addons/logic-game-framework/example/skill-preview/skill_preview.gd::_init_world_stack` —— 该文件是当前已落地的"常驻 World + WorldView + Animator 三件套"响应式样板，本轮 main.gd 直接借同一模式。关键链：
+**参考样板**：`addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack` —— 该文件是当前已落地的"常驻 World + WorldView + Animator 三件套"响应式样板，本轮 main.gd 直接借同一模式。关键链：
 
 ```gdscript
 # 摘自 skill_preview.gd:142-159
@@ -136,9 +136,9 @@ main.gd 适配点：
 
 ### Step 3 — 删 `FrontendBattleReplayScene` + rename `ReplayControls`
 
-- `rm addons/logic-game-framework/example/hex-atb-battle-frontend/scene/battle_replay_scene.gd`
+- `rm addons/logic-game-framework/example/hex-atb-battle/frontend/scene/battle_replay_scene.gd`
 - 如果 `scene/` 空了，顺手删目录
-- `mv addons/logic-game-framework/example/hex-atb-battle-frontend/ui/replay_controls.gd → ui/playback_controls.gd`
+- `mv addons/logic-game-framework/example/hex-atb-battle/frontend/ui/replay_controls.gd → ui/playback_controls.gd`
 - 文件内 `class_name FrontendReplayControls` → `FrontendPlaybackControls`
 - `main.gd` 引用同步更新（在 Step 2 重写时一并改完）
 
@@ -152,7 +152,7 @@ main.gd 适配点：
 
 ### Step 5 — 文档同步
 
-- `example/hex-atb-battle-frontend/README.md`：流程图和 sample code 改成响应式风格
+- `example/hex-atb-battle/frontend/README.md`：流程图和 sample code 改成响应式风格
 - skill `enforcing-lgf/reference/example-app-presentation.md` / `example-app-overview.md`：同步类名引用
 - LGF `CHANGELOG.md` `[Unreleased]` 开新子段（本轮主题）：
   - **Removed**：3 个孤儿测试 + `FrontendBattleReplayScene`
@@ -176,7 +176,7 @@ godot --headless --path "D:/GodotProjects/inkmon/inkmon-godot" tests/smoke_skill
 - frontend_main **PASS**（节点路径变了之后）
 - scenarios **12/12**
 
-**编辑器实测（必跑）**：F6 打开 `addons/logic-game-framework/example/hex-atb-battle-frontend/main.tscn`，点 Start Battle，确认 unit / 飘字 / VFX / 死亡动画都能看到。
+**编辑器实测（必跑）**：F6 打开 `addons/logic-game-framework/example/hex-atb-battle/frontend/main.tscn`，点 Start Battle，确认 unit / 飘字 / VFX / 死亡动画都能看到。
 
 ## 风险与回滚
 

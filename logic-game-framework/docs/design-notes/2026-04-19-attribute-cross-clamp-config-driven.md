@@ -1,7 +1,7 @@
 # pre_change 闭包循环根治：config 驱动的跨属性 clamp
 
 **日期**：2026-04-19（同日第三轮）
-**范围**：`core/attributes/raw_attribute_set.gd`、`core/attributes/base_generated_attribute_set.gd`、`scripts/attribute_set_generator_script.gd`、`example/attributes/attributes_config.gd`、`example/attributes/generated/hex_battle_character_attribute_set.gd`、`example/hex-atb-battle/character_actor.gd`、`tests/core/attributes/attribute_set_test.gd`
+**范围**：`core/attributes/raw_attribute_set.gd`、`core/attributes/base_generated_attribute_set.gd`、`scripts/attribute_set_generator_script.gd`、`example/attributes/attributes_config.gd`、`example/attributes/generated/hex_battle_character_attribute_set.gd`、`example/hex-atb-battle/logic/character_actor.gd`、`tests/core/attributes/attribute_set_test.gd`
 **前置**：`2026-04-19-structural-cycles-weakref.md`（循环 C/D/E）
 
 ---

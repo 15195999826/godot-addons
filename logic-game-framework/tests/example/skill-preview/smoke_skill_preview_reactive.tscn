@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://b20gw2talse51"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/tests/example/skill-preview/smoke_skill_preview_reactive.gd" id="1_smoke"]
-
-[node name="SmokeSkillPreviewReactive" type="Node"]
-script = ExtResource("1_smoke")

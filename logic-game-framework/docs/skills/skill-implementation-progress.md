@@ -39,7 +39,7 @@
 | 1 | Strike | 🔵 已落地 | strike | `skills/strike.gd` | `strike_scenario.gd` |
 | 2 | Poison | 🔵 已落地 | poison | `skills/poison.gd` + `buffs/poison_buff.gd` + `actions/poison_tick_action.gd` | `poison_scenario.gd` |
 | 3 | Ward | 🔵 V1 已落地 | ward | `skills/ward.gd` + `buffs/ward_buff.gd` + `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` + `actions/apply_shield_action.gd` | `shield_basic_absorb` / `shield_full_absorb_no_thorns` / `shield_priority_order` |
-| 4 | Knockback Punch | 🔵 已落地 | knockback_punch | `skills/knockback_punch.gd` + `actions/push_action.gd` + `events/battle_events.gd` (ActorDisplacedEvent + PushBlockedEvent) | `tests/example/hex-atb-battle/smoke_knockback_punch.gd` (7 cases) |
+| 4 | Knockback Punch | 🔵 已落地 | knockback_punch | `skills/knockback_punch.gd` + `actions/push_action.gd` + `events/battle_events.gd` (ActorDisplacedEvent + PushBlockedEvent) | `example/hex-atb-battle/tests/battle/smoke_knockback_punch.gd` (7 cases) |
 | 5 | Expose | ⚫ 未做 | — | — | — |
 | 6 | Execute | ⚫ 未做 | — | — | — |
 

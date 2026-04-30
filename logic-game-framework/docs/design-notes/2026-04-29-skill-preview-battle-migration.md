@@ -5,11 +5,11 @@
 **范围**:
 - `scripts/SkillPreviewBattle.gd` (拆 + 删)
 - `scripts/SimulationManager.gd` (删 Web preview hook)
-- `addons/logic-game-framework/example/hex-atb-battle/` (新增 harness)
-- `addons/logic-game-framework/tests/example/hex-atb-battle/skill_scenarios/` (迁入 scenario tests)
-- `addons/logic-game-framework/tests/example/hex-atb-battle/smoke_skill_scenarios.*` (迁入 runner)
-- `addons/logic-game-framework/tests/example/skill-preview/smoke_skill_preview*.gd` (迁入 SkillPreview smoke)
-- `addons/logic-game-framework/tests/example/hex-atb-battle-frontend/smoke_*.gd` (迁入 frontend/presentation smoke)
+- `addons/logic-game-framework/example/hex-atb-battle/logic/` (新增 harness)
+- `addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/` (迁入 scenario tests)
+- `addons/logic-game-framework/example/hex-atb-battle/tests/battle/smoke_skill_scenarios.*` (迁入 runner)
+- `addons/logic-game-framework/example/hex-atb-battle/tests/skill-preview/smoke_skill_preview*.gd` (迁入 SkillPreview smoke)
+- `addons/logic-game-framework/example/hex-atb-battle/tests/frontend/smoke_*.gd` (迁入 frontend/presentation smoke)
 **前置**: 无. **本 plan 是 TargetPolicy v3 第 5 步的前置 / 替代** — 完成本 plan 后, TargetPolicy 第 5 步直接在新 harness 上扩 `environment_N` 支持, 不再动 `scripts/`.
 
 ---
@@ -19,14 +19,14 @@
 `scripts/SkillPreviewBattle.gd` 当前是一个混合体:
 
 1. **Web preview 桥接** — `run_preview(skill_source, scene_config)` + `_compile_skill()` (运行时编译 GDScript 字符串) + `_build_grid_config()` + `_resolve_target()`. 入口: `SimulationManager._on_preview_skill_call` → `window.godot_preview_skill`.
-2. **Headless scenario harness** — `run_with_config()` / `run_with_actions()` + `_PreviewInstance extends HexWorldGameplayInstance` + 一堆 `_resolve_*_ref` / `_actor_src_to_preview_cfg` / `_fire_action`. 调用方: addon 内 `tests/example/hex-atb-battle/skill_scenarios/`, addon 内 `tests/example/hex-atb-battle/smoke_skill_scenarios.gd`, addon 内 `tests/example/skill-preview/smoke_skill_preview_timeline.gd`, `tests/example/skill-preview/smoke_skill_preview_procedure_timed.gd`, addon 内 `tests/example/hex-atb-battle-frontend/smoke_surge_unit_view.gd`.
+2. **Headless scenario harness** — `run_with_config()` / `run_with_actions()` + `_PreviewInstance extends HexWorldGameplayInstance` + 一堆 `_resolve_*_ref` / `_actor_src_to_preview_cfg` / `_fire_action`. 调用方: addon 内 `example/hex-atb-battle/tests/battle/skill_scenarios/`, addon 内 `example/hex-atb-battle/tests/battle/smoke_skill_scenarios.gd`, addon 内 `example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_timeline.gd`, `example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_procedure_timed.gd`, addon 内 `example/hex-atb-battle/tests/frontend/smoke_surge_unit_view.gd`.
 
 两者共享 `_PreviewInstance` 但语义已经分叉:
 - Web 路径接受**字符串源码**, 走运行时 GDScript 编译, 是"AI 生成技能预览"的产物
 - Headless 路径接受**已注册的 ability config / scenario action**, 是 smoke 测试的固定 helper
 
 类名 `SkillPreviewBattle` 也产生混乱:
-- addon `example/skill-preview/skill_preview*.gd` (常驻 world 编辑器版) **已不依赖**它
+- addon `example/hex-atb-battle/skill-preview/skill_preview*.gd` (常驻 world 编辑器版) **已不依赖**它
 - 但名字里仍带 "Preview" 让人以为它就是 skill_preview UI 的引擎
 
 ## 决策
@@ -51,10 +51,10 @@
 
 ### 2. 迁 headless harness 进 LGF
 
-新位置: **`addons/logic-game-framework/example/hex-atb-battle/scenario/skill_scenario_harness.gd`**
+新位置: **`addons/logic-game-framework/example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd`**
 
 - 新 class_name: `HexBattleSkillScenarioHarness`
-- 路径放 `example/hex-atb-battle/scenario/` 是因为 `_PreviewInstance extends HexWorldGameplayInstance` 强依赖 hex-atb-battle 层 (HexBattleActor / 投射物 / grid). 不放 `addons/logic-game-framework/tests/` 根目录 — 那是 LGF core 单元测试地盘, 不该塞游戏专属 harness.
+- 路径放 `example/hex-atb-battle/logic/scenario/` 是因为 `_PreviewInstance extends HexWorldGameplayInstance` 强依赖 hex-atb-battle 层 (HexBattleActor / 投射物 / grid). 不放 `addons/logic-game-framework/tests/` 根目录 — 那是 LGF core 单元测试地盘, 不该塞游戏专属 harness.
 - 同目录已有 `environment/` 子模式作为先例, `scenario/` 与之并列.
 
 **保留搬迁的符号** (从 `SkillPreviewBattle` 里直接搬, 不重写):
@@ -69,13 +69,13 @@
 
 ### 3. 更新所有调用方并迁移 scenario tests
 
-- `tests/skill_scenarios/` → `addons/logic-game-framework/tests/example/hex-atb-battle/skill_scenarios/`
-- 旧主项目 `smoke_skill_scenarios.gd/.tscn` → `addons/logic-game-framework/tests/example/hex-atb-battle/smoke_skill_scenarios.gd/.tscn`
+- `tests/skill_scenarios/` → `addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/`
+- 旧主项目 `smoke_skill_scenarios.gd/.tscn` → `addons/logic-game-framework/example/hex-atb-battle/tests/battle/smoke_skill_scenarios.gd/.tscn`
 - addon 内 `skill_scenario.gd` 注释 (line 21 / 50): `SkillPreviewBattle` → `HexBattleSkillScenarioHarness`
 - addon 内 `smoke_skill_scenarios.gd` line 88: `SkillPreviewBattle.run_with_actions` → `HexBattleSkillScenarioHarness.run_with_actions`
-- `addons/logic-game-framework/tests/example/skill-preview/smoke_skill_preview_timeline.gd` line 33 + 文件头注释
-- `addons/logic-game-framework/tests/example/skill-preview/smoke_skill_preview_procedure_timed.gd` 注释 (line 4)
-- `addons/logic-game-framework/tests/example/hex-atb-battle-frontend/smoke_surge_unit_view.gd` line 6 + 任何调用
+- `addons/logic-game-framework/example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_timeline.gd` line 33 + 文件头注释
+- `addons/logic-game-framework/example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_procedure_timed.gd` 注释 (line 4)
+- `addons/logic-game-framework/example/hex-atb-battle/tests/frontend/smoke_surge_unit_view.gd` line 6 + 任何调用
 - 删完后 grep 确认: `grep -rn "SkillPreviewBattle\|run_preview\|godot_preview_skill" scripts/ addons/` 应只剩 CHANGELOG / design-notes 历史记录.
 
 ### 4. 删空文件
@@ -84,7 +84,7 @@
 
 ## 不做的事
 
-- ❌ **不动** `addons/.../example/skill-preview/skill_preview*.gd` (常驻 world 编辑器, 走 `SkillPreviewProcedure`, 与本轮无关)
+- ❌ **不动** `addons/.../example/hex-atb-battle/skill-preview/skill_preview*.gd` (常驻 world 编辑器, 走 `SkillPreviewProcedure`, 与本轮无关)
 - ❌ **不动** `godot_run_battle` Web 桥接 (它走 `HexDemoWorldGameplayInstance`, 不是 SkillPreviewBattle)
 - ❌ **不动** `godot_validate_skill` Web 桥接 (它走 `SkillValidator`, 与 preview 解耦)
 - ❌ **不引入** harness 内部的进一步重构 (保持 1:1 搬迁, 等下次有具体需求再优化)
@@ -94,8 +94,8 @@
 
 | 步 | 动作 | 验证 |
 |---|---|---|
-| 1 | 在 LGF 新建 `example/hex-atb-battle/scenario/skill_scenario_harness.gd`, 1:1 搬保留符号, class_name = `HexBattleSkillScenarioHarness` | 新文件能 parse (Godot 编辑器打开无红线) |
-| 2 | 迁移 scenario / SkillPreview / frontend smoke 到 addon, 改所有 test 调用方的引用 (见上) | 跑 LGF `run_tests.tscn` + addon `tests/example/hex-atb-battle/smoke_skill_scenarios.tscn` + addon `tests/example/skill-preview/smoke_skill_preview_timeline.tscn` + addon `tests/example/hex-atb-battle-frontend/smoke_surge_unit_view.tscn` 全 PASS |
+| 1 | 在 LGF 新建 `example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd`, 1:1 搬保留符号, class_name = `HexBattleSkillScenarioHarness` | 新文件能 parse (Godot 编辑器打开无红线) |
+| 2 | 迁移 scenario / SkillPreview / frontend smoke 到 addon, 改所有 test 调用方的引用 (见上) | 跑 LGF `run_tests.tscn` + addon `example/hex-atb-battle/tests/battle/smoke_skill_scenarios.tscn` + addon `example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_timeline.tscn` + addon `example/hex-atb-battle/tests/frontend/smoke_surge_unit_view.tscn` 全 PASS |
 | 3 | 在 `SimulationManager.gd` 删 `godot_preview_skill` 注册 + `_on_preview_skill_call` + `_js_callback_preview_skill` + `run_preview_skill` | `main.tscn` 能跑, `godot_run_battle` 仍工作 (本地 / Web 端不影响) |
 | 4 | 删 `scripts/SkillPreviewBattle.gd` 整个文件 | grep 确认无残留引用; 跑全套 smoke + LGF unit tests |
 | 5 | submodule commit (新 harness + LGF 内更新) → 主仓库 commit (删 SkillPreviewBattle.gd + SimulationManager.gd 改动) → bump submodule pointer | 两层 commit 顺序: submodule 先, 主仓后 |
@@ -105,12 +105,12 @@
 | 场景 | 预期 |
 |---|---|
 | LGF `run_tests.tscn` | PASS (无 SkillPreviewBattle 依赖) |
-| addon `tests/example/hex-atb-battle/smoke_skill_scenarios.tscn` | PASS (调用方迁到 `HexBattleSkillScenarioHarness`) |
+| addon `example/hex-atb-battle/tests/battle/smoke_skill_scenarios.tscn` | PASS (调用方迁到 `HexBattleSkillScenarioHarness`) |
 | `smoke_skill_preview_timeline.tscn` | PASS |
 | `smoke_skill_preview_procedure_timed.tscn` | PASS |
 | `smoke_surge_unit_view.tscn` | PASS |
 | `smoke_frontend_main.tscn` | PASS (与 SkillPreviewBattle 无依赖, 应不动) |
-| addon `example/skill-preview/skill_preview.tscn` | 能打开能跑 (走 `SkillPreviewProcedure`, 与本轮无关) |
+| addon `example/hex-atb-battle/skill-preview/skill_preview.tscn` | 能打开能跑 (走 `SkillPreviewProcedure`, 与本轮无关) |
 | 主场景 `scenes/Simulation.tscn` (Web 模式 / 本地) | `godot_run_battle` / `godot_validate_skill` 仍可用; `godot_preview_skill` 不再注册 (Web 端 JS 调用会得到 `undefined`) |
 
 ## 与 TargetPolicy plan 的关系

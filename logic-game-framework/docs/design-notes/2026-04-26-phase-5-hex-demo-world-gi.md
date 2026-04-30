@@ -1,7 +1,7 @@
 # 阶段 5 落地：拆 HexBattle thin 门面，引入 HexDemoWorldGameplayInstance
 
 **日期**：2026-04-26
-**范围**：`example/hex-atb-battle/hex_battle.gd`（删）、`example/hex-atb-battle/hex_demo_world_gameplay_instance.gd`（新）、`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`、`example/hex-atb-battle/ai/*.gd` × 4、`example/hex-atb-battle/demo_headless.{gd,tscn}` + `example/hex-atb-battle-frontend/demo_frontend.{gd,tscn}`（含改名 `main.*` → `demo_*`）、主仓 `scripts/SimulationManager.gd` / `scripts/SkillPreviewBattle.gd` / `tests/smoke_world_view.gd`
+**范围**：`example/hex-atb-battle/logic/hex_battle.gd`（删）、`example/hex-atb-battle/logic/hex_demo_world_gameplay_instance.gd`（新）、`example/hex-atb-battle/core/hex_world_gameplay_instance.gd`、`example/hex-atb-battle/logic/ai/*.gd` × 4、`example/hex-atb-battle/logic/demo_headless.{gd,tscn}` + `example/hex-atb-battle/frontend/demo_frontend.{gd,tscn}`（含改名 `main.*` → `demo_*`）、主仓 `scripts/SimulationManager.gd` / `scripts/SkillPreviewBattle.gd` / `tests/smoke_world_view.gd`
 **类型**：架构落地 + 范式对齐
 **前置**：[2026-04-19-world-as-single-instance.md](2026-04-19-world-as-single-instance.md) 阶段 5（最后一个待启动阶段）
 
@@ -50,7 +50,7 @@
 
 ## 选定方案的合理性
 
-`SkillPreviewWorldGI` 已经在 `example/skill-preview/skill_preview_world.gd` 里跑了一段时间，模式经过验证：
+`SkillPreviewWorldGI` 已经在 `example/hex-atb-battle/skill-preview/skill_preview_world.gd` 里跑了一段时间，模式经过验证：
 
 ```gdscript
 class_name SkillPreviewWorldGI

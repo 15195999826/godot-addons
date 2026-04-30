@@ -124,7 +124,7 @@ ShieldResolver.resolve(actor, damage, damage_type):
 ### 🆕 新增（项目层 hex-atb-battle）
 
 ```
-addons/logic-game-framework/example/hex-atb-battle/
+addons/logic-game-framework/example/hex-atb-battle/logic/
   components/
     shield_component.gd
     shield_component_config.gd
@@ -140,9 +140,9 @@ addons/logic-game-framework/example/hex-atb-battle/
 
 | 文件 | 改动 |
 |---|---|
-| `addons/.../hex-atb-battle/utils/hex_battle_damage_utils.gd` | `apply_damage` 插入 `ShieldResolver` 调用 |
-| `addons/.../hex-atb-battle-core/events/battle_events.gd` | damage event schema 加 `shield_absorbed` / `actual_life_damage` / `consumption_records[]`；定义 `shield_broken` 事件（伤害打破时）。`shield_expired` 事件由到期路径决定是否需要，可复用 LGF 既有 `ability_expired` 类标准事件 |
-| `addons/.../hex-atb-battle/skills/thorn.gd` | 过滤条件加 `actual_life_damage > 0`（否则全吸收时仍触发反伤，语义错误） |
+| `addons/.../hex-atb-battle/logic/utils/hex_battle_damage_utils.gd` | `apply_damage` 插入 `ShieldResolver` 调用 |
+| `addons/.../hex-atb-battle/core/events/battle_events.gd` | damage event schema 加 `shield_absorbed` / `actual_life_damage` / `consumption_records[]`；定义 `shield_broken` 事件（伤害打破时）。`shield_expired` 事件由到期路径决定是否需要，可复用 LGF 既有 `ability_expired` 类标准事件 |
+| `addons/.../hex-atb-battle/logic/skills/thorn.gd` | 过滤条件加 `actual_life_damage > 0`（否则全吸收时仍触发反伤，语义错误） |
 
 ### 🧪 测试
 
@@ -156,7 +156,7 @@ tests/skill_scenarios/
 ### ❌ 不碰
 
 - `addons/.../core/`（LGF 框架层）
-- `addons/.../hex-atb-battle-frontend/`（表演层）
+- `addons/.../hex-atb-battle/frontend/`（表演层）
 - `attribute system`、`tag system`
 
 ---
@@ -166,7 +166,7 @@ tests/skill_scenarios/
 ```
 1. ✅ components/shield_component.gd + shield_component_config.gd
 2. ✅ utils/hex_battle_shield_resolver.gd（纯函数 + 排序规则）
-3. ✅ hex-atb-battle-core/events/battle_events.gd 扩 damage event schema + 定义 shield_broken
+3. ✅ hex-atb-battle/core/events/battle_events.gd 扩 damage event schema + 定义 shield_broken
 4. ✅ utils/hex_battle_damage_utils.gd::apply_damage 插入 resolver 调用 + on_break 在 remove_actor 前触发
 5. ✅ skills/thorn.gd 加 actual_life_damage > 0 过滤
 6. ✅ actions/apply_shield_action.gd
@@ -259,6 +259,6 @@ tests/skill_scenarios/
 
 - LGF 架构总览：[`addons/logic-game-framework/CLAUDE.md`](../../addons/logic-game-framework/CLAUDE.md)
 - 事件系统：[`addons/logic-game-framework/core/events/`](../../addons/logic-game-framework/core/events/)
-- 现有 buff ability 范式：[`addons/.../hex-atb-battle/skills/poison.gd`](../../addons/logic-game-framework/example/hex-atb-battle/skills/poison.gd)
-- 反伤 ability：[`addons/.../hex-atb-battle/skills/thorn.gd`](../../addons/logic-game-framework/example/hex-atb-battle/skills/thorn.gd)
-- 伤害集中点：[`addons/.../hex-atb-battle/utils/hex_battle_damage_utils.gd`](../../addons/logic-game-framework/example/hex-atb-battle/utils/hex_battle_damage_utils.gd)
+- 现有 buff ability 范式：[`addons/.../hex-atb-battle/skills/poison.gd`](../../addons/logic-game-framework/example/hex-atb-battle/logic/skills/poison.gd)
+- 反伤 ability：[`addons/.../hex-atb-battle/skills/thorn.gd`](../../addons/logic-game-framework/example/hex-atb-battle/logic/skills/thorn.gd)
+- 伤害集中点：[`addons/.../hex-atb-battle/utils/hex_battle_damage_utils.gd`](../../addons/logic-game-framework/example/hex-atb-battle/logic/utils/hex_battle_damage_utils.gd)

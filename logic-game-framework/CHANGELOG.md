@@ -23,18 +23,18 @@ PushAction 的 raycast 已支持 N>1, V1 KnockbackPunch 仅传 distance=1。
 
 ### Added
 
-- **`HexBattlePushAction`** (`example/hex-atb-battle/actions/push_action.gd`) — 通用 forced
+- **`HexBattlePushAction`** (`example/hex-atb-battle/logic/actions/push_action.gd`) — 通用 forced
   displacement Action。raycast N 格沿方向推进, 撞 occupant / edge 停下并按 CollisionProfile
   结算碰撞伤害。constructor 参数 `distance` (默认 1) 和 `displacement_kind` (默认 "knockback")
   让未来 pull / scatter / N>1 变体零代码复用。**碰撞伤害 contract**: deterministic 无暴击,
   不走 PreDamageEvent, 但走 `HexBattleDamageUtils.apply_damage` + `broadcast_post_damage`
   (ShieldComponent / death / thorns 仍生效)。`source_actor_id = caster` (gameplay attribution)。
   case 6 兜底: 若上一步 DamageAction 已击杀 target, 整段 push 跳过。
-- **`HexBattleKnockbackPunch`** (`example/hex-atb-battle/skills/knockback_punch.gd`) — Tier 1 #4
+- **`HexBattleKnockbackPunch`** (`example/hex-atb-battle/logic/skills/knockback_punch.gd`) — Tier 1 #4
   设计卡的最小落地。Timeline HIT @ 300ms: DamageAction(atk) → PushAction(distance=1, "knockback")。
   cooldown 4000ms, range 1, ALLOWED_TARGET_KINDS=["Character"] (V1 不直接 push environment, 由
   WallBreaker pattern 验证打 env; KP 验证 forced displacement pattern)。
-- **`BattleEvents.ActorDisplacedEvent`** (`example/hex-atb-battle-core/events/battle_events.gd`,
+- **`BattleEvents.ActorDisplacedEvent`** (`example/hex-atb-battle/core/events/battle_events.gd`,
   kind="actor_displaced") — forced displacement 事件, 区别于自愿 `MoveCompleteEvent`。字段:
   `actor_id / from_hex / to_hex / displacement_kind / source_actor_id`。仅当 actor 真的移动时
   push (from != to)。前端动画 / replay / scenario 可按 `displacement_kind` 区分 knockback / pull /
@@ -48,10 +48,10 @@ PushAction 的 raycast 已支持 N>1, V1 KnockbackPunch 仅传 distance=1。
   返回从 self 到 other 的邻居方向 (0-5), 不相邻返 -1。让 PushAction 可以从 caster/target
   位置直接求"推开方向"。未来 shadow_step / pull / line AoE 等空间技能复用。
 - **`CollisionProfile.default_character()` / `.default_wall()`** static factories
-  (`example/hex-atb-battle/environment/collision_profile.gd`)。CharacterActor 默认 profile
+  (`example/hex-atb-battle/logic/environment/collision_profile.gd`)。CharacterActor 默认 profile
   taken=1 / dealt=1 / pushable=true / blocks_path=true; default_wall 兜底"撞地图边界" 这种没
   blocker actor 的场景, dealt_to_pusher=1。
-- **Smoke `smoke_knockback_punch`** (`tests/example/hex-atb-battle/smoke_knockback_punch.gd`)
+- **Smoke `smoke_knockback_punch`** (`example/hex-atb-battle/tests/battle/smoke_knockback_punch.gd`)
   覆盖 7 case: free push / edge / stone_wall blocker / character blocker / out-of-range /
   direct env target rejected / killed-by-base-damage / collision deterministic (20 trials)。
 
@@ -107,19 +107,19 @@ AI / 默认 enemy selector / heal / buff / shield 等保持 character-only 隔�
 
 ### Added
 
-- **`HexBattleActor`** (`example/hex-atb-battle/hex_battle_actor.gd`) — 中间基类,持公共 `hex_position` /
+- **`HexBattleActor`** (`example/hex-atb-battle/logic/hex_battle_actor.gd`) — 中间基类,持公共 `hex_position` /
   `ability_set` / `_is_dead`,提供 `get_attribute_set() -> HexBattleActorAttributeSet` 抽象合同 +
   `check_death` / `is_dead` / `is_pre_event_responsive` / `get_ability_set` (IAbilitySetOwner) +
   录像基础设施 (`_get_position` / `setup_recording` / `get_attribute_snapshot` / `get_ability_snapshot` /
   `get_tag_snapshot`)。子类实现 `get_attribute_set()` 返回各自强类型字段。
-- **`EnvironmentActor`** (`example/hex-atb-battle/environment_actor.gd`) — `HexBattleActor` 子类,
+- **`EnvironmentActor`** (`example/hex-atb-battle/logic/environment_actor.gd`) — `HexBattleActor` 子类,
   持 `environment_kind: String` 区分视觉,持 `attribute_set: HexBattleEnvironmentAttributeSet` +
   `collision_profile: CollisionProfile` 普通字段。type = "Environment"。
-- **`CollisionProfile`** (`example/hex-atb-battle/environment/collision_profile.gd`) — 普通数据类,
+- **`CollisionProfile`** (`example/hex-atb-battle/logic/environment/collision_profile.gd`) — 普通数据类,
   字段 `damage_taken_on_blocked_push` / `damage_dealt_to_pusher` / `pushable` / `blocks_path`。
   不进 attribute_set: 这些是结构化物理参数, 不参与 buff/modifier 系统。
   提供 `default_wall()` 静态工厂给"撞地图边界"等无 actor 场景用。
-- **`HexBattleStoneWall`** (`example/hex-atb-battle/environment/stone_wall.gd`) — M1 唯一地形,
+- **`HexBattleStoneWall`** (`example/hex-atb-battle/logic/environment/stone_wall.gd`) — M1 唯一地形,
   `create()` 工厂返回 indestructible (hp=INF + damage_taken=0) + immovable + blocks_path 的
   EnvironmentActor 实例。indestructible 用数据表达,不在代码里加早退分支。
 - **`HexBattleActorAttributeSet`** (generated, `example/attributes/generated/hex_battle_actor_attribute_set.gd`)
@@ -146,7 +146,7 @@ AI / 默认 enemy selector / heal / buff / shield 等保持 character-only 隔�
 
 ### Changed
 
-- **`CharacterActor`** (`example/hex-atb-battle/character_actor.gd`) `extends Actor` →
+- **`CharacterActor`** (`example/hex-atb-battle/logic/character_actor.gd`) `extends Actor` →
   `extends HexBattleActor`。公共字段/方法 (hex_position / ability_set / _is_dead / check_death /
   is_dead / is_pre_event_responsive / get_ability_set / _get_position / setup_recording /
   get_ability_snapshot / get_tag_snapshot) 上抬到基类, CharacterActor 自身只保留 ATB / AI /
@@ -238,7 +238,7 @@ occupy 收窄到只看 timeline, 失败语义改由 LGF 在 fire 时 push 事件
 
 ### Added
 
-- **`SkillPreviewValidation`** (新 class, `addons/logic-game-framework/example/skill-preview/skill_preview_validation.gd`) 把 occupy / 冲突计算抽成纯函数(`ability_occupy_ms` / `find_track_occupy_violation` / `next_free_time_ms_in_track`), 注入式 skill_resolver, 便于单元测试 headless 调用。
+- **`SkillPreviewValidation`** (新 class, `addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview_validation.gd`) 把 occupy / 冲突计算抽成纯函数(`ability_occupy_ms` / `find_track_occupy_violation` / `next_free_time_ms_in_track`), 注入式 skill_resolver, 便于单元测试 headless 调用。
 - **`HexBattleCooldownSystem.TimedCooldownCost.get_duration()`** public getter, 让 SkillPreviewValidation 不直接 access `_duration`。
 - **逻辑层 smoke 扩充** (主仓 `tests/`): 新增 5 个 SkillPreviewProcedure smoke —
   - `smoke_skill_preview_proc_multi_kf_legal` (3 发 Strike 间隔 2100ms, 验证 grant 仅 1 次 + 复用同 ability instance)
@@ -337,7 +337,7 @@ occupy 收窄到只看 timeline, 失败语义改由 LGF 在 fire 时 push 事件
 
 ### Added
 
-- **`FrontendApplyHPDeltaAction`** (`example/hex-atb-battle-frontend/actions/apply_hp_delta_action.gd`): 瞬时指令(duration=0,delay 结束当帧 progress=1 立即完成),apply 时 `actor.target_hp = clamp(target_hp + delta, 0, max)`。
+- **`FrontendApplyHPDeltaAction`** (`example/hex-atb-battle/frontend/actions/apply_hp_delta_action.gd`): 瞬时指令(duration=0,delay 结束当帧 progress=1 立即完成),apply 时 `actor.target_hp = clamp(target_hp + delta, 0, max)`。
 - **`FrontendActorRenderState.target_hp`** 字段:damage / heal apply 累在这里;visual_hp 由 RenderWorld 异步追赶。
 - **`FrontendRenderWorld.tick_hp_lerp(delta_ms)`**: 每 tick 调一次,指数衰减 `1 - exp(-rate * dt)` 让 visual_hp 朝 target_hp 收敛。`FrontendBattleDirector._tick` 末尾 wire。
 - **`FrontendAnimationConfig.hp_lerp_rate`** = 8.0(单位 1/秒,默认约 125ms 收敛 63%)。
@@ -375,7 +375,7 @@ occupy 收窄到只看 timeline, 失败语义改由 LGF 在 fire 时 push 事件
 
 ## [Unreleased] — 2026-04-26 文档归属:`docs/skills/` 从主仓迁回 LGF submodule
 
-主仓 `docs/skills/`(`damage-pipeline.md` / `shield-system.md` / `skill-implementation-progress.md` / `README.md`)4 份文档全部 `git mv` 到 `addons/logic-game-framework/docs/skills/`。原因:这些文档描述的实现代码全部在 LGF submodule 内(`hex-atb-battle-core/apply_damage` / `Shield*` 组件 / `example/hex-atb-battle/skills/` 进度卡),文档归属应跟随实现仓库以保证版本一致性 — 主仓 bump submodule pointer 时,代码 + 文档同步快进,避免「shield V1 文档 + shield V2 代码」错版风险。
+主仓 `docs/skills/`(`damage-pipeline.md` / `shield-system.md` / `skill-implementation-progress.md` / `README.md`)4 份文档全部 `git mv` 到 `addons/logic-game-framework/docs/skills/`。原因:这些文档描述的实现代码全部在 LGF submodule 内(`hex-atb-battle-core/apply_damage` / `Shield*` 组件 / `example/hex-atb-battle/logic/skills/` 进度卡),文档归属应跟随实现仓库以保证版本一致性 — 主仓 bump submodule pointer 时,代码 + 文档同步快进,避免「shield V1 文档 + shield V2 代码」错版风险。
 
 主仓 `docs/` 整个目录清空(plan-docs/ 不在范围)。
 
@@ -388,22 +388,22 @@ occupy 收窄到只看 timeline, 失败语义改由 LGF 在 fire 时 push 事件
 
 ### Added
 
-- **`HexDemoWorldGameplayInstance`** (`example/hex-atb-battle/hex_demo_world_gameplay_instance.gd`): 新建。`extends HexWorldGameplayInstance`, 收编原 `HexBattle` 全部内容 — `start(config)` / `_create_battle_procedure` / `_on_battle_finished` / `_save_replay` / `_build_default_grid_config` / `_create_team_actor` / `_place_team_randomly` / `_apply_inspire_buff_to_all` / `_print_battle_info` / `tick(dt)` / `get_all_actors` / `get_alive_actors` / `get_replay_data` / `get_log_dir`。id 前缀 `IdGenerator.generate("demo")`(actor id 形如 `demo_001:hero_001`), `type = "hex_demo"`。
-- **`HexWorldGameplayInstance.get_alive_actors()`** (`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`): 上抬。返回 `Array[CharacterActor]`, 与 `get_alive_actor_ids()` 并列, 解耦 AI strategy 对 thin facade 的依赖。
+- **`HexDemoWorldGameplayInstance`** (`example/hex-atb-battle/logic/hex_demo_world_gameplay_instance.gd`): 新建。`extends HexWorldGameplayInstance`, 收编原 `HexBattle` 全部内容 — `start(config)` / `_create_battle_procedure` / `_on_battle_finished` / `_save_replay` / `_build_default_grid_config` / `_create_team_actor` / `_place_team_randomly` / `_apply_inspire_buff_to_all` / `_print_battle_info` / `tick(dt)` / `get_all_actors` / `get_alive_actors` / `get_replay_data` / `get_log_dir`。id 前缀 `IdGenerator.generate("demo")`(actor id 形如 `demo_001:hero_001`), `type = "hex_demo"`。
+- **`HexWorldGameplayInstance.get_alive_actors()`** (`example/hex-atb-battle/core/hex_world_gameplay_instance.gd`): 上抬。返回 `Array[CharacterActor]`, 与 `get_alive_actor_ids()` 并列, 解耦 AI strategy 对 thin facade 的依赖。
 
 ### Changed
 
-- **AI strategy 类型签名**(`example/hex-atb-battle/ai/ai_strategy.gd` + 3 个具体策略): `battle: HexBattle` → `battle: HexWorldGameplayInstance` 共 7 处。配合 `get_alive_actors` 上抬, AI 不再 IS-A 偶合具体子类。
+- **AI strategy 类型签名**(`example/hex-atb-battle/logic/ai/ai_strategy.gd` + 3 个具体策略): `battle: HexBattle` → `battle: HexWorldGameplayInstance` 共 7 处。配合 `get_alive_actors` 上抬, AI 不再 IS-A 偶合具体子类。
 - **`scripts/SimulationManager.gd`**: `HexBattle.new()` → `HexDemoWorldGameplayInstance.new()`, cast 类型同步。Web 桥接 `godot_run_battle` 跑的是 demo 路径。
 - **`scripts/SkillPreviewBattle.gd`**: `_PreviewInstance` 从 `extends HexBattle` 改为 `extends HexWorldGameplayInstance`。自管 `left_team` / `right_team` / `recorder` 字段(原本借父类), 自带 `get_all_actors()` 走 staging 拼接。id 前缀 `preview` (actor id 形如 `preview_001:caster`)。
 - **`tests/smoke_world_view.gd`**: `var _world: HexBattle` + `HexBattle.new()` → `HexDemoWorldGameplayInstance`。
-- **`example/hex-atb-battle/main.gd`** / **`example/hex-atb-battle-frontend/main.gd`**: 同步切到 `HexDemoWorldGameplayInstance`。`HexBattle.MAX_TICKS` → `HexBattleProcedure.MAX_TICKS`(唯一来源)。
-- **`example/hex-atb-battle/utils/hex_battle_game_state_utils.gd`** / **`example/hex-atb-battle-core/hex_battle_procedure.gd`** / **`core/events/handler_context.gd`**: 注释里的 `HexBattle` 字面量更新为 `HexWorldGameplayInstance` / `HexDemoWorldGameplayInstance` 按语义。
+- **`example/hex-atb-battle/logic/main.gd`** / **`example/hex-atb-battle/frontend/main.gd`**: 同步切到 `HexDemoWorldGameplayInstance`。`HexBattle.MAX_TICKS` → `HexBattleProcedure.MAX_TICKS`(唯一来源)。
+- **`example/hex-atb-battle/logic/utils/hex_battle_game_state_utils.gd`** / **`example/hex-atb-battle/core/hex_battle_procedure.gd`** / **`core/events/handler_context.gd`**: 注释里的 `HexBattle` 字面量更新为 `HexWorldGameplayInstance` / `HexDemoWorldGameplayInstance` 按语义。
 - **`CLAUDE.md`** mermaid 图: `HexBattle` 节点改名 `HexDemo`(对应新类), 关系箭头不变。
 
 ### Removed
 
-- **`example/hex-atb-battle/hex_battle.gd`** 物理删除(原 268 行)。`HexBattle.MAX_TICKS` / `HexBattle.recorder` 字段在 PR-1 已先去冗余, 物理删时调用方零阻塞。
+- **`example/hex-atb-battle/logic/hex_battle.gd`** 物理删除(原 268 行)。`HexBattle.MAX_TICKS` / `HexBattle.recorder` 字段在 PR-1 已先去冗余, 物理删时调用方零阻塞。
 - **`HexBattle` class_name** 和 `class_name HexBattle` 全局符号一并消失。所有调用方已切到 `HexDemoWorldGameplayInstance` 或 `HexWorldGameplayInstance`。
 
 ### 设计决策(本轮关键点)
@@ -440,7 +440,7 @@ occupy 收窄到只看 timeline, 失败语义改由 LGF 在 fire 时 push 事件
 
 ### Changed
 
-- **`RenderWorld.actor_died`** (`example/hex-atb-battle-frontend/core/render_world.gd`) emit 语义收紧为 transition-only:新增私有 helper `_set_actor_alive(actor, alive)` 收口所有 `is_alive` 写入,只在 `was_alive && not alive` 那帧 emit 一次。`_apply_death_action`(progress >= 1.0)/ `set_actor_dead` 直接 emit 删除,`set_actor_hp`(hp ≤ 0)走同一 helper。重复设 false / 设回 true 不再触发。
+- **`RenderWorld.actor_died`** (`example/hex-atb-battle/frontend/core/render_world.gd`) emit 语义收紧为 transition-only:新增私有 helper `_set_actor_alive(actor, alive)` 收口所有 `is_alive` 写入,只在 `was_alive && not alive` 那帧 emit 一次。`_apply_death_action`(progress >= 1.0)/ `set_actor_dead` 直接 emit 删除,`set_actor_hp`(hp ≤ 0)走同一 helper。重复设 false / 设回 true 不再触发。
 - **`FrontendBattleAnimator`** wire `_director.actor_died` → `_unit_views[id].play_death()`(event-driven),不再依赖 `actor_state_changed` snapshot 推断死亡。`reset()` 内遍历 view 调 `revive()` — Reset 是 playback session control,不走 Director event。
 - **`FrontendUnitView`** 拆 API:`update_state` 删死亡 / 复活分支,只管 hp / flash / tint state sync;新增公共方法 `play_death()`(once 策略,内部 `_death_played` flag 挡重入)和 `revive()`(清 flag + visible/scale 恢复)。删私有 `_play_death_animation` / `_revive_visual_state`。
 
@@ -479,15 +479,15 @@ Animator 一律 wire event signal,**不关心策略**;策略写在 view 方法�
 
 ### Removed
 
-- **`FrontendBattleReplayScene`** (`example/hex-atb-battle-frontend/scene/battle_replay_scene.gd`): destructive `load_replay(record)` 路径整体下线。视觉入口由 `main.gd` 自己 wire `WorldView + BattleAnimator` 替代。
+- **`FrontendBattleReplayScene`** (`example/hex-atb-battle/frontend/scene/battle_replay_scene.gd`): destructive `load_replay(record)` 路径整体下线。视觉入口由 `main.gd` 自己 wire `WorldView + BattleAnimator` 替代。
 - **3 个孤儿 frontend 测试** (`tests/frontend/test_replay_flow.gd` / `test_3d_visualization.gd` / `test_compilation.gd`): 不在 `run_tests.gd::TEST_PATHS` 里, 没人跑过, 全部移除。`tests/frontend/` 目录一并清掉。
 
 ### Changed
 
-- **`example/hex-atb-battle-frontend/main.gd`**: 完全重写为响应式 wire。流程: 用户按 Start Battle → 创建 `HexBattle` → `WorldView.bind_world(battle)` → `battle.start(config)` 触发 `add_actor` signal → view spawn → tick 跑完战斗 → `battle_finished(timeline)` signal → `animator.play(timeline, view.get_unit_views())`。camera / lighting / WorldEnvironment / player_controller 由 main.gd 自管(从被删的 ReplayScene 搬出来)。
+- **`example/hex-atb-battle/frontend/main.gd`**: 完全重写为响应式 wire。流程: 用户按 Start Battle → 创建 `HexBattle` → `WorldView.bind_world(battle)` → `battle.start(config)` 触发 `add_actor` signal → view spawn → tick 跑完战斗 → `battle_finished(timeline)` signal → `animator.play(timeline, view.get_unit_views())`。camera / lighting / WorldEnvironment / player_controller 由 main.gd 自管(从被删的 ReplayScene 搬出来)。
 - **`tests/smoke_frontend_main.gd`** (主仓): 节点路径换成 `get_node("WorldView")` / `get_node("BattleAnimator")`。4 条 invariants 保持: `is_ended` / `current_frame == total_frames` / unit view count > 0 / `visual_hp ∈ [0, max_hp]`。
-- **`FrontendReplayControls` → `FrontendPlaybackControls`** (`example/hex-atb-battle-frontend/ui/replay_controls.gd` → `ui/playback_controls.gd`): 顺手对齐 Playback 命名约定。功能 / 信号 / 公共方法不变, 仅 class_name + 文件名 + 节点 name。
-- **`FrontendBattleAnimator`** API 增补(`example/hex-atb-battle-frontend/battle_animator.gd`): `pause()` / `resume()` / `reset()` / `get_total_frames()` / `get_current_frame()` / `get_actors_snapshot()` / `is_ended()` 全部转发到内部 `_director`; signal `playback_state_changed(is_playing)` / `frame_changed(current, total)` 转发自 director, 供 main.gd UI 同步进度 / 按钮态。
+- **`FrontendReplayControls` → `FrontendPlaybackControls`** (`example/hex-atb-battle/frontend/ui/replay_controls.gd` → `ui/playback_controls.gd`): 顺手对齐 Playback 命名约定。功能 / 信号 / 公共方法不变, 仅 class_name + 文件名 + 节点 name。
+- **`FrontendBattleAnimator`** API 增补(`example/hex-atb-battle/frontend/battle_animator.gd`): `pause()` / `resume()` / `reset()` / `get_total_frames()` / `get_current_frame()` / `get_actors_snapshot()` / `is_ended()` 全部转发到内部 `_director`; signal `playback_state_changed(is_playing)` / `frame_changed(current, total)` 转发自 director, 供 main.gd UI 同步进度 / 按钮态。
 
 ### 外部调用点兼容性
 
@@ -509,7 +509,7 @@ Animator 一律 wire event signal,**不关心策略**;策略写在 view 方法�
 ### 遗留
 
 - B 层"回放(Replay)"逻辑重算未落地。命名占位 `BattleReplayPlayer` / `BattleReplaySession` 保留, 视未来需求再做。
-- AI 目录 `example/hex-atb-battle/ai/*.gd` 5 个文件 `battle: HexBattle` 类型偏窄但 IS-A 兼容当前不报错, 单独一笔做。
+- AI 目录 `example/hex-atb-battle/logic/ai/*.gd` 5 个文件 `battle: HexBattle` 类型偏窄但 IS-A 兼容当前不报错, 单独一笔做。
 - `stdlib/replay/` 目录命名暂未变。它持有 `BattleRecorder + ReplayData + ReplayLogPrinter` 都是录像数据生产/消费侧, 没有"录像播放表演"成分。如果 `Recording` 命名更合适, 留到那时一起做。
 
 ---
@@ -520,11 +520,11 @@ Animator 一律 wire event signal,**不关心策略**;策略写在 view 方法�
 → [design-notes/2026-04-26-death-keeps-actor-in-world.md](docs/design-notes/2026-04-26-death-keeps-actor-in-world.md)
 
 ### Changed
-- `HexBattleDamageUtils.apply_damage`(`example/hex-atb-battle/utils/hex_battle_damage_utils.gd`):死亡分支删除 `battle.remove_actor(target_id)` 调用,新增私有静态方法 `_clear_grid_footprint(battle, dead_actor)` 单独清掉死者的 grid occupant + reservation。语义切分:**死亡 = 行为禁止 + 清格子 + 留 view + 留逻辑实例**;**离开 world = 玩家编辑删除 / 重启战斗 / 投射物完成**。
+- `HexBattleDamageUtils.apply_damage`(`example/hex-atb-battle/logic/utils/hex_battle_damage_utils.gd`):死亡分支删除 `battle.remove_actor(target_id)` 调用,新增私有静态方法 `_clear_grid_footprint(battle, dead_actor)` 单独清掉死者的 grid occupant + reservation。语义切分:**死亡 = 行为禁止 + 清格子 + 留 view + 留逻辑实例**;**离开 world = 玩家编辑删除 / 重启战斗 / 投射物完成**。
   
   正交性已查证:`get_alive_actor_ids` / `_check_battle_end` / AI 候选 / `process_post_event` 广播范围全部走 `actor.is_dead()`(基于 `_is_dead` flag, hp 一次性 ≤ 0 翻),不依赖 `world.has_actor()`,留尸体不污染战斗逻辑。`apply_move_action` 的 `grid.move_occupant` 由 `_clear_grid_footprint` 兜底防止活人撞死尸格触发 UNEXPECTED `push_error`。
   
-  当前剩余的 `world.remove_actor` 运行时调用点:`stdlib/systems/projectile_system.gd:131`(投射物离场)、`example/skill-preview/skill_preview.gd:315/562`(编辑态删 / 切 class),`SkillPreviewWorldGI.reset()` 走 `_actors.clear()` + emit。四条都是"actor 永久离开 world"正当语义,与"死亡留尸体"原则不冲突。
+  当前剩余的 `world.remove_actor` 运行时调用点:`stdlib/systems/projectile_system.gd:131`(投射物离场)、`example/hex-atb-battle/skill-preview/skill_preview.gd:315/562`(编辑态删 / 切 class),`SkillPreviewWorldGI.reset()` 走 `_actors.clear()` + emit。四条都是"actor 永久离开 world"正当语义,与"死亡留尸体"原则不冲突。
 
 ### 命名约定(本轮对齐)
 
@@ -569,14 +569,14 @@ skill_preview F6 编辑器手动验证(死亡 tween 视觉)由用户接手。
 → [design-notes/2026-04-20-skill-preview-reactive.md](docs/design-notes/2026-04-20-skill-preview-reactive.md)
 
 ### Added
-- `SkillPreviewProcedure extends BattleProcedure`(`example/skill-preview/skill_preview_procedure.gd`):skill_preview 特化的战斗过程。不跑 ATB/AI/胜负判定, 只承接"caster 施放指定 ability, tick 到所有技能无 executing instance + 无飞行投射物 + POST_EXECUTION_TICKS 缓冲"这条终止链。`tick_once` 合并 ability tick 与 "executing 探测" 同一循环(省掉一次全量 actor 扫描); `_any_projectile_flying` 单独扫投射物。`_start_recorder` override 走旧版 `start_recording(actors, configs, map_config)` 保留 initial_actors, 供 Animator `ReplayData.BattleRecord.from_dict` 消费。`MAX_TICKS=500 / POST_EXECUTION_TICKS=10` 与旧版一致; passives 构造时 `duplicate()` 防御调方数组外部 mutate。
-- `SkillPreviewWorldGI extends HexWorldGameplayInstance`(`example/skill-preview/skill_preview_world.gd`):编辑器常驻 WorldGI。`reset()` 清空 `_actors / _actor_id_2_actor_dic / _systems / grid / _logic_time`, emit `actor_removed` 让 `FrontendWorldView` 响应式回收 unit view。`queue_preview(caster_id, ability_config, target_id, passives)` 预存下一次 start_battle 的 preview 参数(passives `duplicate()` 防御), `_create_battle_procedure` override 消费参数构造 `SkillPreviewProcedure`(消费后清空防止跨场误用, 加 `Log.assert_crash(ability_config != null)` 防 "忘 queue_preview 直接 start_battle" 静默 null)。
-- `HexWorldGameplayInstance.broadcast_projectile_events()`(`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`):把 projectile HIT/MISS 事件的 collect+match+process_post_event 下沉为 world 公共 method。`HexBattleProcedure` / `SkillPreviewProcedure` 的 tick_once 都调这一方法, 消除同段逻辑两处内联。
+- `SkillPreviewProcedure extends BattleProcedure`(`example/hex-atb-battle/skill-preview/skill_preview_procedure.gd`):skill_preview 特化的战斗过程。不跑 ATB/AI/胜负判定, 只承接"caster 施放指定 ability, tick 到所有技能无 executing instance + 无飞行投射物 + POST_EXECUTION_TICKS 缓冲"这条终止链。`tick_once` 合并 ability tick 与 "executing 探测" 同一循环(省掉一次全量 actor 扫描); `_any_projectile_flying` 单独扫投射物。`_start_recorder` override 走旧版 `start_recording(actors, configs, map_config)` 保留 initial_actors, 供 Animator `ReplayData.BattleRecord.from_dict` 消费。`MAX_TICKS=500 / POST_EXECUTION_TICKS=10` 与旧版一致; passives 构造时 `duplicate()` 防御调方数组外部 mutate。
+- `SkillPreviewWorldGI extends HexWorldGameplayInstance`(`example/hex-atb-battle/skill-preview/skill_preview_world.gd`):编辑器常驻 WorldGI。`reset()` 清空 `_actors / _actor_id_2_actor_dic / _systems / grid / _logic_time`, emit `actor_removed` 让 `FrontendWorldView` 响应式回收 unit view。`queue_preview(caster_id, ability_config, target_id, passives)` 预存下一次 start_battle 的 preview 参数(passives `duplicate()` 防御), `_create_battle_procedure` override 消费参数构造 `SkillPreviewProcedure`(消费后清空防止跨场误用, 加 `Log.assert_crash(ability_config != null)` 防 "忘 queue_preview 直接 start_battle" 静默 null)。
+- `HexWorldGameplayInstance.broadcast_projectile_events()`(`example/hex-atb-battle/core/hex_world_gameplay_instance.gd`):把 projectile HIT/MISS 事件的 collect+match+process_post_event 下沉为 world 公共 method。`HexBattleProcedure` / `SkillPreviewProcedure` 的 tick_once 都调这一方法, 消除同段逻辑两处内联。
 - `tests/smoke_skill_preview_reactive.tscn/gd`(主仓库):连续跑 3 场战斗断言 WorldView/Animator 节点引用复用(直接比较 Node 引用, 不靠 instance_id) + reset 归 0 + battle_finished 产出非空 timeline + animator 跑到 playback_ended。
 
 ### Changed
-- `skill_preview.gd`(`example/skill-preview/skill_preview.gd`)从 "每次 START 调 `SkillPreviewBattle.run_with_config` destructive 重建临时 instance + `FrontendBattleReplayScene.load_replay`" 切到响应式栈:`_ready` 里 `GameWorld.init()` + 常驻 `SkillPreviewWorldGI` + `FrontendWorldView.bind_world` + `FrontendBattleAnimator`。编辑态的 `_rebuild_editor_preview`(旧)替换为 `_rebuild_world_from_model`(新)走 `world.reset() / configure_grid / add_actor / place_occupant` 的显式 mutation API, `FrontendBattleReplayScene / FrontendBattleDirector / _replay_events_by_frame / _last_logged_frame` 等字段全部删除。相机 / 光照 / 环境从原先委托 replay_scene 改为场景自己搭(`_setup_camera_and_env` 沿袭原参数)。console event log 退化为 `battle_finished` 后从 timeline 一次性 dump(不再按 frame 同步推进, UX 遗留记在 handoff)。
-- `HexWorldGameplayInstance.logger: HexBattleLogger = null`(`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`):把原先仅存在于 `HexBattle` 上的 `logger` 字段下沉到父类, 默认 null。动机 —— `damage_utils / heal_action` 用 `if battle.logger != null` 判空访问, 当 `game_state_provider` 是 `SkillPreviewWorldGI` 等 HexBattle 的姊妹子类时触发 `Invalid access to property 'logger'` 报错。下沉后任何 `HexWorldGameplayInstance` 子类都合法共享字段, HexBattle 上原有声明删除以避免 shadowing。
+- `skill_preview.gd`(`example/hex-atb-battle/skill-preview/skill_preview.gd`)从 "每次 START 调 `SkillPreviewBattle.run_with_config` destructive 重建临时 instance + `FrontendBattleReplayScene.load_replay`" 切到响应式栈:`_ready` 里 `GameWorld.init()` + 常驻 `SkillPreviewWorldGI` + `FrontendWorldView.bind_world` + `FrontendBattleAnimator`。编辑态的 `_rebuild_editor_preview`(旧)替换为 `_rebuild_world_from_model`(新)走 `world.reset() / configure_grid / add_actor / place_occupant` 的显式 mutation API, `FrontendBattleReplayScene / FrontendBattleDirector / _replay_events_by_frame / _last_logged_frame` 等字段全部删除。相机 / 光照 / 环境从原先委托 replay_scene 改为场景自己搭(`_setup_camera_and_env` 沿袭原参数)。console event log 退化为 `battle_finished` 后从 timeline 一次性 dump(不再按 frame 同步推进, UX 遗留记在 handoff)。
+- `HexWorldGameplayInstance.logger: HexBattleLogger = null`(`example/hex-atb-battle/core/hex_world_gameplay_instance.gd`):把原先仅存在于 `HexBattle` 上的 `logger` 字段下沉到父类, 默认 null。动机 —— `damage_utils / heal_action` 用 `if battle.logger != null` 判空访问, 当 `game_state_provider` 是 `SkillPreviewWorldGI` 等 HexBattle 的姊妹子类时触发 `Invalid access to property 'logger'` 报错。下沉后任何 `HexWorldGameplayInstance` 子类都合法共享字段, HexBattle 上原有声明删除以避免 shadowing。
 - `HexBattle` 在 `hex_battle.gd` 上的 `var logger: HexBattleLogger = null` 声明移除(下沉到 HexWorldGameplayInstance, 见上), `_on_battle_finished` 里 `logger = _hex_procedure.logger` 语义不变。
 - `HexBattleProcedure._broadcast_projectile_events` 下沉并删除本地 method, `tick_once` 改调 `world.broadcast_projectile_events()`; 顺带移除原实现里的 `print("  [投射物] ...")` debug 行(调试 print 不属于框架职责, 要 log 走 HexBattleLogger)。
 - 所有 `var battle: HexBattle = ctx.game_state_provider` 的静态类型标注改为 `var battle: HexWorldGameplayInstance = ctx.game_state_provider`:`actions/apply_move_action.gd` / `actions/apply_buff_action.gd` / `actions/damage_action.gd` / `actions/poison_tick_action.gd` / `actions/heal_action.gd` (×2) / `actions/reflect_damage_action.gd` / `actions/start_move_action.gd` / `target_selectors.gd`, 以及 `utils/hex_battle_damage_utils.gd` (×2) / `utils/hex_battle_game_state_utils.gd` (×2)。  
@@ -634,12 +634,12 @@ skill_preview F6 编辑器手动验证(死亡 tween 视觉)由用户接手。
 → [design-notes/2026-04-20-world-view.md](docs/design-notes/2026-04-20-world-view.md)
 
 ### Added
-- `FrontendWorldView extends Node3D`(`example/hex-atb-battle-frontend/world_view.gd`):`bind_world(world)` hydrate 当前 actor + 订阅 `actor_added` / `actor_removed` / `actor_position_changed` / `grid_configured` / `grid_cell_changed` signal。view 生命周期完全由 signal 驱动(reactive projection);没有 destructive `load_replay` 等价物。内部挂 `UnitsRoot` + `GridMapRenderer3D`;上层通过 `get_unit_views()` / `get_unit_view(id)` / `get_unit_view_count()` 抓取 view 引用。只为 `CharacterActor` 建 view,ProjectileActor 等非可视单位由 BattleAnimator 自行管 VFX 节点。
-- `FrontendBattleAnimator extends Node3D`(`example/hex-atb-battle-frontend/battle_animator.gd`):`play(record_dict, unit_views)` 复用 `FrontendBattleDirector` 的 timeline 解码 / `FrontendActionScheduler` / `FrontendVisualizerRegistry`,把 Director 的状态变更 signal(`actor_state_changed` / `floating_text_created` / `attack_vfx_*` / `projectile_*`)转发到外部传入的 unit view 字典(`actor_died` 由 Director 经 `actor_state_changed.is_alive=false` 统一推入,不需单独转发);自己只承载 VFX / 投射物 / 飘字节点(挂在内部 `EffectsRoot`)。`playback_started` / `playback_ended` signal + `set_speed()` / `stop()` / `is_playing()` 兼容现有测试加速需求。
+- `FrontendWorldView extends Node3D`(`example/hex-atb-battle/frontend/world_view.gd`):`bind_world(world)` hydrate 当前 actor + 订阅 `actor_added` / `actor_removed` / `actor_position_changed` / `grid_configured` / `grid_cell_changed` signal。view 生命周期完全由 signal 驱动(reactive projection);没有 destructive `load_replay` 等价物。内部挂 `UnitsRoot` + `GridMapRenderer3D`;上层通过 `get_unit_views()` / `get_unit_view(id)` / `get_unit_view_count()` 抓取 view 引用。只为 `CharacterActor` 建 view,ProjectileActor 等非可视单位由 BattleAnimator 自行管 VFX 节点。
+- `FrontendBattleAnimator extends Node3D`(`example/hex-atb-battle/frontend/battle_animator.gd`):`play(record_dict, unit_views)` 复用 `FrontendBattleDirector` 的 timeline 解码 / `FrontendActionScheduler` / `FrontendVisualizerRegistry`,把 Director 的状态变更 signal(`actor_state_changed` / `floating_text_created` / `attack_vfx_*` / `projectile_*`)转发到外部传入的 unit view 字典(`actor_died` 由 Director 经 `actor_state_changed.is_alive=false` 统一推入,不需单独转发);自己只承载 VFX / 投射物 / 飘字节点(挂在内部 `EffectsRoot`)。`playback_started` / `playback_ended` signal + `set_speed()` / `stop()` / `is_playing()` 兼容现有测试加速需求。
 - `tests/smoke_world_view.tscn/gd`:阶段 2 主验证 —— bind 前 0 view → HexBattle.start 触发 signal 把 view 补齐 → WorldGI.tick 推进战斗 → BattleAnimator 消费 timeline 到 `playback_ended` → 显式 `world.remove_actor` 让剩余 view 响应式减少。
 
 ### Deprecated
-- `FrontendBattleReplayScene`(`example/hex-atb-battle-frontend/scene/battle_replay_scene.gd`)收缩为"录像回放专用"路径 —— 仍由 `main.tscn` / Web 桥接使用,但不再是新战斗场景的视觉入口。阶段 4 录像格式 v3 落地后考虑用 `ReplayPlayer`(临时 WorldGI + WorldView)替换,彻底去掉 destructive `load_replay`。
+- `FrontendBattleReplayScene`(`example/hex-atb-battle/frontend/scene/battle_replay_scene.gd`)收缩为"录像回放专用"路径 —— 仍由 `main.tscn` / Web 桥接使用,但不再是新战斗场景的视觉入口。阶段 4 录像格式 v3 落地后考虑用 `ReplayPlayer`(临时 WorldGI + WorldView)替换,彻底去掉 destructive `load_replay`。
 
 ### 外部调用点兼容性
 - `main.tscn` / `SkillPreviewBattle` / scenario runner / Web 桥接均未调整,继续走 `HexBattle` 门面 + `FrontendBattleReplayScene.load_replay(record)` 老路径。WorldView / BattleAnimator 是"可选接入",需要响应式更新的场景才用。
@@ -665,11 +665,11 @@ skill_preview F6 编辑器手动验证(死亡 tween 视觉)由用户接手。
 - `WorldGameplayInstance extends GameplayInstance`(`core/entity/world_gameplay_instance.gd`):显式 mutation API `add_actor` / `remove_actor` / `configure_grid`,每个 emit 对应 signal(`actor_added` / `actor_removed` / `actor_position_changed` / `grid_configured` / `grid_cell_changed` / `battle_finished`);`start_battle(participants: Array[Actor])` 入口配合工厂钩子 `_create_battle_procedure`,`tick(dt)` 战斗优先,分帧吞吐由常数 `BATTLE_TICKS_PER_WORLD_FRAME`(默认 INT_MAX,一帧跑完)控制。Signal 只由显式 mutation 触发,战斗期间 actor 属性/tag 直接改内存,不发 signal(view 由 BattleAnimator 消费 event_timeline 回放)。
 - `BattleProcedure extends RefCounted`(`core/entity/battle_procedure.gd`):抽象骨架。Public API `start` / `tick_once` / `should_end` / `finish`(被 WorldGI.tick 调用,不加下划线)。生命周期管理 in_combat tag(`_mark_in_combat` 虚钩子,基类 no-op,子类按 tag 容器实现)+ recorder(`_start_recorder` 虚钩子,默认走 events-only,子类可 override 回退旧版 `start_recording(actors,...)`)。
 - `BattleRecorder.start_recording_events_only()`(`stdlib/replay/battle_recorder.gd`):仅记录 event timeline,不带 initial_actors / map_config。为新架构下"world 已常驻持有状态,录像只记过程事件"服务;旧版 `start_recording()` 保留未动,向后兼容。
-- `HexBattleProcedure extends BattleProcedure`(`example/hex-atb-battle-core/hex_battle_procedure.gd`):hex 特化。承接原 `HexBattle.tick` 里的 ATB 累积、AI 决策、技能施放、投射物事件广播、MAX_TICKS 安全上限、胜负判定(某方全灭 → `mark_finished` + `_result` 设置为 `left_win / right_win / timeout`)。`_start_recorder` override 走旧版 `start_recording(actors, configs, map_config)` 路径,保留 initial_actors snapshot,阶段 1 不破坏 FrontendBattleReplayScene。
-- `HexWorldGameplayInstance extends WorldGameplayInstance`(`example/hex-atb-battle-core/hex_world_gameplay_instance.gd`):actor registry + grid(UGridMap autoload 后端)+ system 管理。`configure_grid` 转发到 `UGridMap.configure`,保持 `grid` 字段指向 `UGridMap.model`。`remove_actor` 覆盖清理格子 occupant / reservation。`get_actor` 类型收窄 CharacterActor。提供 `get_alive_actor_ids` / `get_ability_set_for_actor` / `can_use_skill_on`。
+- `HexBattleProcedure extends BattleProcedure`(`example/hex-atb-battle/core/hex_battle_procedure.gd`):hex 特化。承接原 `HexBattle.tick` 里的 ATB 累积、AI 决策、技能施放、投射物事件广播、MAX_TICKS 安全上限、胜负判定(某方全灭 → `mark_finished` + `_result` 设置为 `left_win / right_win / timeout`)。`_start_recorder` override 走旧版 `start_recording(actors, configs, map_config)` 路径,保留 initial_actors snapshot,阶段 1 不破坏 FrontendBattleReplayScene。
+- `HexWorldGameplayInstance extends WorldGameplayInstance`(`example/hex-atb-battle/core/hex_world_gameplay_instance.gd`):actor registry + grid(UGridMap autoload 后端)+ system 管理。`configure_grid` 转发到 `UGridMap.configure`,保持 `grid` 字段指向 `UGridMap.model`。`remove_actor` 覆盖清理格子 occupant / reservation。`get_actor` 类型收窄 CharacterActor。提供 `get_alive_actor_ids` / `get_ability_set_for_actor` / `can_use_skill_on`。
 
 ### Changed
-- `HexBattle extends HexWorldGameplayInstance`(`example/hex-atb-battle/hex_battle.gd`)从具体 instance 转为 thin 兼容门面。`start(config)` 走新架构:`configure_grid()` + 6 个 `add_actor()` + 队伍装备 + buff + timeline 注册 + `start_battle(...)` 创建 HexBattleProcedure。`tick(dt)` 委托父类 `WorldGI.tick`,由其驱动 procedure;每 tick 从 procedure 镜像 `tick_count`。战斗结束通过 `battle_finished` signal 回 `_on_battle_finished`,保留字段 `left_team / right_team / recorder / logger / _ended / _final_replay_data / MAX_TICKS`(= 10000)兼容旧调用。  
+- `HexBattle extends HexWorldGameplayInstance`(`example/hex-atb-battle/logic/hex_battle.gd`)从具体 instance 转为 thin 兼容门面。`start(config)` 走新架构:`configure_grid()` + 6 个 `add_actor()` + 队伍装备 + buff + timeline 注册 + `start_battle(...)` 创建 HexBattleProcedure。`tick(dt)` 委托父类 `WorldGI.tick`,由其驱动 procedure;每 tick 从 procedure 镜像 `tick_count`。战斗结束通过 `battle_finished` signal 回 `_on_battle_finished`,保留字段 `left_team / right_team / recorder / logger / _ended / _final_replay_data / MAX_TICKS`(= 10000)兼容旧调用。  
   原 HexBattle 上的 ATB loop / projectile 广播 / AI 决策 / `_check_battle_end` / `_start_actor_action` / `_create_action_use_event` 等全部迁至 HexBattleProcedure,不再在 HexBattle 里保留。
 
 ### 外部调用点兼容性

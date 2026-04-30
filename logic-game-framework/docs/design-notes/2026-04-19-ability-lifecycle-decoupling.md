@@ -128,7 +128,7 @@ var ability: Ability:
 func is_pre_event_responsive() -> bool:
     return true
 
-# example/hex-atb-battle/character_actor.gd（项目层，领域语义）
+# example/hex-atb-battle/logic/character_actor.gd（项目层，领域语义）
 func is_pre_event_responsive() -> bool:
     return not _is_dead
 ```

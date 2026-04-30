@@ -4,9 +4,9 @@
 
 涉及文件：
 
-- `example/hex-atb-battle-frontend/core/render_world.gd` — `actor_died` emit 收紧
-- `example/hex-atb-battle-frontend/battle_animator.gd` — wire `actor_died` event；`reset()` 遍历 view revive
-- `example/hex-atb-battle-frontend/scene/unit_view.gd` — 拆 `play_death()` / `revive()` 公共方法，`update_state` 只管 state sync
+- `example/hex-atb-battle/frontend/core/render_world.gd` — `actor_died` emit 收紧
+- `example/hex-atb-battle/frontend/battle_animator.gd` — wire `actor_died` event；`reset()` 遍历 view revive
+- `example/hex-atb-battle/frontend/scene/unit_view.gd` — 拆 `play_death()` / `revive()` 公共方法，`update_state` 只管 state sync
 
 依赖前轮：
 - [2026-04-20-world-view.md](2026-04-20-world-view.md) — Animator + WorldView 分层落地
@@ -257,7 +257,7 @@ func tick_hp_lerp(delta_ms: float) -> void:
 | `core/animation_config.gd` | 加 `hp_lerp_rate: float = 8.0`；删 `damage_hp_bar_duration` / `heal_hp_bar_duration`（duration 概念在 state 路径下不存在） |
 | `visualizers/damage_visualizer.gd` | 生成 `FrontendApplyHPDeltaAction(target_id, -actual_life_damage, hp_bar_delay)` |
 | `visualizers/heal_visualizer.gd` | 生成 `FrontendApplyHPDeltaAction(target_id, +heal_amount)` |
-| `example/hex-atb-battle-frontend/README.md` | 更新 ActionType 枚举、damage 生命周期例子、目录结构 |
+| `example/hex-atb-battle/frontend/README.md` | 更新 ActionType 枚举、damage 生命周期例子、目录结构 |
 
 ### 方法论补充（架构 KB 候选）
 

@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://bshld0xshld00"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/tests/example/hex-atb-battle-frontend/smoke_shield_ui.gd" id="1_shield"]
-
-[node name="SmokeShieldUI" type="Node"]
-script = ExtResource("1_shield")
