@@ -19,9 +19,7 @@ class _Entry extends RefCounted:
 		timelines = p_timelines
 
 
-static var ALL: Array[_Entry] = _build_manifest()
-
-
+## 不缓存为 static var:Godot 4.6 Windows headless 会在此类静态数组 + 静态读取函数形态下退出崩溃。
 static func _build_manifest() -> Array[_Entry]:
 	var arr: Array[_Entry] = []
 	# Active skills(timeline-driven)
@@ -50,7 +48,7 @@ static func _build_manifest() -> Array[_Entry]:
 
 ## 把所有 TimelineData 注册进 TimelineRegistry。战斗启动时调一次。
 static func register_all_timelines() -> void:
-	for entry in ALL:
+	for entry in _build_manifest():
 		for tl in entry.timelines:
 			TimelineRegistry.register(tl)
 
@@ -58,6 +56,6 @@ static func register_all_timelines() -> void:
 ## 返回 manifest 里所有 AbilityConfig(含 skill / passive / buff)
 static func all_abilities() -> Array[AbilityConfig]:
 	var out: Array[AbilityConfig] = []
-	for entry in ALL:
+	for entry in _build_manifest():
 		out.append(entry.ability)
 	return out

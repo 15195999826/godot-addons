@@ -248,6 +248,11 @@ var _last_timeline: Dictionary = {}
 ## Map spinbox value_changed debounce —— 拖动时合并多次 rebuild。
 var _map_change_timer: Timer = null
 
+## Skill config lookup caches live with this preview instance.
+var _active_skill_configs: Array[AbilityConfig] = []
+var _passive_skill_configs: Array[AbilityConfig] = []
+var _skill_config_by_id: Dictionary[String, AbilityConfig] = {}
+
 
 # ========== 生命周期 ==========
 
@@ -260,6 +265,7 @@ func _ready() -> void:
 	GameWorld.init()
 	_init_world_stack()
 	_init_player_controller()
+	_init_skill_lookup()
 	_init_ui_static_options()
 	_init_timeline_workspace_shell()
 	_init_signals()
@@ -295,6 +301,33 @@ func _process_hex_drag_hold(delta: float) -> void:
 	if _hex_dragging:
 		_set_status("Dragging %s — drop on an empty hex" % _role_id_for(_hex_drag_actor_idx))
 		_drag_actor_to_hover_hex()
+
+
+func _init_skill_lookup() -> void:
+	_active_skill_configs.clear()
+	_passive_skill_configs.clear()
+	_skill_config_by_id.clear()
+
+	for cfg in HexBattleAllSkills.all_abilities():
+		if cfg.ability_tags.has("buff"):
+			continue
+		_skill_config_by_id[cfg.config_id] = cfg
+		if cfg.active_use_components.is_empty():
+			_passive_skill_configs.append(cfg)
+		else:
+			_active_skill_configs.append(cfg)
+
+
+func _get_skill_config(config_id: String) -> AbilityConfig:
+	return _skill_config_by_id.get(config_id, null) as AbilityConfig
+
+
+func _get_active_skill_configs() -> Array[AbilityConfig]:
+	return _active_skill_configs
+
+
+func _get_passive_skill_configs() -> Array[AbilityConfig]:
+	return _passive_skill_configs
 
 
 func _apply_skill_preview_window_size() -> void:
@@ -955,7 +988,7 @@ func _timeline_status_text() -> String:
 		if _selected_spt_kf_idx < track.size():
 			var kf: Dictionary = track[_selected_spt_kf_idx] as Dictionary
 			var skill_id := str(kf.get("skill", ""))
-			var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+			var skill_cfg := _get_skill_config(skill_id)
 			var skill_name := skill_cfg.display_name if skill_cfg != null else skill_id
 			return "Selected %s @ %dms" % [skill_name, int(kf.get("time_ms", 0))]
 	if _spt_cursor_actor_idx >= 0 and _spt_cursor_actor_idx < _actors.size():
@@ -1219,11 +1252,11 @@ func _init_default_actors() -> void:
 
 
 ## 默认 active skill: HexBattleStrike 优先, 没有则取第一个。空场则空 (允许场上无技能)。
-static func _default_active_skill_id() -> String:
-	for cfg in HexBattleSkillIndex.actives():
+func _default_active_skill_id() -> String:
+	for cfg in _get_active_skill_configs():
 		if cfg.config_id == "skill_strike":
 			return cfg.config_id
-	var actives := HexBattleSkillIndex.actives()
+	var actives := _get_active_skill_configs()
 	return actives[0].config_id if not actives.is_empty() else ""
 
 
@@ -2211,7 +2244,7 @@ func _build_keyframe_detail_panel() -> Control:
 	title.text = "Keyframe: %s @ %dms" % [_actor_timeline_label(actor_idx), int(kf.get("time_ms", 0))]
 	title.add_theme_font_override("font", _clay_font_bold())
 	box.add_child(title)
-	var skill_cfg := HexBattleSkillIndex.get_by_id(str(kf.get("skill", "")))
+	var skill_cfg := _get_skill_config(str(kf.get("skill", "")))
 	if skill_cfg != null:
 		var time_ms := int(kf.get("time_ms", 0))
 		var occupy_ms := SkillPreviewValidation.ability_occupy_ms(skill_cfg)
@@ -2404,7 +2437,7 @@ func _draw_track_row(actor_idx: int, track_area: Control) -> void:
 	for kf_variant in track:
 		var kf: Dictionary = kf_variant as Dictionary
 		var time_ms := int(kf.get("time_ms", 0))
-		var skill_cfg := HexBattleSkillIndex.get_by_id(str(kf.get("skill", "")))
+		var skill_cfg := _get_skill_config(str(kf.get("skill", "")))
 		if skill_cfg == null:
 			continue
 		var occupy_ms := SkillPreviewValidation.ability_occupy_ms(skill_cfg)
@@ -2535,7 +2568,7 @@ func _keyframe_button_text(actor_idx: int, kf_idx: int) -> String:
 	if kf_idx < 0 or kf_idx >= track.size():
 		return "?"
 	var skill_id := str((track[kf_idx] as Dictionary).get("skill", ""))
-	var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+	var skill_cfg := _get_skill_config(skill_id)
 	if skill_cfg == null:
 		return skill_id
 	return skill_cfg.display_name
@@ -2548,7 +2581,7 @@ func _keyframe_tooltip(actor_idx: int, kf_idx: int) -> String:
 		return ""
 	var kf: Dictionary = track[kf_idx]
 	var skill_name := str(kf.get("skill", "?"))
-	var skill_cfg := HexBattleSkillIndex.get_by_id(skill_name)
+	var skill_cfg := _get_skill_config(skill_name)
 	var time_ms := int(kf.get("time_ms", 0))
 	var target: Dictionary = kf.get("target", {}) as Dictionary
 	var mode := str(target.get("mode", "auto"))
@@ -2597,7 +2630,7 @@ func _keyframe_timing_warning(actor_idx: int, kf_idx: int) -> Dictionary:
 		if release_t > current_t:
 			continue
 		var release_skill := str(release_kf.get("skill", ""))
-		var release_cfg := HexBattleSkillIndex.get_by_id(release_skill)
+		var release_cfg := _get_skill_config(release_skill)
 		if release_cfg == null:
 			continue
 		var occupy_ms := SkillPreviewValidation.ability_occupy_ms(release_cfg)
@@ -2618,7 +2651,7 @@ func _keyframe_timing_warning(actor_idx: int, kf_idx: int) -> Dictionary:
 		if other_t > current_t:
 			continue
 		var other_skill := str(other.get("skill", ""))
-		var other_cfg := HexBattleSkillIndex.get_by_id(other_skill)
+		var other_cfg := _get_skill_config(other_skill)
 		if other_cfg == null:
 			continue
 		var cooldown_ms := SkillPreviewValidation.ability_cooldown_ms(other_cfg)
@@ -2943,7 +2976,7 @@ func _collect_spt_warnings() -> Array[Dictionary]:
 			var kf: Dictionary = track[kf_idx] as Dictionary
 			var skill_id := str(kf.get("skill", ""))
 			var time_ms := int(kf.get("time_ms", 0))
-			var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+			var skill_cfg := _get_skill_config(skill_id)
 			if skill_cfg == null:
 				warnings.append({
 					"type": "error",
@@ -3201,7 +3234,7 @@ func _build_actor_detail_panel(idx: int) -> PanelContainer:
 	box.add_child(_make_detail_label("Position", "(%d, %d)" % [int(pos[0]), int(pos[1])]))
 	box.add_child(_build_actor_detail_field("HP", _make_actor_spin(idx, "hp", float(data.get("hp", PREVIEW_DEFAULT_HP)), 1, 9999, true, 0)))
 
-	# Passives 段: 每 actor 自己的 passive 选择 (来源 HexBattleSkillIndex.passives())。
+	# Passives 段: 每 actor 自己的 passive 选择 (来源实例级 passive skill cache)。
 	# 与 Skill Track 解耦 —— passive 在战斗 start() 一次性 grant, 不进 timeline。
 	box.add_child(_build_actor_passive_section(idx))
 
@@ -3228,7 +3261,7 @@ func _build_actor_passive_section(actor_idx: int) -> Control:
 	section.add_child(title)
 
 	var current_ids: Array = (_actors[actor_idx] as Dictionary).get("passives", []) as Array
-	for cfg in HexBattleSkillIndex.passives():
+	for cfg in _get_passive_skill_configs():
 		var cb := CheckBox.new()
 		cb.text = "%s (%s)" % [cfg.display_name, cfg.config_id]
 		cb.button_pressed = current_ids.has(cfg.config_id)
@@ -3278,7 +3311,7 @@ func _build_keyframe_summary_row(actor_idx: int, kf_idx: int) -> Control:
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	var kf: Dictionary = track[kf_idx] as Dictionary
 	var skill_id := str(kf.get("skill", ""))
-	var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+	var skill_cfg := _get_skill_config(skill_id)
 	var skill_name := skill_cfg.display_name if skill_cfg != null else skill_id
 	var label := Button.new()
 	label.text = "%dms  %s" % [int(kf.get("time_ms", 0)), skill_name]
@@ -3322,13 +3355,13 @@ func _build_kf_time_spin(actor_idx: int, kf_idx: int) -> SpinBox:
 
 
 ## skill OptionButton: Details keyframe editor 共用。
-## 选项 = HexBattleSkillIndex.actives(), metadata 存 config_id。
+## 选项 = 实例级 active skill cache, metadata 存 config_id。
 func _build_kf_skill_opt(actor_idx: int, kf_idx: int) -> OptionButton:
 	var opt := OptionButton.new()
 	opt.fit_to_longest_item = false
 	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
 	var current_skill_id: String = str((track[kf_idx] as Dictionary).get("skill", ""))
-	var actives := HexBattleSkillIndex.actives()
+	var actives := _get_active_skill_configs()
 	var selected := 0
 	for i in actives.size():
 		opt.add_item(actives[i].display_name)
@@ -3349,7 +3382,7 @@ func _build_keyframe_target_editor(actor_idx: int, kf_idx: int) -> Control:
 
 	var track: Array = (_actors[actor_idx] as Dictionary)["track"] as Array
 	var kf: Dictionary = track[kf_idx]
-	var keyframe_skill_cfg := HexBattleSkillIndex.get_by_id(str(kf.get("skill", "")))
+	var keyframe_skill_cfg := _get_skill_config(str(kf.get("skill", "")))
 	var target: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
 
 	var mode_opt := OptionButton.new()
@@ -3443,7 +3476,7 @@ func _build_keyframe_target_editor(actor_idx: int, kf_idx: int) -> Control:
 			if kf_idx >= 0 and kf_idx < current_track.size():
 				var current_target: Dictionary = (current_track[kf_idx] as Dictionary).get("target", {}) as Dictionary
 				var current_skill_id := str((current_track[kf_idx] as Dictionary).get("skill", ""))
-				var current_skill_cfg := HexBattleSkillIndex.get_by_id(current_skill_id)
+				var current_skill_cfg := _get_skill_config(current_skill_id)
 				target_hint.text = _target_hint_for_ui(actor_idx, current_target, current_skill_cfg)
 	apply_visibility.call()
 	mode_opt.item_selected.connect(func(i: int) -> void:
@@ -3717,13 +3750,13 @@ func _on_keyframe_target_field_changed(actor_idx: int, kf_idx: int, field: Strin
 ## SkillPreviewTimeline 在 track 里找下一个空闲 time_ms。
 ##
 ## 算 occupy / 找冲突的纯逻辑住在 SkillPreviewValidation, 这里只是注入
-## skill_resolver = HexBattleSkillIndex.get_by_id, 不让 UI 文件再依赖
+## skill_resolver = 实例级 skill lookup, 不让 UI 文件再依赖
 ## TimelineRegistry / HexBattleCooldownSystem。
 func _next_free_time_ms_in_track(
 	track: Array, candidate_skill_id: String, start_ms: int, skip_kf_idx: int = -1
 ) -> int:
 	var resolver := func(sid: String) -> AbilityConfig:
-		return HexBattleSkillIndex.get_by_id(sid)
+		return _get_skill_config(sid)
 	return SkillPreviewValidation.next_free_time_ms_in_track(
 		track, candidate_skill_id, resolver, start_ms, skip_kf_idx
 	)
@@ -4338,7 +4371,7 @@ func _finish_with_status(s: String) -> void:
 
 func _find_preview_setup_error() -> String:
 	var skill_resolver := func(sid: String) -> AbilityConfig:
-		return HexBattleSkillIndex.get_by_id(sid)
+		return _get_skill_config(sid)
 	for actor_idx in _actors.size():
 		var actor_data: Dictionary = _actors[actor_idx]
 		var track: Array = actor_data.get("track", []) as Array
@@ -4346,7 +4379,7 @@ func _find_preview_setup_error() -> String:
 			var kf: Dictionary = track[kf_idx]
 			var skill_id := str(kf.get("skill", ""))
 			var time_ms := int(kf.get("time_ms", 0))
-			var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+			var skill_cfg := _get_skill_config(skill_id)
 			if skill_cfg == null:
 				return "%s @ %dms has unknown skill: %s" % [
 					_role_id_for(actor_idx), time_ms, skill_id,
@@ -4386,7 +4419,7 @@ func _collect_actor_setups() -> Array[Dictionary]:
 		var passive_cfgs: Array[AbilityConfig] = []
 		for pid_variant in data.get("passives", []) as Array:
 			var pid: String = str(pid_variant)
-			var cfg := HexBattleSkillIndex.get_by_id(pid)
+			var cfg := _get_skill_config(pid)
 			if cfg != null:
 				passive_cfgs.append(cfg)
 
@@ -4395,7 +4428,7 @@ func _collect_actor_setups() -> Array[Dictionary]:
 		for kf_variant in track_in:
 			var kf: Dictionary = kf_variant as Dictionary
 			var skill_id: String = str(kf.get("skill", ""))
-			var skill_cfg := HexBattleSkillIndex.get_by_id(skill_id)
+			var skill_cfg := _get_skill_config(skill_id)
 			if skill_cfg == null:
 				continue
 			var target_dict: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
@@ -4651,7 +4684,7 @@ func _role_label_for_actor_id(actor_id: String) -> String:
 
 ## 反查 config_id → display_name, 找不到回退 config_id。
 func _skill_display_name_by_config_id(config_id: String) -> String:
-	var cfg := HexBattleSkillIndex.get_by_id(config_id)
+	var cfg := _get_skill_config(config_id)
 	if cfg != null:
 		return cfg.display_name
 	return config_id

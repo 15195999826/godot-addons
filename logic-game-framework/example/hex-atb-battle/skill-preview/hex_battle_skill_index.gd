@@ -40,7 +40,7 @@ static func get_by_id(config_id: String) -> AbilityConfig:
 	return null
 
 
-## 从 HexBattleAllSkills.ALL 派生:只排除 buff 实例本身(PoisonBuff / WardBuff)。
+## 从 HexBattleAllSkills.all_abilities() 派生:只排除 buff 实例本身(PoisonBuff / WardBuff)。
 ## 不排除 "debuff" — 那是主动技能描述"我会造成 debuff"的副作用 tag(如 HexBattlePoison
 ## 主动技能 tags 含 debuff,但它是给玩家选的 active);排除掉会连带过滤主动技能。
 ## 用排除式而非包含式 — Move(tags=["action","move"])这种"非主动也非被动"的项
