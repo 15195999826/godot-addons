@@ -299,11 +299,20 @@ func tick_once() -> void:
 		_check_battle_end()
 
 
+## P2.7: finish 在 BattleRecorder.stop_recording 返回的 dict 上注入 RTS 专属字段:
+##   - "player_commands": _player_commands_log 副本 (P2.6 P2.7 联动 — bit-identical replay 用)
+##   - "rng_seed": _rng_seed (Phase 1 light determinism; world_snapshot 也存了一份)
+##
+## 不修改 stdlib BattleRecorder; 仅在 RTS 层 wrap 输出 dict. 调方 (smoke / replay player) 通过此
+## 增量字段可还原"同 seed + 同 player_commands → 同 event_timeline" 的完整 replay 信息.
 func finish(result: String = "") -> Dictionary:
 	var effective := result if result != "" else _result
 	if effective == "":
 		effective = "battle_complete"
-	return super.finish(effective)
+	var record: Dictionary = super.finish(effective)
+	record["player_commands"] = _player_commands_log.duplicate()
+	record["rng_seed"] = _rng_seed
+	return record
 
 
 # ========== 查询 ==========
