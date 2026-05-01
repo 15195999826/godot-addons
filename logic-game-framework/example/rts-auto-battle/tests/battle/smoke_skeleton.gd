@@ -3,7 +3,7 @@
 ## 渐进式 smoke, 每个 phase 升级:
 ##   M0.1: 验证目录树 + .tscn 加载
 ##   M0.2: 1v1 stub actor, procedure tick 1 次 + 杀左方判 right_win
-##   M0.3: 4v4 RtsCharacterActor (各 2 melee + 2 ranged), 验证 attribute set 数值正确
+##   M0.3: 4v4 RtsUnitActor (各 2 melee + 2 ranged), 验证 attribute set 数值正确
 ##         + procedure tick 不崩 + cooldown 推进可观察
 extends Node
 
@@ -37,34 +37,33 @@ func _ready() -> void:
 		return
 
 	# 抽查数值: melee 单位 hp=200/atk=25, ranged hp=120/atk=18
-	var melee_actor := left_team[0] as RtsCharacterActor
+	var melee_actor := left_team[0] as RtsUnitActor
 	if melee_actor.attribute_set.max_hp != 200.0 or melee_actor.attribute_set.atk != 25.0 or melee_actor.attribute_set.attack_range != Config.MELEE_RANGE_THRESHOLD:
 		_fail("melee stats wrong: hp=%.1f atk=%.1f range=%.1f" % [
 			melee_actor.attribute_set.max_hp, melee_actor.attribute_set.atk, melee_actor.attribute_set.attack_range,
 		])
 		return
-	var ranged_actor := left_team[2] as RtsCharacterActor
+	var ranged_actor := left_team[2] as RtsUnitActor
 	if ranged_actor.attribute_set.max_hp != 120.0 or ranged_actor.attribute_set.atk != 18.0 or ranged_actor.attribute_set.attack_range != 120.0:
 		_fail("ranged stats wrong: hp=%.1f atk=%.1f range=%.1f" % [
 			ranged_actor.attribute_set.max_hp, ranged_actor.attribute_set.atk, ranged_actor.attribute_set.attack_range,
 		])
 		return
 
-	# Cooldown 起手为 0, 推进 0.5s 仍 0(没攻击过, 不会涨)
-	if melee_actor.attack_cooldown_remaining != 0.0:
-		_fail("expected fresh actor cooldown=0, got %f" % melee_actor.attack_cooldown_remaining)
+	# 起手不在 cooldown(P1.6 走 tag-duration, has_tag 应 false)
+	if melee_actor.is_attack_on_cooldown():
+		_fail("expected fresh actor not on cooldown, got tag set")
 		return
 
-	# Procedure 走一帧, 验证不崩
-	var procedure := RtsAutoBattleProcedure.new(world, left_team, right_team, {
+	# Procedure 走一帧, 验证不崩 (P1.3: 不传 per_tick, 内化主循环自动 tick cooldown)
+	# 模拟 attack: 起手给 melee_actor 上 cooldown, 让内化主循环 tick 它(走 tag-duration)
+	# 必须在 procedure 启动后再上 cooldown — start_rts_battle 调 procedure.start() 前 ability_set
+	# 还没注册 tick context, 直接调 add_auto_duration_tag 也行但 logic_time 起点是 0(等同 cooldown
+	# 立即起 expiresAt = 1000ms)。
+	var procedure := world.start_rts_battle(left_team, right_team, {
 		"tick_interval_ms": 50.0,
-		"per_tick": func(_proc: RtsAutoBattleProcedure, dt: float) -> void:
-			# 模拟 attack: 给 melee_actor 起一个 cooldown 看会不会减
-			if melee_actor.attack_cooldown_remaining == 0.0:
-				melee_actor.reset_attack_cooldown()
-			melee_actor.tick_attack_cooldown(dt)
 	})
-	procedure.start()
+	melee_actor.start_attack_cooldown()
 	procedure.tick_once()
 	procedure.tick_once()
 
@@ -73,9 +72,9 @@ func _ready() -> void:
 		_fail("procedure ended too early; result=%s" % procedure.get_result())
 		return
 
-	# Cooldown 应该已推进(< 1 / attack_speed = 1s). 走了两帧 50ms, 应当是 1.0 - 0.05 - 0.05 = 0.9
-	if not is_equal_approx(melee_actor.attack_cooldown_remaining, 0.9):
-		_fail("cooldown tick wrong: expected ~0.9, got %f" % melee_actor.attack_cooldown_remaining)
+	# Cooldown 走了 100ms, melee 周期 1000ms, 应该仍 active(还差 900ms 才过期)
+	if not melee_actor.is_attack_on_cooldown():
+		_fail("expected melee_actor still on cooldown after 100ms, but tag has expired")
 		return
 
 	# 杀掉左方所有, 下一 tick 判 right_win
@@ -97,8 +96,8 @@ func _ready() -> void:
 	get_tree().quit(0)
 
 
-func _spawn_unit(world: RtsWorldGameplayInstance, unit_class: Config.UnitClass, team_id: int) -> RtsCharacterActor:
-	var actor := RtsCharacterActor.new(unit_class)
+func _spawn_unit(world: RtsWorldGameplayInstance, unit_class: Config.UnitClass, team_id: int) -> RtsUnitActor:
+	var actor := RtsUnitActor.new(unit_class)
 	actor.set_team_id(team_id)
 	world.add_actor(actor)
 	return actor

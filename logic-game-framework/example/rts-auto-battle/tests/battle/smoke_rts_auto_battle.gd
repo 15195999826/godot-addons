@@ -24,8 +24,8 @@ var _world: RtsWorldGameplayInstance = null
 var _procedure: RtsAutoBattleProcedure = null
 var _battle_map: RtsBattleMap = null
 var _logger: RtsBattleLogger = null
-var _agents: Dictionary = {}     # actor.id → RtsNavAgent
-var _ais: Dictionary = {}        # actor.id → RtsBasicAI
+var _agents: Dictionary = {}        # actor.id → RtsNavAgent
+var _controllers: Dictionary = {}   # actor.id → RtsUnitController
 var _spawn_positions: Dictionary = {}  # actor.id → Vector2 (起点, 服务 AC2)
 
 
@@ -41,8 +41,7 @@ func _ready() -> void:
 		return w
 	) as RtsWorldGameplayInstance
 
-	await get_tree().physics_frame
-	_world.set_navigation_region(_battle_map.navigation_region)
+	_world.set_grid(_battle_map.grid)
 
 	_logger = RtsBattleLogger.new()
 
@@ -62,17 +61,15 @@ func _ready() -> void:
 		left_actors.append(_spawn(roster[i], 0, left_pos))
 		right_actors.append(_spawn(roster[i], 1, right_pos))
 
-	_procedure = RtsAutoBattleProcedure.new(_world, left_actors, right_actors, {
+	_procedure = _world.start_rts_battle(left_actors, right_actors, {
 		"tick_interval_ms": TICK_INTERVAL_MS,
-		"per_tick": _per_tick,
+		"unit_runtimes": _controllers,
+		"event_sink": _on_events,
 	})
-	_procedure.start()
 
 	var max_ticks: int = int(MAX_SECONDS * 1000.0 / TICK_INTERVAL_MS)
 	for i in range(max_ticks):
 		_procedure.tick_once()
-		if i % 4 == 0:
-			await get_tree().physics_frame
 		if _procedure.should_end():
 			break
 
@@ -142,8 +139,8 @@ func _ready() -> void:
 	get_tree().quit(0)
 
 
-func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsCharacterActor:
-	var actor := RtsCharacterActor.new(unit_class)
+func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsUnitActor:
+	var actor := RtsUnitActor.new(unit_class)
 	actor.set_team_id(team_id)
 	_world.add_actor(actor)
 	actor.position_2d = pos
@@ -151,39 +148,19 @@ func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsChar
 
 	var agent := RtsNavAgent.new()
 	_battle_map.add_child(agent)
-	agent.bind_actor(actor)
+	agent.bind_actor(actor, _battle_map.grid)
 	_agents[actor.get_id()] = agent
 
-	var ai := RtsBasicAI.new()
-	ai.bind(actor, agent)
-	_ais[actor.get_id()] = ai
+	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
+	var controller := RtsUnitController.new(actor, agent, strategy)
+	_controllers[actor.get_id()] = controller
 
 	return actor
 
 
-func _per_tick(_proc: RtsAutoBattleProcedure, dt: float) -> void:
-	for actor in _world.get_alive_actors():
-		if not (actor is RtsCharacterActor):
-			continue
-		var character := actor as RtsCharacterActor
-		var ai := _ais.get(actor.get_id(), null) as RtsBasicAI
-		var agent := _agents.get(actor.get_id(), null) as RtsNavAgent
-
-		if ai != null:
-			ai.tick(dt, _world)
-		if agent != null:
-			agent.tick(dt)
-		character.tick_attack_cooldown(dt)
-
-		if ai != null and ai.last_decision == "in_range" and character.can_attack():
-			var target_id := character.current_target_id
-			if target_id != "":
-				var target := _world.get_actor(target_id) as RtsCharacterActor
-				if target != null and not target.is_dead():
-					RtsBasicAttackAction.execute(character, target, _world)
-					character.reset_attack_cooldown()
-
-	_logger.ingest_frame_events(GameWorld.event_collector.collect())
+func _on_events(events: Array[Dictionary]) -> void:
+	# 内化主循环每 tick 在 flush 之前调一次 event_sink — 这里镜像到 logger。
+	_logger.ingest_frame_events(events)
 
 
 ## AC2: 找出 spawn-y 在 (200, 300) 障碍水平区内 + max_y_deviation ≥ 30 的单位 id 列表

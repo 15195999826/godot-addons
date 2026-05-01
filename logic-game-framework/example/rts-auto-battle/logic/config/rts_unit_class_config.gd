@@ -26,6 +26,16 @@ class StatBlock:
 	var attack_speed: float = 0.0
 	## 攻击距离(像素), 平方比较
 	var attack_range: float = 0.0
+	## 圆形碰撞半径(像素), WC3 风连续 float (architecture-baseline.md §7 "小型 10-12")。
+	## P1.2 最简 push-out 用此值; 必须 2r <= attack_range × RANGE_TOLERANCE 否则
+	## melee 单位永远进不了 attack_range 内 (push-out 把它们推开过 atk_range)。
+	var collision_radius: float = 0.0
+	## P2.4 — 单位归类 tag (供敌方 target_priorities 匹配)。
+	## 默认 melee→["melee","ground"], ranged→["ranged","ground"]; P2.8 飞行单位会有 ["flying","air"]。
+	var unit_tags: Array[String] = []
+	## P2.4 — 目标优先级表 [{tag: String, weight: float}, ...]; 高 weight 优先。
+	## 默认 [] = 仅按距离选最近 (Phase 1 行为兼容); 特定单位类型可在 actor 上 override。
+	var target_priorities: Array[Dictionary] = []
 
 
 const _MELEE_STATS := {
@@ -37,6 +47,10 @@ const _MELEE_STATS := {
 	"move_speed": 80.0,
 	"attack_speed": 1.0,
 	"attack_range": 24.0,
+	# 12px → 2r=24 = melee_attack_range (engagement at atk_range 时不被 push-out 推开)
+	"collision_radius": 12.0,
+	"unit_tags": ["melee", "ground"],
+	"target_priorities": [],
 }
 
 const _RANGED_STATS := {
@@ -48,6 +62,10 @@ const _RANGED_STATS := {
 	"move_speed": 70.0,
 	"attack_speed": 0.8,
 	"attack_range": 120.0,
+	# 10px → 比 melee 更小, 更灵活; 远程不太可能因 push-out 引起 atk_range 边界问题。
+	"collision_radius": 10.0,
+	"unit_tags": ["ranged", "ground"],
+	"target_priorities": [],
 }
 
 ## melee_attack_range 阈值, 用于 AC3 兵种行为断言:
@@ -75,6 +93,18 @@ static func get_stats(unit_class: UnitClass) -> StatBlock:
 	block.move_speed = raw["move_speed"]
 	block.attack_speed = raw["attack_speed"]
 	block.attack_range = raw["attack_range"]
+	block.collision_radius = raw["collision_radius"]
+	# P2.4: 把 raw dict 里的 Array 拷贝到 typed Array 字段, 避免 actor 之间共享同一可变引用。
+	var raw_tags: Array = raw.get("unit_tags", []) as Array
+	var tags: Array[String] = []
+	for tag in raw_tags:
+		tags.append(str(tag))
+	block.unit_tags = tags
+	var raw_prios: Array = raw.get("target_priorities", []) as Array
+	var prios: Array[Dictionary] = []
+	for entry in raw_prios:
+		prios.append((entry as Dictionary).duplicate())
+	block.target_priorities = prios
 	return block
 
 

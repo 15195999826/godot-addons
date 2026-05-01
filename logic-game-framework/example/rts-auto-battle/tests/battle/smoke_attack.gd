@@ -16,7 +16,7 @@ var _procedure: RtsAutoBattleProcedure = null
 var _battle_map: RtsBattleMap = null
 var _logger: RtsBattleLogger = null
 var _agents: Dictionary = {}
-var _ais: Dictionary = {}
+var _controllers: Dictionary = {}
 
 
 func _ready() -> void:
@@ -31,8 +31,7 @@ func _ready() -> void:
 		return w
 	) as RtsWorldGameplayInstance
 
-	await get_tree().physics_frame
-	_world.set_navigation_region(_battle_map.navigation_region)
+	_world.set_grid(_battle_map.grid)
 
 	_logger = RtsBattleLogger.new()
 
@@ -45,17 +44,15 @@ func _ready() -> void:
 	var left_team: Array[RtsBattleActor] = [left_actor]
 	var right_team: Array[RtsBattleActor] = [right_actor]
 
-	_procedure = RtsAutoBattleProcedure.new(_world, left_team, right_team, {
+	_procedure = _world.start_rts_battle(left_team, right_team, {
 		"tick_interval_ms": TICK_INTERVAL_MS,
-		"per_tick": _per_tick,
+		"unit_runtimes": _controllers,
+		"event_sink": _on_events,
 	})
-	_procedure.start()
 
 	var max_ticks: int = int(MAX_SECONDS * 1000.0 / TICK_INTERVAL_MS)
 	for i in range(max_ticks):
 		_procedure.tick_once()
-		if i % 4 == 0:
-			await get_tree().physics_frame
 		if _procedure.should_end():
 			break
 
@@ -102,49 +99,27 @@ func _ready() -> void:
 	get_tree().quit(0)
 
 
-func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsCharacterActor:
-	var actor := RtsCharacterActor.new(unit_class)
+func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsUnitActor:
+	var actor := RtsUnitActor.new(unit_class)
 	actor.set_team_id(team_id)
 	_world.add_actor(actor)
 	actor.position_2d = pos
 
 	var agent := RtsNavAgent.new()
 	_battle_map.add_child(agent)
-	agent.bind_actor(actor)
+	agent.bind_actor(actor, _battle_map.grid)
 	_agents[actor.get_id()] = agent
 
-	var ai := RtsBasicAI.new()
-	ai.bind(actor, agent)
-	_ais[actor.get_id()] = ai
+	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
+	var controller := RtsUnitController.new(actor, agent, strategy)
+	_controllers[actor.get_id()] = controller
 
 	return actor
 
 
-func _per_tick(_proc: RtsAutoBattleProcedure, dt: float) -> void:
-	for actor in _world.get_alive_actors():
-		if not (actor is RtsCharacterActor):
-			continue
-		var character := actor as RtsCharacterActor
-		var ai := _ais.get(actor.get_id(), null) as RtsBasicAI
-		var agent := _agents.get(actor.get_id(), null) as RtsNavAgent
-
-		if ai != null:
-			ai.tick(dt, _world)
-		if agent != null:
-			agent.tick(dt)
-		character.tick_attack_cooldown(dt)
-
-		# Attack: AI 报 in_range + cooldown 到 + target 还活着
-		if ai != null and ai.last_decision == "in_range" and character.can_attack():
-			var target_id := character.current_target_id
-			if target_id != "":
-				var target := _world.get_actor(target_id) as RtsCharacterActor
-				if target != null and not target.is_dead():
-					RtsBasicAttackAction.execute(character, target, _world)
-					character.reset_attack_cooldown()
-
-	# 在 procedure flush 前把这帧累计的事件 mirror 到 logger
-	_logger.ingest_frame_events(GameWorld.event_collector.collect())
+func _on_events(events: Array[Dictionary]) -> void:
+	# 走 procedure event_sink: 内化主循环每 tick 把当前事件副本送过来, 镜像到 logger。
+	_logger.ingest_frame_events(events)
 
 
 func _max_in(arr: Array[float]) -> float:

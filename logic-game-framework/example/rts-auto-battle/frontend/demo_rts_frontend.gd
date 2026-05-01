@@ -19,7 +19,7 @@ var _world: RtsWorldGameplayInstance = null
 var _procedure: RtsAutoBattleProcedure = null
 var _battle_map: RtsBattleMap = null
 var _agents: Dictionary = {}        # actor.id → RtsNavAgent
-var _ais: Dictionary = {}           # actor.id → RtsBasicAI
+var _controllers: Dictionary = {}   # actor.id → RtsUnitController
 var _visualizers: Dictionary = {}   # actor.id → RtsUnitVisualizer
 
 var _accumulated_ms: float = 0.0
@@ -38,8 +38,7 @@ func _ready() -> void:
 		return w
 	) as RtsWorldGameplayInstance
 
-	await get_tree().physics_frame
-	_world.set_navigation_region(_battle_map.navigation_region)
+	_world.set_grid(_battle_map.grid)
 
 	# 4v4: 同 smoke 套路, 各队 2 melee + 2 ranged
 	var roster: Array[Config.UnitClass] = [
@@ -54,11 +53,10 @@ func _ready() -> void:
 		left_actors.append(_spawn(roster[i], 0, RtsBattleMap.sample_team_spawn(0, i, roster.size())))
 		right_actors.append(_spawn(roster[i], 1, RtsBattleMap.sample_team_spawn(1, i, roster.size())))
 
-	_procedure = RtsAutoBattleProcedure.new(_world, left_actors, right_actors, {
+	_procedure = _world.start_rts_battle(left_actors, right_actors, {
 		"tick_interval_ms": TICK_INTERVAL_MS,
-		"per_tick": _per_tick,
+		"unit_runtimes": _controllers,
 	})
-	_procedure.start()
 	_started = true
 
 
@@ -84,20 +82,20 @@ func _process(dt: float) -> void:
 			vis.sync()
 
 
-func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsCharacterActor:
-	var actor := RtsCharacterActor.new(unit_class)
+func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsUnitActor:
+	var actor := RtsUnitActor.new(unit_class)
 	actor.set_team_id(team_id)
 	_world.add_actor(actor)
 	actor.position_2d = pos
 
 	var agent := RtsNavAgent.new()
 	_battle_map.add_child(agent)
-	agent.bind_actor(actor)
+	agent.bind_actor(actor, _battle_map.grid)
 	_agents[actor.get_id()] = agent
 
-	var ai := RtsBasicAI.new()
-	ai.bind(actor, agent)
-	_ais[actor.get_id()] = ai
+	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
+	var controller := RtsUnitController.new(actor, agent, strategy)
+	_controllers[actor.get_id()] = controller
 
 	var vis := RtsUnitVisualizer.new()
 	_battle_map.add_child(vis)
@@ -105,29 +103,6 @@ func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsChar
 	_visualizers[actor.get_id()] = vis
 
 	return actor
-
-
-func _per_tick(_proc: RtsAutoBattleProcedure, dt: float) -> void:
-	for actor in _world.get_alive_actors():
-		if not (actor is RtsCharacterActor):
-			continue
-		var character := actor as RtsCharacterActor
-		var ai := _ais.get(actor.get_id(), null) as RtsBasicAI
-		var agent := _agents.get(actor.get_id(), null) as RtsNavAgent
-
-		if ai != null:
-			ai.tick(dt, _world)
-		if agent != null:
-			agent.tick(dt)
-		character.tick_attack_cooldown(dt)
-
-		if ai != null and ai.last_decision == "in_range" and character.can_attack():
-			var target_id := character.current_target_id
-			if target_id != "":
-				var target := _world.get_actor(target_id) as RtsCharacterActor
-				if target != null and not target.is_dead():
-					RtsBasicAttackAction.execute(character, target, _world)
-					character.reset_attack_cooldown()
 
 
 func _finalize() -> void:

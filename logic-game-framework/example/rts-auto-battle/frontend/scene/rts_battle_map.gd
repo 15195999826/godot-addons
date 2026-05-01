@@ -1,17 +1,14 @@
-## RtsBattleMap - 500×500 RTS 战场场景
+## RtsBattleMap - 500×500 RTS 战场场景(P1.2: grid 替代 navmesh)
 ##
-## 编程式构造 NavigationRegion2D + NavigationPolygon, 不用编辑器烘焙资源。
-## 地图是 500×500 矩形, 中央 (200..300, 200..300) 一块矩形障碍。
+## P1.2 重写: 去 NavigationRegion2D / NavigationPolygon, 改为 RtsBattleGrid (SQUARE
+## grid_type, cell_size = 32) 描述战场。中央 (200..300, 200..300) 障碍由 grid cells
+## 标 is_blocking 表达 — 决策 D3-B / D3-F (走 ultra-grid-map plugin, 不动插件本身)。
 ##
-## NavigationPolygon 用 3×3 网格(共 8 个凸四边形, 跳过中央障碍格)显式拼出可走区域。
-## 关键: 相邻 polygon 必须**精确共享端点对**, NavigationServer2D 才会把它们连成可达图。
-## (避免上一版"大条带"切法因端点不匹配导致路径在障碍前断开。)
+## 障碍范围: 标 cells (cols 6..9, rows 6..9) is_blocking, 像素覆盖 (192..320, 192..320),
+## 略宽于 M0 的 100×100 obstacle 区(200..300), 但仍允许出生位 (50, 230) / (50, 270) 落在
+## 非阻挡 cell — slot 1/2 的横向接敌仍必须绕路, 服务 AC2 主断言。
 ##
-## 顶点网格 x ∈ {0, 200, 300, 500}, y ∈ {0, 200, 300, 500} = 16 顶点;
-## 中心格 (vertex 5,6,10,9 = obstacle 四角) 不进 polygon 数组 = 障碍。
-##
-## headless 调方在用 navmesh 之前必须 `await get_tree().physics_frame` 至少一次
-## 让 NavigationServer2D.sync_map 跑一遍。
+## headless 调方不再需要 await physics_frame: grid + A* 是同步算法, 路径立即可用。
 class_name RtsBattleMap
 extends Node2D
 
@@ -25,65 +22,39 @@ const OBSTACLE_Y_MIN: float = 200.0
 const OBSTACLE_Y_MAX: float = 300.0
 
 
-var navigation_region: NavigationRegion2D = null
+var grid: RtsBattleGrid = null
 
 
 func _ready() -> void:
-	navigation_region = NavigationRegion2D.new()
-	add_child(navigation_region)
+	grid = RtsBattleGrid.new(Vector2(MAP_WIDTH, MAP_HEIGHT), RtsBattleGrid.DEFAULT_CELL_SIZE, Vector2.ZERO)
+	_mark_obstacle_cells()
 
-	var nav_poly := NavigationPolygon.new()
 
-	# 3×3 grid, 16 顶点 (4 列 × 4 行)
-	# 索引规则: row * 4 + col
-	#   row 0: y=0, row 1: y=200, row 2: y=300, row 3: y=500
-	#   col 0: x=0, col 1: x=200, col 2: x=300, col 3: x=500
-	var verts := PackedVector2Array([
-		Vector2(0.0, 0.0),                         # 0
-		Vector2(OBSTACLE_X_MIN, 0.0),              # 1
-		Vector2(OBSTACLE_X_MAX, 0.0),              # 2
-		Vector2(MAP_WIDTH, 0.0),                   # 3
-		Vector2(0.0, OBSTACLE_Y_MIN),              # 4
-		Vector2(OBSTACLE_X_MIN, OBSTACLE_Y_MIN),   # 5  obstacle TL
-		Vector2(OBSTACLE_X_MAX, OBSTACLE_Y_MIN),   # 6  obstacle TR
-		Vector2(MAP_WIDTH, OBSTACLE_Y_MIN),        # 7
-		Vector2(0.0, OBSTACLE_Y_MAX),              # 8
-		Vector2(OBSTACLE_X_MIN, OBSTACLE_Y_MAX),   # 9  obstacle BL
-		Vector2(OBSTACLE_X_MAX, OBSTACLE_Y_MAX),   # 10 obstacle BR
-		Vector2(MAP_WIDTH, OBSTACLE_Y_MAX),        # 11
-		Vector2(0.0, MAP_HEIGHT),                  # 12
-		Vector2(OBSTACLE_X_MIN, MAP_HEIGHT),       # 13
-		Vector2(OBSTACLE_X_MAX, MAP_HEIGHT),       # 14
-		Vector2(MAP_WIDTH, MAP_HEIGHT),            # 15
-	])
-	nav_poly.set_vertices(verts)
+# ========== 内部 ==========
 
-	# 8 个 polygon, 跳过中心格(5,6,10,9), 顺时针顶点序
-	# Top row
-	nav_poly.add_polygon(PackedInt32Array([0, 1, 5, 4]))   # TL
-	nav_poly.add_polygon(PackedInt32Array([1, 2, 6, 5]))   # TM
-	nav_poly.add_polygon(PackedInt32Array([2, 3, 7, 6]))   # TR
-	# Middle row (skip center)
-	nav_poly.add_polygon(PackedInt32Array([4, 5, 9, 8]))   # ML
-	nav_poly.add_polygon(PackedInt32Array([6, 7, 11, 10])) # MR
-	# Bottom row
-	nav_poly.add_polygon(PackedInt32Array([8, 9, 13, 12])) # BL
-	nav_poly.add_polygon(PackedInt32Array([9, 10, 14, 13]))# BM
-	nav_poly.add_polygon(PackedInt32Array([10, 11, 15, 14]))# BR
-
-	nav_poly.agent_radius = 6.0
-	nav_poly.cell_size = 1.0
-
-	navigation_region.navigation_polygon = nav_poly
+## 把中央障碍区域内的 cells 标 is_blocking。
+## 用 cell_size=32 时 obstacle (200..300, 200..300) 横跨 cells (6..9, 6..9)
+## (cell 6 起 192, cell 9 终 320; cell 边界稍宽于 obstacle 区)。
+func _mark_obstacle_cells() -> void:
+	var cs: float = grid.cell_size
+	var col_min: int = int(floorf(OBSTACLE_X_MIN / cs))
+	var col_max: int = int(floorf((OBSTACLE_X_MAX - 0.001) / cs))
+	var row_min: int = int(floorf(OBSTACLE_Y_MIN / cs))
+	var row_max: int = int(floorf((OBSTACLE_Y_MAX - 0.001) / cs))
+	for row in range(row_min, row_max + 1):
+		for col in range(col_min, col_max + 1):
+			var coord := HexCoord.new(col, row)
+			if grid.has_tile(coord):
+				grid.model.set_tile_blocking(coord, true)
 
 
 # ========== 查询 ==========
 
 ## 给 smoke / frontend 用的"对方阵营出生点"。team 0 → x≈50, team 1 → x≈450。
 ##
-## 当 total_slots == 4 时使用专门排布: y ∈ {80, 250, 250, 420}。
+## 当 total_slots == 4 时使用专门排布: y ∈ {80, 230, 270, 420}。
 ## - slot 0 & 3 在顶 / 底, 接敌路径不过中央障碍 (200..300, 200..300)
-## - slot 1 & 2 都在 y=250 (障碍中线): 接敌必绕 navmesh, 服务 AC2 主断言
+## - slot 1 & 2 都在 y=230/270 (障碍中线): 接敌必绕 grid path, 服务 AC2 主断言
 ## 其它 total_slots 退化为 [80, 420] 均分(M1 扩到 8v8 时再细化)。
 static func sample_team_spawn(team_id: int, slot: int, total_slots: int) -> Vector2:
 	var x: float = 50.0 if team_id == 0 else 450.0

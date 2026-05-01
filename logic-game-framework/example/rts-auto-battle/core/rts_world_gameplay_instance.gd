@@ -1,21 +1,34 @@
 ## RtsWorldGameplayInstance - RTS 连续坐标战斗世界 Instance
 ##
-## WorldGameplayInstance 子类: 不依赖 UGridMap / hex grid, 用连续 Vector2 描述位置。
-## NavigationRegion2D 由 frontend / smoke 入口注入, 提供给 actor 寻路。
+## WorldGameplayInstance 子类: 持 grid (RtsBattleGrid wrapper, P1.2 替代 NavigationRegion2D)
+## + 连续 Vector2 描述位置。
 ##
-## 战斗推进由 RtsAutoBattleProcedure 承担。
+## P1.3 (S1 修复) 后, 战斗推进由 RtsAutoBattleProcedure 完全内化(不再有 per_tick callback)。
+## 调方走 start_rts_battle(left, right, opts) → world.start_battle 工厂创建 procedure。
 class_name RtsWorldGameplayInstance
 extends WorldGameplayInstance
 
 
 # ========== 字段 ==========
 
-## 地图边界(像素), 仅供 AI / 出生点采样使用; 物理边界由 NavigationRegion2D 决定。
+## 地图边界(像素), 仅供 AI / 出生点采样使用; 物理边界由 grid blocking cells 决定。
 var map_size: Vector2 = Vector2(500.0, 500.0)
 
-## NavigationRegion2D 句柄, 由 frontend / smoke 入口注入。
-## 为 null 时 actor 退化为直线接敌(M0.4 之前 / RTS 单测中允许)。
-var navigation_region: NavigationRegion2D = null
+## RTS 战场 grid wrapper (P1.2 替代 NavigationRegion2D), 由 frontend / smoke 入口注入。
+## 为 null 时 actor 退化为直线接敌(走 RtsPathfinding.find_path 的 _direct_path 分支)。
+var rts_grid: RtsBattleGrid = null
+
+
+# ========== 战斗 staging fields (start_rts_battle 写, _create_battle_procedure 读) ==========
+
+## 即将开战的 left team — 仅在 start_rts_battle 调用期间有效。
+var _pending_left: Array[RtsBattleActor] = []
+
+## 即将开战的 right team — 仅在 start_rts_battle 调用期间有效。
+var _pending_right: Array[RtsBattleActor] = []
+
+## 即将传给 procedure 的 opts (含 unit_runtimes / event_sink / tick_interval_ms)。
+var _pending_battle_opts: Dictionary = {}
 
 
 # ========== 初始化 ==========
@@ -25,9 +38,48 @@ func _init(id_value: String = "") -> void:
 	type = "rts_world"
 
 
-## 注入 NavigationRegion2D。frontend / smoke 在 _ready 中构造后调用。
-func set_navigation_region(region: NavigationRegion2D) -> void:
-	navigation_region = region
+## 注入 RtsBattleGrid。frontend / smoke 在 _ready 中构造 RtsBattleMap 后调用。
+func set_grid(p_grid: RtsBattleGrid) -> void:
+	rts_grid = p_grid
+
+
+# ========== 战斗调度 (P1.3 S1 修复) ==========
+
+## 启动一场 RTS 战斗。返回 procedure 引用, 调方负责 tick_once / finish。
+##
+## opts 键(透传给 RtsAutoBattleProcedure._init):
+##   - tick_interval_ms: float
+##   - unit_runtimes: Dictionary[actor_id, {ai, agent}]
+##   - event_sink: Callable(events: Array[Dictionary])
+func start_rts_battle(
+	left: Array[RtsBattleActor],
+	right: Array[RtsBattleActor],
+	opts: Dictionary = {},
+) -> RtsAutoBattleProcedure:
+	_pending_left = left
+	_pending_right = right
+	_pending_battle_opts = opts
+
+	var participants: Array[Actor] = []
+	for a in left:
+		participants.append(a)
+	for a in right:
+		participants.append(a)
+
+	var procedure := start_battle(participants) as RtsAutoBattleProcedure
+
+	# 清 pending state 让 GC 在 procedure 释放后能 release left/right reference
+	_pending_left = []
+	_pending_right = []
+	_pending_battle_opts = {}
+
+	return procedure
+
+
+## 工厂钩子: WorldGameplayInstance.start_battle 调用此函数创建 procedure。
+## 读 _pending_* 字段构造 RtsAutoBattleProcedure。
+func _create_battle_procedure(_participants: Array[Actor]) -> BattleProcedure:
+	return RtsAutoBattleProcedure.new(self, _pending_left, _pending_right, _pending_battle_opts)
 
 
 # ========== Actor registry ==========
@@ -47,4 +99,14 @@ func get_alive_actors() -> Array[RtsBattleActor]:
 	for actor in get_actors():
 		if actor is RtsBattleActor and not (actor as RtsBattleActor).is_dead():
 			result.append(actor as RtsBattleActor)
+	return result
+
+
+## 仅返回存活的 RtsUnitActor (排除 RtsBuildingActor)。
+## P1.2 push-out / nav tick 等"对单位生效"的循环用此过滤。
+func get_alive_units() -> Array[RtsUnitActor]:
+	var result: Array[RtsUnitActor] = []
+	for actor in get_actors():
+		if actor is RtsUnitActor and not (actor as RtsUnitActor).is_dead():
+			result.append(actor as RtsUnitActor)
 	return result

@@ -14,7 +14,7 @@ const POLYGON_SEGMENTS: int = 8
 
 var _polygon: Polygon2D = null
 var _hp_label: Label = null
-var actor: RtsCharacterActor = null
+var actor: RtsUnitActor = null
 
 
 func _ready() -> void:
@@ -34,7 +34,7 @@ func _ready() -> void:
 
 # ========== 绑定 ==========
 
-func bind_actor(p_actor: RtsCharacterActor) -> void:
+func bind_actor(p_actor: RtsUnitActor) -> void:
 	actor = p_actor
 	position = p_actor.position_2d
 	_polygon.color = _team_color(p_actor.get_team_id())
