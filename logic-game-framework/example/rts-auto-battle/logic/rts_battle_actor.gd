@@ -151,7 +151,7 @@ func start_attack_cooldown() -> void:
 
 func set_team_id(p_team_id: int) -> void:
 	team_id = p_team_id
-	_team = str(p_team_id)
+	set_team(str(p_team_id))
 
 
 func get_team_id() -> int:

@@ -55,7 +55,8 @@ func _init(p_unit_class: RtsUnitClassConfig.UnitClass) -> void:
 	var stats := RtsUnitClassConfig.get_stats(p_unit_class)
 	_display_name = stats.name
 
-	attribute_set = RtsUnitAttributeSet.new(get_id())
+	# actor_id 留默认空串; _on_id_assigned 在 add_actor 后 sync 真 ID。
+	attribute_set = RtsUnitAttributeSet.new()
 	# max_hp 必须先于 hp: cross-attr clamp(hp <= max_hp) 在 set_hp_base 时按当前 max_hp 截。
 	attribute_set.set_max_hp_base(stats.max_hp)
 	attribute_set.set_hp_base(stats.hp)

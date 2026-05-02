@@ -62,7 +62,8 @@ static func _create_from_kind(building_kind: String) -> RtsBuildingActor:
 	# 建筑永远在 GROUND 层 (M1 范围内不存在飞行建筑)
 	actor.movement_layer = MovementLayer.Layer.GROUND
 
-	actor.attribute_set = RtsBuildingAttributeSet.new(actor.get_id())
+	# actor_id 留默认空串; _on_id_assigned 在 add_actor 后 sync 真 ID。
+	actor.attribute_set = RtsBuildingAttributeSet.new()
 	# max_hp 必须先于 hp: cross-attr clamp(hp <= max_hp) 在 set_hp_base 时按当前 max_hp 截。
 	actor.attribute_set.set_max_hp_base(stats.max_hp)
 	actor.attribute_set.set_hp_base(stats.hp)
