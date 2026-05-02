@@ -17,7 +17,8 @@ class_name RtsBuildings
 
 # ========== 工厂方法 ==========
 
-## 水晶塔: 高 hp, 不生产 (P2.6 胜负判定 — 任一阵营 crystal_tower 死即结束战斗)。
+## 水晶塔: 高 hp, 不生产 (P2.6 胜负判定 — 任一阵营 crystal_tower 死即结束战斗);
+## M2.1 Phase C 兼任 worker drop-off (RtsBuildingConfig._CRYSTAL_TOWER_STATS.is_drop_off=true 写入 actor)。
 static func create_crystal_tower() -> RtsBuildingActor:
 	return _create_from_kind(RtsBuildingConfig.KIND_CRYSTAL_TOWER)
 
@@ -42,6 +43,7 @@ static func _create_from_kind(building_kind: String) -> RtsBuildingActor:
 	actor.set_display_name(stats.name)
 	actor.footprint_size = stats.footprint_size
 	actor.is_crystal_tower = stats.is_crystal_tower
+	actor.is_drop_off = stats.is_drop_off
 	actor.production_period_ms = stats.production_period_ms
 	actor.spawn_unit_kind = stats.spawn_unit_kind
 	actor.spawn_unit_stance = stats.spawn_unit_stance

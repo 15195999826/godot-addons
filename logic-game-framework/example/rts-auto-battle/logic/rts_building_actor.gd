@@ -30,6 +30,12 @@ var footprint_size: Vector2i = Vector2i(1, 1)
 ## 是否水晶塔 (供 P2.6 胜负判定快速过滤; P2.5 仅记录, 不参与判定)。
 var is_crystal_tower: bool = false
 
+## M2.1 Phase C — 是否 worker drop-off 点 (RtsReturnAndDropActivity 找己方最近 is_drop_off 建筑)。
+##
+## 由 RtsBuildings._create_from_kind 从 RtsBuildingConfig.StatBlock.is_drop_off 写入
+## (crystal_tower stats 设 true; barracks / archer_tower 默认 false)。
+var is_drop_off: bool = false
+
 ## 生产周期 (ms); <= 0 表示不生产。production_system tick 累积 _production_progress_ms,
 ## 达到此周期 → 触发 spawn + 减一周期 (溢出量保留, 让 spawn 节奏稳定)。
 var production_period_ms: float = 0.0

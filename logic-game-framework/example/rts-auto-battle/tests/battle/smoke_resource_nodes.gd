@@ -1,22 +1,24 @@
-## RTS Resource Nodes smoke (M2.1 Phase B — AC6 gate)
+## RTS Resource Nodes smoke (M2.1 Phase B → Phase C 重定位)
 ##
-## 验证 Phase B 6 个 acceptance 项的端到端联动:
-##   1. RtsResourceNodeConfig + RtsResourceNode actor + RtsResourceNodes 工厂能正常实例化 (AC1-3)
-##   2. UnitClass.WORKER 起手 idle (target_layer_mask=NONE → AutoTargetSystem mover skip,
-##      _cached_target_id 永远空, basic_attack.decide 返 IdleActivity) (AC4-5)
-##   3. ResourceNode amount 起手 = max_amount, Phase B 不会减 (Phase C HarvestActivity 才消费)
+## **Phase C 重定位**: 主旨从"worker mask=NONE 让 basic_attack idle"改为"worker 走 RtsHarvestStrategy
+## fallback to IdleActivity (找不到 ResourceNode 时)" — 同样验 worker max_drift=0, 但通过策略
+## 不同分支。原 Phase B 主张 worker 永远 idle 在 Phase C 后不再成立 (worker 见到 node 就采集)。
 ##
-## 设计:
+## 验证目标 (Phase C 后):
+##   1. RtsHarvestStrategy 找不到 ResourceNode → 返 IdleActivity (AC4 fallback 分支)
+##   2. UnitClass.WORKER 起手 + factory get_strategy(WORKER) 链路无 SCRIPT ERROR
+##   3. RtsResourceNode actor 类型仍可 instantiate (AC1-3 注册不退化) — 通过 import 而非 smoke 跑覆盖
+##
+## 设计 (Phase C 后):
 ##   - 起手:
 ##     - 5 worker (左方 team 0, spawn 在 (100, 200) 附近, 间隔 30 px)
-##     - 1 gold node + 1 wood node (中立 team_id=-1, 在中央但远离 worker spawn)
-##     - 右方 1 crystal_tower (hp=2000 永远不死) — 让 _check_battle_end 走 ct 模式右方不败,
-##       左方 fallback 全灭模式 worker alive 不败 → 战斗持续 200 tick (10 真实秒)
+##     - 右方 1 crystal_tower (hp=2000 永远不死) — 让 _check_battle_end ct 模式右方不败,
+##       左方 fallback 全灭 worker alive 不败 → 战斗持续 200 tick (10 真实秒)
+##     - **不放** ResourceNode — RtsHarvestStrategy 的 _find_closest_resource_node 返空 → IdleActivity
 ##   - 跑 200 tick @ 50ms = 10 真实秒
-##   - 验证: worker 5 alive, 距 spawn ≤ 50 px, gold/wood amount = 1500, 无 SCRIPT ERROR
+##   - 验证: worker 5 alive, max_drift ≤ 50 px, 无 SCRIPT ERROR
 ##
-## 与 Phase A 既有 6 smoke + replay 双 smoke 的 regression gate 由 phase-b §Validation 顺序覆盖,
-## 此 smoke 仅做 Phase B 新能力的最小可行验证。
+## smoke_harvest_loop (Phase C C.7) 覆盖 worker + ResourceNode + harvest cycle 主链路。
 extends Node
 
 
@@ -32,8 +34,6 @@ const WORKER_SPAWN_BASE: Vector2 = Vector2(100.0, 200.0)
 const WORKER_SPAWN_DELTA: Vector2 = Vector2(0.0, 30.0)
 const SPAWN_DRIFT_TOLERANCE: float = 50.0  # idle 容许 group_formation 推开微移
 
-const GOLD_NODE_POS: Vector2 = Vector2(250.0, 200.0)
-const WOOD_NODE_POS: Vector2 = Vector2(250.0, 300.0)
 const RIGHT_CT_POS: Vector2 = Vector2(450.0, 250.0)
 
 
@@ -46,8 +46,6 @@ var _host: Node2D = null
 
 var _worker_spawn_positions: Array[Vector2] = []
 var _workers: Array[RtsUnitActor] = []
-var _gold_node: RtsResourceNode = null
-var _wood_node: RtsResourceNode = null
 
 
 func _ready() -> void:
@@ -73,17 +71,6 @@ func _ready() -> void:
 		_workers.append(worker)
 		_worker_spawn_positions.append(worker.position_2d)
 
-	# 起手 1 gold node + 1 wood node (中立 team_id=-1)
-	_gold_node = RtsResourceNodes.create_gold_node()
-	_gold_node.set_team_id(-1)
-	_world.add_actor(_gold_node)
-	_gold_node.position_2d = GOLD_NODE_POS
-
-	_wood_node = RtsResourceNodes.create_wood_node()
-	_wood_node.set_team_id(-1)
-	_world.add_actor(_wood_node)
-	_wood_node.position_2d = WOOD_NODE_POS
-
 	# 右方 1 ct (hp=2000 永远不死) — 让 _check_battle_end ct 模式右方不败 (procedure.start
 	# 自动绑 right cfg.crystal_tower_id); 左方 fallback 全灭 worker alive 不败
 	var right_ct := RtsBuildings.create_crystal_tower()
@@ -95,7 +82,7 @@ func _ready() -> void:
 	var left_cfg := RtsTeamConfig.unconfigured(0)
 	var right_cfg := RtsTeamConfig.unconfigured(1)
 
-	# left_team 含 5 worker; right_team 含 ct (ResourceNode 中立, 不入任一方)
+	# left_team 含 5 worker; right_team 含 ct
 	var left_actors: Array[RtsBattleActor] = []
 	for w in _workers:
 		left_actors.append(w)
@@ -119,7 +106,7 @@ func _ready() -> void:
 	_procedure.finish()
 
 	# ===== 验证 =====
-	# AC6.1: 5 worker 全部 alive
+	# 1. 5 worker 全部 alive
 	var alive_workers: int = 0
 	for w in _workers:
 		if not w.is_dead():
@@ -128,7 +115,7 @@ func _ready() -> void:
 		_fail("expected %d alive workers, got %d" % [NUM_WORKERS, alive_workers])
 		return
 
-	# AC6.2: worker 距 spawn ≤ SPAWN_DRIFT_TOLERANCE (idle 不主动远离)
+	# 2. worker 距 spawn ≤ SPAWN_DRIFT_TOLERANCE (HarvestStrategy 找不到 node → IdleActivity → 不主动远离)
 	var max_drift: float = 0.0
 	for i in range(_workers.size()):
 		var w := _workers[i]
@@ -137,44 +124,26 @@ func _ready() -> void:
 		if drift > max_drift:
 			max_drift = drift
 		if drift > SPAWN_DRIFT_TOLERANCE:
-			_fail("worker %d drifted %.2f px from spawn (limit %.2f); strategy may have side-effect" % [
+			_fail("worker %d drifted %.2f px from spawn (limit %.2f); HarvestStrategy 应在找不到 node 时返 IdleActivity" % [
 				i, drift, SPAWN_DRIFT_TOLERANCE,
 			])
 			return
 
-	# AC6.3: worker 起手没 cached_target_id (mask=NONE 让 AutoTargetSystem 永不写)
+	# 3. worker carrying 始终空 (没找到 ResourceNode → 不会切到 ReturnAndDrop, 也不会有 carrying)
 	for i in range(_workers.size()):
 		var w := _workers[i]
-		if not w._cached_target_id.is_empty():
-			_fail("worker %d unexpectedly has cached_target_id=%s (mask=NONE 不应被 AutoTargetSystem 选中)" % [
-				i, w._cached_target_id,
-			])
+		if not w.carrying.is_empty():
+			_fail("worker %d unexpectedly has carrying=%s (找不到 node 不应有 carrying)" % [i, str(w.carrying)])
 			return
 
-	# AC6.4: gold node amount 不变
-	if _gold_node.amount != _gold_node.max_amount:
-		_fail("gold node amount changed (Phase B 不应消减): %d / %d" % [_gold_node.amount, _gold_node.max_amount])
-		return
-	if _gold_node.is_dead() or _gold_node.is_depleted():
-		_fail("gold node unexpectedly dead/depleted")
-		return
-
-	# AC6.5: wood node amount 不变
-	if _wood_node.amount != _wood_node.max_amount:
-		_fail("wood node amount changed (Phase B 不应消减): %d / %d" % [_wood_node.amount, _wood_node.max_amount])
-		return
-	if _wood_node.is_dead() or _wood_node.is_depleted():
-		_fail("wood node unexpectedly dead/depleted")
-		return
-
 	# 报告
-	print("rts resource_nodes smoke: ticks=%d alive_workers=%d gold_amount=%d wood_amount=%d max_drift=%.2f" % [
-		_procedure.get_current_tick(), alive_workers, _gold_node.amount, _wood_node.amount, max_drift,
+	print("rts resource_nodes smoke: ticks=%d alive_workers=%d max_drift=%.2f" % [
+		_procedure.get_current_tick(), alive_workers, max_drift,
 	])
 
 	_world.end()
 	GameWorld.destroy()
-	print("SMOKE_TEST_RESULT: PASS - 5 workers idle near spawn + gold/wood nodes intact at max_amount")
+	print("SMOKE_TEST_RESULT: PASS - 5 workers idle near spawn (HarvestStrategy fallback to IdleActivity 找不到 node)")
 	get_tree().quit(0)
 
 

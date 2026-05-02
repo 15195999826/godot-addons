@@ -34,6 +34,10 @@ class StatBlock:
 	var footprint_size: Vector2i = Vector2i(1, 1)
 	## 是否水晶塔 (P2.6 胜负判定 — 任一阵营 crystal_tower hp=0 → 战斗结束)
 	var is_crystal_tower: bool = false
+	## M2.1 Phase C — 是否 worker drop-off 点 (RtsReturnAndDropActivity 找己方最近 is_drop_off 建筑)。
+	## crystal_tower 起手 true (双方起手就有 ct → 经济闭环不需要新加 building_kind);
+	## Phase D 若加 town_hall / supply_depot 也设 true。
+	var is_drop_off: bool = false
 	## 生产周期 (ms); <= 0 表示不生产 (crystal_tower / archer_tower)
 	var production_period_ms: float = 0.0
 	## 生产的单位兵种 (RtsUnitClassConfig.UnitClass; production_period_ms <= 0 时未使用)
@@ -73,6 +77,8 @@ const _CRYSTAL_TOWER_STATS := {
 	"hp": 2000.0,
 	"footprint_size": Vector2i(2, 2),
 	"is_crystal_tower": true,
+	# M2.1 Phase C: ct 兼任 worker drop-off (双方起手就有 ct → harvest 闭环不需要新加 building_kind)
+	"is_drop_off": true,
 	"production_period_ms": 0.0,
 	"spawn_unit_kind": -1,
 	# 不可建造来源 — 起手 / 调方手动放, PlaceBuildingCommand 走 cost 校验本字段会被遍历
@@ -148,6 +154,7 @@ static func get_stats(building_kind: String) -> StatBlock:
 	block.hp = raw["hp"]
 	block.footprint_size = raw["footprint_size"]
 	block.is_crystal_tower = raw["is_crystal_tower"]
+	block.is_drop_off = bool(raw.get("is_drop_off", false))
 	block.production_period_ms = raw["production_period_ms"]
 	block.spawn_unit_kind = raw["spawn_unit_kind"]
 	block.cost = _copy_resource_dict(raw.get("cost", null))

@@ -24,6 +24,19 @@ class_name RtsActivity
 extends RefCounted
 
 
+# ========== Nav refresh 限频 (子类共享) ==========
+
+## Nav target 刷新最小间隔(秒). attack / harvest / return-and-drop Activity 共用 —
+## target 移动 > 2px 也立即刷(避免追不上跑动目标; Phase 1 controller 同值)。
+const NAV_REFRESH_INTERVAL: float = 0.2
+
+## 距离上次 _refresh_nav_target 累积时间(秒). 子类 tick 起手 += dt 即可.
+var _time_since_nav_refresh: float = 0.0
+
+## 上一次 set_target 位置 (跳过 < 2px 抖动)
+var _last_set_target: Vector2 = Vector2.INF
+
+
 # ========== State ==========
 
 enum State {
@@ -114,6 +127,28 @@ func is_done() -> bool:
 
 func is_canceling() -> bool:
 	return state == State.CANCELING
+
+
+# ========== Nav refresh 共享 helper (子类可调) ==========
+
+## 是否应该刷新 nav target:
+##   - 距离上次刷新 ≥ NAV_REFRESH_INTERVAL, 或
+##   - 目标位置发生显著变化 (>2 px) — 即使在限频窗口内也立即刷
+func _should_refresh_nav(target_pos: Vector2) -> bool:
+	if _time_since_nav_refresh >= NAV_REFRESH_INTERVAL:
+		return true
+	if _last_set_target.distance_squared_to(target_pos) > 4.0:  # 2² px 抖动阈值
+		return true
+	return false
+
+
+## 写 nav target + 更新限频状态. nav_agent null 时 no-op (子类需自查).
+func _refresh_nav_target(nav_agent: RtsNavAgent, target_pos: Vector2) -> void:
+	if nav_agent == null:
+		return
+	nav_agent.set_target(target_pos)
+	_last_set_target = target_pos
+	_time_since_nav_refresh = 0.0
 
 
 # ========== 链式构造工具 ==========

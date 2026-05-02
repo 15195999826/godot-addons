@@ -41,6 +41,23 @@ var attribute_set: RtsUnitAttributeSet
 ## "HOLD_FIRE / DEFENSIVE" 的语义。
 var stance: int = Stance.AGGRESSIVE
 
+## M2.1 Phase C — worker 当前 carry 中的资源 (key = 资源种类, e.g. "gold" / "wood"; value = 数量).
+##
+## RtsHarvestActivity 在抵达 ResourceNode 后 per-tick 累加: carrying[key] += transfer_amount;
+## RtsReturnAndDropActivity 抵达 drop-off 时调 procedure.add_team_resources(team_id, carrying) 后 clear。
+##
+## 既有兵种 (melee / ranged) 不读不写, 默认空 dict — 不影响 4v4 main path。
+var carrying: Dictionary[String, int] = {}
+
+
+## M2.1 Phase C — carrying 总和; HarvestStrategy 判断"是否该回去 drop-off",
+## HarvestActivity 判断"是否还能继续 harvest" 都用此值.
+func get_carry_total() -> int:
+	var total: int = 0
+	for v in carrying.values():
+		total += int(v)
+	return total
+
 # 注: P2.8 起 current_target_id / unit_tags / target_priorities / _cached_target_id / target_layer_mask
 # 已上推到 RtsBattleActor 基类 (单位 + 建筑共用), 此处不再重复声明。
 # Cooldown tag (ATTACK_COOLDOWN_TAG) 也在基类 — 单位/建筑共用 add_auto_duration_tag 计冷却。

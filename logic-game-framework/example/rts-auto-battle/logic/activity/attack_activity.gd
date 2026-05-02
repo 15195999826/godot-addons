@@ -24,9 +24,6 @@ extends RtsActivity
 ## attack 距离判定加 5% 容差(浮点抖动 + 单位贴边时不抢攻击, 与 Phase 1 一致)
 const RANGE_TOLERANCE: float = 1.05
 
-## Nav target 刷新最小间隔(秒); Phase 1 controller 同值。
-const NAV_REFRESH_INTERVAL: float = 0.2
-
 
 # ========== 字段 ==========
 
@@ -39,11 +36,8 @@ var _nav_agent: RtsNavAgent = null
 ## 本帧是否想 attack (in-range 时 true; out-of-range / target dead 时 false)
 var _wants_attack: bool = false
 
-## Nav refresh 限频计时
-var _time_since_nav_refresh: float = 0.0
-
-## 上一次 set_target 的位置, 用于跳过 < 2px 抖动
-var _last_set_target: Vector2 = Vector2.INF
+# Nav refresh 限频字段 (NAV_REFRESH_INTERVAL / _time_since_nav_refresh / _last_set_target /
+# _should_refresh_nav / _refresh_nav_target) 在 RtsActivity 基类 — attack/harvest/return 共用。
 
 
 # ========== 初始化 ==========
@@ -83,9 +77,7 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 	else:
 		_wants_attack = false
 		if _nav_agent != null and _should_refresh_nav(target.position_2d):
-			_nav_agent.set_target(target.position_2d)
-			_last_set_target = target.position_2d
-			_time_since_nav_refresh = 0.0
+			_refresh_nav_target(_nav_agent, target.position_2d)
 	return true
 
 
@@ -109,16 +101,3 @@ func is_equivalent_to(other: RtsActivity) -> bool:
 
 func get_intent_label() -> String:
 	return "attack" if _wants_attack else "approach"
-
-
-# ========== 内部 ==========
-
-## 是否应该刷新 nav target:
-##   - 距离上次刷新已经 ≥ NAV_REFRESH_INTERVAL, 或
-##   - 目标位置发生显著变化 (>2 px) — 即使在限频窗口内也立即刷
-func _should_refresh_nav(target_pos: Vector2) -> bool:
-	if _time_since_nav_refresh >= NAV_REFRESH_INTERVAL:
-		return true
-	if _last_set_target.distance_squared_to(target_pos) > 4.0:  # 2² px 抖动阈值
-		return true
-	return false

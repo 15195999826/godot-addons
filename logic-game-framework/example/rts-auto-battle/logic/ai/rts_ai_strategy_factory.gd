@@ -12,6 +12,9 @@ class_name RtsAIStrategyFactory
 
 static var _basic_attack: RtsAIStrategy = RtsBasicAttackStrategy.new()
 
+## M2.1 Phase C — worker 经济策略 (carry > 0 → ReturnAndDrop; 否则找最近 ResourceNode → Harvest)
+static var _harvest_strategy: RtsAIStrategy = RtsHarvestStrategy.new()
+
 
 ## 根据 unit_class 获取 AI 策略。
 ##
@@ -19,9 +22,8 @@ static var _basic_attack: RtsAIStrategy = RtsBasicAttackStrategy.new()
 ## 不在策略上。Phase 2 P2.4 AutoTargetSystem + Activity 后可能拆出 ranged-specific 策略
 ## (如 ranged 持距离 / 撤退微操)。
 ##
-## M2.1 Phase B: WORKER 也复用 basic_attack — worker target_layer_mask=NONE 让
-## AutoTargetSystem 在 mover 阶段 skip, 永不写 _cached_target_id; basic_attack.decide 因
-## cached 空返 IdleActivity → worker 自然 idle。Phase C 启动 RtsHarvestStrategy 替代此分支。
+## M2.1 Phase C: WORKER 切到 _harvest_strategy (carrying 总和≥1 → ReturnAndDrop; 否则找最近
+## ResourceNode → Harvest); melee/ranged 仍走 basic_attack 不动。
 static func get_strategy(unit_class: RtsUnitClassConfig.UnitClass) -> RtsAIStrategy:
 	match unit_class:
 		RtsUnitClassConfig.UnitClass.MELEE:
@@ -29,6 +31,6 @@ static func get_strategy(unit_class: RtsUnitClassConfig.UnitClass) -> RtsAIStrat
 		RtsUnitClassConfig.UnitClass.RANGED:
 			return _basic_attack
 		RtsUnitClassConfig.UnitClass.WORKER:
-			return _basic_attack
+			return _harvest_strategy
 		_:
 			return _basic_attack

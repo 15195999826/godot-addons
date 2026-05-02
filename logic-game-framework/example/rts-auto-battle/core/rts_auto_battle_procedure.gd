@@ -148,6 +148,9 @@ func _init(
 	if opts.has("player_command_queue"):
 		_player_command_queue = opts.get("player_command_queue", null) as RtsPlayerCommandQueue
 
+	# M2.1 Phase C: 让 world 持当前 procedure 引用, Activity 通过 world.procedure 访问 procedure API。
+	world.bind_procedure(self)
+
 
 # ========== 生命周期 ==========
 
@@ -500,6 +503,21 @@ func spend_team_resources(team_id: int, cost: Dictionary) -> void:
 			continue
 		var current: int = int(bucket.get(key, 0))
 		bucket[str(key)] = current - amount
+	_team_resources[team_id] = bucket
+
+
+## 加阵营资源 (M2.1 Phase C — RtsReturnAndDropActivity worker 抵达 drop-off 时调)。
+##
+## delta 为 Dictionary[String, int]; value=0 跳过; key 不在 _team_resources[team_id] 内 →
+## 视为当前 0 起加。对称 spend_team_resources。
+func add_team_resources(team_id: int, delta: Dictionary) -> void:
+	var bucket: Dictionary = _team_resources.get(team_id, {}) as Dictionary
+	for key in delta:
+		var amount: int = int(delta[key])
+		if amount == 0:
+			continue
+		var current: int = int(bucket.get(key, 0))
+		bucket[str(key)] = current + amount
 	_team_resources[team_id] = bucket
 
 

@@ -31,6 +31,18 @@ var _pending_right: Array[RtsBattleActor] = []
 var _pending_battle_opts: Dictionary = {}
 
 
+# ========== Procedure 引用 (M2.1 Phase C) ==========
+
+## 当前活跃 procedure; procedure._init 末尾调 bind_procedure(self) 写入。
+##
+## Activity 子类 (M2.1 Phase C: RtsHarvestActivity / RtsReturnAndDropActivity) 通过
+## world.procedure.add_team_resources(...) 改阵营资源, 不破坏 Activity (actor, world, dt) sig。
+##
+## 战斗结束后 procedure GC, 此字段仍指向旧实例无影响 (Activity 只在战斗内 tick);
+## 下次开战 start_rts_battle 创建新 procedure → 新 procedure._init 末尾 bind_procedure 覆盖。
+var procedure: RtsAutoBattleProcedure = null
+
+
 # ========== 初始化 ==========
 
 func _init(id_value: String = "") -> void:
@@ -41,6 +53,11 @@ func _init(id_value: String = "") -> void:
 ## 注入 RtsBattleGrid。frontend / smoke 在 _ready 中构造 RtsBattleMap 后调用。
 func set_grid(p_grid: RtsBattleGrid) -> void:
 	rts_grid = p_grid
+
+
+## 由 RtsAutoBattleProcedure._init 末尾调用; Activity 通过 world.procedure 访问 procedure API。
+func bind_procedure(p: RtsAutoBattleProcedure) -> void:
+	procedure = p
 
 
 # ========== 战斗调度 (P1.3 S1 修复) ==========
