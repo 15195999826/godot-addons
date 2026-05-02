@@ -37,6 +37,11 @@ var _render_height: float = 0.0
 var _polygon: Polygon2D = null
 var _hp_label: Label = null
 
+## P3.2 — 选中态可视化 (黄色环). lazy 创建 — 仅在 set_selected(true) 第一次调时 add_child。
+## visualizer 不持任何 selection 业务状态 — demo 直接调 set_selected(bool) 切。
+var _selection_ring: _SelectionRing = null
+var _is_selected: bool = false
+
 # Push 模式: WorldView 经 director signal 写到这些字段
 var _prev_pos: Vector2 = Vector2.ZERO
 var _curr_pos: Vector2 = Vector2.ZERO
@@ -121,6 +126,25 @@ func update_render_state(
 	_update_hp_label()
 
 
+## P3.2 — 切换选中态 (demo 鼠标拖框 / 单击 / 右键 deselect 时调).
+##
+## 选中: lazy 创建 _selection_ring 子节点 + visible=true; 取消: visible=false (不 free,
+## 反复切节省 GC).
+## visualizer 不持业务 selection 状态 — 此 flag 只服务渲染开关.
+func set_selected(selected: bool) -> void:
+	_is_selected = selected
+	if selected and _selection_ring == null:
+		_selection_ring = _SelectionRing.new()
+		add_child(_selection_ring)
+	if _selection_ring != null:
+		_selection_ring.visible = selected
+
+
+## P3.2 — 查询当前是否处于选中态 (demo 调拖框增量更新 / 调试用).
+func is_selected_visual() -> bool:
+	return _is_selected
+
+
 ## 由 WorldView 把 director.actor_died 信号路由到本 visualizer 时调用.
 ##
 ## 默认实现: 调暗 + label "DEAD". 子类可 override 加死亡动画.
@@ -170,3 +194,21 @@ func _get_director() -> RtsBattleDirector:
 	if _director_ref == null:
 		return null
 	return _director_ref.get_ref() as RtsBattleDirector
+
+
+# ========== _SelectionRing ==========
+
+## 选中态可视化: 黄色 stroke circle, 半径略大于单位 collision_radius (RADIUS+4).
+## 内嵌类 (RtsUnitVisualizer 私有): 不暴露给外部, 只服务 set_selected 切换显示.
+class _SelectionRing extends Node2D:
+	const RING_RADIUS: float = RtsUnitVisualizer.RADIUS + 4.0
+	const RING_WIDTH: float = 2.0
+	const RING_COLOR: Color = Color(1.0, 0.9, 0.2, 1.0)  # 黄
+
+	func _ready() -> void:
+		# z_index 保持默认 (visualizer 同层) — 圆环大于 polygon, 即使 polygon 盖住中心
+		# 也能从外圈看到环。
+		queue_redraw()
+
+	func _draw() -> void:
+		draw_arc(Vector2.ZERO, RING_RADIUS, 0.0, TAU, 32, RING_COLOR, RING_WIDTH, false)

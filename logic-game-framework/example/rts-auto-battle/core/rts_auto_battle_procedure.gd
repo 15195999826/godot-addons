@@ -492,6 +492,17 @@ func get_player_commands_log() -> Array[Dictionary]:
 	return _player_commands_log.duplicate()
 
 
+## P3.2: 取 actor_id 对应的 RtsUnitController (P1.5 后的 runtime 持有者).
+##
+## 玩家命令 (RtsMoveUnitsCommand 等) 在 apply 时通过此 accessor 取 controller 调
+## set_activity_chain — 不让 _unit_runtimes 私有 dict 暴露给 command 子类直接访问。
+##
+## actor_id 对应 actor 不是 RtsUnitActor (如建筑) → 返回 null;
+## actor_id 没注册 runtime → 返回 null (smoke 自由场景中 actor 可能没 controller)。
+func get_unit_runtime(actor_id: String) -> RtsUnitController:
+	return _unit_runtimes.get(actor_id, null) as RtsUnitController
+
+
 # ========== 内部 ==========
 
 ## P2.6: 装配 team_configs。opts 不传 / 不含 0/1 时, 用 unconfigured(team_id) 占位让旧 smoke 不破。

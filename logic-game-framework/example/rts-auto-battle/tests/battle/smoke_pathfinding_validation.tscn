@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_pathfinding_validation"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_pathfinding_validation.gd" id="1_pathfind_val"]
+
+[node name="RtsSmokePathfindingValidation" type="Node"]
+script = ExtResource("1_pathfind_val")
