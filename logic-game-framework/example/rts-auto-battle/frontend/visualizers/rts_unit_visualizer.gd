@@ -30,6 +30,10 @@ var actor_id: String = ""
 var _team_id: int = -1
 var _director_ref: WeakRef = null
 
+## P2.8 — 渲染高度 (AIR 单位画在 8px 上空); 由 bind() 注入, 战斗期间不变。
+## Godot 2D 坐标 y 向下增加, 故 y 偏移用 -render_height 实现"上抬"。
+var _render_height: float = 0.0
+
 var _polygon: Polygon2D = null
 var _hp_label: Label = null
 
@@ -68,7 +72,8 @@ func _process(_delta: float) -> void:
 		var director: RtsBattleDirector = _get_director()
 		if director != null:
 			alpha = director.get_alpha()
-	position = _prev_pos.lerp(_curr_pos, alpha)
+	# P2.8: 飞行单位上抬 _render_height px (Godot 2D y 向下, 故减)。
+	position = _prev_pos.lerp(_curr_pos, alpha) - Vector2(0.0, _render_height)
 
 
 # ========== 公共 API ==========
@@ -77,9 +82,11 @@ func _process(_delta: float) -> void:
 ##
 ## actor_id 是 LGF 全 actor id (含 instance prefix); team_id 0=left/red, 1=right/blue.
 ## director 用于 _process 内拿 alpha (持 weakref 防循环).
-func bind(p_actor_id: String, p_team_id: int, p_director: RtsBattleDirector) -> void:
+## p_render_height (P2.8): 飞行单位 8px, 地面单位 0; 创建期 hydrate 自 actor.get_render_height()。
+func bind(p_actor_id: String, p_team_id: int, p_director: RtsBattleDirector, p_render_height: float = 0.0) -> void:
 	actor_id = p_actor_id
 	_team_id = p_team_id
+	_render_height = p_render_height
 	if p_director != null:
 		_director_ref = weakref(p_director)
 	# 起手从 director 拉一次初始 render state (visualizer 接信号前 director 可能没 emit 过)
@@ -91,7 +98,7 @@ func bind(p_actor_id: String, p_team_id: int, p_director: RtsBattleDirector) -> 
 			_hp = state.get("hp", 0.0)
 			_max_hp = state.get("max_hp", 0.0)
 			_is_dead = state.get("is_dead", false)
-			position = _curr_pos
+			position = _curr_pos - Vector2(0.0, _render_height)
 	# 颜色 / label 在 _ready 之后再 update (此时 _polygon / _hp_label 可能还为 null)
 	if _polygon != null:
 		_polygon.color = _team_color(_team_id)

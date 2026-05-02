@@ -168,7 +168,9 @@ func _spawn_visualizer(actor_id: String) -> void:
 		var unit_actor := actor as RtsUnitActor
 		var unit_vis := RtsUnitVisualizer.new()
 		add_child(unit_vis)
-		unit_vis.bind(actor_id, unit_actor.get_team_id(), _director)
+		# P2.8: 一次性 hydrate render_height (AIR 单位画在 8px 上空); 创建期读 actor 是允许的,
+		# render_height 是 layer 派生静态量, 战斗期间不变, 不需要每帧推 push (与 team_id / footprint 同级).
+		unit_vis.bind(actor_id, unit_actor.get_team_id(), _director, unit_actor.get_render_height())
 		_visualizers[actor_id] = unit_vis
 		return
 

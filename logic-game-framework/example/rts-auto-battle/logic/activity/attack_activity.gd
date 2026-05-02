@@ -68,7 +68,8 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 	_time_since_nav_refresh += dt
 	if actor == null or actor.is_dead() or world == null:
 		return false
-	var target := world.get_actor(target_id) as RtsUnitActor
+	# P2.8: target 类型放宽到 RtsBattleActor — 单位可以打建筑 (e.g. AC8 攻击水晶塔判胜负)。
+	var target := world.get_actor(target_id) as RtsBattleActor
 	if target == null or target.is_dead():
 		return false
 	actor.current_target_id = target_id

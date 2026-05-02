@@ -13,9 +13,12 @@ class_name RtsTargetSelectors
 # 通用选择器
 # ============================================================
 
-## 取 ability owner 的 current_target_id (RtsUnitActor.current_target_id 字段)。
+## 取 ability owner 的 current_target_id (RtsBattleActor.current_target_id 字段)。
 ## RTS basic attack 在 procedure 主循环里调时, ability_ref.owner_actor_id 已经写为 attacker id;
-## 此选择器读 attacker.current_target_id (P1.5 后由 RtsUnitController 维护)。
+## 此选择器读 attacker.current_target_id (P1.5 后由 RtsUnitController 维护; P2.8 起建筑也写)。
+##
+## P2.8: attacker / target 都接受 RtsBattleActor (单位 + 建筑); RtsBasicAttackAction 后续按
+## get_atk()/get_def() 等 virtual accessor 取数值。
 class CurrentUnitTarget extends TargetSelector:
 	func select(ctx: ExecutionContext) -> Array[String]:
 		if ctx.ability_ref == null:
@@ -26,7 +29,7 @@ class CurrentUnitTarget extends TargetSelector:
 		var world := ctx.game_state_provider as RtsWorldGameplayInstance
 		if world == null:
 			return []
-		var attacker := world.get_actor(owner_id) as RtsUnitActor
+		var attacker := world.get_actor(owner_id) as RtsBattleActor
 		if attacker == null or attacker.is_dead():
 			return []
 		var target_id: String = attacker.current_target_id

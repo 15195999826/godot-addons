@@ -211,35 +211,59 @@ func tick_once() -> void:
 		if ability_set != null:
 			ability_set.tick(_tick_interval, get_logic_time())
 
-	# 2.5 P2.4: AutoTargetSystem 写 _cached_target_id (在 strategy.decide 之前)。
-	#     每 RESCAN_INTERVAL_TICKS (20) tick 全量重评; cache 失效单位本 tick 立即单独重扫。
+	# 2.5 P2.4 (P2.8 扩到建筑): AutoTargetSystem 写 _cached_target_id (在 strategy.decide 之前)。
+	#     每 RESCAN_INTERVAL_TICKS (20) tick 全量重评; cache 失效 actor 本 tick 立即单独重扫。
+	#     P2.8: 入参从 alive_units 改 alive_actors (含建筑) — 让单位可以选 building (e.g. 水晶塔)
+	#     当目标; 让 building (e.g. archer_tower) 也作为 mover 写自己的 cached_target_id。
 	if _auto_target_system == null:
 		_auto_target_system = RtsAutoTargetSystem.new()
-	var alive_units_for_target: Array = world.get_alive_units()
-	_auto_target_system.tick(world, alive_units_for_target)
+	var alive_actors_for_target: Array = world.get_alive_actors()
+	_auto_target_system.tick(world, alive_actors_for_target)
 
-	# 3. 单位行为推进: controller → cooldown → attack
-	#    Controller 内部跑 strategy.decide → reconcile current_activity → RtsActivity.advance。
-	#    strategy.decide 读 actor._cached_target_id (P2.4 后 AutoTargetSystem 已在 step 2.5 填好)。
-	#    Activity tick 仅维护 nav target / wants_to_attack — **不写 position** (P2.2 拆分);
-	#    实际移动留给 step 4 的 compute_velocity → steering → integrate 三段管线。
+	# 3. Actor 行为推进: 单位走 controller / activity, 建筑走攻击直读 cached_target_id。
+	#    Unit:    controller.tick → strategy.decide → reconcile current_activity → advance。
+	#             strategy.decide 读 actor._cached_target_id (AutoTargetSystem 在 step 2.5 填好)。
+	#             Activity tick 仅维护 nav target / wants_to_attack — **不写 position** (P2.2 拆分);
+	#             实际移动留给 step 4 的 compute_velocity → steering → integrate 三段管线。
+	#    Building (P2.8): 没 controller / activity, procedure 直接读 _cached_target_id, 范围内
+	#                     + cooldown ready → 触发 BasicAttackAction (e.g. archer_tower 防空)。
 	for actor in world.get_alive_actors():
-		if not (actor is RtsUnitActor):
-			continue
-		var unit := actor as RtsUnitActor
-		var controller := _unit_runtimes.get(unit.get_id(), null) as RtsUnitController
-		if controller != null:
-			controller.tick(dt_seconds, world)
+		if actor is RtsUnitActor:
+			var unit := actor as RtsUnitActor
+			var controller := _unit_runtimes.get(unit.get_id(), null) as RtsUnitController
+			if controller != null:
+				controller.tick(dt_seconds, world)
 
-		# P1.6 (修 M4): cooldown 走 ability_set.tag_container, ability_set.tick (步骤 2)
-		# 已自动 cleanup 过期 tag → can_attack 直接查 has_tag。
-		if controller != null and controller.wants_to_attack() and unit.can_attack():
-			var target_id: String = unit.current_target_id
-			if target_id != "":
-				var target := world.get_actor(target_id) as RtsUnitActor
-				if target != null and not target.is_dead():
-					_invoke_basic_attack(unit, world)
-					unit.start_attack_cooldown()
+			# P1.6 (修 M4): cooldown 走 ability_set.tag_container, ability_set.tick (步骤 2)
+			# 已自动 cleanup 过期 tag → can_attack 直接查 has_tag。
+			# P2.8: target 不再强制 cast 为 RtsUnitActor — 单位可以打 building (水晶塔等)。
+			if controller != null and controller.wants_to_attack() and unit.can_attack():
+				var target_id: String = unit.current_target_id
+				if target_id != "":
+					var target := world.get_actor(target_id) as RtsBattleActor
+					if target != null and not target.is_dead():
+						_invoke_basic_attack(unit, world)
+						unit.start_attack_cooldown()
+		elif actor is RtsBuildingActor:
+			# P2.8: 建筑攻击循环 — 没 strategy / activity, 直接读 _cached_target_id 决定是否 fire。
+			var building := actor as RtsBuildingActor
+			if building.target_layer_mask == MovementLayer.MASK_NONE:
+				continue  # 兵营 / 水晶塔 不参战
+			var cached_id: String = building._cached_target_id
+			if cached_id.is_empty():
+				continue
+			var target_b := world.get_actor(cached_id) as RtsBattleActor
+			if target_b == null or target_b.is_dead():
+				continue
+			var dist: float = building.position_2d.distance_to(target_b.position_2d)
+			# 与 RtsAttackActivity.RANGE_TOLERANCE = 1.05 对齐, 浮点 + 边界一致体验
+			if dist > building.get_attack_range() * 1.05:
+				continue
+			if not building.can_attack():
+				continue
+			building.current_target_id = cached_id  # CurrentUnitTarget selector 读此字段
+			_invoke_basic_attack(building, world)
+			building.start_attack_cooldown()
 
 	# 4. P2.2 移动管线: spatial_hash → compute_velocity → steering → integrate
 	#    替代 Phase 1 的"nav_agent.tick (compute+integrate 一体) + RtsMinimalPushOut.resolve"。
@@ -496,7 +520,10 @@ func _safe_get_ability_set(actor: RtsBattleActor) -> AbilitySet:
 
 ## P1.4: 包装 basic attack action 调用。给共享 action 喂 ExecutionContext + AbilityRef。
 ## ability_ref.owner_actor_id 让 RtsTargetSelectors.CurrentUnitTarget 拿到 attacker。
-func _invoke_basic_attack(attacker: RtsUnitActor, world: RtsWorldGameplayInstance) -> void:
+##
+## P2.8: 接受任意 RtsBattleActor (单位 / 建筑); 共享 action 内部按 attacker.get_atk() 等
+## virtual accessor 取数值, 不再强制 RtsUnitActor.attribute_set 路径。
+func _invoke_basic_attack(attacker: RtsBattleActor, world: RtsWorldGameplayInstance) -> void:
 	var ability_ref := AbilityRef.create(
 		"basic_attack_inst",
 		"basic_attack",

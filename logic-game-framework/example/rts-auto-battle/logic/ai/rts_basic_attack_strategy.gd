@@ -34,13 +34,14 @@ func decide(actor: RtsUnitActor, world: RtsWorldGameplayInstance) -> RtsActivity
 ## 读 actor._cached_target_id; 仍存活 → 返回; 否则 null。
 ##
 ## P2.4 不再做 fallback 全场扫描 — 那是 RtsAutoTargetSystem 的职责; 策略保持 pure 读。
+## P2.8: 返回类型放宽到 RtsBattleActor — 单位可以选 building 当目标 (AC8: 单位攻击水晶塔)。
 ## 边界 case: AutoTargetSystem 没运行过 (cache 一直空) → 单位永远 Idle, 但这种情况只在没接
 ## procedure 主循环的特殊测试里发生, 正式 procedure tick 顺序保证 cache 在 strategy 之前写好。
-func _resolve_cached_target(actor: RtsUnitActor, world: RtsWorldGameplayInstance) -> RtsUnitActor:
+func _resolve_cached_target(actor: RtsUnitActor, world: RtsWorldGameplayInstance) -> RtsBattleActor:
 	var cached_id: String = actor._cached_target_id
 	if cached_id.is_empty():
 		return null
-	var cached := world.get_actor(cached_id) as RtsUnitActor
+	var cached := world.get_actor(cached_id) as RtsBattleActor
 	if cached == null or cached.is_dead():
 		return null
 	return cached

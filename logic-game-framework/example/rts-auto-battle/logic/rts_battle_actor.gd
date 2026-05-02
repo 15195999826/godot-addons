@@ -48,6 +48,105 @@ var collision_profile: CollisionProfile = null
 var _is_dead: bool = false
 
 
+# ========== P2.8: 攻击 / 目标 共享字段(单位 + 建筑 都用) ==========
+
+## 当前正在打的目标 actor id; 空表示没目标。
+## P1.5 起 unit 的 RtsUnitController 维护; P2.8 起 building 的 procedure 攻击循环也写。
+##
+## TargetSelector (RtsTargetSelectors.CurrentUnitTarget) 读此字段定位攻击目标 — 故 attacker 必须
+## 在调 BasicAttackAction 之前把 cached target 写进 current_target_id。
+var current_target_id: String = ""
+
+## P2.8 — 攻击者武器的 layer mask: bit i = 1 表示能命中 movement_layer = i 的目标。
+## 详见 MovementLayer.MASK_* 与 RtsWeaponConfig。
+##
+## 默认 0 = 不攻击 (兵营 / 水晶塔 / 不持武器的 actor); 子类按 unit_class / building_kind 覆盖。
+var target_layer_mask: int = MovementLayer.MASK_NONE
+
+## P2.4 — 单位归类 tag, 供敌方 target_priorities 匹配 / debug 用。
+##
+## 默认 [] (无 tag, AutoTargetSystem 退化按距离选最近)。子类按 unit_class / building_kind 覆盖:
+##   - melee unit → ["melee", "ground"]
+##   - flying unit → ["flying", "air"]
+##   - barracks → ["building", "barracks"]
+##   - crystal_tower → ["building", "crystal_tower", "priority_target"]
+var unit_tags: Array[String] = []
+
+## P2.4 — 目标优先级表 [{tag: String, weight: float}, ...]; AutoTargetSystem 用此评分。
+##
+## 默认 [] = 仅按距离选最近 (Phase 1 行为兼容); 特定单位类型可在 actor 上 override。
+var target_priorities: Array[Dictionary] = []
+
+## P2.4 — AutoTargetSystem 写入的目标缓存 actor id (空=暂无目标)。
+## 每 RESCAN_INTERVAL_TICKS (20) tick 全量重算; 目标死亡当 tick 立即重算 (不等下个 scan)。
+##
+## P2.8: 单位 + 建筑 都用此字段。
+##   - 单位: RtsBasicAttackStrategy.decide 读, 决定 AttackActivity target_id
+##   - 建筑: procedure 攻击循环直接读 (建筑没 strategy / activity, 直接 attack 范围内目标)
+var _cached_target_id: String = ""
+
+
+# ========== P2.8: 攻击协议 (子类按需 override) ==========
+
+## 攻击力。子类按数据源 override:
+##   - RtsUnitActor → return attribute_set.atk
+##   - RtsBuildingActor → return atk_value (从 RtsBuildingConfig 注入的 plain float 字段)
+##
+## 默认 0 (基类不参战)。
+func get_atk() -> float:
+	return 0.0
+
+
+## 防御力。同上。
+func get_def() -> float:
+	return 0.0
+
+
+## 攻击距离 (像素, 平方比较)。同上。
+func get_attack_range() -> float:
+	return 0.0
+
+
+## 攻击频率 (次/秒, basic attack cooldown = 1 / attack_speed)。同上。
+func get_attack_speed() -> float:
+	return 0.0
+
+
+## 共享 cooldown tag id (与 P1.6 一致, 单位 + 建筑都用同一 tag string)。
+const ATTACK_COOLDOWN_TAG: String = "rts_attack_cooldown"
+
+
+## 是否冷却中 (查 ability_set.tag_container 上的 attack_cooldown tag)。
+##
+## 单位/建筑 共用此实现 — 都靠 ability_set.add_auto_duration_tag 计冷却时长。
+func is_attack_on_cooldown() -> bool:
+	if ability_set == null:
+		return false
+	return ability_set.has_tag(ATTACK_COOLDOWN_TAG)
+
+
+## 是否冷却完毕、可发起 basic attack (and not dead, and 持武器)。
+##
+## P2.8: 加 target_layer_mask != 0 — mask=0 的 actor (兵营 / 水晶塔) 不参战。
+func can_attack() -> bool:
+	if is_dead():
+		return false
+	if target_layer_mask == MovementLayer.MASK_NONE:
+		return false
+	return not is_attack_on_cooldown()
+
+
+## 启动 attack cooldown — 走 LGF tag-duration 机制。
+##
+## 单位/建筑 共用此实现; 时长 = 1000 / attack_speed (ms)。
+func start_attack_cooldown() -> void:
+	if ability_set == null:
+		return
+	var atk_speed: float = get_attack_speed()
+	var duration_ms: float = 1000.0 / atk_speed if atk_speed > 0.0 else 99999000.0
+	ability_set.add_auto_duration_tag(ATTACK_COOLDOWN_TAG, duration_ms)
+
+
 # ========== 队伍 ==========
 
 func set_team_id(p_team_id: int) -> void:

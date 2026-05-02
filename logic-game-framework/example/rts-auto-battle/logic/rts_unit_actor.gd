@@ -35,33 +35,15 @@ var unit_class: RtsUnitClassConfig.UnitClass
 ## 公共代码读 hp 走 get_attribute_set() 接口; 专属代码读 atk/def/move_speed 直接用此字段。
 var attribute_set: RtsUnitAttributeSet
 
-## 当前目标的 actor id; 空表示没目标(初始 / 目标已死)。
-## P1.5 后由 RtsUnitController 维护; 此字段保留作为单位状态的统一入口。
-var current_target_id: String = ""
-
-## P2.4 — 单位归类 tag (供敌方 target_priorities 匹配)。从 unit_class config 拷过来,
-## 调方可在 spawn 后 override (如 boss 加 ["elite"] tag)。
-var unit_tags: Array[String] = []
-
-## P2.4 — 目标优先级表 [{tag: String, weight: float}, ...]; AutoTargetSystem 用此评分。
-## 默认从 unit_class config 拷; smoke / 玩家命令可 override。
-var target_priorities: Array[Dictionary] = []
-
 ## P2.4 — 攻击姿态; 默认 AGGRESSIVE, smoke / 玩家命令可调。
+##
+## 注: 仅 RtsUnitActor 有 stance; RtsBuildingActor 始终按 target_layer_mask 主动接战, 没有
+## "HOLD_FIRE / DEFENSIVE" 的语义。
 var stance: int = Stance.AGGRESSIVE
 
-## P2.4 — AutoTargetSystem 写入的目标缓存 actor id (空=暂无目标)。
-## 每 RESCAN_INTERVAL_TICKS (20) tick 全量重算; 目标死亡当 tick 立即重算 (不等下个 scan)。
-##
-## RtsBasicAttackStrategy.decide 读此字段决定 AttackActivity 的 target_id。
-## 不要把 controller / activity 的 actor.current_target_id 与此混淆: current_target_id 是
-## "当前正在打的 target", _cached_target_id 是 "AutoTargetSystem 推荐的下一 target"。
-var _cached_target_id: String = ""
-
-## P1.6 (修 M4) 后, cooldown 走 ability_set.tag_container.add_auto_duration_tag, 不再用
-## 裸 float 字段。查询走 is_attack_on_cooldown() / can_attack(), 启动走 start_attack_cooldown()。
-## 时长在 ms 单位(与 LGF tag_container 内部 logic_time 对齐, hex 同 unit)。
-const ATTACK_COOLDOWN_TAG: String = "rts_attack_cooldown"
+# 注: P2.8 起 current_target_id / unit_tags / target_priorities / _cached_target_id / target_layer_mask
+# 已上推到 RtsBattleActor 基类 (单位 + 建筑共用), 此处不再重复声明。
+# Cooldown tag (ATTACK_COOLDOWN_TAG) 也在基类 — 单位/建筑共用 add_auto_duration_tag 计冷却。
 
 
 # ========== 初始化 ==========
@@ -90,6 +72,10 @@ func _init(p_unit_class: RtsUnitClassConfig.UnitClass) -> void:
 	unit_tags = stats.unit_tags.duplicate()
 	target_priorities = stats.target_priorities.duplicate(true)
 
+	# P2.8: layer + 武器命中 mask (默认 GROUND 层 + 能打 GROUND; flying 单位 stats 会覆盖到 AIR / MASK_GROUND)
+	movement_layer = stats.default_movement_layer
+	target_layer_mask = stats.target_layer_mask
+
 	ability_set = AbilitySet.new(get_id(), attribute_set)
 
 
@@ -99,30 +85,22 @@ func get_attribute_set() -> BaseGeneratedAttributeSet:
 	return attribute_set
 
 
-# ========== Cooldown 控制 (P1.6 走 LGF tag-duration) ==========
+# ========== P2.8 攻击协议 override (从 attribute_set 拿数值) ==========
 
-## 是否冷却中(查 ability_set.tag_container 上的 attack_cooldown tag)。
-func is_attack_on_cooldown() -> bool:
-	if ability_set == null:
-		return false
-	return ability_set.has_tag(ATTACK_COOLDOWN_TAG)
+func get_atk() -> float:
+	return attribute_set.atk if attribute_set != null else 0.0
 
 
-## 是否冷却完毕、可发起 basic attack。
-func can_attack() -> bool:
-	return not is_attack_on_cooldown() and not is_dead()
+func get_def() -> float:
+	return attribute_set.def if attribute_set != null else 0.0
 
 
-## 启动 attack cooldown — 走 LGF tag-duration 机制。
-##
-## duration 用 ms (与 LGF logic_time 同 unit, 见 BattleProcedure.get_logic_time);
-## attack_speed 是次/秒, 所以 cooldown_ms = 1000.0 / attack_speed。
-func start_attack_cooldown() -> void:
-	if ability_set == null:
-		return
-	var atk_speed: float = attribute_set.attack_speed
-	var duration_ms: float = 1000.0 / atk_speed if atk_speed > 0.0 else 99999000.0
-	ability_set.add_auto_duration_tag(ATTACK_COOLDOWN_TAG, duration_ms)
+func get_attack_range() -> float:
+	return attribute_set.attack_range if attribute_set != null else 0.0
+
+
+func get_attack_speed() -> float:
+	return attribute_set.attack_speed if attribute_set != null else 0.0
 
 
 # ========== 录像支持 ==========

@@ -46,6 +46,23 @@ var spawn_unit_stance: int = 2
 var _production_progress_ms: float = 0.0
 
 
+# ========== P2.8: 建筑武器字段 (供能攻击的塔) ==========
+
+## 攻击力 (建筑没 attribute_set 的 atk 字段, 直接挂 plain float; 由工厂从 BuildingConfig 注入)。
+##
+## 默认 0 = 不攻击 (兵营 / 水晶塔); archer_tower 在 P2.8 落地为 anti-air, atk > 0。
+var atk_value: float = 0.0
+
+## 防御力 (M1 范围内建筑不被实际计算 def 减伤, 但保留字段对齐)
+var def_value: float = 0.0
+
+## 攻击距离 (像素, 平方比较)
+var attack_range_value: float = 0.0
+
+## 攻击频率 (次/秒)
+var attack_speed_value: float = 0.0
+
+
 # ========== 初始化 ==========
 
 ## P2.5: 调方应通过 RtsBuildings.create_*() 工厂方法创建实例 — 工厂会:
@@ -73,6 +90,24 @@ func writes_to_pathing_map() -> bool:
 ## 强类型 attribute_set 暴露给基类视图 (check_death / 公共 hp 查询)。
 func get_attribute_set() -> BaseGeneratedAttributeSet:
 	return attribute_set
+
+
+# ========== P2.8 攻击协议 override (从 plain float 字段拿数值; building 无 attribute_set.atk) ==========
+
+func get_atk() -> float:
+	return atk_value
+
+
+func get_def() -> float:
+	return def_value
+
+
+func get_attack_range() -> float:
+	return attack_range_value
+
+
+func get_attack_speed() -> float:
+	return attack_speed_value
 
 
 ## 按 footprint_size 计算覆盖的 AABB cells, 中心对齐 position_2d。

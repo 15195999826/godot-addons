@@ -45,6 +45,26 @@ class StatBlock:
 	## 防御塔 50。这些数字仅 M1 占位, P3 经济系统会重做。
 	var cost: int = 0
 
+	# ========== P2.8: 武器字段 (供能攻击的塔) ==========
+	## 攻击力 (0 = 不攻击; 兵营 / 水晶塔 都 0; archer_tower = 防空 atk)
+	var atk: float = 0.0
+	## 防御力 (减伤公式中用; M1 范围内塔受击不走 def 减伤但保留字段对齐)
+	var def: float = 0.0
+	## 攻击距离 (像素)
+	var attack_range: float = 0.0
+	## 攻击频率 (次/秒)
+	var attack_speed: float = 0.0
+	## P2.8 — 武器命中 layer mask (bit i = 1 表示能命中 layer i 的目标)。
+	##   - barracks / crystal_tower: MASK_NONE (0) 不参战
+	##   - archer_tower: MASK_AIR (2) anti-air 防空塔
+	## 工厂从此字段写入 actor.target_layer_mask。
+	var target_layer_mask: int = MovementLayer.MASK_NONE
+	## P2.8 — 建筑归类 tag (供敌方 target_priorities 匹配 / debug)。
+	##   - barracks: ["building", "barracks"]
+	##   - archer_tower: ["building", "tower", "anti_air"]
+	##   - crystal_tower: ["building", "crystal_tower", "priority_target"]
+	var unit_tags: Array[String] = []
+
 
 const _CRYSTAL_TOWER_STATS := {
 	"name": "Crystal Tower",
@@ -55,6 +75,13 @@ const _CRYSTAL_TOWER_STATS := {
 	"production_period_ms": 0.0,
 	"spawn_unit_kind": -1,
 	"cost": 0,
+	# P2.8: 不参战 — 玩家保护对象, 没武器
+	"atk": 0.0,
+	"def": 0.0,
+	"attack_range": 0.0,
+	"attack_speed": 0.0,
+	"target_layer_mask": MovementLayer.MASK_NONE,
+	"unit_tags": ["building", "crystal_tower", "priority_target"],
 }
 
 const _BARRACKS_STATS := {
@@ -68,8 +95,20 @@ const _BARRACKS_STATS := {
 	# RtsUnitClassConfig.UnitClass.MELEE = 0
 	"spawn_unit_kind": 0,
 	"cost": 100,
+	# P2.8: 兵营不参战 — 只生产, 不打人
+	"atk": 0.0,
+	"def": 0.0,
+	"attack_range": 0.0,
+	"attack_speed": 0.0,
+	"target_layer_mask": MovementLayer.MASK_NONE,
+	"unit_tags": ["building", "barracks"],
 }
 
+## P2.8: archer_tower 升级为防空塔 (target_layer_mask = MASK_AIR, 只打飞行)。
+##   - atk 25 比 ranged unit (18) 高 — 塔单点输出强但不能移动
+##   - attack_range 140 比 ranged (120) 略远 — 塔需要先发优势, 让飞行单位被迫绕飞
+##   - attack_speed 0.7 略慢 — 塔单点强但开火节奏慢
+##   - target_layer_mask = MASK_AIR — 只打飞行, 地面单位即使来攻也不还手
 const _ARCHER_TOWER_STATS := {
 	"name": "Archer Tower",
 	"max_hp": 600.0,
@@ -79,6 +118,12 @@ const _ARCHER_TOWER_STATS := {
 	"production_period_ms": 0.0,
 	"spawn_unit_kind": -1,
 	"cost": 50,
+	"atk": 25.0,
+	"def": 0.0,
+	"attack_range": 140.0,
+	"attack_speed": 0.7,
+	"target_layer_mask": MovementLayer.MASK_AIR,
+	"unit_tags": ["building", "tower", "anti_air"],
 }
 
 
@@ -104,6 +149,17 @@ static func get_stats(building_kind: String) -> StatBlock:
 	block.production_period_ms = raw["production_period_ms"]
 	block.spawn_unit_kind = raw["spawn_unit_kind"]
 	block.cost = int(raw.get("cost", 0))
+	# P2.8: 武器 / mask / tags
+	block.atk = float(raw.get("atk", 0.0))
+	block.def = float(raw.get("def", 0.0))
+	block.attack_range = float(raw.get("attack_range", 0.0))
+	block.attack_speed = float(raw.get("attack_speed", 0.0))
+	block.target_layer_mask = int(raw.get("target_layer_mask", MovementLayer.MASK_NONE))
+	var raw_tags: Array = raw.get("unit_tags", []) as Array
+	var tags: Array[String] = []
+	for tag in raw_tags:
+		tags.append(str(tag))
+	block.unit_tags = tags
 	# 默认 AGGRESSIVE stance (RtsUnitActor.Stance.AGGRESSIVE = 2);
 	# 不直接引用枚举常量避开 cyclic dep, 数值形式传出, smoke / 调方按 RtsUnitActor.Stance 对照。
 	block.spawn_unit_stance = 2

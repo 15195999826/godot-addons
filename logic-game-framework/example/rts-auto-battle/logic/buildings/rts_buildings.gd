@@ -52,6 +52,16 @@ static func _create_from_kind(building_kind: String) -> RtsBuildingActor:
 	var cell_size: float = 32.0
 	actor.collision_radius = max(stats.footprint_size.x, stats.footprint_size.y) * cell_size * 0.5
 
+	# P2.8: 武器字段 (能攻击的塔) + tag / layer mask
+	actor.atk_value = stats.atk
+	actor.def_value = stats.def
+	actor.attack_range_value = stats.attack_range
+	actor.attack_speed_value = stats.attack_speed
+	actor.target_layer_mask = stats.target_layer_mask
+	actor.unit_tags = stats.unit_tags.duplicate()
+	# 建筑永远在 GROUND 层 (M1 范围内不存在飞行建筑)
+	actor.movement_layer = MovementLayer.Layer.GROUND
+
 	actor.attribute_set = RtsBuildingAttributeSet.new(actor.get_id())
 	# max_hp 必须先于 hp: cross-attr clamp(hp <= max_hp) 在 set_hp_base 时按当前 max_hp 截。
 	actor.attribute_set.set_max_hp_base(stats.max_hp)

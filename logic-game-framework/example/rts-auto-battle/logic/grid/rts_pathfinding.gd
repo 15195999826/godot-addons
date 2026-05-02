@@ -32,6 +32,11 @@ static func find_path(
 	if grid == null or grid.model == null:
 		return []
 
+	# P2.8: AIR 单位绕开 A* — grid.is_passable_for_layer(AIR) 永远 true, A* 跑出来都是直线邻 cell,
+	# 不如直接 direct_path 让飞行走斜对角到目标 (穿地面建筑 footprint)。也省 A* 调用开销。
+	if layer == MovementLayer.Layer.AIR:
+		return _direct_path(to_world)
+
 	var from_coord := grid.world_to_coord(from_world)
 	var to_coord := grid.world_to_coord(to_world)
 
