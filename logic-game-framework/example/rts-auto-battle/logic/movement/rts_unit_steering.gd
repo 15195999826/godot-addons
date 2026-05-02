@@ -133,7 +133,7 @@ static func apply(
 
 	# Cap sep_force magnitude — 避免 N 邻居叠加 + clamp 让后侧单位被完全反向推
 	var max_sep: float = move_speed * MAX_SEP_FRACTION
-	if sep_force.length() > max_sep:
+	if sep_force.length_squared() > max_sep * max_sep:
 		sep_force = sep_force.normalized() * max_sep
 
 	# Apply separation
@@ -145,7 +145,7 @@ static func apply(
 		combined = combined.rotated(DEFLECTION_ANGLE * sign_factor)
 
 	# Clamp magnitude to move_speed
-	if combined.length() > move_speed:
+	if combined.length_squared() > move_speed * move_speed:
 		combined = combined.normalized() * move_speed
 
 	unit.velocity = combined

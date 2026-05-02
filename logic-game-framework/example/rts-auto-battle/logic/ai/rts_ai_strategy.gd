@@ -20,35 +20,8 @@ class_name RtsAIStrategy
 
 ## AI 决策: 返回本 tick 的"建议 activity"。
 ## 子类必须覆盖。基类默认返回 IdleActivity (空 fallback)。
+##
+## P2.4 起目标选择由 RtsAutoTargetSystem 集中处理 (写 actor._cached_target_id),
+## 子类 decide 直接读 cache, 不再扫敌; 故基类不再提供 _get_enemies / _select_nearest helper。
 func decide(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> RtsActivity:
 	return RtsIdleActivity.new()
-
-
-# ============================================================
-# 通用工具方法 (子类共用)
-# ============================================================
-
-## 找出 actor 的所有存活敌方单位
-func _get_enemies(actor: RtsUnitActor, world: RtsWorldGameplayInstance) -> Array[RtsUnitActor]:
-	var enemies: Array[RtsUnitActor] = []
-	for other in world.get_alive_actors():
-		if not (other is RtsUnitActor):
-			continue
-		var unit_other := other as RtsUnitActor
-		if unit_other.get_team_id() != actor.get_team_id():
-			enemies.append(unit_other)
-	return enemies
-
-
-## 在候选列表中选最近的(按 position_2d 距离平方, 避免开根, 同序结果)
-func _select_nearest(actor: RtsUnitActor, candidates: Array[RtsUnitActor]) -> RtsUnitActor:
-	if candidates.is_empty():
-		return null
-	var best: RtsUnitActor = candidates[0]
-	var best_dsq: float = actor.position_2d.distance_squared_to(best.position_2d)
-	for i in range(1, candidates.size()):
-		var dsq: float = actor.position_2d.distance_squared_to(candidates[i].position_2d)
-		if dsq < best_dsq:
-			best_dsq = dsq
-			best = candidates[i]
-	return best

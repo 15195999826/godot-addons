@@ -44,6 +44,10 @@ const RESCAN_INTERVAL_TICKS: int = 20
 ## 副作用: weight=0 时 score = -dsq → 与 _select_nearest 同序 (P1.5 行为兼容)。
 const WEIGHT_SCALE: float = 100000.0
 
+## target_priorities 入口字典的字段名 (避免 stringly-typed 散落)。
+const PRIORITY_TAG_KEY: String = "tag"
+const PRIORITY_WEIGHT_KEY: String = "weight"
+
 
 # ========== 字段 ==========
 
@@ -121,7 +125,8 @@ func tick(world: RtsWorldGameplayInstance, actors: Array) -> void:
 		var t: int = actor.get_team_id()
 		if not by_team.has(t):
 			by_team[t] = ([] as Array[RtsBattleActor])
-		(by_team[t] as Array[RtsBattleActor]).append(actor)
+		var team_list: Array[RtsBattleActor] = by_team[t]
+		team_list.append(actor)
 
 	# 第 3 遍: 对 rescan_set 中每个 mover, 按 priority + distance 评分选最佳候选。
 	for mover in rescan_set:
@@ -135,7 +140,8 @@ func tick(world: RtsWorldGameplayInstance, actors: Array) -> void:
 func _rescore_mover(mover: RtsBattleActor, by_team: Dictionary) -> void:
 	var my_team: int = mover.get_team_id()
 	var atk_range: float = mover.get_attack_range()
-	var defensive_range_sq: float = pow(atk_range * RtsUnitActor.DEFENSIVE_ENGAGE_RANGE_FACTOR, 2)
+	var defensive_range: float = atk_range * RtsUnitActor.DEFENSIVE_ENGAGE_RANGE_FACTOR
+	var defensive_range_sq: float = defensive_range * defensive_range
 	var apply_defensive: bool = _is_defensive(mover)
 
 	var best: RtsBattleActor = null
@@ -173,12 +179,12 @@ static func _priority_weight(mover: RtsBattleActor, candidate: RtsBattleActor) -
 		return 0.0
 	var max_w: float = 0.0
 	for entry in mover.target_priorities:
-		var tag: String = str(entry.get("tag", ""))
+		var tag: String = str(entry.get(PRIORITY_TAG_KEY, ""))
 		if tag.is_empty():
 			continue
 		if not candidate.unit_tags.has(tag):
 			continue
-		var w: float = float(entry.get("weight", 0.0))
+		var w: float = float(entry.get(PRIORITY_WEIGHT_KEY, 0.0))
 		if w > max_w:
 			max_w = w
 	return max_w

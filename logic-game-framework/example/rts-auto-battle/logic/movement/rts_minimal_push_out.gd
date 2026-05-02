@@ -49,10 +49,12 @@ static func resolve(units: Array) -> void:
 				continue
 
 			var diff: Vector2 = a.position_2d - b.position_2d
-			var dist: float = diff.length()
+			var dist_sq: float = diff.length_squared()
 			var min_dist: float = a.collision_radius + b.collision_radius
-			if dist >= min_dist or dist < EPSILON:
+			# 早出避免 sqrt: 不重叠 (≥ min) 或完全重合 (< EPSILON) 都跳过
+			if dist_sq >= min_dist * min_dist or dist_sq < EPSILON * EPSILON:
 				continue
+			var dist: float = sqrt(dist_sq)
 			var push_dir: Vector2 = diff / dist
 			var overlap: float = min_dist - dist
 			a.position_2d += push_dir * (overlap * 0.5)
