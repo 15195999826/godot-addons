@@ -98,6 +98,14 @@ var _player_command_queue: RtsPlayerCommandQueue = null
 ## smoke / replay 可通过 get_player_commands_log() 读取。
 var _player_commands_log: Array[Dictionary] = []
 
+## M2.2 — team-level AI 对手实例; 默认空 (E10 决策 — procedure 不主动创建,
+## smoke / demo 显式调 attach_computer_player(team_id) 才入)。
+##
+## tick 末尾循环调 cp.think(world, _current_tick) — AI enqueue 的命令在下一 tick step 1.5 应用。
+##
+## E10 决策保旧 smoke 行为不破: 既有 12 项 smoke 不 attach AI → think 路径不进 → 数字 0 漂移。
+var _computer_players: Array[RtsComputerPlayer] = []
+
 
 # ========== 初始化 ==========
 
@@ -322,6 +330,14 @@ func tick_once() -> void:
 	# 6. 录像帧
 	record_current_frame_events()
 
+	# 6.5 M2.2 — AI 对手决策 (E10 — 默认空, attach_computer_player 显式入)
+	#     非决策 tick (current_tick % 30 != 0) think() 直接返; 决策 tick AI enqueue
+	#     PlaceBuildingCommand / MoveUnitsCommand → 下一 tick step 1.5 apply_due 应用。
+	#     放在录像帧之后 — think 不影响本 tick events; 放在胜负判定之前 — 让最后一 tick
+	#     AI 决策也被记录 (但战斗已结束的下一 tick 不会被 apply, 自然丢弃)。
+	for cp in _computer_players:
+		cp.think(world, _current_tick)
+
 	# 7. 胜负判定
 	if _current_tick >= MAX_TICKS:
 		_result = "timeout"
@@ -519,6 +535,21 @@ func add_team_resources(team_id: int, delta: Dictionary) -> void:
 		var current: int = int(bucket.get(key, 0))
 		bucket[str(key)] = current + amount
 	_team_resources[team_id] = bucket
+
+
+## M2.2 — 给指定 team_id 注册 AI 对手 (E10 显式 attach 时机决策)。
+##
+## smoke / demo 在 procedure 创建后调用 (procedure.attach_computer_player(0/1));
+## 不在 procedure._init 默认创建, 保留旧 smoke "右侧不发 command 就死站" 行为不变。
+##
+## 同 team_id 重复 attach 不去重 — 调方负责只调一次; 重复 attach 会让 think 一 tick 调多次。
+func attach_computer_player(p_team_id: int) -> void:
+	Log.assert_crash(
+		p_team_id == 0 or p_team_id == 1,
+		"RtsAutoBattleProcedure",
+		"attach_computer_player: invalid team_id %d" % p_team_id,
+	)
+	_computer_players.append(RtsComputerPlayer.new(p_team_id))
 
 
 ## P2.6 录像入口: 全 player_commands history (含 success / fail entries)。
