@@ -13,7 +13,7 @@
 ## P2.7 wire 顺序保持不变 (world / battle_map / director / world_view 的搭线; spawn → start → attach)。
 ##
 ## 关键不变量:
-##   - demo 不读 actor.position_2d (那是 director 内部投影)
+##   - demo 不读 actor 状态 (position / hp 等都是 director 内部投影; HUD 走 director.get_render_state)
 ##   - flying_scout 用 RtsAttackMoveActivity override_strategy=true 让它直奔目标 (不被 strategy 替换)
 ##   - 玩家命令通过 procedure.enqueue_player_command + tick_stamp = current_tick 即时应用
 extends Node
@@ -167,16 +167,18 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	# HUD 刷新 — 不读 actor, 仅查 procedure 资源 / 状态
-	# M2.1 Phase A — get_team_resources 返回 Dictionary[String, int]; HUD 拆 Gold / Wood 双显示
-	if _hud_label != null and _procedure != null:
+	# HUD 刷新 — 不读 actor 状态, 资源走 procedure / hp 走 director.get_render_state.
+	# M2.1 Phase A — get_team_resources 返回 Dictionary[String, int]; HUD 拆 Gold / Wood 双显示.
+	if _hud_label != null and _procedure != null and _director != null:
 		var resources: Dictionary = _procedure.get_team_resources(0)
 		var gold: int = int(resources.get("gold", 0))
 		var wood: int = int(resources.get("wood", 0))
+		var left_state: Dictionary = _director.get_render_state(_left_ct.get_id()) if _left_ct != null else {}
+		var right_state: Dictionary = _director.get_render_state(_right_ct.get_id()) if _right_ct != null else {}
+		var left_hp: float = float(left_state.get("hp", 0.0))
+		var right_hp: float = float(right_state.get("hp", 0.0))
 		_hud_label.text = "Gold: %d | Wood: %d  |  Click left mouse in left zone to place barracks (cost: gold 100)\nLeft CT HP: %.0f  Right CT HP: %.0f" % [
-			gold, wood,
-			_left_ct.get_attribute_set().get_raw().get_current_value("hp"),
-			_right_ct.get_attribute_set().get_raw().get_current_value("hp"),
+			gold, wood, left_hp, right_hp,
 		]
 
 
