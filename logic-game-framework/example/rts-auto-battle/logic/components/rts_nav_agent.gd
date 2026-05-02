@@ -28,6 +28,7 @@ extends Node2D
 
 ## 抵达 waypoint 的距离阈值(像素)
 const ARRIVAL_THRESHOLD: float = 4.0
+const ARRIVAL_THRESHOLD_SQ: float = ARRIVAL_THRESHOLD * ARRIVAL_THRESHOLD
 
 
 # ========== 字段 ==========
@@ -111,7 +112,7 @@ func is_arrived() -> bool:
 		return true
 	if _waypoint_index >= _path.size():
 		return true
-	if actor.position_2d.distance_to(_final_target) <= ARRIVAL_THRESHOLD:
+	if actor.position_2d.distance_squared_to(_final_target) <= ARRIVAL_THRESHOLD_SQ:
 		return true
 	return false
 
@@ -132,7 +133,7 @@ func has_target() -> bool:
 func is_at_final_target() -> bool:
 	if not _has_target or actor == null:
 		return true
-	return actor.position_2d.distance_to(_final_target) <= ARRIVAL_THRESHOLD
+	return actor.position_2d.distance_squared_to(_final_target) <= ARRIVAL_THRESHOLD_SQ
 
 
 ## 当前最终目标坐标 (像素); _has_target=false 时返回 Vector2.ZERO 占位 (调方应先查 has_target)。
@@ -188,13 +189,14 @@ func integrate(dt: float) -> void:
 	# Waypoint 抵达检查 + steering 推过头时的跳号
 	while _waypoint_index < _path.size():
 		var next_pt: Vector2 = _path[_waypoint_index]
-		if actor.position_2d.distance_to(next_pt) <= ARRIVAL_THRESHOLD:
+		var next_dist_sq: float = actor.position_2d.distance_squared_to(next_pt)
+		if next_dist_sq <= ARRIVAL_THRESHOLD_SQ:
 			_waypoint_index += 1
 			continue
 		# 跳过被 steering 推过头的 waypoint: 若下一 waypoint 比当前 waypoint 更近, 视为已通过
 		if _waypoint_index + 1 < _path.size():
 			var future_pt: Vector2 = _path[_waypoint_index + 1]
-			if actor.position_2d.distance_to(future_pt) < actor.position_2d.distance_to(next_pt):
+			if actor.position_2d.distance_squared_to(future_pt) < next_dist_sq:
 				_waypoint_index += 1
 				continue
 		break

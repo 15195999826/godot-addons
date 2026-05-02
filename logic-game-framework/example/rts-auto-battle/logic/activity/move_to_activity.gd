@@ -14,6 +14,7 @@ extends RtsActivity
 # ========== 常量 ==========
 
 const ARRIVAL_THRESHOLD: float = 4.0
+const ARRIVAL_THRESHOLD_SQ: float = ARRIVAL_THRESHOLD * ARRIVAL_THRESHOLD
 
 
 # ========== 字段 ==========
@@ -46,7 +47,7 @@ func on_first_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> voi
 func tick(actor: RtsUnitActor, _world: RtsWorldGameplayInstance, _dt: float) -> bool:
 	if actor == null or actor.is_dead():
 		return false
-	if actor.position_2d.distance_to(target_pos) <= ARRIVAL_THRESHOLD:
+	if actor.position_2d.distance_squared_to(target_pos) <= ARRIVAL_THRESHOLD_SQ:
 		return false
 	if _nav_agent == null:
 		return false
@@ -64,7 +65,7 @@ func is_equivalent_to(other: RtsActivity) -> bool:
 	if not (other is RtsMoveToActivity):
 		return false
 	var other_move := other as RtsMoveToActivity
-	return target_pos.distance_to(other_move.target_pos) < 1.0
+	return target_pos.distance_squared_to(other_move.target_pos) < 1.0
 
 
 func get_intent_label() -> String:

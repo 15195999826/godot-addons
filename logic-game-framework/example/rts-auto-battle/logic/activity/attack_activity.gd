@@ -73,9 +73,10 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 	if target == null or target.is_dead():
 		return false
 	actor.current_target_id = target_id
-	var dist: float = actor.position_2d.distance_to(target.position_2d)
+	var dist_sq: float = actor.position_2d.distance_squared_to(target.position_2d)
 	var atk_range: float = actor.attribute_set.attack_range
-	if dist <= atk_range * RANGE_TOLERANCE:
+	var atk_range_with_tol: float = atk_range * RANGE_TOLERANCE
+	if dist_sq <= atk_range_with_tol * atk_range_with_tol:
 		_wants_attack = true
 		if _nav_agent != null:
 			_nav_agent.clear_target()
@@ -118,6 +119,6 @@ func get_intent_label() -> String:
 func _should_refresh_nav(target_pos: Vector2) -> bool:
 	if _time_since_nav_refresh >= NAV_REFRESH_INTERVAL:
 		return true
-	if _last_set_target.distance_to(target_pos) > 2.0:
+	if _last_set_target.distance_squared_to(target_pos) > 4.0:  # 2² px 抖动阈值
 		return true
 	return false

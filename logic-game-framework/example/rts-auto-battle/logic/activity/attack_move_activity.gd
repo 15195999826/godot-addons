@@ -86,7 +86,7 @@ func is_equivalent_to(other: RtsActivity) -> bool:
 	if not (other is RtsAttackMoveActivity):
 		return false
 	var other_am := other as RtsAttackMoveActivity
-	return target_pos.distance_to(other_am.target_pos) < 1.0
+	return target_pos.distance_squared_to(other_am.target_pos) < 1.0
 
 
 func get_intent_label() -> String:
