@@ -27,6 +27,9 @@ const BARRACKS_OFFSET_X: float = 96.0
 ## E5 — barracks 建造 cap (1 个/team; ≥ 1 就不再放)
 const BARRACKS_CAP: int = 1
 
+## E6 — 触发 attack-move 的最小 alive non-worker unit 数量
+const ATTACK_DISPATCH_THRESHOLD: int = 3
+
 
 # ========== 字段 ==========
 
@@ -89,9 +92,35 @@ func _try_build_barracks(world: RtsWorldGameplayInstance, current_tick: int) -> 
 	))
 
 
-## E3 — Attack 决策: ≥3 non-worker unit 后 attack-move 一次。E.3 实现。
-func _try_attack(_world: RtsWorldGameplayInstance, _current_tick: int) -> void:
-	pass
+## E3 — Attack 决策: ≥3 non-worker unit 后 attack-move 一次 (only-once)。
+##
+## 流程:
+##   1. _attack_dispatched == true → return (E6 cache, M2.2 不做反复跟随)
+##   2. 收集己方 alive non-worker RtsUnitActor; 数量 < ATTACK_DISPATCH_THRESHOLD → return
+##   3. 找敌方 (1 - team_id) ct.position_2d → 不存在 → return
+##   4. enqueue MoveUnitsCommand(unit_ids = all non-worker, target = enemy_ct.position)
+##   5. 设 _attack_dispatched = true
+##
+## 注: 不传 attack_move=true (RtsMoveUnitsCommand 没此字段); 走纯 RtsMoveToActivity, unit
+## 走到敌方 ct 后 controller._player_command_active 自然清零, RtsBasicAttackStrategy 接管,
+## AutoTargetSystem 写 _cached_target_id → unit 在 ct 范围内即 attack ct。
+func _try_attack(world: RtsWorldGameplayInstance, current_tick: int) -> void:
+	if _attack_dispatched:
+		return
+	var procedure := world.procedure
+	if procedure == null:
+		return
+	var dispatch_unit_ids: Array[String] = _collect_team_non_worker_unit_ids(world)
+	if dispatch_unit_ids.size() < ATTACK_DISPATCH_THRESHOLD:
+		return
+	var enemy_team_id: int = 1 - team_id
+	var enemy_ct_pos: Vector2 = _find_team_ct_position_for(world, procedure, enemy_team_id)
+	if enemy_ct_pos == Vector2.INF:
+		return
+	procedure.enqueue_player_command(RtsMoveUnitsCommand.new(
+		current_tick, team_id, dispatch_unit_ids, enemy_ct_pos,
+	))
+	_attack_dispatched = true
 
 
 # ========== 内部 helpers ==========
@@ -122,7 +151,12 @@ func _team_can_afford(procedure: RtsAutoBattleProcedure, cost: Dictionary) -> bo
 
 ## 找己方 ct.position_2d; 没 ct (team_config 没绑 / actor 已死 / world 没此 actor) → Vector2.INF。
 func _find_team_ct_position(world: RtsWorldGameplayInstance, procedure: RtsAutoBattleProcedure) -> Vector2:
-	var cfg: RtsTeamConfig = procedure.get_team_config(team_id)
+	return _find_team_ct_position_for(world, procedure, team_id)
+
+
+## 找指定 team 的 ct.position_2d (Build 决策查己方, Attack 决策查敌方); 同上 INF 语义。
+func _find_team_ct_position_for(world: RtsWorldGameplayInstance, procedure: RtsAutoBattleProcedure, p_team_id: int) -> Vector2:
+	var cfg: RtsTeamConfig = procedure.get_team_config(p_team_id)
 	if cfg == null or not cfg.has_crystal_tower():
 		return Vector2.INF
 	var ct: Actor = world.get_actor(cfg.crystal_tower_id)
@@ -132,3 +166,15 @@ func _find_team_ct_position(world: RtsWorldGameplayInstance, procedure: RtsAutoB
 	if ct_actor == null or ct_actor.is_dead():
 		return Vector2.INF
 	return ct_actor.position_2d
+
+
+## 收集己方 alive non-worker RtsUnitActor 的 actor_id (E6 — 不含 worker; spawn 顺序自然 stable)。
+func _collect_team_non_worker_unit_ids(world: RtsWorldGameplayInstance) -> Array[String]:
+	var ids: Array[String] = []
+	for unit in world.get_alive_units():
+		if unit.get_team_id() != team_id:
+			continue
+		if unit.unit_class == RtsUnitClassConfig.UnitClass.WORKER:
+			continue
+		ids.append(unit.get_id())
+	return ids
