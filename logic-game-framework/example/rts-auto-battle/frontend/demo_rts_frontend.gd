@@ -1,8 +1,13 @@
-## RtsFrontendDemo - 经济闭环 RTS demo (M2.1 Phase D D19)
+## RtsFrontendDemo - 经济闭环 + AI vs AI RTS demo (M2.2 — AI 对手 落地)
 ##
 ## 编辑器 F6 运行: 双方各 5 worker + 1 crystal_tower + 2 gold node + 2 wood node;
-## 玩家点左键在左方 build_zone 内放置 barracks (cost gold 80 + wood 50; 起手只够 1 个);
-## barracks 周期生产 melee 朝对方 crystal_tower 进军; 任一 ct 被毁判胜负。
+## 双方都 attach RtsComputerPlayer (E9 — demo F6 启用方式: AI vs AI); 各自 worker 自动
+## harvest → 攒 80g + 50w → AI 在 ct 偏移点 (E4) 放 barracks → barracks 周期生产 melee →
+## ≥3 melee 后 attack-move 攻敌方 ct (only-once); 任一 ct 被毁判胜负。
+##
+## 玩家鼠标左键 click 仍可在左方 build_zone 内 enqueue PlaceBuildingCommand barracks
+## (M2.2 不做 override AI 模式 — 双 barracks cap=1 玩家命令会被 AI 命令竞争; 通常 AI 在
+## tick 30 抢先放下, 玩家命令失败 reason=cells_occupied / 资源不足 等)。
 ##
 ## Phase D D19 改动 (相比 P2.8 城堡战争 demo):
 ##   - 删除起手 archer_tower / 4 ground / 1 flying_scout (Phase D 主题切到经济闭环, 不验防空 / 4v4)
@@ -162,9 +167,16 @@ func _ready() -> void:
 
 	# 6. Director attach (procedure 已存在, 接管 event_sink + broadcast 起手 state)
 	_director.attach(_world, _procedure)
+
+	# 7. M2.2 — 双方都 attach AI (E9 — demo F6 启用方式: AI vs AI)
+	#    procedure 默认不创建 AI (E10), 由 demo 显式 attach; 玩家鼠标 click 仍可 enqueue
+	#    PlaceBuildingCommand (左方 build_zone 内), 不强制 override AI 决策 (M2.2 不做 override 模式)。
+	_procedure.attach_computer_player(0)
+	_procedure.attach_computer_player(1)
+
 	_started = true
 
-	# 7. HUD 简易 Label (resources / 操作提示)
+	# 8. HUD 简易 Label (resources / 操作提示)
 	_setup_hud()
 
 
