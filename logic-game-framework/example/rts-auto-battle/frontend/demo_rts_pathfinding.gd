@@ -33,7 +33,9 @@ const TICK_INTERVAL_MS: float = 50.0
 const RNG_SEED: int = 0  # 0 = 随机 (每次 F6 不同 RNG)
 const MAP_SIZE: Vector2 = Vector2(600.0, 500.0)
 const SINGLE_CLICK_THRESHOLD: float = 5.0  # 拖距 < 此值视为单击
+const SINGLE_CLICK_THRESHOLD_SQ: float = SINGLE_CLICK_THRESHOLD * SINGLE_CLICK_THRESHOLD
 const SINGLE_CLICK_PICK_RADIUS: float = 24.0  # 单击查找最近 unit 半径
+const SINGLE_CLICK_PICK_RADIUS_SQ: float = SINGLE_CLICK_PICK_RADIUS * SINGLE_CLICK_PICK_RADIUS
 
 # 8 个 team 0 melee 起始 (左下角散布)
 const TEAM0_START_POSITIONS: Array[Vector2] = [
@@ -182,8 +184,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _drag_overlay != null:
 				_drag_overlay.visible = false
 			var release_pos: Vector2 = mb.position
-			var drag_dist: float = release_pos.distance_to(_drag_start)
-			if drag_dist < SINGLE_CLICK_THRESHOLD:
+			var drag_dist_sq: float = release_pos.distance_squared_to(_drag_start)
+			if drag_dist_sq < SINGLE_CLICK_THRESHOLD_SQ:
 				_handle_single_click(release_pos)
 			else:
 				_handle_rect_select(_drag_start, release_pos)
@@ -199,14 +201,14 @@ func _unhandled_input(event: InputEvent) -> void:
 func _handle_single_click(pos: Vector2) -> void:
 	# 找最近 team 0 alive unit (within SINGLE_CLICK_PICK_RADIUS); 找不到 → 清选
 	var best_id: String = ""
-	var best_d: float = SINGLE_CLICK_PICK_RADIUS
+	var best_d_sq: float = SINGLE_CLICK_PICK_RADIUS_SQ
 	for uid in _team0_unit_ids:
 		var actor := _world.get_actor(uid) as RtsUnitActor
 		if actor == null or actor.is_dead():
 			continue
-		var d: float = actor.position_2d.distance_to(pos)
-		if d <= best_d:
-			best_d = d
+		var d_sq: float = actor.position_2d.distance_squared_to(pos)
+		if d_sq <= best_d_sq:
+			best_d_sq = d_sq
 			best_id = uid
 	_set_selection([best_id] if best_id != "" else [])
 
