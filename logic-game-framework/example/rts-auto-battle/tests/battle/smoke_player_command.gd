@@ -18,10 +18,11 @@
 ##
 ## 设计:
 ##   - 自建轻量 Node2D host + RtsBattleGrid (不带障碍, 让 placement 自由)
-##   - 左方 team_config: build_zone = Rect2(50, 50, 400, 200), starting_resources={"gold": 200, "wood": 0}
+##   - 左方 team_config: build_zone = Rect2(50, 50, 400, 200), starting_resources={"gold": 100, "wood": 100}
 ##   - 右方 team_config: 默认 (无 build_zone 限制); 给右方 1 sentinel unit 让 fallback team-wipeout 不立刻 right_lost
 ##
-## M2.1 Phase A — STARTING_RESOURCES / BARRACKS_COST 改 Dictionary[String, int] (gold + wood)。
+## M2.1 Phase D — STARTING_RESOURCES 跟 D17 finalized 对齐 ({"gold": 100, "wood": 100});
+## BARRACKS_COST 跟 D17 cost 配方对齐 ({"gold": 80, "wood": 50})。
 ## 多资源 fail case (gold 不足 → reason=not_enough_gold) 由 phase-a §A.5 §可选 case 覆盖。
 ##   - 双方都有占位 actor + 无 controller → 都 idle 不动, 战斗在 PLACE_TICK 之前不会自然结束
 extends Node
@@ -34,9 +35,10 @@ const MAP_WIDTH: float = 500.0
 const MAP_HEIGHT: float = 500.0
 
 const PLACE_TICK: int = 30
-const STARTING_GOLD: int = 200
-const STARTING_WOOD: int = 0
-const BARRACKS_COST_GOLD: int = 100  # 与 RtsBuildingConfig._BARRACKS_STATS.cost.gold 同步
+const STARTING_GOLD: int = 100
+const STARTING_WOOD: int = 100
+const BARRACKS_COST_GOLD: int = 80   # 与 RtsBuildingConfig._BARRACKS_STATS.cost.gold 同步 (Phase D)
+const BARRACKS_COST_WOOD: int = 50   # 与 RtsBuildingConfig._BARRACKS_STATS.cost.wood 同步 (Phase D)
 
 const PLACE_POS_OK: Vector2 = Vector2(150.0, 200.0)
 const PLACE_POS_OUT_OF_ZONE: Vector2 = Vector2(50.0, 400.0)  # y=400 在 build_zone (50, 50, 400, 200) 之外
@@ -160,14 +162,15 @@ func _ready() -> void:
 		_fail("entry2 expected out_of_build_zone, got %s" % result2.get("reason", ""))
 		return
 
-	# Resources: 仅扣一次 cost (entry0 成功); M2.1 Phase A 多资源 dict 比较
+	# Resources: 仅扣一次 cost (entry0 成功); Phase D barracks cost 80g + 50w → 起手 100/100 → 剩 20/50
 	var remaining: Dictionary = _procedure.get_team_resources(0)
 	var expected_gold: int = STARTING_GOLD - BARRACKS_COST_GOLD
+	var expected_wood: int = STARTING_WOOD - BARRACKS_COST_WOOD
 	var actual_gold: int = int(remaining.get("gold", 0))
 	var actual_wood: int = int(remaining.get("wood", 0))
-	if actual_gold != expected_gold or actual_wood != STARTING_WOOD:
+	if actual_gold != expected_gold or actual_wood != expected_wood:
 		_fail("expected gold=%d wood=%d after 1 placement, got gold=%d wood=%d" % [
-			expected_gold, STARTING_WOOD, actual_gold, actual_wood,
+			expected_gold, expected_wood, actual_gold, actual_wood,
 		])
 		return
 

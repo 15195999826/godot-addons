@@ -2,7 +2,7 @@
 ##
 ## 验证要点 (玩家命令 → placement → production 完整链路):
 ##   1. tick 30 玩家命令应用成功 → left 阵营 barracks 出现
-##   2. 资源扣减: left team_resources = 200 - 100 = 100
+##   2. 资源扣减: left team_resources = 100 - 80 = 20 gold (Phase D barracks cost 80g+50w; 起手 100g+100w)
 ##   3. 后续 tick 内 production_system 累积 progress, 满周期触发 spawner 创建 melee
 ##   4. 30s 后 left 阵营 spawned 单位 ≥ 3 (placement @ tick 30 后 570 ticks ≈ 28.5s @ 4s 周期 = 7 spawn 理论, 阈值 ≥ 3 留 buffer)
 ##   5. 至少 1 个 spawn 单位朝东 ≥ 50 px (验证 override_strategy=true 让 SpawnLane 不被 strategy 替换)
@@ -17,8 +17,8 @@
 ##
 ## 设计:
 ##   - 自建 host + grid (无障碍)
-##   - 左方 team_config: build_zone (50, 50) ~ (350, 350), starting_resources={"gold": 200, "wood": 0}
-##   - 右方 team_config: 默认 (无 build_zone, resources={"gold": 0, "wood": 0})
+##   - 左方 team_config: build_zone (50, 50) ~ (350, 350), starting_resources={"gold": 100, "wood": 100} (Phase D D17)
+##   - 右方 team_config: 默认 (无 build_zone, resources={})
 ##   - 起手放双方 crystal_tower (各 hp=2000, 永远不死) — 不让任何一方 fallback 全灭
 ##   - 玩家命令 tick_stamp=30: PlaceBuildingCommand 兵营 @ (100, 230)
 ##   - 跑 600 ticks (30s @ 50ms)
@@ -29,9 +29,9 @@ const TICK_INTERVAL_MS: float = 50.0
 const MAX_SECONDS: float = 30.0
 const RNG_SEED: int = 12345
 
-const STARTING_GOLD: int = 200
-const STARTING_WOOD: int = 0
-const BARRACKS_COST_GOLD: int = 100
+const STARTING_GOLD: int = 100   # Phase D D17 finalized
+const STARTING_WOOD: int = 100   # Phase D D17 finalized
+const BARRACKS_COST_GOLD: int = 80  # Phase D barracks cost
 
 const PLACE_TICK: int = 30
 const PLACE_POS: Vector2 = Vector2(100.0, 230.0)

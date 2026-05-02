@@ -47,7 +47,8 @@ class StatBlock:
 	## M2.1 Phase A — 建造资源消耗 (PlaceBuildingCommand 扣减; team 任一资源不够 → 命令失败)。
 	## key = 资源种类 ("gold" / "wood" — RtsTeamConfig 同口径); value = 需求量。
 	## 缺 key / value=0 视为不消耗该资源。crystal_tower 起手 {} (不可建造来源 = smoke / 调方);
-	## 兵营 {"gold": 100}; 防御塔 {"gold": 50}。Phase D 会重平衡为多资源 trade-off。
+	## Phase D finalized: barracks {"gold": 80, "wood": 50} (gold-rich 偏 melee 推 ct);
+	## archer_tower {"gold": 60, "wood": 100} (wood-rich 偏防空)。
 	var cost: Dictionary[String, int] = {}
 
 	# ========== P2.8: 武器字段 (供能攻击的塔) ==========
@@ -102,7 +103,8 @@ const _BARRACKS_STATS := {
 	"production_period_ms": 4000.0,
 	# RtsUnitClassConfig.UnitClass.MELEE = 0
 	"spawn_unit_kind": 0,
-	"cost": {"gold": 100},
+	# Phase D finalized: gold-rich 偏 barracks 推 melee 直 ct
+	"cost": {"gold": 80, "wood": 50},
 	# P2.8: 兵营不参战 — 只生产, 不打人
 	"atk": 0.0,
 	"def": 0.0,
@@ -125,7 +127,8 @@ const _ARCHER_TOWER_STATS := {
 	"is_crystal_tower": false,
 	"production_period_ms": 0.0,
 	"spawn_unit_kind": -1,
-	"cost": {"gold": 50},
+	# Phase D finalized: wood-rich 偏防空 (anti-air)
+	"cost": {"gold": 60, "wood": 100},
 	"atk": 25.0,
 	"def": 0.0,
 	"attack_range": 140.0,
