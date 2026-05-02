@@ -18,11 +18,17 @@ static var _basic_attack: RtsAIStrategy = RtsBasicAttackStrategy.new()
 ## P1.5 melee / ranged 都走 basic_attack — 行为差异在数值上(attack_range / move_speed),
 ## 不在策略上。Phase 2 P2.4 AutoTargetSystem + Activity 后可能拆出 ranged-specific 策略
 ## (如 ranged 持距离 / 撤退微操)。
+##
+## M2.1 Phase B: WORKER 也复用 basic_attack — worker target_layer_mask=NONE 让
+## AutoTargetSystem 在 mover 阶段 skip, 永不写 _cached_target_id; basic_attack.decide 因
+## cached 空返 IdleActivity → worker 自然 idle。Phase C 启动 RtsHarvestStrategy 替代此分支。
 static func get_strategy(unit_class: RtsUnitClassConfig.UnitClass) -> RtsAIStrategy:
 	match unit_class:
 		RtsUnitClassConfig.UnitClass.MELEE:
 			return _basic_attack
 		RtsUnitClassConfig.UnitClass.RANGED:
+			return _basic_attack
+		RtsUnitClassConfig.UnitClass.WORKER:
 			return _basic_attack
 		_:
 			return _basic_attack

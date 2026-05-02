@@ -7,7 +7,12 @@ extends RefCounted
 
 ## P2.8: FLYING_SCOUT 起开始接 AIR 层 (movement_layer = AIR + 自身 target_layer_mask = GROUND 攻地;
 ## 防空塔等单位 target_layer_mask = AIR 命中飞行)。
-enum UnitClass { MELEE, RANGED, FLYING_SCOUT }
+##
+## M2.1 Phase B: WORKER (=3) 加在末尾 (不挤掉 0/1/2); 不参战 — atk=0, target_layer_mask=NONE,
+## AutoTargetSystem 永不写 cached_target_id, decide 因 cached 空返 IdleActivity 自然 idle。
+## 新字段 carry_capacity / harvest_speed 仅 WORKER 用 (其它兵种默认 0); Phase C HarvestActivity
+## 实际消费这两个字段。
+enum UnitClass { MELEE, RANGED, FLYING_SCOUT, WORKER }
 
 
 ## 单兵种数值条目
@@ -45,8 +50,16 @@ class StatBlock:
 	##   - melee 默认 MASK_GROUND (近战只打地面)
 	##   - ranged 默认 MASK_BOTH (弓箭手兼顾防空)
 	##   - flying_scout 默认 MASK_GROUND (空对地; 不互打飞行 — 简化, M1 仅 1 种 AIR 单位)
-	## 0 = 不能攻击 (worker / non-combatant; M1 范围暂无)
+	##   - worker MASK_NONE (M2.1 Phase B 起 — 不参战, 让 AutoTargetSystem skip mover 重扫)
+	## 0 = 不能攻击
 	var target_layer_mask: int = MovementLayer.MASK_GROUND
+	## M2.1 Phase B — worker 单次背负的资源量 (worker harvest 满 carry_capacity → 切 ReturnAndDrop)。
+	## 默认 0 表 melee/ranged/flying_scout 不背资源; WORKER stats 设 10 (Phase D 可调)。
+	## Phase B 仅声明字段, Phase C HarvestActivity 实际消费。
+	var carry_capacity: int = 0
+	## M2.1 Phase B — worker 每 tick 累积的 harvest_progress 量 (满 carry_capacity 完成一次背负)。
+	## 默认 0; WORKER stats 设 5.0 (Phase D 可调)。Phase B 仅声明, Phase C 消费。
+	var harvest_speed: float = 0.0
 
 
 const _MELEE_STATS := {
@@ -109,6 +122,36 @@ const _FLYING_SCOUT_STATS := {
 	"target_layer_mask": MovementLayer.MASK_GROUND,
 }
 
+## M2.1 Phase B: WORKER — 经济兵种, 不参战, 仅 idle 占位 (Phase C HarvestActivity 接 harvest 行为)。
+##
+## 数值取舍:
+##   - max_hp 50 (低于 melee 200, 高于 0 让 worker 被 AOE 仍能短时存活)
+##   - atk / attack_range / attack_speed 全 0 (不参战)
+##   - target_layer_mask = MASK_NONE — AutoTargetSystem 在 mover 阶段 skip, 不写 cached_target_id;
+##     RtsBasicAttackStrategy.decide 读 cached 空 → 返 IdleActivity → worker 自然 idle
+##   - move_speed 80 与 melee 同 (Phase C 视情况调慢一点让经济节奏更明显)
+##   - collision_radius 12 与 melee 同 (5 worker idle 互避不挤压)
+##   - default_movement_layer = GROUND (worker 不能飞)
+##   - unit_tags ["worker"] (Phase C HarvestStrategy 通过此 tag 识别 worker 群)
+##   - 新字段 carry_capacity=10 / harvest_speed=5.0 占位 Phase C
+const _WORKER_STATS := {
+	"name": "Worker",
+	"max_hp": 50.0,
+	"hp": 50.0,
+	"atk": 0.0,
+	"def": 0.0,
+	"move_speed": 80.0,
+	"attack_speed": 0.0,
+	"attack_range": 0.0,
+	"collision_radius": 12.0,
+	"unit_tags": ["worker"],
+	"target_priorities": [],
+	"default_movement_layer": MovementLayer.Layer.GROUND,
+	"target_layer_mask": MovementLayer.MASK_NONE,
+	"carry_capacity": 10,
+	"harvest_speed": 5.0,
+}
+
 ## melee_attack_range 阈值, 用于 AC3 兵种行为断言:
 ##   - 所有 MELEE attack 距离 <= MELEE_RANGE_THRESHOLD * 1.05
 ##   - 所有 RANGED unit 至少 1 次 attack 距离 > MELEE_RANGE_THRESHOLD
@@ -125,6 +168,8 @@ static func get_stats(unit_class: UnitClass) -> StatBlock:
 			raw = _RANGED_STATS
 		UnitClass.FLYING_SCOUT:
 			raw = _FLYING_SCOUT_STATS
+		UnitClass.WORKER:
+			raw = _WORKER_STATS
 		_:
 			Log.assert_crash(false, "RtsUnitClassConfig", "Unknown UnitClass: %d" % unit_class)
 	var block := StatBlock.new()
@@ -151,6 +196,9 @@ static func get_stats(unit_class: UnitClass) -> StatBlock:
 	# P2.8: layer / mask
 	block.default_movement_layer = int(raw.get("default_movement_layer", MovementLayer.Layer.GROUND))
 	block.target_layer_mask = int(raw.get("target_layer_mask", MovementLayer.MASK_GROUND))
+	# M2.1 Phase B: worker 经济字段 (其它兵种 raw 不含 → 默认 0 / 0.0)
+	block.carry_capacity = int(raw.get("carry_capacity", 0))
+	block.harvest_speed = float(raw.get("harvest_speed", 0.0))
 	return block
 
 
@@ -162,4 +210,6 @@ static func to_string_name(unit_class: UnitClass) -> String:
 			return "ranged"
 		UnitClass.FLYING_SCOUT:
 			return "flying_scout"
+		UnitClass.WORKER:
+			return "worker"
 	return "unknown"
