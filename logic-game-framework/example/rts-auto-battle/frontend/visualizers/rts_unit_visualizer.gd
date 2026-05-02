@@ -14,7 +14,7 @@
 ##   - 不读 actor — actor 字段全部通过 update_render_state 由 director push 进来
 ##   - 死亡触发由 on_died() 入口 (可选; update_render_state 的 is_dead 也会更新 hp 显示)
 class_name RtsUnitVisualizer
-extends Node2D
+extends RtsBaseVisualizer
 
 
 # ========== 视觉常量 ==========
@@ -24,11 +24,8 @@ const POLYGON_SEGMENTS: int = 8
 const HP_LABEL_OFFSET: Vector2 = Vector2(-20.0, -RADIUS - 18.0)
 
 
-# ========== 字段 ==========
-
-var actor_id: String = ""
-var _team_id: int = -1
-var _director_ref: WeakRef = null
+# ========== 单位独有字段 ==========
+# (基类 hoist: actor_id / _team_id / _director_ref / _curr_pos / _hp / _max_hp / _is_dead)
 
 ## P2.8 — 渲染高度 (AIR 单位画在 8px 上空); 由 bind() 注入, 战斗期间不变。
 ## Godot 2D 坐标 y 向下增加, 故 y 偏移用 -render_height 实现"上抬"。
@@ -42,12 +39,8 @@ var _hp_label: Label = null
 var _selection_ring: _SelectionRing = null
 var _is_selected: bool = false
 
-# Push 模式: WorldView 经 director signal 写到这些字段
+## 单位独有: 上 tick 位置 (用于 _process 内插值). 建筑不需要 (不移动).
 var _prev_pos: Vector2 = Vector2.ZERO
-var _curr_pos: Vector2 = Vector2.ZERO
-var _hp: float = 0.0
-var _max_hp: float = 0.0
-var _is_dead: bool = false
 
 
 # ========== 生命周期 ==========
@@ -89,20 +82,13 @@ func _process(_delta: float) -> void:
 ## director 用于 _process 内拿 alpha (持 weakref 防循环).
 ## p_render_height (P2.8): 飞行单位 8px, 地面单位 0; 创建期 hydrate 自 actor.get_render_height()。
 func bind(p_actor_id: String, p_team_id: int, p_director: RtsBattleDirector, p_render_height: float = 0.0) -> void:
-	actor_id = p_actor_id
-	_team_id = p_team_id
+	_bind_base(p_actor_id, p_team_id, p_director)
 	_render_height = p_render_height
-	if p_director != null:
-		_director_ref = weakref(p_director)
-	# 起手从 director 拉一次初始 render state (visualizer 接信号前 director 可能没 emit 过)
+	# 单位独有: prev_pos 起手 hydrate (基类 _bind_base 只填 _curr_pos)
 	if p_director != null:
 		var state: Dictionary = p_director.get_render_state(p_actor_id)
 		if not state.is_empty():
 			_prev_pos = state.get("prev_pos", Vector2.ZERO)
-			_curr_pos = state.get("curr_pos", Vector2.ZERO)
-			_hp = state.get("hp", 0.0)
-			_max_hp = state.get("max_hp", 0.0)
-			_is_dead = state.get("is_dead", false)
 			position = _curr_pos - Vector2(0.0, _render_height)
 	# 颜色 / label 在 _ready 之后再 update (此时 _polygon / _hp_label 可能还为 null)
 	if _polygon != null:
@@ -156,17 +142,10 @@ func on_died() -> void:
 
 
 # ========== 查询 (smoke / debug 用; 不在 sim 主路径) ==========
+# (基类 hoist: get_render_hp / get_render_is_dead)
 
 func get_render_position() -> Vector2:
 	return position
-
-
-func get_render_hp() -> float:
-	return _hp
-
-
-func get_render_is_dead() -> bool:
-	return _is_dead
 
 
 # ========== 内部 ==========
@@ -188,12 +167,6 @@ func _update_hp_label() -> void:
 	else:
 		_hp_label.text = "%.0f" % _hp
 		_hp_label.modulate = Color.WHITE
-
-
-func _get_director() -> RtsBattleDirector:
-	if _director_ref == null:
-		return null
-	return _director_ref.get_ref() as RtsBattleDirector
 
 
 # ========== _SelectionRing ==========

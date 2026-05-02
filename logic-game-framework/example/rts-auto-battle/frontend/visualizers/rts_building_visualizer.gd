@@ -10,7 +10,7 @@
 ##
 ## 与 unit visualizer 一样不持 actor 引用 — 通过 update_render_state push 模式更新.
 class_name RtsBuildingVisualizer
-extends Node2D
+extends RtsBaseVisualizer
 
 
 # ========== 视觉常量 ==========
@@ -21,18 +21,11 @@ const HP_BAR_OFFSET_Y: float = -6.0  # 在 footprint 上方 6 px
 const CRYSTAL_BORDER_COLOR := Color(1.0, 0.95, 0.6, 1.0)  # 金色边框
 
 
-# ========== 字段 ==========
+# ========== 建筑独有字段 ==========
+# (基类 hoist: actor_id / _team_id / _director_ref / _curr_pos / _hp / _max_hp / _is_dead)
 
-var actor_id: String = ""
-var _team_id: int = -1
 var _footprint_size: Vector2i = Vector2i(1, 1)
 var _is_crystal_tower: bool = false
-var _director_ref: WeakRef = null
-
-var _curr_pos: Vector2 = Vector2.ZERO  # 建筑不移动, prev == curr
-var _hp: float = 0.0
-var _max_hp: float = 0.0
-var _is_dead: bool = false
 
 
 # ========== 生命周期 ==========
@@ -54,18 +47,9 @@ func bind(
 	p_is_crystal_tower: bool,
 	p_director: RtsBattleDirector,
 ) -> void:
-	actor_id = p_actor_id
-	_team_id = p_team_id
+	_bind_base(p_actor_id, p_team_id, p_director)
 	_footprint_size = p_footprint_size
 	_is_crystal_tower = p_is_crystal_tower
-	if p_director != null:
-		_director_ref = weakref(p_director)
-		var state: Dictionary = p_director.get_render_state(p_actor_id)
-		if not state.is_empty():
-			_curr_pos = state.get("curr_pos", Vector2.ZERO)
-			_hp = state.get("hp", 0.0)
-			_max_hp = state.get("max_hp", 0.0)
-			_is_dead = state.get("is_dead", false)
 	position = _curr_pos
 	queue_redraw()
 
@@ -95,14 +79,7 @@ func on_died() -> void:
 
 
 # ========== 查询 (smoke / debug 用) ==========
-
-func get_render_hp() -> float:
-	return _hp
-
-
-func get_render_is_dead() -> bool:
-	return _is_dead
-
+# (基类 hoist: get_render_hp / get_render_is_dead)
 
 # ========== 渲染 ==========
 
