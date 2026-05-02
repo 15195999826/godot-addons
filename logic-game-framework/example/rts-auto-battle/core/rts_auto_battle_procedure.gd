@@ -219,8 +219,9 @@ func tick_once() -> void:
 	#     当目标; 让 building (e.g. archer_tower) 也作为 mover 写自己的 cached_target_id。
 	if _auto_target_system == null:
 		_auto_target_system = RtsAutoTargetSystem.new()
-	var alive_actors_for_target: Array = world.get_alive_actors()
-	_auto_target_system.tick(world, alive_actors_for_target)
+	# step 2.5 + step 3 同 tick 内不增删 actor, 共用一份 alive 列表 (省一次 O(N) 遍历 + Array alloc)
+	var alive_actors: Array = world.get_alive_actors()
+	_auto_target_system.tick(world, alive_actors)
 
 	# 3. Actor 行为推进: 单位走 controller / activity, 建筑走攻击直读 cached_target_id。
 	#    Unit:    controller.tick → strategy.decide → reconcile current_activity → advance。
@@ -229,7 +230,7 @@ func tick_once() -> void:
 	#             实际移动留给 step 4 的 compute_velocity → steering → integrate 三段管线。
 	#    Building (P2.8): 没 controller / activity, procedure 直接读 _cached_target_id, 范围内
 	#                     + cooldown ready → 触发 BasicAttackAction (e.g. archer_tower 防空)。
-	for actor in world.get_alive_actors():
+	for actor in alive_actors:
 		if actor is RtsUnitActor:
 			var unit := actor as RtsUnitActor
 			var controller := _unit_runtimes.get(unit.get_id(), null) as RtsUnitController
@@ -257,9 +258,10 @@ func tick_once() -> void:
 			var target_b := world.get_actor(cached_id) as RtsBattleActor
 			if target_b == null or target_b.is_dead():
 				continue
-			var dist: float = building.position_2d.distance_to(target_b.position_2d)
 			# 与 RtsAttackActivity.RANGE_TOLERANCE = 1.05 对齐, 浮点 + 边界一致体验
-			if dist > building.get_attack_range() * 1.05:
+			var atk_range_with_tol: float = building.get_attack_range() * 1.05
+			var dist_sq: float = building.position_2d.distance_squared_to(target_b.position_2d)
+			if dist_sq > atk_range_with_tol * atk_range_with_tol:
 				continue
 			if not building.can_attack():
 				continue
