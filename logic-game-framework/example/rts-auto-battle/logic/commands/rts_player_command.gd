@@ -31,8 +31,8 @@ var team_id: int = -1
 ## 应用此命令。返回 dict:
 ##   { "success": bool, "reason": String, "details": Dictionary (可选) }
 ##
-## reason 在 success=false 时填合法性失败原因 ("not_enough_resources" /
-## "out_of_build_zone" / "cells_occupied" 等枚举字符串)。
+## reason 在 success=false 时填合法性失败原因 ("not_enough_<kind>" 例 "not_enough_gold" /
+## "out_of_build_zone" / "cells_occupied" 等枚举字符串; M2.1 Phase A 起多资源逐 key 报)。
 ##
 ## 子类可在 details 里返回创建出的 actor id (PlaceBuildingCommand 返回新建筑 id),
 ## 给 smoke / replay 引用。

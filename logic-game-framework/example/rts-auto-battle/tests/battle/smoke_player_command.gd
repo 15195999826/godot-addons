@@ -18,8 +18,11 @@
 ##
 ## 设计:
 ##   - 自建轻量 Node2D host + RtsBattleGrid (不带障碍, 让 placement 自由)
-##   - 左方 team_config: build_zone = Rect2(50, 50, 400, 200), starting_resources=200
+##   - 左方 team_config: build_zone = Rect2(50, 50, 400, 200), starting_resources={"gold": 200, "wood": 0}
 ##   - 右方 team_config: 默认 (无 build_zone 限制); 给右方 1 sentinel unit 让 fallback team-wipeout 不立刻 right_lost
+##
+## M2.1 Phase A — STARTING_RESOURCES / BARRACKS_COST 改 Dictionary[String, int] (gold + wood)。
+## 多资源 fail case (gold 不足 → reason=not_enough_gold) 由 phase-a §A.5 §可选 case 覆盖。
 ##   - 双方都有占位 actor + 无 controller → 都 idle 不动, 战斗在 PLACE_TICK 之前不会自然结束
 extends Node
 
@@ -31,8 +34,9 @@ const MAP_WIDTH: float = 500.0
 const MAP_HEIGHT: float = 500.0
 
 const PLACE_TICK: int = 30
-const STARTING_RESOURCES: int = 200
-const BARRACKS_COST: int = 100  # 与 RtsBuildingConfig._BARRACKS_STATS.cost 同步
+const STARTING_GOLD: int = 200
+const STARTING_WOOD: int = 0
+const BARRACKS_COST_GOLD: int = 100  # 与 RtsBuildingConfig._BARRACKS_STATS.cost.gold 同步
 
 const PLACE_POS_OK: Vector2 = Vector2(150.0, 200.0)
 const PLACE_POS_OUT_OF_ZONE: Vector2 = Vector2(50.0, 400.0)  # y=400 在 build_zone (50, 50, 400, 200) 之外
@@ -61,8 +65,11 @@ func _ready() -> void:
 	) as RtsWorldGameplayInstance
 	_world.set_grid(_grid)
 
-	# Team config: 左方 build_zone (50, 50) ~ (450, 250); resources = 200
-	var left_team_cfg := RtsTeamConfig.create(0, "human", STARTING_RESOURCES, Rect2(50.0, 50.0, 400.0, 200.0))
+	# Team config: 左方 build_zone (50, 50) ~ (450, 250); resources = {"gold": 200, "wood": 0}
+	var left_team_cfg := RtsTeamConfig.create(
+		0, "human", {"gold": STARTING_GOLD, "wood": STARTING_WOOD},
+		Rect2(50.0, 50.0, 400.0, 200.0),
+	)
 	# 右方默认: 无 build_zone, resources = 0; 不放任何 actor → fallback 全灭判定会让 right 立刻 lost
 	var right_team_cfg := RtsTeamConfig.unconfigured(1)
 
@@ -153,11 +160,14 @@ func _ready() -> void:
 		_fail("entry2 expected out_of_build_zone, got %s" % result2.get("reason", ""))
 		return
 
-	# Resources: 仅扣一次 cost (entry0 成功)
-	var remaining: int = _procedure.get_team_resources(0)
-	if remaining != STARTING_RESOURCES - BARRACKS_COST:
-		_fail("expected resources %d after 1 placement, got %d" % [
-			STARTING_RESOURCES - BARRACKS_COST, remaining,
+	# Resources: 仅扣一次 cost (entry0 成功); M2.1 Phase A 多资源 dict 比较
+	var remaining: Dictionary = _procedure.get_team_resources(0)
+	var expected_gold: int = STARTING_GOLD - BARRACKS_COST_GOLD
+	var actual_gold: int = int(remaining.get("gold", 0))
+	var actual_wood: int = int(remaining.get("wood", 0))
+	if actual_gold != expected_gold or actual_wood != STARTING_WOOD:
+		_fail("expected gold=%d wood=%d after 1 placement, got gold=%d wood=%d" % [
+			expected_gold, STARTING_WOOD, actual_gold, actual_wood,
 		])
 		return
 
@@ -192,8 +202,8 @@ func _ready() -> void:
 		return
 
 	# 报告
-	print("rts player_command smoke: ticks=%d log_entries=%d resources_remaining=%d placed_id=%s" % [
-		_procedure.get_current_tick(), log.size(), remaining, placed_id,
+	print("rts player_command smoke: ticks=%d log_entries=%d gold_remaining=%d wood_remaining=%d placed_id=%s" % [
+		_procedure.get_current_tick(), log.size(), actual_gold, actual_wood, placed_id,
 	])
 
 	_world.end()

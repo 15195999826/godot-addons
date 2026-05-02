@@ -80,9 +80,11 @@ var _unit_spawner: Callable = Callable()
 ## faction_id)。opts.team_configs 不传时, 内部用 unconfigured(team_id) 占位 (旧 smoke 行为)。
 var _team_configs: Dictionary = {}
 
-## P2.6: team_id (int) → 当前剩余资源 (int); 初始化时拷自 team_config.starting_resources,
-## PlaceBuildingCommand 等命令通过 spend_team_resources 扣减。
-var _team_resources: Dictionary = {}
+## M2.1 Phase A — team_id (int) → 当前剩余资源 (Dictionary[String, int]; key = "gold" / "wood");
+## 初始化时深拷自 team_config.starting_resources, PlaceBuildingCommand 通过
+## spend_team_resources(team_id, cost: Dictionary) 逐 key 扣减。读 API get_team_resources 返
+## 拷贝防外部改 reference。Phase D 会加 add_team_resources (worker harvest drop-off 用)。
+var _team_resources: Dictionary[int, Dictionary] = {}
 
 ## P2.6: 玩家命令队列; opts.player_command_queue 不传时按需 lazy 创建 (但若没人 enqueue, apply 也是 no-op)。
 ##
@@ -472,16 +474,31 @@ func get_team_config(team_id: int) -> RtsTeamConfig:
 
 
 ## 取阵营当前剩余资源 (PlaceBuildingCommand 校验花费时调)。
-func get_team_resources(team_id: int) -> int:
-	return int(_team_resources.get(team_id, 0))
-
-
-## 扣阵营资源 (PlaceBuildingCommand 成功后调; 调方应保证 amount ≤ get_team_resources)。
 ##
-## amount < 0 视为加资源 (P3 经济系统 / 杀敌返还时用; 当前 P2.6 仅 ≥ 0 路径)。
-func spend_team_resources(team_id: int, amount: int) -> void:
-	var current: int = int(_team_resources.get(team_id, 0))
-	_team_resources[team_id] = current - amount
+## M2.1 Phase A — 返回 Dictionary[String, int] 拷贝 (key = 资源种类; 缺 key 由调方 .get(kind, 0))。
+## 拷贝防外部改 reference 触发 procedure 内部状态漂移。
+func get_team_resources(team_id: int) -> Dictionary:
+	var src: Dictionary = _team_resources.get(team_id, {}) as Dictionary
+	var copy: Dictionary[String, int] = {}
+	for key in src:
+		copy[str(key)] = int(src[key])
+	return copy
+
+
+## 扣阵营资源 (PlaceBuildingCommand 成功后调; 调方应保证每 key cost ≤ 当前 remaining)。
+##
+## M2.1 Phase A — cost 为 Dictionary[String, int]; 缺 key / value=0 跳过, 不扣减该资源。
+## key 不在 _team_resources[team_id] 内 → 视为当前 0, 直接负数 (上层 placement.validate 已保证
+## 充足, 不应到此; 防御式存负数让后续 audit 容易看到 bug)。
+func spend_team_resources(team_id: int, cost: Dictionary) -> void:
+	var bucket: Dictionary = _team_resources.get(team_id, {}) as Dictionary
+	for key in cost:
+		var amount: int = int(cost[key])
+		if amount == 0:
+			continue
+		var current: int = int(bucket.get(key, 0))
+		bucket[str(key)] = current - amount
+	_team_resources[team_id] = bucket
 
 
 ## P2.6 录像入口: 全 player_commands history (含 success / fail entries)。
@@ -509,14 +526,20 @@ func get_unit_runtime(actor_id: String) -> RtsUnitController:
 ##
 ## 调用后:
 ##   - _team_configs[0/1] 永远存在
-##   - _team_resources[0/1] 拷自 cfg.starting_resources (默认 0)
+##   - _team_resources[0/1] 深拷自 cfg.starting_resources (默认 {})
+##
+## M2.1 Phase A — 深拷防 cfg.starting_resources 与 runtime 状态共享同一 dict reference;
+## procedure 内 spend 改 bucket 后, 外部 cfg.starting_resources 不应被污染。
 func _install_team_configs(opts_team_configs: Dictionary) -> void:
 	for team_id in [0, 1]:
 		var cfg: RtsTeamConfig = opts_team_configs.get(team_id, null) as RtsTeamConfig
 		if cfg == null:
 			cfg = RtsTeamConfig.unconfigured(team_id)
 		_team_configs[team_id] = cfg
-		_team_resources[team_id] = cfg.starting_resources
+		var bucket: Dictionary[String, int] = {}
+		for key in cfg.starting_resources:
+			bucket[str(key)] = int(cfg.starting_resources[key])
+		_team_resources[team_id] = bucket
 
 
 ## RtsBattleActor 基类不强制持 ability_set; 子类(RtsUnitActor) 通过 get_ability_set 暴露。

@@ -49,7 +49,8 @@ func _init(
 ## 应用本命令。procedure 在 step 2 调用; 失败时不静默丢弃 — 返回 result dict 由 procedure
 ## 写入 _failed_commands 给 replay / UI 反馈。
 ##
-## 成功 details 含 "actor_id" (新建筑 id), "footprint" (Array[HexCoord]), "cost" (int)。
+## 成功 details 含 "actor_id" (新建筑 id), "footprint" (Array[HexCoord]),
+## "cost" (Dictionary[String, int] — M2.1 Phase A 起改 dict 形态)。
 func apply(procedure, world) -> Dictionary:
 	if procedure == null or world == null:
 		return { "success": false, "reason": "missing_procedure_or_world" }
@@ -62,7 +63,8 @@ func apply(procedure, world) -> Dictionary:
 	if team_config == null:
 		return { "success": false, "reason": "team_mismatch" }
 
-	var team_remaining: int = procedure.get_team_resources(team_id)
+	# M2.1 Phase A — get_team_resources 返回 Dictionary[String, int] 拷贝
+	var team_remaining: Dictionary = procedure.get_team_resources(team_id)
 
 	# 1. 合法性校验
 	var check := RtsBuildingPlacement.validate(
@@ -87,8 +89,8 @@ func apply(procedure, world) -> Dictionary:
 	var footprint: Array = building.get_footprint_cells(rts_world.rts_grid)
 	rts_world.rts_grid.place_building(building.get_id(), footprint)
 
-	# 4. 扣资源
-	var cost: int = int(check.get("cost", 0))
+	# 4. 扣多资源 (M2.1 Phase A — cost 是 Dictionary[String, int])
+	var cost: Dictionary = check.get("cost", {}) as Dictionary
 	procedure.spend_team_resources(team_id, cost)
 
 	# 5. 加入 procedure 的 team 列表 (让 _check_battle_end 看见)

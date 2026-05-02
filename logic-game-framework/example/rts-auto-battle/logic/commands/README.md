@@ -15,8 +15,10 @@
 ## 怎么用
 
 ```gdscript
-# 起手装配 procedure
-var left_team_cfg := RtsTeamConfig.create(0, "human", 200, Rect2(50, 50, 400, 200))
+# 起手装配 procedure (M2.1 Phase A — starting_resources 改 Dictionary[String, int])
+var left_team_cfg := RtsTeamConfig.create(
+    0, "human", {"gold": 200, "wood": 0}, Rect2(50, 50, 400, 200),
+)
 procedure = world.start_rts_battle(..., {
     "team_configs": { 0: left_team_cfg, 1: right_team_cfg },
     ...
@@ -31,9 +33,9 @@ procedure.enqueue_player_command(RtsPlaceBuildingCommand.new(
 for i in range(...):
     procedure.tick_once()
 
-# 战斗结束后读 log
+# 战斗结束后读 log; M2.1 Phase A — result.cost 是 Dictionary[String, int]
 var log = procedure.get_player_commands_log()
-# log[0] = { command: {...}, result: { success: true, actor_id: "...", footprint: [...], cost: 100 }, applied_tick: 30 }
+# log[0] = { command: {...}, result: { success: true, actor_id: "...", footprint: [...], cost: {"gold": 100} }, applied_tick: 30 }
 ```
 
 ## 添加新命令类型

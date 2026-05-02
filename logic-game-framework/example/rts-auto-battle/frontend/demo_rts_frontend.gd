@@ -26,7 +26,8 @@ const Config := preload("res://addons/logic-game-framework/example/rts-auto-batt
 const TICK_INTERVAL_MS: float = 50.0
 const RNG_SEED: int = 0  # 0 = 随机种子 (每次 F6 不同战斗); 调试用可固定到任意正数
 
-const STARTING_RESOURCES_LEFT: int = 300  # 够放 3 个 barracks (cost=100 each)
+const STARTING_GOLD_LEFT: int = 300  # 够放 3 个 barracks (cost.gold=100 each)
+const STARTING_WOOD_LEFT: int = 0    # M2.1 Phase A — wood 字段就位; Phase D 重平衡后启用
 const RIGHT_CT_HP: float = 400.0  # 让战斗时间合理 (~20-30s)
 
 # 双方阵地基线 x; 主战线在 y=200~280 之间.
@@ -143,8 +144,12 @@ func _ready() -> void:
 	)
 
 	# 5. 启动战斗 (含 team_configs + player_command_queue + production spawner)
-	var left_cfg := RtsTeamConfig.create(0, "human", STARTING_RESOURCES_LEFT, LEFT_BUILD_ZONE)
-	var right_cfg := RtsTeamConfig.create(1, "ai", 0, Rect2())
+	# M2.1 Phase A — starting_resources 改 Dictionary[String, int] (gold + wood)
+	var left_cfg := RtsTeamConfig.create(
+		0, "human", {"gold": STARTING_GOLD_LEFT, "wood": STARTING_WOOD_LEFT},
+		LEFT_BUILD_ZONE,
+	)
+	var right_cfg := RtsTeamConfig.create(1, "ai", {}, Rect2())
 	_procedure = _world.start_rts_battle(left_actors, right_actors, {
 		"tick_interval_ms": TICK_INTERVAL_MS,
 		"unit_runtimes": _controllers,
@@ -163,9 +168,13 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	# HUD 刷新 — 不读 actor, 仅查 procedure 资源 / 状态
+	# M2.1 Phase A — get_team_resources 返回 Dictionary[String, int]; HUD 拆 Gold / Wood 双显示
 	if _hud_label != null and _procedure != null:
-		_hud_label.text = "Resources: %d  |  Click left mouse in left zone to place barracks (cost 100)\nLeft CT HP: %.0f  Right CT HP: %.0f" % [
-			_procedure.get_team_resources(0),
+		var resources: Dictionary = _procedure.get_team_resources(0)
+		var gold: int = int(resources.get("gold", 0))
+		var wood: int = int(resources.get("wood", 0))
+		_hud_label.text = "Gold: %d | Wood: %d  |  Click left mouse in left zone to place barracks (cost: gold 100)\nLeft CT HP: %.0f  Right CT HP: %.0f" % [
+			gold, wood,
 			_left_ct.get_attribute_set().get_raw().get_current_value("hp"),
 			_right_ct.get_attribute_set().get_raw().get_current_value("hp"),
 		]

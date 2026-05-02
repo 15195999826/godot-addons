@@ -17,8 +17,8 @@
 ##
 ## 设计:
 ##   - 自建 host + grid (无障碍)
-##   - 左方 team_config: build_zone (50, 50) ~ (350, 350), starting_resources=200
-##   - 右方 team_config: 默认 (无 build_zone, resources=0)
+##   - 左方 team_config: build_zone (50, 50) ~ (350, 350), starting_resources={"gold": 200, "wood": 0}
+##   - 右方 team_config: 默认 (无 build_zone, resources={"gold": 0, "wood": 0})
 ##   - 起手放双方 crystal_tower (各 hp=2000, 永远不死) — 不让任何一方 fallback 全灭
 ##   - 玩家命令 tick_stamp=30: PlaceBuildingCommand 兵营 @ (100, 230)
 ##   - 跑 600 ticks (30s @ 50ms)
@@ -29,8 +29,9 @@ const TICK_INTERVAL_MS: float = 50.0
 const MAX_SECONDS: float = 30.0
 const RNG_SEED: int = 12345
 
-const STARTING_RESOURCES: int = 200
-const BARRACKS_COST: int = 100
+const STARTING_GOLD: int = 200
+const STARTING_WOOD: int = 0
+const BARRACKS_COST_GOLD: int = 100
 
 const PLACE_TICK: int = 30
 const PLACE_POS: Vector2 = Vector2(100.0, 230.0)
@@ -81,9 +82,12 @@ func _ready() -> void:
 	_world.add_actor(right_ct)
 	right_ct.position_2d = Vector2(450.0, 450.0)
 
-	# Team config: 左 build_zone (50, 50) ~ (350, 350); resources = 200
-	var left_team_cfg := RtsTeamConfig.create(0, "human", STARTING_RESOURCES, Rect2(50.0, 50.0, 300.0, 300.0))
-	var right_team_cfg := RtsTeamConfig.create(1, "human", 0, Rect2())
+	# Team config: 左 build_zone (50, 50) ~ (350, 350); resources = {"gold": 200, "wood": 0}
+	var left_team_cfg := RtsTeamConfig.create(
+		0, "human", {"gold": STARTING_GOLD, "wood": STARTING_WOOD},
+		Rect2(50.0, 50.0, 300.0, 300.0),
+	)
+	var right_team_cfg := RtsTeamConfig.create(1, "human", {}, Rect2())
 
 	var left_actors: Array[RtsBattleActor] = [left_ct]
 	var right_actors: Array[RtsBattleActor] = [right_ct]
@@ -127,12 +131,12 @@ func _ready() -> void:
 		_fail("placement success but actor_id missing")
 		return
 
-	# 2. Resources 扣减 = cost
-	var remaining: int = _procedure.get_team_resources(0)
-	if remaining != STARTING_RESOURCES - BARRACKS_COST:
-		_fail("expected resources %d after placement, got %d" % [
-			STARTING_RESOURCES - BARRACKS_COST, remaining,
-		])
+	# 2. Resources 扣减 = cost (M2.1 Phase A 多资源 dict)
+	var remaining: Dictionary = _procedure.get_team_resources(0)
+	var expected_gold: int = STARTING_GOLD - BARRACKS_COST_GOLD
+	var actual_gold: int = int(remaining.get("gold", 0))
+	if actual_gold != expected_gold:
+		_fail("expected gold %d after placement, got %d" % [expected_gold, actual_gold])
 		return
 
 	# 3. Spawn 数量 ≥ EXPECTED_MIN_SPAWNS
@@ -164,8 +168,8 @@ func _ready() -> void:
 		return
 
 	# 报告
-	print("rts player_command_production smoke: ticks=%d placed_id=%s left_spawned=%d max_eastward=%.2f resources=%d" % [
-		_procedure.get_current_tick(), placed_id, left_spawned, max_left_eastward, remaining,
+	print("rts player_command_production smoke: ticks=%d placed_id=%s left_spawned=%d max_eastward=%.2f gold_remaining=%d" % [
+		_procedure.get_current_tick(), placed_id, left_spawned, max_left_eastward, actual_gold,
 	])
 
 	_world.end()

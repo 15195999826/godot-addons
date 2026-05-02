@@ -61,8 +61,9 @@ func _ready() -> void:
 	right_ct.position_2d = Vector2(420.0, 250.0)
 
 	# team_configs: crystal_tower_id 留空让 procedure.start() 自动绑 (验证自动绑定逻辑)
-	var left_team_cfg := RtsTeamConfig.create(0, "human", 0, Rect2())
-	var right_team_cfg := RtsTeamConfig.create(1, "human", 0, Rect2())
+	# M2.1 Phase A — starting_resources 改 dict, 此 smoke 不走 cost 路径, 用空 dict 即可
+	var left_team_cfg := RtsTeamConfig.create(0, "human", {}, Rect2())
+	var right_team_cfg := RtsTeamConfig.create(1, "human", {}, Rect2())
 
 	var left_actors: Array[RtsBattleActor] = [left_ct]
 	var right_actors: Array[RtsBattleActor] = [right_ct]

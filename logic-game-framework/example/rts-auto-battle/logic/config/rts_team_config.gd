@@ -22,8 +22,10 @@ var team_id: int = -1
 ## 阵营标识 (供 frontend / replay 区分; "human" / "orc" 等; M1 仅占位)
 var faction_id: String = ""
 
-## 起手资源量 (供 PlaceBuildingCommand 扣减)
-var starting_resources: int = 0
+## M2.1 Phase A — 起手资源量 (供 PlaceBuildingCommand 扣减)。
+## key = 资源种类 ("gold" / "wood"); value = 起手量。缺 key → 0 (procedure 内部 lazy 拷贝)。
+## 默认 {} 让 unconfigured(team_id) 占位 team 仍然 cost 校验时 not_enough_<kind>。
+var starting_resources: Dictionary[String, int] = {}
 
 ## 建造区 (world 像素 Rect2; 玩家命令落在此区外的 placement 视为非法)
 ## 默认 Rect2(0, 0, 0, 0) 表示无限制 (旧 smoke 不破)
@@ -45,10 +47,13 @@ static func unconfigured(p_team_id: int) -> RtsTeamConfig:
 
 ## P2.6 smoke / demo 常用入口 — 一次性配齐 4 字段。
 ## build_zone 默认 Rect2() = 无限制; crystal_tower_id 由调方在 add_actor 后 set。
+##
+## M2.1 Phase A — p_starting_resources 改 Dictionary[String, int] (key = "gold" / "wood")。
+## 调方传字面量 {"gold": 200, "wood": 0} 或省略 wood key (validate 走逐 key, 缺 key 视为 0)。
 static func create(
 	p_team_id: int,
 	p_faction_id: String = "",
-	p_starting_resources: int = 0,
+	p_starting_resources: Dictionary[String, int] = {},
 	p_build_zone: Rect2 = Rect2(),
 ) -> RtsTeamConfig:
 	var cfg := RtsTeamConfig.new()

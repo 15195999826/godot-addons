@@ -33,7 +33,7 @@ const TICK_INTERVAL_MS: float = 50.0
 const RNG_SEED: int = 7777
 const MAX_TICKS: int = 600  # 30s @ 50ms
 
-const STARTING_RESOURCES_LEFT: int = 100  # 够放 1 barracks (cost=100)
+const STARTING_GOLD_LEFT: int = 100  # 够放 1 barracks (cost.gold=100); M2.1 Phase A 多资源 dict
 const RIGHT_CT_HP: float = 100.0  # 故意设低让战斗快速分胜负 (1 melee 4s 杀; 600 ticks 内可破)
 
 # 注: barracks 2×2 footprint, 不能与 left_archer (80,200) / left_ct (80,350) cells 重叠。
@@ -105,9 +105,9 @@ func _ready() -> void:
 		RtsAttackMoveActivity.new(left_ct.position_2d), true,
 	)
 
-	# Team configs: 左方 build_zone, starting_resources 够放 1 barracks
-	var left_cfg := RtsTeamConfig.create(0, "human", STARTING_RESOURCES_LEFT, LEFT_BUILD_ZONE)
-	var right_cfg := RtsTeamConfig.create(1, "ai", 0, Rect2())
+	# Team configs: 左方 build_zone, starting_resources 够放 1 barracks (M2.1 Phase A 多资源 dict)
+	var left_cfg := RtsTeamConfig.create(0, "human", {"gold": STARTING_GOLD_LEFT, "wood": 0}, LEFT_BUILD_ZONE)
+	var right_cfg := RtsTeamConfig.create(1, "ai", {}, Rect2())
 
 	var left_actors: Array[RtsBattleActor] = [left_archer, left_ct]
 	var right_actors: Array[RtsBattleActor] = [right_archer, right_ct, right_scout]

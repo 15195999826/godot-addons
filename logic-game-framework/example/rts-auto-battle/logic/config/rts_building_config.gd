@@ -40,10 +40,11 @@ class StatBlock:
 	var spawn_unit_kind: int = -1
 	## 生产单位的初始 stance (默认 AGGRESSIVE; P2.6 玩家命令可 override)
 	var spawn_unit_stance: int = -1
-	## P2.6 — 建造资源消耗 (PlaceBuildingCommand 扣减; team 资源不够 → 命令失败)。
-	## crystal_tower 默认 0 (玩家不应该能花钱建主基地; smoke 起手布置 / 调方手动放); 兵营 100;
-	## 防御塔 50。这些数字仅 M1 占位, P3 经济系统会重做。
-	var cost: int = 0
+	## M2.1 Phase A — 建造资源消耗 (PlaceBuildingCommand 扣减; team 任一资源不够 → 命令失败)。
+	## key = 资源种类 ("gold" / "wood" — RtsTeamConfig 同口径); value = 需求量。
+	## 缺 key / value=0 视为不消耗该资源。crystal_tower 起手 {} (不可建造来源 = smoke / 调方);
+	## 兵营 {"gold": 100}; 防御塔 {"gold": 50}。Phase D 会重平衡为多资源 trade-off。
+	var cost: Dictionary[String, int] = {}
 
 	# ========== P2.8: 武器字段 (供能攻击的塔) ==========
 	## 攻击力 (0 = 不攻击; 兵营 / 水晶塔 都 0; archer_tower = 防空 atk)
@@ -74,7 +75,8 @@ const _CRYSTAL_TOWER_STATS := {
 	"is_crystal_tower": true,
 	"production_period_ms": 0.0,
 	"spawn_unit_kind": -1,
-	"cost": 0,
+	# 不可建造来源 — 起手 / 调方手动放, PlaceBuildingCommand 走 cost 校验本字段会被遍历
+	"cost": {},
 	# P2.8: 不参战 — 玩家保护对象, 没武器
 	"atk": 0.0,
 	"def": 0.0,
@@ -94,7 +96,7 @@ const _BARRACKS_STATS := {
 	"production_period_ms": 4000.0,
 	# RtsUnitClassConfig.UnitClass.MELEE = 0
 	"spawn_unit_kind": 0,
-	"cost": 100,
+	"cost": {"gold": 100},
 	# P2.8: 兵营不参战 — 只生产, 不打人
 	"atk": 0.0,
 	"def": 0.0,
@@ -117,7 +119,7 @@ const _ARCHER_TOWER_STATS := {
 	"is_crystal_tower": false,
 	"production_period_ms": 0.0,
 	"spawn_unit_kind": -1,
-	"cost": 50,
+	"cost": {"gold": 50},
 	"atk": 25.0,
 	"def": 0.0,
 	"attack_range": 140.0,
@@ -148,7 +150,7 @@ static func get_stats(building_kind: String) -> StatBlock:
 	block.is_crystal_tower = raw["is_crystal_tower"]
 	block.production_period_ms = raw["production_period_ms"]
 	block.spawn_unit_kind = raw["spawn_unit_kind"]
-	block.cost = int(raw.get("cost", 0))
+	block.cost = _copy_resource_dict(raw.get("cost", null))
 	# P2.8: 武器 / mask / tags
 	block.atk = float(raw.get("atk", 0.0))
 	block.def = float(raw.get("def", 0.0))
@@ -164,3 +166,15 @@ static func get_stats(building_kind: String) -> StatBlock:
 	# 不直接引用枚举常量避开 cyclic dep, 数值形式传出, smoke / 调方按 RtsUnitActor.Stance 对照。
 	block.spawn_unit_stance = 2
 	return block
+
+
+## raw const dict 是普通 Dictionary, 转 Dictionary[String, int] typed 副本 (避免外层共享引用)。
+## 缺 / null → 空 typed dict, 与 cost 默认 {} 同语义 (validate 遍历空就 always pass)。
+static func _copy_resource_dict(raw_value: Variant) -> Dictionary[String, int]:
+	var typed: Dictionary[String, int] = {}
+	if raw_value == null:
+		return typed
+	var src: Dictionary = raw_value as Dictionary
+	for key in src:
+		typed[str(key)] = int(src[key])
+	return typed

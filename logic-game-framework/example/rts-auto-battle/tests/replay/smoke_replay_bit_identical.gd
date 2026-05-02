@@ -147,9 +147,10 @@ func _run_scenario() -> Dictionary:
 	queue.enqueue(cmd_right)
 
 	# Team configs: build_zone + 起手资源 + crystal_tower_id (战斗中放置, 此 smoke 不需要绑 ct_id)
+	# M2.1 Phase A — starting_resources 改 Dictionary[String, int] (gold + wood)
 	var team_configs: Dictionary[int, RtsTeamConfig] = {
-		0: RtsTeamConfig.create(0, "left_faction", 500, Rect2(0, 0, 250, 500)),
-		1: RtsTeamConfig.create(1, "right_faction", 500, Rect2(250, 0, 250, 500)),
+		0: RtsTeamConfig.create(0, "left_faction", {"gold": 500, "wood": 0}, Rect2(0, 0, 250, 500)),
+		1: RtsTeamConfig.create(1, "right_faction", {"gold": 500, "wood": 0}, Rect2(250, 0, 250, 500)),
 	}
 
 	var procedure := world.start_rts_battle(left_actors, right_actors, {
