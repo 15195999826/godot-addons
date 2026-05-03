@@ -104,14 +104,34 @@ const _MAP_SIZE: Vector2 = Vector2(500.0, 500.0)
 var _camera: Camera2D = null
 var _minimap: RtsMinimap = null
 
+# Optional setup (main_menu 选预设后注入; null = 走 hardcode fallback).
+var _preset: RtsMatchPreset = null
+
 var _started: bool = false
 var _finalized: bool = false
+
+
+# ========== 预设入口 ==========
+
+## main_menu 实例化 demo 后立刻调用, _ready 之前注入. 之后 _ready 内字段读 preset 优先.
+func apply_preset(p: RtsMatchPreset) -> void:
+	_preset = p
 
 
 # ========== 生命周期 ==========
 
 func _ready() -> void:
 	GameWorld.init()
+
+	# preset 字段优先, 缺则走 hardcode fallback (frontend smoke headless 路径不破).
+	var fallback_left: Dictionary[String, int] = {"gold": STARTING_GOLD_LEFT, "wood": STARTING_WOOD_LEFT}
+	var fallback_right: Dictionary[String, int] = {}
+	var eff_resources_left: Dictionary[String, int] = _preset.starting_resources_left if _preset != null else fallback_left
+	var eff_resources_right: Dictionary[String, int] = _preset.starting_resources_right if _preset != null else fallback_right
+	var eff_num_workers: int = _preset.num_workers_per_team if _preset != null else NUM_WORKERS_PER_TEAM
+	var eff_attach_left_ai: bool = _preset.attach_left_ai if _preset != null else true
+	var eff_attach_right_ai: bool = _preset.attach_right_ai if _preset != null else true
+	var eff_show_build_panel: bool = _preset.show_build_panel if _preset != null else true
 
 	# 1. 战场地图 (含 grid)
 	_battle_map = RtsBattleMap.new()
@@ -153,8 +173,8 @@ func _ready() -> void:
 	_right_ct.position_2d = RIGHT_CT_POS
 	right_actors.append(_right_ct)
 
-	# 双方各 5 worker
-	for i in range(NUM_WORKERS_PER_TEAM):
+	# 双方各 N worker (preset.num_workers_per_team / fallback NUM_WORKERS_PER_TEAM)
+	for i in range(eff_num_workers):
 		var lp: Vector2 = Vector2(LEFT_WORKER_SPAWN_X, WORKER_SPAWN_BASE_Y + WORKER_SPAWN_DELTA_Y * float(i))
 		left_actors.append(_spawn_unit(Config.UnitClass.WORKER, 0, lp))
 		var rp: Vector2 = Vector2(RIGHT_WORKER_SPAWN_X, WORKER_SPAWN_BASE_Y + WORKER_SPAWN_DELTA_Y * float(i))
@@ -167,11 +187,8 @@ func _ready() -> void:
 	_spawn_resource_nodes(RIGHT_WOOD_NODE_POSITIONS, false)
 
 	# 5. 启动战斗 (含 team_configs + production spawner)
-	var left_cfg := RtsTeamConfig.create(
-		0, "human", {"gold": STARTING_GOLD_LEFT, "wood": STARTING_WOOD_LEFT},
-		LEFT_BUILD_ZONE,
-	)
-	var right_cfg := RtsTeamConfig.create(1, "ai", {}, Rect2())
+	var left_cfg := RtsTeamConfig.create(0, "human", eff_resources_left, LEFT_BUILD_ZONE)
+	var right_cfg := RtsTeamConfig.create(1, "ai", eff_resources_right, Rect2())
 	_procedure = _world.start_rts_battle(left_actors, right_actors, {
 		"tick_interval_ms": TICK_INTERVAL_MS,
 		"unit_runtimes": _controllers,
@@ -183,17 +200,19 @@ func _ready() -> void:
 	# 6. Director attach (procedure 已存在, 接管 event_sink + broadcast 起手 state)
 	_director.attach(_world, _procedure)
 
-	# 7. 双方都 attach AI (procedure 默认不创建; demo 显式 attach AI vs AI 观战)
-	#    玩家鼠标命令仍可同步 enqueue, 不强制 override AI 决策.
-	_procedure.attach_computer_player(0)
-	_procedure.attach_computer_player(1)
+	# 7. AI attach — 由 preset 决定哪侧 AI; 玩家鼠标命令仍可同步 enqueue.
+	if eff_attach_left_ai:
+		_procedure.attach_computer_player(0)
+	if eff_attach_right_ai:
+		_procedure.attach_computer_player(1)
 
 	_started = true
 
 	_setup_camera()
 	_setup_hud()
-	_setup_build_panel()
-	_setup_placement_ghost()
+	if eff_show_build_panel:
+		_setup_build_panel()
+		_setup_placement_ghost()
 	_setup_minimap()
 
 
