@@ -1,28 +1,17 @@
-## RtsFrontendDemo - 经济闭环 + AI vs AI RTS demo (M2.2 — AI 对手 落地)
+## RtsFrontendDemo - 经济闭环 + AI vs AI RTS demo + 玩家 BuildPanel 放置.
 ##
-## 编辑器 F6 运行: 双方各 5 worker + 1 crystal_tower + 2 gold node + 2 wood node;
-## 双方都 attach RtsComputerPlayer (E9 — demo F6 启用方式: AI vs AI); 各自 worker 自动
-## harvest → 攒 80g + 50w → AI 在 ct 偏移点 (E4) 放 barracks → barracks 周期生产 melee →
-## ≥3 melee 后 attack-move 攻敌方 ct (only-once); 任一 ct 被毁判胜负。
+## F6 运行: 双方各 5 worker + 1 crystal_tower + 2 gold node + 2 wood node; 双方都 attach
+## RtsComputerPlayer; worker 自动 harvest → AI 攒资源放 barracks → barracks 生产 melee →
+## attack-move 攻敌 ct; 任一 ct 死判胜负.
 ##
-## 玩家鼠标左键 click 仍可在左方 build_zone 内 enqueue PlaceBuildingCommand barracks
-## (M2.2 不做 override AI 模式 — 双 barracks cap=1 玩家命令会被 AI 命令竞争; 通常 AI 在
-## tick 30 抢先放下, 玩家命令失败 reason=cells_occupied / 资源不足 等)。
+## 玩家通过屏幕底部 BuildPanel 选 building_kind → 进入 placement mode → ghost 跟鼠标 +
+## grid snap (绿=可放 / 红=不可放, RtsBuildingPlacement.validate 同步预检) → 左键放下 /
+## ESC / 右键取消. 不在 placement mode 时左键不入命令.
 ##
-## Phase D D19 改动 (相比 P2.8 城堡战争 demo):
-##   - 删除起手 archer_tower / 4 ground / 1 flying_scout (Phase D 主题切到经济闭环, 不验防空 / 4v4)
-##   - 起手双方各 5 worker (走 RtsHarvestStrategy 自动 harvest 中立 ResourceNode → drop 到己方 ct)
-##   - 起手中立 (team_id=-1) ResourceNode: 双方各 2 gold + 2 wood (4 node × 2 侧 = 8 node 共)
-##   - starting_resources {gold: 100, wood: 100} (D17): 起手能造 1 barracks (80g+50w) 之后必须 harvest 补
-##   - HUD 提示文字更新 (cost gold 80 + wood 50)
-##
-## 注意: ResourceNode 当前没有 RtsResourceNodeVisualizer (WorldView._spawn_visualizer 仅对
-## RtsUnitActor / RtsBuildingActor 创 visualizer); F6 时 node 不可见, 视觉上 worker 走到 (220, ?)
-## 周围 harvest 然后回 ct, HUD 资源数字增长。后续若需可视 node, 可加 RtsResourceNodeVisualizer。
-##
-## 关键不变量:
-##   - demo 不读 actor 状态 (position / hp 等都是 director 内部投影; HUD 走 director.get_render_state)
-##   - 玩家命令通过 procedure.enqueue_player_command + tick_stamp = current_tick 即时应用
+## 不变量:
+##   - demo 不读 actor 状态 — position / hp 走 director.get_render_state, 资源走 procedure
+##   - 玩家命令 tick_stamp = current_tick → 立即 apply (procedure step 1.5)
+##   - BuildPanel + ghost 是纯 frontend 状态机, 不动 core / logic / commands → replay 不破
 extends Node
 
 
@@ -33,7 +22,7 @@ const Config := preload("res://addons/logic-game-framework/example/rts-auto-batt
 const TICK_INTERVAL_MS: float = 50.0
 const RNG_SEED: int = 0  # 0 = 随机种子 (每次 F6 不同战斗); 调试用可固定到任意正数
 
-# Phase D D17 finalized — 起手能造 1 barracks (80g+50w) 之后必须 worker harvest 补
+# 起手能造 1 barracks (80g+50w) 之后必须 worker harvest 补
 const STARTING_GOLD_LEFT: int = 100
 const STARTING_WOOD_LEFT: int = 100
 
@@ -43,7 +32,7 @@ const RIGHT_BASE_X: float = 420.0
 
 const LEFT_BUILD_ZONE: Rect2 = Rect2(50.0, 50.0, 200.0, 400.0)
 
-# Phase D D19 worker / node 起手布局
+# worker / node 起手布局
 const NUM_WORKERS_PER_TEAM: int = 5
 const WORKER_SPAWN_DELTA_Y: float = 30.0
 const LEFT_WORKER_SPAWN_X: float = LEFT_BASE_X + 50.0   # 130
@@ -86,7 +75,24 @@ var _controllers: Dictionary = {}   # actor.id → RtsUnitController (logic 层)
 # 关键 actor 引用 (HUD / 玩家命令上下文)
 var _left_ct: RtsBuildingActor = null
 var _right_ct: RtsBuildingActor = null
-var _hud_label: Label = null
+
+# HUD: 资源数字 (icon + Label) + hint + ct hp
+var _gold_label: Label = null
+var _wood_label: Label = null
+var _hud_hint_label: Label = null
+var _hud_hp_label: Label = null
+
+# BuildPanel + placement mode
+const _NO_PLACEMENT_KIND: String = ""
+
+var _build_panel: RtsBuildPanel = null
+## 当前 placement mode 选中的 building_kind; `_NO_PLACEMENT_KIND` = 未在 mode.
+var _placement_kind: String = _NO_PLACEMENT_KIND
+## ghost preview 半透明矩形 — 跟鼠标 + grid snap; tint 绿=可放 / 红=不可放.
+var _placement_ghost: ColorRect = null
+## 进 mode 时缓存 stats / bbox 偏置, 避免每帧重算 footprint 偶数偏置 + new StatBlock.
+var _placement_stats: RtsBuildingConfig.StatBlock = null
+var _placement_ghost_offset: Vector2 = Vector2.ZERO
 
 var _started: bool = false
 var _finalized: bool = false
@@ -120,7 +126,7 @@ func _ready() -> void:
 	_battle_map.add_child(_world_view)
 	_world_view.bind(_world, _director)
 
-	# 4. 起手 spawn: 双方 ct + 5 worker + 中立 4 node (Phase D D19)
+	# 4. 起手 spawn: 双方 ct + 5 worker + 中立 4 node
 	var left_actors: Array[RtsBattleActor] = []
 	var right_actors: Array[RtsBattleActor] = []
 
@@ -151,7 +157,6 @@ func _ready() -> void:
 	_spawn_resource_nodes(RIGHT_WOOD_NODE_POSITIONS, false)
 
 	# 5. 启动战斗 (含 team_configs + production spawner)
-	# Phase D D17 — starting_resources {gold: 100, wood: 100}
 	var left_cfg := RtsTeamConfig.create(
 		0, "human", {"gold": STARTING_GOLD_LEFT, "wood": STARTING_WOOD_LEFT},
 		LEFT_BUILD_ZONE,
@@ -168,57 +173,93 @@ func _ready() -> void:
 	# 6. Director attach (procedure 已存在, 接管 event_sink + broadcast 起手 state)
 	_director.attach(_world, _procedure)
 
-	# 7. M2.2 — 双方都 attach AI (E9 — demo F6 启用方式: AI vs AI)
-	#    procedure 默认不创建 AI (E10), 由 demo 显式 attach; 玩家鼠标 click 仍可 enqueue
-	#    PlaceBuildingCommand (左方 build_zone 内), 不强制 override AI 决策 (M2.2 不做 override 模式)。
+	# 7. 双方都 attach AI (procedure 默认不创建; demo 显式 attach AI vs AI 观战)
+	#    玩家鼠标命令仍可同步 enqueue, 不强制 override AI 决策.
 	_procedure.attach_computer_player(0)
 	_procedure.attach_computer_player(1)
 
 	_started = true
 
-	# 8. HUD 简易 Label (resources / 操作提示)
 	_setup_hud()
+	_setup_build_panel()
+	_setup_placement_ghost()
 
 
 func _process(_delta: float) -> void:
-	# HUD 刷新 — 不读 actor 状态, 资源走 procedure / hp 走 director.get_render_state.
-	# Phase D HUD 文字更新 cost 提示 (gold 80 + wood 50).
-	if _hud_label != null and _procedure != null and _director != null:
-		var resources: Dictionary = _procedure.get_team_resources(0)
-		var gold: int = int(resources.get("gold", 0))
-		var wood: int = int(resources.get("wood", 0))
+	if _procedure == null or _director == null:
+		return
+
+	# 资源 dict 同帧复用 — HUD + ghost tint 都读, 避免 procedure 内 2 次 dict 拷贝
+	var resources: Dictionary = _procedure.get_team_resources(0)
+
+	if _gold_label != null and _wood_label != null:
+		_gold_label.text = "%d" % int(resources.get("gold", 0))
+		_wood_label.text = "%d" % int(resources.get("wood", 0))
+
 		var left_state: Dictionary = _director.get_render_state(_left_ct.get_id()) if _left_ct != null else {}
 		var right_state: Dictionary = _director.get_render_state(_right_ct.get_id()) if _right_ct != null else {}
 		var left_hp: float = float(left_state.get("hp", 0.0))
 		var right_hp: float = float(right_state.get("hp", 0.0))
-		_hud_label.text = "Gold: %d | Wood: %d  |  Click left mouse in left zone to place barracks (cost: gold 80 + wood 50)\nLeft CT HP: %.0f  Right CT HP: %.0f" % [
-			gold, wood, left_hp, right_hp,
-		]
+		_hud_hp_label.text = "Left CT HP: %.0f   Right CT HP: %.0f" % [left_hp, right_hp]
+
+		_hud_hint_label.text = (
+			"[Placement: %s] left mouse to place | ESC / right mouse to cancel" % _placement_kind
+			if _placement_kind != _NO_PLACEMENT_KIND
+			else "Click BuildPanel to start placement (left zone only)"
+		)
+
+	if _placement_kind != _NO_PLACEMENT_KIND:
+		_update_placement_ghost(resources)
 
 
-# ========== 玩家输入 (鼠标点击放兵营) ==========
+# ========== 玩家输入 ==========
 
+## placement mode 下处理鼠标放置 / 取消 / ESC; 否则忽略 (玩家必须先点 BuildPanel).
 func _unhandled_input(event: InputEvent) -> void:
-	if not _started or _finalized:
+	if not _started or _finalized or _placement_kind == _NO_PLACEMENT_KIND:
 		return
-	if not (event is InputEventMouseButton):
+	if event is InputEventMouseButton and event.pressed:
+		match event.button_index:
+			MOUSE_BUTTON_LEFT:
+				_try_place_at(event.position)
+				get_viewport().set_input_as_handled()
+			MOUSE_BUTTON_RIGHT:
+				_exit_placement_mode("right_click")
+				get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		_exit_placement_mode("escape")
+		get_viewport().set_input_as_handled()
+
+
+## 左键点放尝试 — _validate_player_placement 同步预检; 通过 → enqueue + 退 mode;
+## 失败 → console log + 留 mode 让玩家重选 (resources / cells_occupied / out_of_zone 都同处理).
+func _try_place_at(world_pos: Vector2) -> void:
+	var check: Dictionary = _validate_player_placement(world_pos, _procedure.get_team_resources(0))
+	if not check.get("success", false):
+		print("[RtsFrontendDemo] placement failed: %s @ %s (kind=%s; stay in mode)" % [
+			check.get("reason", "?"), world_pos, _placement_kind,
+		])
 		return
-	var mb := event as InputEventMouseButton
-	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
-		return
-	var pos: Vector2 = mb.position
-	# 落在 build_zone 外 → 仅打 console (UI 反馈留给 PlaceBuildingCommand 失败 reason)
-	if not LEFT_BUILD_ZONE.has_point(pos):
-		print("[RtsFrontendDemo] click outside build_zone, pos=%s" % str(pos))
-		return
-	# tick_stamp = 当前 tick → 立即应用 (tick_once step 1.5)
-	var current_tick: int = _procedure.get_current_tick() if _procedure != null else 0
+
+	var current_tick: int = _procedure.get_current_tick()
 	_procedure.enqueue_player_command(RtsPlaceBuildingCommand.new(
-		current_tick, 0, RtsBuildingConfig.KIND_BARRACKS, pos,
+		current_tick, 0, _placement_kind, world_pos,
 	))
-	print("[RtsFrontendDemo] enqueued PlaceBuildingCommand barracks @ %s tick_stamp=%d" % [
-		str(pos), current_tick,
+	print("[RtsFrontendDemo] enqueued PlaceBuildingCommand %s @ %s tick_stamp=%d" % [
+		_placement_kind, world_pos, current_tick,
 	])
+	_exit_placement_mode("placed")
+
+
+## 玩家 (team_id=0) 放置合法性检查 — 调方提供 team_remaining (避免 _process 内每帧 2 次拷 dict).
+func _validate_player_placement(world_pos: Vector2, team_remaining: Dictionary) -> Dictionary:
+	return RtsBuildingPlacement.validate(
+		_battle_map.grid,
+		_procedure.get_team_config(0),
+		team_remaining,
+		_placement_kind,
+		world_pos,
+	)
 
 
 # ========== Spawn ==========
@@ -277,13 +318,137 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 
 # ========== HUD ==========
 
+const _ICON_GOLD_COLOR: Color = Color(1.00, 0.85, 0.20, 1.0)   # 金黄
+const _ICON_WOOD_COLOR: Color = Color(0.50, 0.32, 0.15, 1.0)   # 棕色
+const _HUD_ICON_SIZE: Vector2 = Vector2(16.0, 16.0)
+
+## 屏顶左 HUD: VBox(HBox(gold icon + 数字), HBox(wood icon + 数字), hint Label, hp Label).
+## icon = ColorRect 占位 (后续可替换 sprite). 数字与 hp 由 _process 从 procedure / director 拉.
 func _setup_hud() -> void:
-	_hud_label = Label.new()
-	_hud_label.name = "Hud"
-	_hud_label.position = Vector2(10.0, 10.0)
-	_hud_label.add_theme_font_size_override("font_size", 14)
-	_hud_label.modulate = Color(1.0, 1.0, 1.0, 0.95)
-	add_child(_hud_label)
+	var hud_root := VBoxContainer.new()
+	hud_root.name = "Hud"
+	hud_root.position = Vector2(10.0, 10.0)
+	hud_root.add_theme_constant_override("separation", 4)
+	add_child(hud_root)
+
+	_gold_label = _make_resource_row(hud_root, "Gold", _ICON_GOLD_COLOR)
+	_wood_label = _make_resource_row(hud_root, "Wood", _ICON_WOOD_COLOR)
+
+	_hud_hint_label = Label.new()
+	_hud_hint_label.name = "Hint"
+	_hud_hint_label.add_theme_font_size_override("font_size", 13)
+	_hud_hint_label.modulate = Color(1.0, 1.0, 1.0, 0.85)
+	hud_root.add_child(_hud_hint_label)
+
+	_hud_hp_label = Label.new()
+	_hud_hp_label.name = "Hp"
+	_hud_hp_label.add_theme_font_size_override("font_size", 13)
+	_hud_hp_label.modulate = Color(1.0, 1.0, 1.0, 0.85)
+	hud_root.add_child(_hud_hp_label)
+
+
+## 单行 "icon (ColorRect) + Label name + Label value", 返回 value Label 由调方持引用刷数字.
+func _make_resource_row(parent: Container, name_str: String, icon_color: Color) -> Label:
+	var row := HBoxContainer.new()
+	row.name = "Row_%s" % name_str
+	row.add_theme_constant_override("separation", 6)
+	parent.add_child(row)
+
+	var icon := ColorRect.new()
+	icon.name = "Icon"
+	icon.color = icon_color
+	icon.custom_minimum_size = _HUD_ICON_SIZE
+	icon.size = _HUD_ICON_SIZE
+	row.add_child(icon)
+
+	var name_label := Label.new()
+	name_label.name = "Name"
+	name_label.text = name_str + ":"
+	name_label.add_theme_font_size_override("font_size", 14)
+	row.add_child(name_label)
+
+	var value_label := Label.new()
+	value_label.name = "Value"
+	value_label.text = "0"
+	value_label.add_theme_font_size_override("font_size", 14)
+	row.add_child(value_label)
+
+	return value_label
+
+
+# ========== BuildPanel + Placement Mode ==========
+
+const _BUILD_PANEL_SCENE := preload("res://addons/logic-game-framework/example/rts-auto-battle/frontend/ui/build_panel.tscn")
+const _GHOST_OK_COLOR: Color = Color(0.30, 0.90, 0.30, 0.35)
+const _GHOST_BAD_COLOR: Color = Color(0.95, 0.25, 0.25, 0.35)
+
+
+func _setup_build_panel() -> void:
+	_build_panel = _BUILD_PANEL_SCENE.instantiate() as RtsBuildPanel
+	add_child(_build_panel)
+	_build_panel.building_selected.connect(_on_building_selected)
+
+
+## ghost = 半透明 ColorRect, size 按 footprint × cell_size; 加在 BattleMap (Node2D) 下让
+## 坐标系与 unit visualizer 一致.
+func _setup_placement_ghost() -> void:
+	_placement_ghost = ColorRect.new()
+	_placement_ghost.name = "PlacementGhost"
+	_placement_ghost.color = _GHOST_OK_COLOR
+	_placement_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_placement_ghost.visible = false
+	_battle_map.add_child(_placement_ghost)
+
+
+func _on_building_selected(kind: String) -> void:
+	_enter_placement_mode(kind)
+
+
+## 进 mode 时缓存 stats + bbox 偏置 (mode 期间 kind 不变, 避免每帧 new StatBlock + 重算偶数偏置).
+func _enter_placement_mode(kind: String) -> void:
+	_placement_kind = kind
+	_placement_stats = RtsBuildingConfig.get_stats(kind)
+	var cs: float = _battle_map.grid.cell_size
+	var fp: Vector2i = _placement_stats.footprint_size
+	_placement_ghost_offset = _bbox_center_offset(fp, cs)
+	_placement_ghost.size = Vector2(fp.x * cs, fp.y * cs)
+	_placement_ghost.color = _GHOST_OK_COLOR
+	_placement_ghost.visible = true
+	print("[RtsFrontendDemo] enter placement mode kind=%s footprint=%s" % [kind, fp])
+
+
+func _exit_placement_mode(reason: String) -> void:
+	if _placement_kind == _NO_PLACEMENT_KIND:
+		return
+	print("[RtsFrontendDemo] exit placement mode kind=%s reason=%s" % [_placement_kind, reason])
+	_placement_kind = _NO_PLACEMENT_KIND
+	_placement_stats = null
+	_placement_ghost.visible = false
+
+
+## 跟鼠标 + grid snap, validate 决定 tint. resources 由 _process 头部抓好后传入避免每帧 2 次拷贝.
+func _update_placement_ghost(team_remaining: Dictionary) -> void:
+	var grid := _battle_map.grid
+	var mouse_world: Vector2 = _battle_map.get_local_mouse_position()
+	var snapped_world: Vector2 = grid.coord_to_world(grid.world_to_coord(mouse_world))
+	var bbox_center: Vector2 = snapped_world + _placement_ghost_offset
+	_placement_ghost.position = bbox_center - _placement_ghost.size * 0.5
+
+	var check: Dictionary = _validate_player_placement(snapped_world, team_remaining)
+	_placement_ghost.color = _GHOST_OK_COLOR if check.get("success", false) else _GHOST_BAD_COLOR
+
+
+## 与 RtsBuildingPlacement._compute_footprint_cells 同算法的 bbox 中心相对 cell 中心的偏置.
+## 偶数 footprint 中心偏向 cell 边界 (half_lo > half_hi → 负向偏); 奇数为 0.
+static func _bbox_center_offset(footprint_size: Vector2i, cell_size: float) -> Vector2:
+	var half_x_lo: int = footprint_size.x / 2
+	var half_x_hi: int = footprint_size.x - 1 - half_x_lo
+	var half_y_lo: int = footprint_size.y / 2
+	var half_y_hi: int = footprint_size.y - 1 - half_y_lo
+	return Vector2(
+		float(half_x_hi - half_x_lo) * cell_size * 0.5,
+		float(half_y_hi - half_y_lo) * cell_size * 0.5,
+	)
 
 
 # ========== 战斗结束 ==========
