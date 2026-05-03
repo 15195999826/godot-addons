@@ -24,8 +24,27 @@ var building_kind: String = ""
 var attribute_set: RtsBuildingAttributeSet = null
 
 ## footprint cell 尺寸 (cells × cells, AABB)。Phase 2 P2.5: 兵营 (2,2), 水晶塔 (2,2),
-## 防御塔 (1,1)。get_footprint_cells(grid) 按此尺寸算 AABB cells, 中心对齐 position_2d。
+## 防御塔 (1,1)。
+##
+## **M0.4 注**: 仍保留作 frontend 视觉与 M0 fallback (obstruction_shape == null 时
+## get_footprint_cells 用此字段); M2 引入 ObstructionManager 后由 obstruction_shape 完全替代,
+## 此字段才删除。
 var footprint_size: Vector2i = Vector2i(1, 1)
+
+## M0.4 — Obstruction shape (寻路占地, OBB). 工厂 RtsBuildings 在 _create_from_kind 时填,
+## 调方在 set position_2d 之后调 sync_obstruction_shape() 把 center 设到
+## position_2d + stats.obstruction_offset (M0.5 落地 6 个 call sites).
+##
+## **M0.4 阶段**: 此字段仍可能为 null (M0.5 工厂注入前所有路径都走旧 fallback);
+## get_footprint_cells 会在 null 时回退到 footprint_size 旧路径,保 smoke 0 漂移.
+var obstruction_shape: RtsObstructionShapeStatic = null
+
+## M0.4 — Footprint shape (UI 选择). 工厂在 _create_from_kind 时填. M0.6 frontend
+## visualizer 选择圈渲染调 footprint_shape.get_world_aabb(actor.position_2d).
+##
+## **M0.4 阶段**: 此字段仍可能为 null (M0.5 工厂注入前); frontend 现有选择圈逻辑不动,
+## M0.6 切到 footprint_shape 时再处理 null 兜底.
+var footprint_shape: RtsFootprintShape = null
 
 ## 是否水晶塔 (供 P2.6 胜负判定快速过滤; P2.5 仅记录, 不参与判定)。
 var is_crystal_tower: bool = false
@@ -116,28 +135,52 @@ func get_attack_speed() -> float:
 	return attack_speed_value
 
 
-## 按 footprint_size 计算覆盖的 AABB cells, 中心对齐 position_2d。
+## 按建筑占地几何计算覆盖的 AABB cells (左上偏置, 偶数尺寸时上半左半).
 ##
-## 例: footprint_size=(2,2), position_2d=(160,160), cell_size=32:
-##     center_cell = (5, 5); 2×2 AABB → cells [(4,4),(5,4),(4,5),(5,5)] (左上偏置)
+## **M0.4 算法**:
+##   - obstruction_shape != null (M0.5 之后): 用 obstruction_shape.center 当 grid 中心,
+##     按 obstruction_shape.{width, height} ÷ cell_size 推 cells_w / cells_h.
+##     这是 Bug 1 修复路径 — 寻路占地中心跟着 obstruction_shape 走, 跟 sprite 锚点
+##     (position_2d) 解耦, 让 sprite 视觉中心和寻路逻辑中心可错位.
+##   - obstruction_shape == null (M0.5 工厂注入前 / 单元测试 stub):
+##     fallback 到旧路径 — 用 position_2d 当中心, 按 footprint_size: Vector2i 推 cells.
+##     M0.4 阶段所有调用方仍走 fallback (obstruction_shape 为 null), 保 smoke 0 漂移.
 ##
-## footprint_size=(1,1) 退化为基类默认 (单 cell)。footprint_size=(2,2) AABB 取
-## center_cell - (1, 1) 到 center_cell - (0, 0) (左上 inclusive 偏置, 与 cell_size=32
-## RtsBattleMap 标 obstacle cells 一致).
+## 例 (新旧两路径同样的 footprint_size=(2,2), position_2d=(160,160), cell_size=32):
+##   - 新路径: obstruction_shape.center=(160,160), w=h=64, cells_w=cells_h=2,
+##     center_cell=(5,5), 偶数左上偏置 → cells [(4,4),(5,4),(4,5),(5,5)]
+##   - 旧路径: position_2d=(160,160), footprint_size=(2,2) → 同样的 cells (bit-identical)
+##
+## 偏置方向严格保留旧"左上偏置" (上半左半, codex P1 #1 锚点不变), 不改方向.
+## 保持与 RtsBuildingPlacement._compute_footprint_cells / RtsBattleMap obstacle cells
+## 标记完全一致.
 func get_footprint_cells(grid) -> Array:
 	if grid == null:
 		return []
 	# 基类用 untyped `grid` 参数 (向后兼容); 这里取出 HexCoord 时显式标 type 让推导通过。
-	var center: HexCoord = grid.world_to_coord(position_2d)
+	var center: HexCoord
+	var cells_w: int
+	var cells_h: int
+	if obstruction_shape != null:
+		# 新路径 (M0.4): 用 obstruction_shape.center 算 cells (Bug 1 修复).
+		center = grid.world_to_coord(obstruction_shape.center)
+		# int(round(...)) 显式整数化, 避免浮点精度漂移 (M0.4 风险 R2).
+		cells_w = int(round(obstruction_shape.width / grid.cell_size))
+		cells_h = int(round(obstruction_shape.height / grid.cell_size))
+	else:
+		# Fallback (M0.4 阶段所有调用方走此路径, M0.5 工厂注入后 obstruction_shape 非 null 自动切新路径).
+		center = grid.world_to_coord(position_2d)
+		cells_w = footprint_size.x
+		cells_h = footprint_size.y
 	# 1×1 退化
-	if footprint_size.x <= 1 and footprint_size.y <= 1:
+	if cells_w <= 1 and cells_h <= 1:
 		return [center]
 	# AABB: 偶数尺寸时左上偏置 (footprint = [center-1, center])
 	# 奇数尺寸时居中 (footprint = [center - half, center + half])
-	var half_x_lo: int = footprint_size.x / 2
-	var half_x_hi: int = footprint_size.x - 1 - half_x_lo
-	var half_y_lo: int = footprint_size.y / 2
-	var half_y_hi: int = footprint_size.y - 1 - half_y_lo
+	var half_x_lo: int = cells_w / 2
+	var half_x_hi: int = cells_w - 1 - half_x_lo
+	var half_y_lo: int = cells_h / 2
+	var half_y_hi: int = cells_h - 1 - half_y_lo
 	var result: Array = []
 	# HexCoord 在 SQUARE grid 里 q=col, r=row (plugin 约定 cell 坐标始终用 HexCoord 类即使非 hex)。
 	for dy in range(-half_y_lo, half_y_hi + 1):
@@ -145,6 +188,25 @@ func get_footprint_cells(grid) -> Array:
 			var coord: HexCoord = HexCoord.new(center.q + dx, center.r + dy)
 			result.append(coord)
 	return result
+
+
+## M0.4 — 把 obstruction_shape.center 设为 position_2d + stats.obstruction_offset.
+##
+## 必须在 actor.position_2d 设置之后、place_building 之前调用一次, 由 M0.5 6 个 call sites
+## 接入 (rts_place_building_command / rts_auto_battle_procedure / demo_rts_frontend
+## / demo_rts_pathfinding / rts_scenario_harness / rts_match_preset).
+##
+## **不变量**: factory 时 obstruction_shape.center == ZERO (因 factory 不知道最终 position);
+## 调方写完 position_2d 后必须调本方法把 center 同步到 position_2d + obstruction_offset.
+## 否则 obstruction_shape.center 仍 ZERO, 寻路会以为建筑在 (0,0) (M0.7 加 assert 兜底).
+##
+## obstruction_shape == null 时静默返回 (M0.4 阶段未注入工厂的旧路径); building_kind 不识别时
+## RtsBuildingConfig.get_stats 自身 Log.assert_crash.
+func sync_obstruction_shape() -> void:
+	if obstruction_shape == null:
+		return
+	var stats: RtsBuildingConfig.StatBlock = RtsBuildingConfig.get_stats(building_kind)
+	obstruction_shape.center = position_2d + stats.obstruction_offset
 
 
 # ========== 录像支持 ==========
