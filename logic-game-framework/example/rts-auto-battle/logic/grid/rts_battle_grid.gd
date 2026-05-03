@@ -118,6 +118,11 @@ func attach_passability_registry(registry: RtsPassabilityClassRegistry) -> void:
 	# 按 model 尺寸建 NavcellGrid; columns/rows 是奇数 (half_*2+1)
 	var cfg: GridMapConfig = model.get_config()
 	_navcell_grid = RtsNavcellGrid.new(cfg.columns, cfg.rows)
+	# M3.3: 设 NavcellGrid origin 让"world ↔ navcell index" 跟 RtsBattleGrid 的 _coord_to_ij 偏移
+	# 一致。NavcellGrid (0, 0) 对应 model HexCoord (-half_cols, -half_rows) 的 world top-left =
+	# (-half_cols*32, -half_rows*32)。这让 ObstructionManager 用 world / cell_size 索引 NavcellGrid
+	# 时拿到的 (i, j) 跟 RtsBattleGrid._coord_to_ij(coord) 同一坐标系。
+	_navcell_grid.set_origin_world(Vector2(-_half_cols, -_half_rows) * cell_size)
 	# Sync 已有 model.is_tile_blocking 状态到 NavcellGrid (frontend/_ready 在 procedure._init
 	# 之前调 mark_obstacle_cell 设 obstacle 时, NavcellGrid 还未 attach, 所以 model 路径已写
 	# 但 NavcellGrid 还 0-state). attach 时把 model already-blocking 的 cells 同步过来。

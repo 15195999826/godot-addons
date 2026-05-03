@@ -39,6 +39,18 @@ var _height: int = 0
 var _data: PackedInt32Array = PackedInt32Array()
 var _dirtiness: PackedByteArray = PackedByteArray()
 
+## NavcellGrid (0, 0) 对应的世界坐标 (top-left); 默认 (0, 0)。
+##
+## **用途**: RtsBattleGrid 用 model HexCoord 偏移坐标 [-half..+half], NavcellGrid 用 0-indexed,
+## 两边平移 (q+half_cols, r+half_rows) 对接; ObstructionManager 用世界坐标直接索引 NavcellGrid,
+## 必须知道 NavcellGrid (0,0) 的 world top-left 才能正确转换。 RtsBattleGrid.attach 时 set_origin_world
+## (-half_cols*32, -half_rows*32) 让两条路径坐标系一致。
+##
+## **为啥 origin 而不是直接用 model HexCoord**: 0 A.D. NavcellGrid 是 absolute world 坐标,无 offset
+## 系统; 我们 plugin 的 HexCoord 偏移是 RtsBattleGrid 私事; NavcellGrid 加 origin 让"world →
+## NavcellGrid index" 函数集中在一处,ObstructionManager 不需要知道 RtsBattleGrid 内部约定。
+var _origin_world: Vector2 = Vector2.ZERO
+
 
 # ========== 初始化 ==========
 
@@ -47,6 +59,30 @@ func _init(w: int, h: int) -> void:
 	_height = h
 	_data.resize(w * h)
 	_dirtiness.resize(w * h)
+
+
+# ========== Origin offset (M3 引入) ==========
+
+## 设 NavcellGrid (0, 0) 对应的世界坐标 (top-left)。
+##
+## RtsBattleGrid.attach_passability_registry 调一次, 设成 model 的 (-half_cols*32, -half_rows*32),
+## 让 navcell_center_world / nearest_navcell / world_to_navcell_* 跟 RtsBattleGrid 偏移坐标一致。
+func set_origin_world(origin: Vector2) -> void:
+	_origin_world = origin
+
+
+func origin_world() -> Vector2:
+	return _origin_world
+
+
+## world x → navcell index i (col); 越界结果由调方判断 (内部不 clamp)。
+func world_to_navcell_i(world_x: float) -> int:
+	return int(floorf((world_x - _origin_world.x) / float(NAVCELL_SIZE_PX)))
+
+
+## world y → navcell index j (row); 越界结果由调方判断。
+func world_to_navcell_j(world_y: float) -> int:
+	return int(floorf((world_y - _origin_world.y) / float(NAVCELL_SIZE_PX)))
 
 
 # ========== 内部 ==========
@@ -126,6 +162,27 @@ func clear_dirty() -> void:
 		_dirtiness[k] = 0
 
 
+## 是否存在任何 dirty cell (rasterize_if_dirty 短路用)。
+func has_any_dirty() -> bool:
+	for k in range(_dirtiness.size()):
+		if _dirtiness[k] != 0:
+			return true
+	return false
+
+
+## 收集所有 dirty cells (i, j) 到 Array; rasterize_if_dirty / _clear_dirty_with_buffer 共享一次扫描。
+##
+## **Determinism**: row-major 扫描序固定 (j outer, i inner)。
+func collect_dirty_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for j in range(_height):
+		var row_base: int = j * _width
+		for i in range(_width):
+			if _dirtiness[row_base + i] != 0:
+				cells.append(Vector2i(i, j))
+	return cells
+
+
 # ========== 元信息 ==========
 
 func width() -> int:
@@ -138,13 +195,13 @@ func height() -> int:
 
 # ========== 坐标转换 (内联 helper) ==========
 
-## navcell (i, j) 中心的世界坐标 (px)。
+## navcell (i, j) 中心的世界坐标 (px)。受 _origin_world 偏移影响。
 func navcell_center_world(i: int, j: int) -> Vector2:
-	return Vector2((float(i) + 0.5) * NAVCELL_SIZE_PX, (float(j) + 0.5) * NAVCELL_SIZE_PX)
+	return _origin_world + Vector2((float(i) + 0.5) * NAVCELL_SIZE_PX, (float(j) + 0.5) * NAVCELL_SIZE_PX)
 
 
-## 世界坐标 → 最近 navcell index (Vector2i, x=i, y=j)。
+## 世界坐标 → 最近 navcell index (Vector2i, x=i, y=j)。受 _origin_world 偏移影响。
 ##
 ## 边界外的 world_pos 返回的 index 也可能越界, 调方需要再走 is_passable / get_data 边界判定。
 func nearest_navcell(world_pos: Vector2) -> Vector2i:
-	return Vector2i(int(world_pos.x / NAVCELL_SIZE_PX), int(world_pos.y / NAVCELL_SIZE_PX))
+	return Vector2i(world_to_navcell_i(world_pos.x), world_to_navcell_j(world_pos.y))

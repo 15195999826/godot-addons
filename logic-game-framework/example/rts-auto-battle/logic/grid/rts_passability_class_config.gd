@@ -28,3 +28,11 @@ extends Resource
 
 ## 离岸最小距离 (留接口)
 @export var min_shore_distance: float = 0.0
+
+## BLOCK_PATHFINDING shape 是否对此 class 生效。
+##
+## - true (default class): rasterize 把 BLOCK_PATHFINDING 建筑 / 装饰 obstacle 写到此 class 的 bit
+## - false (air class): air 视角 cells 永远 passable, 留 wiring 给后续飞行单位 milestone
+##
+## procedure._init 注册 class 时按 spec 显式设, 让 ObstructionManager 不依赖 class_name_id 字符串。
+@export var affects_pathfinding: bool = true
