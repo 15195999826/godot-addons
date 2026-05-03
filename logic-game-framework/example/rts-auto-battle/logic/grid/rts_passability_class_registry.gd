@@ -67,3 +67,18 @@ func max_clearance() -> float:
 ## 已注册 class 数量。
 func size() -> int:
 	return _classes.size()
+
+
+## 全部已注册 class (按注册序; 给 ObstructionManager.rasterize_if_dirty 遍历用)。
+##
+## 返 reference (调方不应修改); 注册顺序固化是 replay determinism 关键 (R5 决策)。
+func get_classes() -> Array[RtsPassabilityClassConfig]:
+	return _classes
+
+
+## 按 mask (1 << bit_index) 反查 class; 未匹配返 null (M3 spec §M3.1 步骤 2 要求)。
+func get_class_by_mask(mask: int) -> RtsPassabilityClassConfig:
+	for c in _classes:
+		if (1 << c.bit_index) == mask:
+			return c
+	return null

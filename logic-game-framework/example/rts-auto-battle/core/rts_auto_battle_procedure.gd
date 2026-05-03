@@ -171,6 +171,7 @@ func _init(
 		var air_cfg := RtsPassabilityClassConfig.new()
 		air_cfg.class_name_id = "air"
 		air_cfg.clearance = 8.0
+		air_cfg.affects_pathfinding = false  # air 不被 BLOCK_PATHFINDING shape 阻挡 (M3 wiring)
 		registry.register(air_cfg)
 		world.passability_registry = registry
 
@@ -187,6 +188,10 @@ func _init(
 			world.rts_grid.get_navcell_grid(),
 			world.passability_registry,
 		)
+		# M3.3: 装饰 obstacle cells (frontend RtsBattleMap._mark_obstacle_cells 在 procedure._init
+		#   之前调 grid.mark_obstacle_cell, 那时 manager 还未出生) 补登记成 1×1 cell OBB shape 进
+		#   manager。让 rasterize_if_dirty 增量重写时这些 cells 不被清掉。
+		_register_decorative_obstacles_to_manager(world)
 
 
 # ========== 生命周期 ==========
@@ -394,12 +399,28 @@ func tick_once() -> void:
 	for cp in _computer_players:
 		cp.think(world, _current_tick)
 
+	# 6.6 M3.3 — Rasterize 增量: BLOCK_PATHFINDING shape (建筑 / 装饰 obstacle) 引发的 navcell
+	#     dirty 集合触发 ObstructionManager 重 rasterize 进 NavcellGrid (含 inflate clearance buffer)。
+	#     **R5 P1-2 invariant**: rasterize 不清 dirty; step 7.5 末端统一清。
+	#     Manager 为 null (老 smoke 不走 frontend) / NavcellGrid 未挂时跳过。
+	if world.obstruction_manager != null and world.rts_grid != null and world.rts_grid.has_navcell_grid():
+		world.obstruction_manager.rasterize_if_dirty(
+			world.rts_grid.get_navcell_grid(),
+			world.passability_registry,
+		)
+
 	# 7. 胜负判定
 	if _current_tick >= MAX_TICKS:
 		_result = "timeout"
 		mark_finished()
 	else:
 		_check_battle_end()
+
+	# 7.5 M3.3 — Dirty lifecycle 末端统一清 (R5 P1-2 invariant): rasterize / 后续 hierarchical
+	#     update (M4 引入) 都只读 dirty 不清; 末端 RtsWorld.tick step 7 统一 clear_dirty。
+	#     M3 阶段 caller 仅 rasterize_if_dirty, 此 clear 配对; M4 hierarchical 引入后此处不变。
+	if world.rts_grid != null and world.rts_grid.has_navcell_grid():
+		world.rts_grid.get_navcell_grid().clear_dirty()
 
 
 ## P2.7: finish 在 BattleRecorder.stop_recording 返回的 dict 上注入 RTS 专属字段:
@@ -657,6 +678,49 @@ func _safe_get_ability_set(actor: RtsBattleActor) -> AbilitySet:
 	if actor.has_method("get_ability_set"):
 		return actor.call("get_ability_set") as AbilitySet
 	return null
+
+
+## M3.3 — 把 grid.model 上现存的 is_tile_blocking 装饰 cells (frontend RtsBattleMap._ready
+## 阶段 调 mark_obstacle_cell 标的, 但此时 manager 还没出生) 补登记成 1×1 cell OBB shape 进
+## ObstructionManager。让后续 rasterize_if_dirty 增量重写时这些 cells 不被清掉。
+##
+## **不**注册重叠 building footprint cells: building 在 procedure.start() 用整 OBB 注册 (含 inflate),
+## 装饰单 cell shape 跟 building OBB 部分覆盖会让 inflate 范围有重复, but rasterize OR 同 bit no-op,
+## 不影响正确性 (仅多算几次距离判定); 留 perf 优化给后续 milestone。
+##
+## **Determinism**: model.get_all_coords 走 Dictionary 迭代序非 deterministic; sort by (q, r)
+## 数值复合 key 确保 tag 分配 cross-run 一致 (跟 §12.4 风格对齐)。
+##
+## 装饰 cell shape entity_id = "decorative_obstacle_<q>_<r>" 不跟任何 actor 关联 — 仅作为 manager 内
+## "baseline 地形障碍" 的 single source of truth。
+func _register_decorative_obstacles_to_manager(world: RtsWorldGameplayInstance) -> void:
+	var grid: RtsBattleGrid = world.rts_grid
+	if grid == null or grid.model == null:
+		return
+	var manager: RtsObstructionManager = world.obstruction_manager
+	if manager == null:
+		return
+	var coords: Array[HexCoord] = grid.model.get_all_coords()
+	coords.sort_custom(func(a: HexCoord, b: HexCoord) -> bool:
+		if a.q != b.q:
+			return a.q < b.q
+		return a.r < b.r
+	)
+	var cell_size: float = grid.cell_size
+	var flags: int = RtsObstructionFlags.BLOCK_PATHFINDING | RtsObstructionFlags.BLOCK_FOUNDATION
+	for coord in coords:
+		if not grid.model.is_tile_blocking(coord):
+			continue
+		var center_world: Vector2 = grid.coord_to_world(coord)
+		manager.add_static_shape(
+			"decorative_obstacle_%d_%d" % [coord.q, coord.r],
+			center_world,
+			0.0,
+			cell_size,
+			cell_size,
+			flags,
+			"decorative",
+		)
 
 
 ## M2.5 — 每 tick 末 sync 所有 alive unit 的 obstruction shape 到 ObstructionManager。

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dfiiiufmrgvlo"]
+
+[ext_resource type="Script" uid="uid://ha3ihh83ijck" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_clearance_inflate.gd" id="1"]
+
+[node name="SmokeClearanceInflate" type="Node"]
+script = ExtResource("1")
