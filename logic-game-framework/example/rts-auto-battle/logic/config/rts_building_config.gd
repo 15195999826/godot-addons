@@ -22,6 +22,15 @@ const KIND_BARRACKS: String = "barracks"
 const KIND_ARCHER_TOWER: String = "archer_tower"
 
 
+# ========== 内部常量 ==========
+
+## Cell size (px), 跟 RtsBattleGrid.DEFAULT_CELL_SIZE 对齐 — M0.3 fallback 用.
+## 当 raw config 没显式 obstruction_size 时, 从旧 footprint_size: Vector2i × 此常量 派生.
+## 不直接引 RtsBattleGrid.DEFAULT_CELL_SIZE 避免 config → grid 反向依赖; 数值已在 §RtsBattleGrid 钉死,
+## 双源漂移风险低 (RTS 例子从未改过 cell_size).
+const _CELL_SIZE_FALLBACK: float = 32.0
+
+
 ## 单建筑数值条目
 class StatBlock:
 	extends RefCounted
@@ -30,8 +39,32 @@ class StatBlock:
 	var max_hp: float = 0.0
 	## 起手血量 (默认 = max_hp)
 	var hp: float = 0.0
-	## footprint cell 尺寸 (cells × cells, AABB; (1,1) = 单 cell, (2,2) = 2×2 = 4 cells)
+	## footprint cell 尺寸 (cells × cells, AABB; (1,1) = 单 cell, (2,2) = 2×2 = 4 cells)。
+	##
+	## **M0.3 注**: 此字段保留 (向后兼容现有 RtsBuildingActor.get_footprint_cells 算法 + 全部 smoke 数字);
+	## M2 引入 ObstructionManager 后由 obstruction_size (Vector2 px) 替换并删除。
+	## 新引入的 obstruction_size 默认从此字段 × cell_size 派生 (M0.3 fallback)。
 	var footprint_size: Vector2i = Vector2i(1, 1)
+	## M0.3 — Obstruction shape OBB 全宽全高 (px). 用于 RtsObstructionShapeStatic.{width, height}.
+	##
+	## 默认 ZERO; raw config 没显式时 fallback = `Vector2(footprint_size) × _CELL_SIZE_FALLBACK`.
+	## 三个建筑 (crystal_tower / barracks / archer_tower) 当前均走 fallback (M0.3 不配置, 保持 0 漂移).
+	var obstruction_size: Vector2 = Vector2.ZERO
+	## M0.3 — Obstruction shape 几何中心相对 actor.position_2d 的偏移 (px). 默认 ZERO.
+	##
+	## ZERO = sprite 锚点 = 寻路占地中心 (M0 默认行为, F1 决策 A); 非零让 sprite 视觉中心和寻路占地中心错位
+	## (M0.7 步骤 1 新 smoke 故意把 obstruction_offset 设非零验证 cells 跟着 obstruction.center 走).
+	var obstruction_offset: Vector2 = Vector2.ZERO
+	## M0.3 — Footprint UI 形状类型 (对照 RtsFootprintShape.Type: 0=CIRCLE, 1=SQUARE). 默认 0 = CIRCLE.
+	var footprint_shape_type: int = 0
+	## M0.3 — UI selection footprint 尺寸 (px). 注意**新名**: 不叫 footprint_size (跟旧 Vector2i 字段冲突).
+	##
+	## 语义 (跟 RtsFootprintShape.size 对应):
+	##   - CIRCLE: x = 半径; y 不用
+	##   - SQUARE: x = 半宽; y = 半高
+	##
+	## 默认 ZERO; raw config 没显式时 fallback = obstruction 外接圆半径 = `max(w, h) * 0.5`.
+	var selection_footprint_size: Vector2 = Vector2.ZERO
 	## 是否水晶塔 (P2.6 胜负判定 — 任一阵营 crystal_tower hp=0 → 战斗结束)
 	var is_crystal_tower: bool = false
 	## M2.1 Phase C — 是否 worker drop-off 点 (RtsReturnAndDropActivity 找己方最近 is_drop_off 建筑)。
@@ -175,6 +208,22 @@ static func get_stats(building_kind: String) -> StatBlock:
 	# 默认 AGGRESSIVE stance (RtsUnitActor.Stance.AGGRESSIVE = 2);
 	# 不直接引用枚举常量避开 cyclic dep, 数值形式传出, smoke / 调方按 RtsUnitActor.Stance 对照。
 	block.spawn_unit_stance = 2
+	# M0.3 — Obstruction / footprint shape 字段 (raw 未显式时 fallback 派生).
+	# 当前 3 个建筑 raw 都不写新字段, 全走 fallback, 保 0 漂移 + 向后兼容现有 smoke.
+	if raw.has("obstruction_size"):
+		block.obstruction_size = raw["obstruction_size"]
+	else:
+		block.obstruction_size = Vector2(block.footprint_size) * _CELL_SIZE_FALLBACK
+	if raw.has("obstruction_offset"):
+		block.obstruction_offset = raw["obstruction_offset"]
+	if raw.has("footprint_shape_type"):
+		block.footprint_shape_type = int(raw["footprint_shape_type"])
+	if raw.has("selection_footprint_size"):
+		block.selection_footprint_size = raw["selection_footprint_size"]
+	else:
+		# default = obstruction 外接圆半径 (CIRCLE.size.x = 半径).
+		var max_dim: float = maxf(block.obstruction_size.x, block.obstruction_size.y)
+		block.selection_footprint_size = Vector2(max_dim * 0.5, 0.0)
 	return block
 
 
