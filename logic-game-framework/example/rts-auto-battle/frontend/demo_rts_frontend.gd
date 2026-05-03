@@ -1,17 +1,19 @@
-## RtsFrontendDemo - 经济闭环 + AI vs AI RTS demo + 玩家 BuildPanel 放置.
+## RtsFrontendDemo - 经济闭环 + AI vs AI RTS demo + 玩家 BuildPanel 放置 + Minimap.
 ##
 ## F6 运行: 双方各 5 worker + 1 crystal_tower + 2 gold node + 2 wood node; 双方都 attach
 ## RtsComputerPlayer; worker 自动 harvest → AI 攒资源放 barracks → barracks 生产 melee →
 ## attack-move 攻敌 ct; 任一 ct 死判胜负.
 ##
 ## 玩家通过屏幕底部 BuildPanel 选 building_kind → 进入 placement mode → ghost 跟鼠标 +
-## grid snap (绿=可放 / 红=不可放, RtsBuildingPlacement.validate 同步预检) → 左键放下 /
-## ESC / 右键取消. 不在 placement mode 时左键不入命令.
+## grid snap → 左键放下 (失败留 mode) / ESC / 右键取消.
+##
+## Camera2D zoom=3 居中 (250, 250); WASD 移动主 camera (placement mode 下禁 WASD 避免冲突).
+## 屏幕右下角 Minimap 实时画 actor 点 + camera viewport 框; 点 minimap → camera 跳.
 ##
 ## 不变量:
-##   - demo 不读 actor 状态 — position / hp 走 director.get_render_state, 资源走 procedure
+##   - demo 不读 actor 状态 — position / hp / team_id 走 director.get_render_state, 资源走 procedure
 ##   - 玩家命令 tick_stamp = current_tick → 立即 apply (procedure step 1.5)
-##   - BuildPanel + ghost 是纯 frontend 状态机, 不动 core / logic / commands → replay 不破
+##   - BuildPanel + ghost + minimap + camera 是纯 frontend 状态机 → replay 不破
 extends Node
 
 
@@ -93,6 +95,14 @@ var _placement_ghost: ColorRect = null
 ## 进 mode 时缓存 stats / bbox 偏置, 避免每帧重算 footprint 偶数偏置 + new StatBlock.
 var _placement_stats: RtsBuildingConfig.StatBlock = null
 var _placement_ghost_offset: Vector2 = Vector2.ZERO
+
+# Camera2D + Minimap
+const _CAMERA_ZOOM: float = 3.0
+const _CAMERA_MOVE_SPEED: float = 200.0  # px/sec (world-space, 不受 zoom 影响)
+const _MAP_SIZE: Vector2 = Vector2(500.0, 500.0)
+
+var _camera: Camera2D = null
+var _minimap: RtsMinimap = null
 
 var _started: bool = false
 var _finalized: bool = false
@@ -180,12 +190,14 @@ func _ready() -> void:
 
 	_started = true
 
+	_setup_camera()
 	_setup_hud()
 	_setup_build_panel()
 	_setup_placement_ghost()
+	_setup_minimap()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _procedure == null or _director == null:
 		return
 
@@ -205,11 +217,26 @@ func _process(_delta: float) -> void:
 		_hud_hint_label.text = (
 			"[Placement: %s] left mouse to place | ESC / right mouse to cancel" % _placement_kind
 			if _placement_kind != _NO_PLACEMENT_KIND
-			else "Click BuildPanel to start placement (left zone only)"
+			else "WASD: pan camera | click BuildPanel: build (left zone) | click minimap: jump"
 		)
 
 	if _placement_kind != _NO_PLACEMENT_KIND:
 		_update_placement_ghost(resources)
+	else:
+		_update_camera_from_input(delta)
+
+	if _minimap != null:
+		_minimap.queue_redraw()
+
+
+## WASD 主 camera 移动 — 仅在非 placement mode 调; Camera2D limit_* 自动 clamp 边界.
+func _update_camera_from_input(delta: float) -> void:
+	if _camera == null:
+		return
+	var dir: Vector2 = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+	if dir.is_zero_approx():
+		return
+	_camera.position += dir * _CAMERA_MOVE_SPEED * delta
 
 
 # ========== 玩家输入 ==========
@@ -449,6 +476,60 @@ static func _bbox_center_offset(footprint_size: Vector2i, cell_size: float) -> V
 		float(half_x_hi - half_x_lo) * cell_size * 0.5,
 		float(half_y_hi - half_y_lo) * cell_size * 0.5,
 	)
+
+
+# ========== Camera2D + Minimap ==========
+
+const _MINIMAP_SCENE := preload("res://addons/logic-game-framework/example/rts-auto-battle/frontend/ui/minimap.tscn")
+
+
+## 加 Camera2D 子节点到 BattleMap, 居中 + zoom + 边界 clamp; add_child 后 make_current 接管 viewport.
+## 顺手注册 WASD 到 ui_left/right/up/down (默认只绑 arrow keys, RTS 玩家更习惯 WASD).
+func _setup_camera() -> void:
+	_camera = Camera2D.new()
+	_camera.name = "MainCamera"
+	_camera.position = _MAP_SIZE * 0.5
+	_camera.zoom = Vector2(_CAMERA_ZOOM, _CAMERA_ZOOM)
+	_camera.limit_left = 0
+	_camera.limit_top = 0
+	_camera.limit_right = int(_MAP_SIZE.x)
+	_camera.limit_bottom = int(_MAP_SIZE.y)
+	_battle_map.add_child(_camera)
+	_camera.make_current()
+
+	_register_camera_keys()
+
+
+static func _register_camera_keys() -> void:
+	_add_action_key("ui_left", KEY_A)
+	_add_action_key("ui_right", KEY_D)
+	_add_action_key("ui_up", KEY_W)
+	_add_action_key("ui_down", KEY_S)
+
+
+static func _add_action_key(action: String, keycode: int) -> void:
+	if not InputMap.has_action(action):
+		return
+	for ev in InputMap.action_get_events(action):
+		if ev is InputEventKey and (ev as InputEventKey).keycode == keycode:
+			return
+	var key := InputEventKey.new()
+	key.keycode = keycode
+	InputMap.action_add_event(action, key)
+
+
+func _setup_minimap() -> void:
+	_minimap = _MINIMAP_SCENE.instantiate() as RtsMinimap
+	add_child(_minimap)
+	_minimap.bind(_MAP_SIZE, _director, _camera)
+	_minimap.world_position_clicked.connect(_on_minimap_clicked)
+
+
+## minimap 点击 → camera 跳到 world_pos (Camera2D limit_* 自动 clamp).
+func _on_minimap_clicked(world_pos: Vector2) -> void:
+	if _camera == null:
+		return
+	_camera.position = world_pos
 
 
 # ========== 战斗结束 ==========

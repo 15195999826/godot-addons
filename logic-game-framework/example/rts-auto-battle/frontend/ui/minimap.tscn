@@ -1,0 +1,18 @@
+[gd_scene load_steps=2 format=3 uid="uid://rts_minimap"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/frontend/ui/minimap.gd" id="1_minimap"]
+
+[node name="RtsMinimap" type="Control"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -170.0
+offset_top = -170.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 1
+script = ExtResource("1_minimap")

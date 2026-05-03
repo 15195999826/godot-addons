@@ -287,6 +287,7 @@ func _seed_render_state(actor: RtsBattleActor) -> void:
 		"hp": hp,
 		"max_hp": max_hp,
 		"is_dead": actor.is_dead(),
+		"team_id": actor.get_team_id(),
 	}
 
 
