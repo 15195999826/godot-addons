@@ -96,6 +96,8 @@ static func run(scenario: RtsScenario, host: Node) -> Dictionary:
 		building.set_team_id(team_id)
 		world.add_actor(building)
 		building.position_2d = pos
+		# M0.5 — sync obstruction_shape.center 到 position_2d (place_building 由 procedure.start 后续做)
+		building.sync_obstruction_shape()
 		if b_cfg.has("hp_override"):
 			building.attribute_set.set_hp_base(float(b_cfg["hp_override"]))
 		(team_actors[team_id] as Array).append(building)
@@ -304,6 +306,8 @@ static func _inject_static_obstacle(
 	building.set_team_id(int(ob.get("team_id", 0)))
 	world.add_actor(building)
 	building.position_2d = ob.get("pos", Vector2.ZERO) as Vector2
+	# M0.5 — sync 必须在 get_footprint_cells 前 (动态注入,直调 place_building 不走 procedure.start)
+	building.sync_obstruction_shape()
 	var footprint: Array = building.get_footprint_cells(grid)
 	grid.place_building(building.get_id(), footprint)
 

@@ -116,12 +116,15 @@ func _ready() -> void:
 		ob.set_team_id(1)  # team 1 占位
 		_world.add_actor(ob)
 		ob.position_2d = ob_pos
+		# M0.5 — sync obstruction_shape.center 到 position_2d (place_building 由 procedure.start 后续做)
+		ob.sync_obstruction_shape()
 		right_actors.append(ob)
 
 	var dummy := RtsBuildings.create_barracks()
 	dummy.set_team_id(1)
 	_world.add_actor(dummy)
 	dummy.position_2d = DUMMY_BARRACKS_POS
+	dummy.sync_obstruction_shape()
 	right_actors.append(dummy)
 
 	for sp in TEAM0_START_POSITIONS:
@@ -270,6 +273,8 @@ func _handle_key_k() -> void:
 	ob.set_team_id(1)
 	_world.add_actor(ob)
 	ob.position_2d = ob_pos
+	# M0.5 — sync 必须在 get_footprint_cells 前 (动态 spawn 走 place_building 而非 procedure.start)
+	ob.sync_obstruction_shape()
 	var footprint: Array = ob.get_footprint_cells(_battle_map.grid)
 	_battle_map.grid.place_building(ob.get_id(), footprint)
 	_last_command_summary = "K: spawned obstacle @ %s" % str(ob_pos)

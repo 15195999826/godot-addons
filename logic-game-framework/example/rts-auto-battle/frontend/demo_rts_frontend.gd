@@ -165,12 +165,15 @@ func _ready() -> void:
 	_left_ct.set_team_id(0)
 	_world.add_actor(_left_ct)
 	_left_ct.position_2d = LEFT_CT_POS
+	# M0.5 — sync obstruction_shape.center 到 position_2d (place_building 由 procedure.start 在后续做)
+	_left_ct.sync_obstruction_shape()
 	left_actors.append(_left_ct)
 
 	_right_ct = RtsBuildings.create_crystal_tower()
 	_right_ct.set_team_id(1)
 	_world.add_actor(_right_ct)
 	_right_ct.position_2d = RIGHT_CT_POS
+	_right_ct.sync_obstruction_shape()
 	right_actors.append(_right_ct)
 
 	# 双方各 N worker (preset.num_workers_per_team / fallback NUM_WORKERS_PER_TEAM)
@@ -451,16 +454,22 @@ func _on_building_selected(kind: String) -> void:
 
 
 ## 进 mode 时缓存 stats + bbox 偏置 (mode 期间 kind 不变, 避免每帧 new StatBlock + 重算偶数偏置).
+##
+## **M0.5**: ghost size 切到走 stats.obstruction_size (Vector2 px) 而不是 footprint_size × cell_size,
+## 让 ghost 跟最终 actor.obstruction_shape 占地完全对齐 (spec §M0.5 步骤 4).
+## obstruction_offset = ZERO (M0.3 默认) 时, 跟旧 ghost 视觉 bit-identical;
+## 非零时 ghost 跟着 obstruction_offset 偏移, 玩家看到的占地和最终生效占地一致.
 func _enter_placement_mode(kind: String) -> void:
 	_placement_kind = kind
 	_placement_stats = RtsBuildingConfig.get_stats(kind)
 	var cs: float = _battle_map.grid.cell_size
 	var fp: Vector2i = _placement_stats.footprint_size
 	_placement_ghost_offset = _bbox_center_offset(fp, cs)
-	_placement_ghost.size = Vector2(fp.x * cs, fp.y * cs)
+	# M0.5 — ghost size = obstruction_size (Vector2 px); 跟 actor.obstruction_shape 占地一致
+	_placement_ghost.size = _placement_stats.obstruction_size
 	_placement_ghost.color = _GHOST_OK_COLOR
 	_placement_ghost.visible = true
-	print("[RtsFrontendDemo] enter placement mode kind=%s footprint=%s" % [kind, fp])
+	print("[RtsFrontendDemo] enter placement mode kind=%s footprint=%s obstruction=%s" % [kind, fp, _placement_stats.obstruction_size])
 
 
 func _exit_placement_mode(reason: String) -> void:
@@ -473,11 +482,14 @@ func _exit_placement_mode(reason: String) -> void:
 
 
 ## 跟鼠标 + grid snap, validate 决定 tint. resources 由 _process 头部抓好后传入避免每帧 2 次拷贝.
+##
+## **M0.5**: ghost bbox center 加上 obstruction_offset, 让 ghost 视觉中心落在最终 obstruction.center
+## (= position_2d + obstruction_offset) 上, 跟 actor 落地后真实占地完全一致.
 func _update_placement_ghost(team_remaining: Dictionary) -> void:
 	var grid := _battle_map.grid
 	var mouse_world: Vector2 = _battle_map.get_local_mouse_position()
 	var snapped_world: Vector2 = grid.coord_to_world(grid.world_to_coord(mouse_world))
-	var bbox_center: Vector2 = snapped_world + _placement_ghost_offset
+	var bbox_center: Vector2 = snapped_world + _placement_ghost_offset + _placement_stats.obstruction_offset
 	_placement_ghost.position = bbox_center - _placement_ghost.size * 0.5
 
 	var check: Dictionary = _validate_player_placement(snapped_world, team_remaining)

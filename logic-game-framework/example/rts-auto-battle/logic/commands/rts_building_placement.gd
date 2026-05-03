@@ -102,13 +102,40 @@ static func validate(
 ## 让校验阶段不依赖 actor 实例 (placement 失败时不应 new actor)。
 ##
 ## 偶数尺寸左上偏置, 奇数居中, 与 RtsBuildingActor.get_footprint_cells 完全一致。
+##
+## **M0.5**: 内部抽出 _compute_footprint_cells_core, actor / placement / ghost preview 共享
+## (data-structures.md §M0.5 — 避免双份算法漂移).
 static func _compute_footprint_cells(center: HexCoord, footprint_size: Vector2i) -> Array:
-	if footprint_size.x <= 1 and footprint_size.y <= 1:
+	return _compute_footprint_cells_core(center, footprint_size.x, footprint_size.y)
+
+
+## M0.5 — 从 RtsObstructionShapeStatic 算 footprint cells (新算法; 用 obstruction_shape.center
+## 当中心, w/h ÷ cell_size 推 cells_w/h). 跟 RtsBuildingActor.get_footprint_cells 新路径
+## 走同一 core helper, 无双份算法漂移.
+##
+## 用于:
+##   - placement 校验时 (validate 入口尚未引, 现走 footprint_size 路径; M0.6 ghost preview 切此)
+##   - frontend ghost preview 渲染 (M0.6 落地)
+static func _compute_footprint_cells_from_shape(shape: RtsObstructionShapeStatic, grid: RtsBattleGrid) -> Array:
+	if shape == null or grid == null:
+		return []
+	var center: HexCoord = grid.world_to_coord(shape.center)
+	# int(round(...)) 显式整数化, 避免浮点精度漂移 (与 actor.get_footprint_cells 一致, M0.4 风险 R2)
+	var cells_w: int = int(round(shape.width / grid.cell_size))
+	var cells_h: int = int(round(shape.height / grid.cell_size))
+	return _compute_footprint_cells_core(center, cells_w, cells_h)
+
+
+## M0.5 — Core AABB cells 算法, 偶数尺寸"左上偏置" (上半左半), 奇数居中.
+## actor.get_footprint_cells / _compute_footprint_cells / _compute_footprint_cells_from_shape
+## 共享, 严格保留旧偏置方向 (codex P1 #1).
+static func _compute_footprint_cells_core(center: HexCoord, cells_w: int, cells_h: int) -> Array:
+	if cells_w <= 1 and cells_h <= 1:
 		return [center]
-	var half_x_lo: int = footprint_size.x / 2
-	var half_x_hi: int = footprint_size.x - 1 - half_x_lo
-	var half_y_lo: int = footprint_size.y / 2
-	var half_y_hi: int = footprint_size.y - 1 - half_y_lo
+	var half_x_lo: int = cells_w / 2
+	var half_x_hi: int = cells_w - 1 - half_x_lo
+	var half_y_lo: int = cells_h / 2
+	var half_y_hi: int = cells_h - 1 - half_y_lo
 	var result: Array = []
 	for dy in range(-half_y_lo, half_y_hi + 1):
 		for dx in range(-half_x_lo, half_x_hi + 1):

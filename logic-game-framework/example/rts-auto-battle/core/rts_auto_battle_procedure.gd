@@ -184,6 +184,9 @@ func start() -> void:
 		var building := actor as RtsBuildingActor
 		if building.is_dead():
 			continue
+		# M0.5 — procedure.start 时建筑已被 demo / scenario / smoke 调方 set position_2d, 这里
+		# sync obstruction_shape.center 到 position_2d + offset, 必须在 get_footprint_cells 前.
+		building.sync_obstruction_shape()
 		var footprint: Array = building.get_footprint_cells(world.rts_grid)
 		world.rts_grid.place_building(building.get_id(), footprint)
 		# P2.6: 自动绑 crystal_tower_id 给 team_config (若尚未配)

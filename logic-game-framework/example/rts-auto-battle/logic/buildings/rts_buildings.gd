@@ -72,4 +72,23 @@ static func _create_from_kind(building_kind: String) -> RtsBuildingActor:
 
 	actor.ability_set = AbilitySet.new(actor.get_id(), actor.attribute_set)
 
+	# M0.5 — 注入 obstruction / footprint shape (只填 size/type/offset, 不写 center;
+	# center 由调方在 set position_2d 之后调 actor.sync_obstruction_shape() 时填,
+	# codex P1 #2: factory 不知道最终 position).
+	#
+	# entity_id 与 control_group 同样在 sync site 由调方填 (因 factory 时 actor 还未 add_actor,
+	# get_id 返回空串; team_id 也通常是 add_actor 之后才 set).
+	var obstr := RtsObstructionShapeStatic.new()
+	obstr.width = stats.obstruction_size.x
+	obstr.height = stats.obstruction_size.y
+	obstr.rotation_rad = 0.0   # M0 所有建筑无旋转, M2 ObstructionManager 落地后再加旋转支持
+	obstr.flags = 1 << 3       # FLAG_BLOCK_PATHFINDING (M0 硬编码; M2 引入完整 RtsObstructionFlags)
+	actor.obstruction_shape = obstr
+
+	var fp := RtsFootprintShape.new()
+	fp.type = stats.footprint_shape_type   # int → RtsFootprintShape.Type 枚举值; 0=CIRCLE / 1=SQUARE
+	fp.size = stats.selection_footprint_size
+	fp.center_offset = Vector2.ZERO        # F5 决策 A: footprint 中心默认跟 sprite 锚点重合
+	actor.footprint_shape = fp
+
 	return actor

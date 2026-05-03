@@ -158,36 +158,20 @@ func get_footprint_cells(grid) -> Array:
 	if grid == null:
 		return []
 	# 基类用 untyped `grid` 参数 (向后兼容); 这里取出 HexCoord 时显式标 type 让推导通过。
-	var center: HexCoord
-	var cells_w: int
-	var cells_h: int
 	if obstruction_shape != null:
 		# 新路径 (M0.4): 用 obstruction_shape.center 算 cells (Bug 1 修复).
-		center = grid.world_to_coord(obstruction_shape.center)
-		# int(round(...)) 显式整数化, 避免浮点精度漂移 (M0.4 风险 R2).
-		cells_w = int(round(obstruction_shape.width / grid.cell_size))
-		cells_h = int(round(obstruction_shape.height / grid.cell_size))
-	else:
-		# Fallback (M0.4 阶段所有调用方走此路径, M0.5 工厂注入后 obstruction_shape 非 null 自动切新路径).
-		center = grid.world_to_coord(position_2d)
-		cells_w = footprint_size.x
-		cells_h = footprint_size.y
-	# 1×1 退化
-	if cells_w <= 1 and cells_h <= 1:
-		return [center]
-	# AABB: 偶数尺寸时左上偏置 (footprint = [center-1, center])
-	# 奇数尺寸时居中 (footprint = [center - half, center + half])
-	var half_x_lo: int = cells_w / 2
-	var half_x_hi: int = cells_w - 1 - half_x_lo
-	var half_y_lo: int = cells_h / 2
-	var half_y_hi: int = cells_h - 1 - half_y_lo
-	var result: Array = []
-	# HexCoord 在 SQUARE grid 里 q=col, r=row (plugin 约定 cell 坐标始终用 HexCoord 类即使非 hex)。
-	for dy in range(-half_y_lo, half_y_hi + 1):
-		for dx in range(-half_x_lo, half_x_hi + 1):
-			var coord: HexCoord = HexCoord.new(center.q + dx, center.r + dy)
-			result.append(coord)
-	return result
+		# Lazy sync 兜底: M0.5 工厂注入后, 若调方漏调 sync_obstruction_shape() (常见于 tests / diag),
+		# obstruction_shape.center 会留在 ZERO 而 position_2d 已 set, 这里救场一次, 避免 cells
+		# 围绕 (0,0) 算. M0.7 step 1 加 Log.assert_crash 在 place_building 入口仍会捕获生产路径.
+		if obstruction_shape.center == Vector2.ZERO and position_2d != Vector2.ZERO:
+			sync_obstruction_shape()
+		# delegate 给 Placement core helper, 跟 RtsBuildingPlacement / ghost preview 共享同一份算法,
+		# 严格保留旧"左上偏置" (M0.5 抽 core 避免双份漂移)
+		return RtsBuildingPlacement._compute_footprint_cells_from_shape(
+			obstruction_shape as RtsObstructionShapeStatic, grid)
+	# Fallback (M0.4 字段加完前的旧路径; M0.5 工厂注入后 obstruction_shape 非 null 不走此分支)
+	var center: HexCoord = grid.world_to_coord(position_2d)
+	return RtsBuildingPlacement._compute_footprint_cells_core(center, footprint_size.x, footprint_size.y)
 
 
 ## M0.4 — 把 obstruction_shape.center 设为 position_2d + stats.obstruction_offset.
@@ -202,11 +186,20 @@ func get_footprint_cells(grid) -> Array:
 ##
 ## obstruction_shape == null 时静默返回 (M0.4 阶段未注入工厂的旧路径); building_kind 不识别时
 ## RtsBuildingConfig.get_stats 自身 Log.assert_crash.
+##
+## **M0.5 自动填**: 顺手把 entity_id (来自 actor.get_id) + control_group (来自 team_id) 填上,
+## 让调方少写 3 行 boilerplate. 仅当 actor 已 add_actor (get_id 非空) 时填 entity_id;
+## team_id < 0 (未 set) 时 control_group 留空字符串 (factory 早期场景).
 func sync_obstruction_shape() -> void:
 	if obstruction_shape == null:
 		return
 	var stats: RtsBuildingConfig.StatBlock = RtsBuildingConfig.get_stats(building_kind)
 	obstruction_shape.center = position_2d + stats.obstruction_offset
+	var actor_id: String = get_id()
+	if actor_id != "":
+		obstruction_shape.entity_id = actor_id
+	if team_id >= 0:
+		obstruction_shape.control_group = str(team_id)
 
 
 # ========== 录像支持 ==========

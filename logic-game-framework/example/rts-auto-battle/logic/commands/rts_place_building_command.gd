@@ -84,6 +84,8 @@ func apply(procedure, world) -> Dictionary:
 	building.set_team_id(team_id)
 	rts_world.add_actor(building)
 	building.position_2d = position_2d
+	# M0.5 — sync obstruction_shape.center 到 position_2d + obstruction_offset, 必须在 get_footprint_cells 前调.
+	building.sync_obstruction_shape()
 
 	# 3. 写 pathing map (战斗中新建筑由命令自己负责; procedure.start 仅处理战斗起手)
 	var footprint: Array = building.get_footprint_cells(rts_world.rts_grid)
