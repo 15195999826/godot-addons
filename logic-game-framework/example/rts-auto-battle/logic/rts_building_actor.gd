@@ -159,19 +159,26 @@ func get_footprint_cells(grid) -> Array:
 		return []
 	# 基类用 untyped `grid` 参数 (向后兼容); 这里取出 HexCoord 时显式标 type 让推导通过。
 	if obstruction_shape != null:
-		# 新路径 (M0.4): 用 obstruction_shape.center 算 cells (Bug 1 修复).
-		# Lazy sync 兜底: M0.5 工厂注入后, 若调方漏调 sync_obstruction_shape() (常见于 tests / diag),
-		# obstruction_shape.center 会留在 ZERO 而 position_2d 已 set, 这里救场一次, 避免 cells
-		# 围绕 (0,0) 算. M0.7 step 1 加 Log.assert_crash 在 place_building 入口仍会捕获生产路径.
+		# 用 obstruction_shape.center 当中心算 cells (Bug 1 修复 — 寻路占地中心跟 sprite 锚点解耦).
+		# Lazy sync 兜底: 若调方漏调 sync_obstruction_shape() (常见于 tests / diag),
+		# center 留 ZERO 而 position_2d 已 set 时救场一次, 避免 cells 围绕 (0,0) 算.
 		if obstruction_shape.center == Vector2.ZERO and position_2d != Vector2.ZERO:
 			sync_obstruction_shape()
+		# 抓 factory 注入后调方漏 set position_2d 但 stats 配了非默认 offset 的 bug
+		# (lazy sync 救不回, 因为 position_2d == ZERO 不触发).
+		var stats: RtsBuildingConfig.StatBlock = RtsBuildingConfig.get_stats(building_kind)
+		Log.assert_crash(
+			obstruction_shape.center != Vector2.ZERO or stats.obstruction_offset == Vector2.ZERO,
+			"RtsBuildingActor",
+			"get_footprint_cells: obstruction.center ZERO but stats.obstruction_offset non-zero — sync after setting position_2d"
+		)
 		# delegate 给 Placement core helper, 跟 RtsBuildingPlacement / ghost preview 共享同一份算法,
-		# 严格保留旧"左上偏置" (M0.5 抽 core 避免双份漂移)
-		return RtsBuildingPlacement._compute_footprint_cells_from_shape(
+		# 严格保留"左上偏置" (codex P1 #1, 避免双份漂移)
+		return RtsBuildingPlacement.compute_footprint_cells_from_shape(
 			obstruction_shape as RtsObstructionShapeStatic, grid)
-	# Fallback (M0.4 字段加完前的旧路径; M0.5 工厂注入后 obstruction_shape 非 null 不走此分支)
+	# Fallback: factory 未注入 obstruction_shape 的旧路径 (单元测试 stub / 早期场景)
 	var center: HexCoord = grid.world_to_coord(position_2d)
-	return RtsBuildingPlacement._compute_footprint_cells_core(center, footprint_size.x, footprint_size.y)
+	return RtsBuildingPlacement.compute_footprint_cells_core(center, footprint_size.x, footprint_size.y)
 
 
 ## M0.4 — 把 obstruction_shape.center 设为 position_2d + stats.obstruction_offset.

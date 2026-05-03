@@ -183,6 +183,7 @@ func _spawn_visualizer(actor_id: String) -> void:
 			actor_id,
 			bld_actor.get_team_id(),
 			bld_actor.footprint_size,
+			bld_actor.footprint_shape,
 			bld_actor.is_crystal_tower,
 			_director,
 		)

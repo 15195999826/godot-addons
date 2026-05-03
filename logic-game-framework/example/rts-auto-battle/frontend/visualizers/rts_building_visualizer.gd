@@ -25,6 +25,8 @@ const CRYSTAL_BORDER_COLOR := Color(1.0, 0.95, 0.6, 1.0)  # 金色边框
 # (基类 hoist: actor_id / _team_id / _director_ref / _curr_pos / _hp / _max_hp / _is_dead)
 
 var _footprint_size: Vector2i = Vector2i(1, 1)
+## UI selection 形状; _draw 优先用其 get_world_aabb. null 时退回 _footprint_size × CELL_SIZE.
+var _footprint_shape: RtsFootprintShape = null
 var _is_crystal_tower: bool = false
 
 
@@ -38,17 +40,20 @@ func _ready() -> void:
 
 ## 由 WorldView._spawn_visualizer 调用.
 ##
-## footprint_size 来自 RtsBuildingActor.footprint_size (Vector2i, 单位: cells).
+## footprint_size 来自 RtsBuildingActor.footprint_size (Vector2i, 单位: cells, M2 删).
+## footprint_shape 来自 RtsBuildingActor.footprint_shape (RtsFootprintShape, M0.6 起 _draw 优先用).
 ## director 用于起手 hydrate (不参与 _process — 建筑不需要插值).
 func bind(
 	p_actor_id: String,
 	p_team_id: int,
 	p_footprint_size: Vector2i,
+	p_footprint_shape: RtsFootprintShape,
 	p_is_crystal_tower: bool,
 	p_director: RtsBattleDirector,
 ) -> void:
 	_bind_base(p_actor_id, p_team_id, p_director)
 	_footprint_size = p_footprint_size
+	_footprint_shape = p_footprint_shape
 	_is_crystal_tower = p_is_crystal_tower
 	position = _curr_pos
 	queue_redraw()
@@ -84,10 +89,19 @@ func on_died() -> void:
 # ========== 渲染 ==========
 
 func _draw() -> void:
-	var w: float = _footprint_size.x * CELL_SIZE
-	var h: float = _footprint_size.y * CELL_SIZE
-	var rect_origin: Vector2 = Vector2(-w * 0.5, -h * 0.5)
-	var rect: Rect2 = Rect2(rect_origin, Vector2(w, h))
+	# 优先用 footprint_shape.get_world_aabb 算外接矩形 (UI 选择形状);
+	# null fallback 走 _footprint_size × CELL_SIZE 旧路径 (防御非 factory 创建路径).
+	# visualizer.position = actor.position_2d, _draw 在 local 空间, owner_pos 传 ZERO.
+	var rect: Rect2
+	if _footprint_shape != null:
+		rect = _footprint_shape.get_world_aabb(Vector2.ZERO)
+	else:
+		var fw: float = _footprint_size.x * CELL_SIZE
+		var fh: float = _footprint_size.y * CELL_SIZE
+		rect = Rect2(-fw * 0.5, -fh * 0.5, fw, fh)
+	var rect_origin: Vector2 = rect.position
+	var w: float = rect.size.x
+	var h: float = rect.size.y
 
 	# Body
 	var body_color: Color = _team_color(_team_id)
