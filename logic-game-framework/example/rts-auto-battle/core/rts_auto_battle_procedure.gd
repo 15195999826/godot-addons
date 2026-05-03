@@ -192,6 +192,8 @@ func _init(
 		#   之前调 grid.mark_obstacle_cell, 那时 manager 还未出生) 补登记成 1×1 cell OBB shape 进
 		#   manager。让 rasterize_if_dirty 增量重写时这些 cells 不被清掉。
 		_register_decorative_obstacles_to_manager(world)
+		# M4a: Hierarchical pathfinder 实例 (空数据; tick step 6.7 lazy recompute)
+		world.hierarchical_pathfinder = RtsHierarchicalPathfinder.new()
 
 
 # ========== 生命周期 ==========
@@ -407,6 +409,24 @@ func tick_once() -> void:
 		world.obstruction_manager.rasterize_if_dirty(
 			world.rts_grid.get_navcell_grid(),
 			world.passability_registry,
+		)
+
+	# 6.7 M4a — Hierarchical Pathfinder 首次 tick lazy recompute。
+	#     **为什么 lazy 不在 procedure.start()**: M3 baseline 起手 navcell grid 不含 building OBB
+	#     (rasterize 在 step 6.6 才跑); start() 里 recompute 会让 grid 提前含 building → tick 1
+	#     strategy 决策走非 stale grid → 改路径 → 破 replay bit-identical。step 6.6 之后做
+	#     recompute 才能跟 M3 既有时序兼容。
+	#     **R5 P1-2 invariant**: recompute 只读 dirty 不清,step 7.5 末端统一清。
+	#     **M4c 启用后此处改 incremental update** (perf 触发: full recompute > 30 ms / tick)。
+	if (
+		world.hierarchical_pathfinder != null
+		and not world.hierarchical_pathfinder.is_recomputed()
+		and world.rts_grid != null
+		and world.rts_grid.has_navcell_grid()
+	):
+		world.hierarchical_pathfinder.recompute(
+			world.rts_grid.get_navcell_grid(),
+			world.passability_registry.get_classes(),
 		)
 
 	# 7. 胜负判定
