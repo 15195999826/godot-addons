@@ -30,6 +30,17 @@ var passability_registry: RtsPassabilityClassRegistry = null
 ## ObstructionManager 闲置不影响 baseline。
 var obstruction_manager: RtsObstructionManager = null
 
+## M4: Hierarchical pathfinder 实例 (chunk + region 可达性查询); procedure._init 末尾构造
+## (obstruction_manager 之后)。grid 为 null 时此字段也是 null。
+##
+## **M4a 阶段**: 仅实例化 + 首次 tick step 6.7 lazy recompute; production code (player
+## commands / activity) **不消费** — 0 漂移保 replay bit-identical。
+## **M4b 阶段**: player commands 调 make_goal_reachable canonicalize goal → 改变路径 →
+## 接受新 baseline (P1)。
+## **M4c 阶段**(可选): tick step 6.7 改 incremental update 替代 lazy recompute;触发条件 =
+## M4a recompute > 30 ms / tick (perf 测量后决定)。
+var hierarchical_pathfinder: RtsHierarchicalPathfinder = null
+
 
 # ========== 战斗 staging fields (start_rts_battle 写, _create_battle_procedure 读) ==========
 
