@@ -103,11 +103,21 @@ func _create_battle_procedure(_participants: Array[Actor]) -> BattleProcedure:
 
 ## 仅返回存活的 actor id 集合, 服务 EventProcessor.process_post_event 广播。
 ## RtsBattleActor 子类暴露 is_dead(); 非 RtsBattleActor 视作非战斗对象, 不进集合。
+##
+## 过滤 ability_set == null 的纯 data actor (如 RtsResourceNode), 因 process_post_event
+## 走 IAbilitySetOwner.get_ability_set 后 assert 非 null — 没 ability_set 的 actor
+## 不参与事件广播.
 func get_alive_actor_ids() -> Array[String]:
 	var result: Array[String] = []
 	for actor in get_actors():
-		if actor is RtsBattleActor and not (actor as RtsBattleActor).is_dead():
-			result.append(actor.get_id())
+		if not (actor is RtsBattleActor):
+			continue
+		var battle_actor := actor as RtsBattleActor
+		if battle_actor.is_dead():
+			continue
+		if battle_actor.ability_set == null:
+			continue
+		result.append(actor.get_id())
 	return result
 
 
