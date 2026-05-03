@@ -12,6 +12,60 @@
 
 ---
 
+## [Unreleased] — 2026-05-04 RTS Pathfinding M3 Epic / M2 — ObstructionManager (Shape 数据库 + Spatial Index)
+
+M3 Epic 第三个 milestone(M0 Footprint 拆分 + M1 Navcell Grid 已 archived 2026-05-04)。引入 `RtsObstructionManager` 作为所有 obstruction shape(单位圆 + 建筑 OBB)的统一数据库,替换 M0/M1 阶段"actor 自管 obstruction_shape + grid 自管 placement_map"的散乱状态;同时引入完整 `RtsObstructionFlags` 枚举(6 flag)+ `RtsObstructionTestFilter` 抽象 + `RtsSpatialIndex`(uniform grid bucket 256 px)+ 完整 SAT OBB-OBB 重叠测试。
+
+**M2 是数据层 + Manager 单例落地, production code 仍走 dual-write**(grid bit 由 `rts_grid.place_building` 写入, manager 持 shape 数据但不被 pathfinder 消费); **replay seed=42 frames=9 events=20 deep-equal + baseline CSV byte-identical(882882 bytes)0 漂移**。spec §AC8 预期"trace 字段从占位变实填"导致新 baseline 未发生 — dual-write 模式让 M5 切 pathfinder 走 manager 时再一次性接受 baseline 漂。
+
+不修改 LGF core / stdlib,改动仅在 `addons/logic-game-framework/example/rts-auto-battle/` 内。
+
+### Added
+
+- **`logic/obstruction/rts_obstruction_flags.gd`** — Obstruction shape EFlags 位掩码常量(class_name + 6 const);完整对照 0 A.D. `ICmpObstructionManager.h:78-86` 6 flag(BLOCK_MOVEMENT / BLOCK_FOUNDATION / BLOCK_CONSTRUCTION / BLOCK_PATHFINDING / MOVING / DELETE_UPON_CONSTRUCTION);替换 M0 阶段 `rts_buildings.gd:85` 硬编码 `1 << 3`
+- **`logic/obstruction/rts_obstruction_test_filter.gd`** — Filter 抽象(RefCounted + `predicate(shape)` 默认 true)+ 3 静态工厂(`skip_control_group(group)` / `only_blocking_movement()` / `combined(a, b)`)+ 3 inner class 实现(`_SkipControlGroup` / `_OnlyBlockingMovement` / `_Combined`);**inner class 方案绕 GDScript 同文件 class_name 限制**(R6 缓解)
+- **`logic/obstruction/rts_obstruction_shape_unit.gd`** — Unit 子类(extends RtsObstructionShape;`clearance: float` + `moving: bool`;`_init` 设 `type = Type.UNIT`);base.flags 与 moving 字段双写约定
+- **`logic/obstruction/rts_spatial_index.gd`** — Uniform grid bucket spatial index(RefCounted;`BUCKET_SIZE = 256 px` = 8 navcell × 32 px;H2 决策 A);`_buckets: Dictionary[Vector2i, Array[int]]` + `_shape_buckets: Dictionary[int, Array[Vector2i]]` 反向索引(O(1) remove);4 公开 API(`insert` / `remove` / `update` / `query_circle`)+ 2 调试 helper(`size` / `bucket_count`);**`query_circle` 末尾 `result.sort()` 强制 tag 升序**(§12.4 determinism contract)
+- **`logic/obstruction/rts_obstruction_manager.gd`** — Obstruction shape 数据库 + 空间查询 + rasterize 单例(RefCounted;挂 `RtsWorldGameplayInstance.obstruction_manager`;H1 决策 A);9+ 公开 API(`add_unit_shape` / `add_static_shape` / `move_shape` / `set_unit_moving_flag` / `set_*control_group` / `remove_shape` / `get_shape` / `get_obstructions_in_range` / `test_unit_shape` / `test_static_shape` / `distance_to_point` / `distance_to_target` / `rasterize`)+ 2 调试 helper(`size` / `next_tag`);**完整 SAT 4 轴 OBB-OBB 重叠测试**(R1 缓解;0 A.D. `helpers/Pathfinding.cpp:TestObstructionsAgainstSquare` 同算法);完整 circle-OBB / OBB local 投影 / point-in-OBB 几何;`rasterize(grid, pass_class, dirty_only)` 把 BLOCK_PATHFINDING shape 写到 NavcellGrid 对应 class bit;**`_next_tag` 单调递增永不复用**(R5 决策, tag 0 = invalid 哨兵);**rasterize 不调 `clear_dirty()`**(R5 P1-2 决策, RtsWorld.tick step 7 末统一清);`rasterize` 内 `_shapes.keys() + sort()` 保 deterministic 写入序(Dictionary 迭代序非 deterministic, §12.4)
+- **`tests/battle/smoke_obstruction_manager_register.{gd,tscn}`** — 8 shape add(5 unit + 3 static)→ 验证 tag 1..8 单调递增 + `manager.size() == 8` + `next_tag() == 9` + `get_shape(tag)` 反查 + `get_obstructions_in_range(中心, 大半径)` 返回 8 shape 按 tag 升序(§12.4 determinism)
+- **`tests/battle/smoke_obstruction_manager_query.{gd,tscn}`** — 5 段:filter predicate 基础(`skip_control_group` / `only_blocking_movement` / `combined`)+ `test_unit_shape`(单位 vs 单位)+ `test_static_shape`(OBB vs Unit / OBB)+ **SAT OBB-OBB 4 case**(轴对齐 / 旋转 45° / 边接触 / 角接触;R1 缓解)+ `distance_to_point` / `distance_to_target`
+- **`tests/battle/smoke_obstruction_manager_remove.{gd,tscn}`** — 4 段:remove basic + idempotent(重复 remove / 不存在 tag 不 crash)+ query 一致性(remove 后 `get_obstructions_in_range` 不返回该 shape)+ remove all + re-add(验证 tag 永不复用,从 _next_tag 继续)
+
+### Changed
+
+- **`logic/obstruction/rts_obstruction_shape.gd`** — 基类 `flags` 字段注释从"M0 硬编码"更新为引用 `RtsObstructionFlags` + 典型组合(单位 BLOCK_MOVEMENT / 建筑 BLOCK_PATHFINDING|BLOCK_FOUNDATION / 树 BLOCK_PATHFINDING|DELETE_UPON_CONSTRUCTION)
+- **`logic/buildings/rts_buildings.gd:85`** — `obstr.flags = 1 << 3` → `obstr.flags = RtsObstructionFlags.BLOCK_PATHFINDING`(消除 M0 硬编码)
+- **`logic/rts_building_actor.gd`** — 加 `obstruction_tag: int = 0` 字段(0 = 未注册;dual-write 模式占位,M5 切 pathfinder 时成 single source of truth)
+- **`logic/rts_unit_actor.gd`** — 加 `obstruction_tag: int = 0` 字段;**Death unregister deferred 到 M5**(spec drift, _shapes 持续膨胀 ≤100 unit, 战斗结束 procedure GC 时随 manager 释放)
+- **`logic/commands/rts_place_building_command.gd:apply`** — step 3.5 补 `_register_to_obstruction_manager(rts_world, building)` 内部静态 helper, 调 `obstruction_manager.add_static_shape` 拿 tag 存 `building.obstruction_tag`;flag 用 `BLOCK_PATHFINDING | BLOCK_FOUNDATION`;manager / shape 任一为 null 时跳过(老 smoke / 单元测试 stub 兼容)
+- **`core/rts_world_gameplay_instance.gd`** — 加 `obstruction_manager: RtsObstructionManager = null` 字段(跟 grid / passability_registry 字段同段)
+- **`core/rts_auto_battle_procedure.gd`** — `_init` 末尾 `attach_passability_registry` 之后构造 `RtsObstructionManager` 挂 `world.obstruction_manager`(grid 为 null 时跳过老 smoke fallback);`start()` 起手 placed building loop 内 `place_building` 之后 inline 调 `add_static_shape`(同样 manager / shape 任一 null 跳过);`tick()` step 4d 之后插入 step 4f `_sync_unit_obstruction_shapes(world, alive_units)`(manager null 跳过);新加 helper `_sync_unit_obstruction_shapes`:遍历 alive_units, `obstruction_tag == 0` 调 `add_unit_shape` 注册并存 tag, `!= 0` 调 `move_shape(tag, position_2d)`
+
+### 待处理
+
+- **AC9 perf-trace** — M2 spec §AC9 要求 wall_clock ≤ +50% / tick_p99 ≤ 30 ms。perf_trace.gd 工具仍未实现(M0 / M1 也无), M2 实测 wall-clock 没明显增长(smoke 跑时间感觉跟 M1 一致), 但缺正式数据。stop-runner 第 5 条(2× 慢)未触发。计划 M5 启动前批量补足 perf_trace + oos_log 工具
+- **Death unit obstruction_tag unregister** — M2.5 spec 要求 death 调 `manager.remove_shape(tag)`,实际 deferred 到 M5 启动前(M5 切 pathfinder 真正消费 manager 时同步加 cleanup hook;M2 阶段死单位 tag 残留不影响 baseline,因 production code 不消费 manager._shapes)
+- **`obstruction_manager.rasterize` 接入** — M2.4 spec §step 4 要求 dual-write 中 manager 走 rasterize 写 NavcellGrid bit,实际仅 `place_building` 写入(单 source of truth);M5 切 pathfinder 走 manager 时一次性切换 + 接受 baseline 漂(预期变化)
+- **set_unit_moving_flag MOVING bit 切换** — M2.5 spec 要求起步 / 停步触发,实际 deferred 到 M7 unit motion 重写时再做(M2 阶段 step 4f 仅 add/move,不切 MOVING bit)
+
+### 验证表
+
+| 测试 | M1 末态 | M2 末态 |
+|---|---|---|
+| LGF 单元测试 | 73/73 PASS | 73/73 PASS |
+| smoke_rts_auto_battle | ticks=347 attacks=74 melee=32 ranged=42 melee_max=24.00 deaths=6 detoured=4 | **完全 byte-identical** |
+| smoke_castle_war_minimal | ticks=193 unit_to_building_attacks=4 archer_anti_air=1 spawn_count=2 | **完全 byte-identical** |
+| smoke_player_command_production | ticks=600 left_spawned=7 max_eastward=254.74 | **完全 byte-identical** |
+| smoke_replay_bit_identical | seed=42 frames=9 events=20 deep-equal | **完全 byte-identical** |
+| smoke_determinism | tick_diff=0 | **tick_diff=0** |
+| baseline CSV(882 KB / 6155 行) | M1 末态 | **byte-identical(882882 bytes match)** |
+| smoke_navcell_grid_passability(M1)| PASS AC1+AC2+AC8 | **完全 byte-identical** |
+| smoke_obstruction_manager_register(新)| 不存在 | **PASS** AC4+AC7,8 shape tags 1..8 单调,sorted query OK |
+| smoke_obstruction_manager_query(新)| 不存在 | **PASS** AC4+AC7+R1,filter + test_*_shape + SAT 4-case + distance OK |
+| smoke_obstruction_manager_remove(新)| 不存在 | **PASS** AC4+AC7,basic + idempotent + query-consistent + readd OK |
+
+---
+
 ## [Unreleased] — 2026-05-04 RTS Pathfinding M3 Epic / M1 — Navcell Grid + 16-bit Passability Class
 
 M3 Epic 第二个 milestone(M0 Footprint 拆分 2026-05-04 已 archived)。把 `RtsBattleGrid` 内部 per-cell `is_blocking: bool`(M0 末态:走 ultra-grid-map plugin `model.is_tile_blocking`)替换为 `RtsNavcellGrid` `PackedInt32Array` 16-bit 位掩码 multi-class passability,引入 `RtsPassabilityClassRegistry` 注册 `default` + `air` 两 class(留 14 bit 给将来 mod / 扩展)。

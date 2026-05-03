@@ -46,6 +46,15 @@ var obstruction_shape: RtsObstructionShapeStatic = null
 ## M0.6 切到 footprint_shape 时再处理 null 兜底.
 var footprint_shape: RtsFootprintShape = null
 
+## M2.4 — ObstructionManager 注册返回的 tag (0 = 未注册). placement 链路 (PlaceBuildingCommand /
+## procedure.start 起手注册) 调 obstruction_manager.add_static_shape 时存入; 撤建筑 / 死亡时调
+## obstruction_manager.remove_shape(tag) 反注册。
+##
+## **M2.4 阶段**: dual-write 模式 — grid bit 仍由 rts_grid.place_building 写入 (兼容老 path),
+## manager 旁路持 shape 数据;不影响 baseline。M5 切 pathfinder 走 manager 时, manager 才成为
+## single source of truth, grid.place_building 弃用。
+var obstruction_tag: int = 0
+
 ## 是否水晶塔 (供 P2.6 胜负判定快速过滤; P2.5 仅记录, 不参与判定)。
 var is_crystal_tower: bool = false
 
