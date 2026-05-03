@@ -159,6 +159,26 @@ func _init(
 	# M2.1 Phase C: 让 world 持当前 procedure 引用, Activity 通过 world.procedure 访问 procedure API。
 	world.bind_procedure(self)
 
+	# M1.1: PassabilityClassRegistry — 注册顺序固化是 replay determinism 关键。
+	# default 先 (bit_index=0, mask=0x1) → air 后 (bit_index=1, mask=0x2)。
+	# 顺序换会让 NavcellGrid 上所有 mask 数字漂, 破 replay bit-identical (R5 P1 决策)。
+	if world.passability_registry == null:
+		var registry := RtsPassabilityClassRegistry.new()
+		var ground_cfg := RtsPassabilityClassConfig.new()
+		ground_cfg.class_name_id = "default"
+		ground_cfg.clearance = 14.0
+		registry.register(ground_cfg)
+		var air_cfg := RtsPassabilityClassConfig.new()
+		air_cfg.class_name_id = "air"
+		air_cfg.clearance = 8.0
+		registry.register(air_cfg)
+		world.passability_registry = registry
+
+	# M1.4: 把 registry attach 到 grid; grid 自此走 NavcellGrid 路径 (双写 model 兼容老 smoke)。
+	# grid 可能为 null (smoke 不走 frontend / scenario 时), 此时跳过 attach, 老 smoke 走 fallback。
+	if world.rts_grid != null:
+		world.rts_grid.attach_passability_registry(world.passability_registry)
+
 
 # ========== 生命周期 ==========
 

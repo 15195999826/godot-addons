@@ -12,6 +12,49 @@
 
 ---
 
+## [Unreleased] — 2026-05-04 RTS Pathfinding M3 Epic / M1 — Navcell Grid + 16-bit Passability Class
+
+M3 Epic 第二个 milestone(M0 Footprint 拆分 2026-05-04 已 archived)。把 `RtsBattleGrid` 内部 per-cell `is_blocking: bool`(M0 末态:走 ultra-grid-map plugin `model.is_tile_blocking`)替换为 `RtsNavcellGrid` `PackedInt32Array` 16-bit 位掩码 multi-class passability,引入 `RtsPassabilityClassRegistry` 注册 `default` + `air` 两 class(留 14 bit 给将来 mod / 扩展)。
+
+**M1 是数据层重构,寻路算法不变** — 现有 `GridPathfinding.find_path` 仍工作(只是底下数据存储方式变了);**replay seed=42 frames=9 events=20 deep-equal + baseline CSV byte-identical(882882 bytes)**。
+
+不修改 LGF core / stdlib,改动仅在 `addons/logic-game-framework/example/rts-auto-battle/` 内。
+
+### Added
+
+- **`logic/grid/rts_passability_class_config.gd`** — Passability class 配置(Resource);6 字段对齐 0 A.D. `pathfinder.xml` schema(class_name_id / bit_index / clearance / max_water_depth / min_water_depth / min_shore_distance);clearance 单位换 px(默认 14.0 贴近现有 `RtsUnitClassConfig.collision_radius`)
+- **`logic/grid/rts_passability_class_registry.gd`** — Passability 注册查询单例(RefCounted);`PASS_CLASS_BITS=16` + `SPECIAL_PASS_CLASS_INDEX=15`(给 in-place 计算保留);`register / get_pass_class / get_mask / max_clearance / size` API;duplicate class_name_id `Log.assert_crash`;**registry full** 在 _next_bit ≥ 15 时 assert_crash;`get_pass_class` 命名避开 RefCounted 内建 `get_class()` 签名冲突
+- **`logic/grid/rts_navcell_grid.gd`** — 多 class navcell 数据 grid(RefCounted);`_data: PackedInt32Array` 长度 = w × h(16-bit 位掩码 per cell)+ `_dirtiness: PackedByteArray` 同 size;`get_data / set_data / or_data / and_data / is_passable / mark_dirty / is_dirty / clear_dirty / width / height / navcell_center_world / nearest_navcell` API;边界外 `is_passable` 返 false / `get_data` 返 -1(防越界,跟 0 A.D. helpers/Pathfinding.h 一致);`or_data / and_data` 仅在值变化时 mark dirty(精确 dirty 集合);**dirty lifecycle 注释固化 R5 P1-2 决策**(rasterize / hierarchical update 只读,`RtsWorld.tick` step 7 末端统一 clear)
+- **`tests/battle/smoke_navcell_grid_passability.{gd,tscn}`** — M1 acceptance smoke;5 个测试函数 13 项断言 覆盖 AC1(registry bit_index 0/1, get_mask 0x1/0x2, unknown 返 0, max_clearance, size)+ AC2(初始 clean / or_data 设 bit / and_data 清 bit / 边界外 false / dirty 标记 / clear_dirty)+ AC8(default 写不影响 air, air 写不影响 default, 双 bit 同 cell 独立)
+
+### Changed
+
+- **`logic/grid/rts_battle_grid.gd`** — 改成 facade:加 `_navcell_grid` / `_passability_registry` / `_default_class_mask` / `_half_cols` / `_half_rows` 字段;`attach_passability_registry(registry)` 注入(lazy 创建 `RtsNavcellGrid(cfg.columns, cfg.rows)` + 从 model `get_all_coords()` 同步已有 `is_tile_blocking` cells);`is_passable_for_layer / is_blocking / mark_obstacle_cell / unmark_obstacle_cell / place_building / remove_building` 走双写(model + NavcellGrid attached 时);`is_blocking(coord)` 新公开 API;`_coord_to_ij(coord) -> Vector2i` helper(HexCoord 偏移坐标 [-half..+half] → NavcellGrid 0-indexed [0..columns-1])
+- **`core/rts_world_gameplay_instance.gd`** — 加 `passability_registry: RtsPassabilityClassRegistry = null` 字段
+- **`core/rts_auto_battle_procedure.gd`** — `_init` 末尾按固定顺序 `register("default", clearance=14.0)` → `register("air", clearance=8.0)` 写 `world.passability_registry`(R5 决策:顺序固化让 mask 数字 0x1/0x2 跨 run 不漂);如 `world.rts_grid != null` 调 `attach_passability_registry`
+- **`frontend/scene/rts_battle_map.gd`** — `_mark_obstacle_cells` 把 `model.set_tile_blocking(coord, true)` 改 `grid.mark_obstacle_cell(coord)`(走 facade 双写,不再直读 plugin)
+- **`logic/commands/rts_building_placement.gd`** — `validate` footprint cells 阻挡检查从 `grid.model.is_tile_blocking` 改 `grid.is_blocking`(走 facade,NavcellGrid attached 时优先)
+
+### 待处理
+
+- **AC7 perf-trace 工具** — M1 spec §3 AC7 要求"perf-trace.csv 新增 M1 行 / vs M0: wall_clock ≤ +50%, tick_p99 ≤ 30 ms",但 perf_trace.gd 工具未实现(M0 也没引入)。M1 实测 wall-clock 没明显增长(smoke 跑时间感觉跟 M0 一致),但缺正式数据。按 stop-runner 第 5 条(`tick_p99/tick_max` 增长 ≥ 100% / 2× 才停)未触发。计划 M5 启动前批量补足 perf_trace + oos_log 工具。
+- **smoke 直读 `grid.model.is_tile_blocking` 的 5 处**(diag_*.gd 等 utility) — 由 dual-write 兜底,不破。M5 删除 facade 时统一 cleanup。
+
+### 验证表
+
+| 测试 | M0 末态 | M1 末态 |
+|---|---|---|
+| LGF 单元测试 | 73/73 PASS | 73/73 PASS |
+| smoke_rts_auto_battle | ticks=347 attacks=74 melee=32 ranged=42 melee_max=24.00 | **完全 byte-identical** |
+| smoke_castle_war_minimal | ticks=193 left_win | **完全 byte-identical** |
+| smoke_player_command_production | ticks=600 left_spawned=7 | **完全 byte-identical** |
+| smoke_replay_bit_identical | seed=42 frames=9 events=20 deep-equal | **完全 byte-identical** |
+| smoke_determinism | tick_diff=0 | **tick_diff=0** |
+| baseline CSV (882 KB / 6155 行) | M0 末态 | **byte-identical(882882 bytes match)** |
+| smoke_navcell_grid_passability(新)| 不存在 | **PASS** AC1+AC2+AC8 |
+
+---
+
 ## [Unreleased] — 2026-04-30 RTS 自动战斗示例（连续坐标 + navmesh）
 
 新增第二个 LGF 示例 `example/rts-auto-battle/`：连续 `Vector2` 坐标（500×500 px）+ Godot `NavigationServer2D` 寻路 + 实时 `attack_cooldown` 节奏，与既有 hex-atb-battle 的 hex grid + ATB 累积形成对比，验证 LGF 核心抽象（`WorldGameplayInstance` / `BattleProcedure` / `Actor` / `AbilitySet` / `EventProcessor`）对不同节奏 / 坐标系 / 寻路体系的复用面。

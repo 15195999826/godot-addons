@@ -45,7 +45,7 @@ func _mark_obstacle_cells() -> void:
 		for col in range(col_min, col_max + 1):
 			var coord := HexCoord.new(col, row)
 			if grid.has_tile(coord):
-				grid.model.set_tile_blocking(coord, true)
+				grid.mark_obstacle_cell(coord)
 
 
 # ========== 查询 ==========

@@ -18,6 +18,10 @@ var map_size: Vector2 = Vector2(500.0, 500.0)
 ## 为 null 时 actor 退化为直线接敌(走 RtsPathfinding.find_path 的 _direct_path 分支)。
 var rts_grid: RtsBattleGrid = null
 
+## M1: Passability class 注册查询单例 (default / air); procedure._init 末尾按固定顺序注册。
+## Determinism 关键 — register 顺序固化让 mask 数字 (0x1 default / 0x2 air) 跨 run 不漂。
+var passability_registry: RtsPassabilityClassRegistry = null
+
 
 # ========== 战斗 staging fields (start_rts_battle 写, _create_battle_procedure 读) ==========
 

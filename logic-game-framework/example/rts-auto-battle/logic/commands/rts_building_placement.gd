@@ -64,7 +64,7 @@ static func validate(
 	# 3. footprint cells 全不阻挡
 	for c in footprint:
 		var coord := c as HexCoord
-		if grid.model.is_tile_blocking(coord):
+		if grid.is_blocking(coord):
 			return { "success": false, "reason": "cells_blocked" }
 
 	# 4. footprint cells 内无现存 actor (反向索引)
