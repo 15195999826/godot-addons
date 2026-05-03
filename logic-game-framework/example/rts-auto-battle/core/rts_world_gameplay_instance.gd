@@ -22,6 +22,14 @@ var rts_grid: RtsBattleGrid = null
 ## Determinism 关键 — register 顺序固化让 mask 数字 (0x1 default / 0x2 air) 跨 run 不漂。
 var passability_registry: RtsPassabilityClassRegistry = null
 
+## M2: ObstructionManager 实例 (shape 数据库 + spatial index + rasterize); procedure._init 末尾构造
+## (grid + registry 都就位后)。grid 为 null 时 manager 也是 null (老 smoke 不走 frontend 时)。
+##
+## **M2.3 阶段**: 仅实例化, **不**接 building / unit / placement 链路 (留 M2.4 / M2.5)。
+## production code (place_building / spawn unit / move tick) 仍走 RtsBattleGrid facade 路径,
+## ObstructionManager 闲置不影响 baseline。
+var obstruction_manager: RtsObstructionManager = null
+
 
 # ========== 战斗 staging fields (start_rts_battle 写, _create_battle_procedure 读) ==========
 

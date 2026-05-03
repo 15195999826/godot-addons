@@ -82,7 +82,7 @@ static func _create_from_kind(building_kind: String) -> RtsBuildingActor:
 	obstr.width = stats.obstruction_size.x
 	obstr.height = stats.obstruction_size.y
 	obstr.rotation_rad = 0.0   # M0 所有建筑无旋转, M2 ObstructionManager 落地后再加旋转支持
-	obstr.flags = 1 << 3       # FLAG_BLOCK_PATHFINDING (M0 硬编码; M2 引入完整 RtsObstructionFlags)
+	obstr.flags = RtsObstructionFlags.BLOCK_PATHFINDING
 	actor.obstruction_shape = obstr
 
 	var fp := RtsFootprintShape.new()

@@ -49,6 +49,15 @@ var stance: int = Stance.AGGRESSIVE
 ## 既有兵种 (melee / ranged) 不读不写, 默认空 dict — 不影响 4v4 main path。
 var carrying: Dictionary[String, int] = {}
 
+## M2.5 — ObstructionManager 注册返回的 tag (0 = 未注册)。procedure.tick step 4f 集中 sync:
+## 新 spawn 单位首次扫到时调 add_unit_shape 拿 tag 存; 已注册单位每 tick 调 move_shape(tag, pos)
+## 同步 manager 内的 _spatial_index。
+##
+## **Death unregister deferred** (spec drift): M2.5 阶段不在死亡时调 manager.remove_shape, 让
+## _shapes 持续膨胀直到战斗结束 procedure 销毁; M5 切 pathfinder 走 manager 时再加完整 death cleanup。
+## 单场战斗 spawn ≤ 100 unit, _shapes ≤ 100 + 建筑数, perf 影响小。
+var obstruction_tag: int = 0
+
 
 ## M2.1 Phase C — carrying 总和; HarvestStrategy 判断"是否该回去 drop-off",
 ## HarvestActivity 判断"是否还能继续 harvest" 都用此值.

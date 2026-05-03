@@ -41,14 +41,12 @@ var entity_id: String = ""
 ## (= position_2d + obstruction_offset)。
 var center: Vector2 = Vector2.ZERO
 
-## EFlags 位掩码 (M0 硬编码,M2 引入完整 RtsObstructionFlags 枚举)。
+## EFlags 位掩码 — 取值见 [RtsObstructionFlags] (M2 引入完整 6 个 flag 常量)。
 ##
-## 当前 M0 阶段使用的 bit:
-##   1 << 3  =  BLOCK_PATHFINDING  (阻止 A* 选这条路)
-##
-## M2 引入完整枚举:
-##   BLOCK_MOVEMENT / BLOCK_FOUNDATION / BLOCK_CONSTRUCTION /
-##   BLOCK_PATHFINDING / MOVING / DELETE_UPON_CONSTRUCTION
+## **典型组合**:
+##   - 单位 (RtsObstructionShapeUnit): `BLOCK_MOVEMENT`
+##   - 建筑 (RtsObstructionShapeStatic): `BLOCK_PATHFINDING | BLOCK_FOUNDATION`
+##   - 树 / 资源点: `BLOCK_PATHFINDING | DELETE_UPON_CONSTRUCTION`
 var flags: int = 0
 
 ## 控制组 (= formation_id 或 owner_id, "" = 无 group)。

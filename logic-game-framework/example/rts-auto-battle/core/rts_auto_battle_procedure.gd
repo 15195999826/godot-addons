@@ -179,6 +179,15 @@ func _init(
 	if world.rts_grid != null:
 		world.rts_grid.attach_passability_registry(world.passability_registry)
 
+	# M2.3: 构造 ObstructionManager (依赖 navcell_grid + registry, 必须 attach 之后)。
+	# **M2.3 仅实例化**, building / unit / placement 链路改造留 M2.4 / M2.5; 此处 manager 闲置,
+	# 不影响 baseline 0 漂移。grid 为 null 时跳过 (老 smoke 不走 frontend)。
+	if world.rts_grid != null and world.rts_grid.has_navcell_grid():
+		world.obstruction_manager = RtsObstructionManager.new(
+			world.rts_grid.get_navcell_grid(),
+			world.passability_registry,
+		)
+
 
 # ========== 生命周期 ==========
 
@@ -209,6 +218,20 @@ func start() -> void:
 		building.sync_obstruction_shape()
 		var footprint: Array = building.get_footprint_cells(world.rts_grid)
 		world.rts_grid.place_building(building.get_id(), footprint)
+		# M2.4 — 起手已 placed building 也注册到 ObstructionManager (dual-write 模式).
+		# manager 为 null (老 smoke 不走 frontend 创 grid) / shape 为 null (factory 未注入) 时跳过,
+		# 跟 place_building 行为一致 — 全程 baseline 0 漂移。
+		if world.obstruction_manager != null and building.obstruction_shape != null:
+			var shape := building.obstruction_shape
+			building.obstruction_tag = world.obstruction_manager.add_static_shape(
+				building.get_id(),
+				shape.center,
+				shape.rotation_rad,
+				shape.width,
+				shape.height,
+				RtsObstructionFlags.BLOCK_PATHFINDING | RtsObstructionFlags.BLOCK_FOUNDATION,
+				str(building.team_id),
+			)
 		# P2.6: 自动绑 crystal_tower_id 给 team_config (若尚未配)
 		if building.is_crystal_tower:
 			var cfg: RtsTeamConfig = _team_configs.get(building.get_team_id(), null) as RtsTeamConfig
@@ -336,6 +359,16 @@ func tick_once() -> void:
 	if _stuck_detector == null:
 		_stuck_detector = RtsStuckDetector.new()
 	_stuck_detector.tick(alive_units, _unit_runtimes)
+
+	# 4f. M2.5 — 同步 unit obstruction shape 到 ObstructionManager (dual-write 模式):
+	#     新 spawn 单位 (obstruction_tag == 0) → add_unit_shape 注册, 拿 tag 存到 actor.obstruction_tag;
+	#     已注册单位 → move_shape(tag, position_2d) 同步 _spatial_index 内位置。
+	#     manager 为 null 时跳过 (老 smoke 不走 frontend); production code 不消费 manager._shapes,
+	#     baseline 0 漂移。
+	#     **Death unregister deferred** (spec drift): 不在死亡时反注册, _shapes 持续膨胀直到战斗结束,
+	#     procedure GC 时随 manager 一并 release; M5 切 pathfinder 时再加完整 cleanup。
+	if world.obstruction_manager != null:
+		_sync_unit_obstruction_shapes(world, alive_units)
 
 	# 4e. P2.5 production system: 走全部 alive RtsBuildingActor, 累积 production_progress_ms,
 	#     满周期触发 _unit_spawner 回调 (smoke / 调方负责实际 add_actor + nav agent + controller +
@@ -624,6 +657,33 @@ func _safe_get_ability_set(actor: RtsBattleActor) -> AbilitySet:
 	if actor.has_method("get_ability_set"):
 		return actor.call("get_ability_set") as AbilitySet
 	return null
+
+
+## M2.5 — 每 tick 末 sync 所有 alive unit 的 obstruction shape 到 ObstructionManager。
+##
+## 新单位 (obstruction_tag == 0) 调 add_unit_shape 注册; 已注册单位调 move_shape 更新位置。
+## **Death unregister deferred** 到 M5: M2.5 阶段死单位 obstruction_tag 残留, 但 production code
+## 不消费 manager._shapes, baseline 不漂; 战斗结束 procedure GC 时随 manager 释放。
+##
+## **Determinism**: alive_units 顺序由 RtsWorldGameplayInstance.get_alive_units() 决定 (跟 base
+## get_actors 同序), 跨 run 一致 → tag 分配序也一致。
+##
+## **Perf**: 100 unit × 30 Hz = 3000 op/s, 主要开销在 _spatial_index.update (remove+insert);
+## M3 时若 perf hot 可加 short-circuit (旧/新 AABB 桶集合相同时不动)。
+func _sync_unit_obstruction_shapes(world: RtsWorldGameplayInstance, alive_units: Array) -> void:
+	var manager: RtsObstructionManager = world.obstruction_manager
+	for u in alive_units:
+		var unit: RtsUnitActor = u as RtsUnitActor
+		if unit.obstruction_tag == 0:
+			unit.obstruction_tag = manager.add_unit_shape(
+				unit.get_id(),
+				unit.position_2d,
+				unit.collision_radius,
+				RtsObstructionFlags.BLOCK_MOVEMENT,
+				str(unit.team_id),
+			)
+		else:
+			manager.move_shape(unit.obstruction_tag, unit.position_2d)
 
 
 ## P1.4: 包装 basic attack action 调用。给共享 action 喂 ExecutionContext + AbilityRef。

@@ -91,6 +91,10 @@ func apply(procedure, world) -> Dictionary:
 	var footprint: Array = building.get_footprint_cells(rts_world.rts_grid)
 	rts_world.rts_grid.place_building(building.get_id(), footprint)
 
+	# 3.5 M2.4 — 注册到 ObstructionManager (dual-write 模式: grid bit 已由 step 3 写入,
+	#     manager 旁路持 shape 数据让后续 query / rasterize 路径可用; baseline 0 漂移)。
+	_register_to_obstruction_manager(rts_world, building)
+
 	# 4. 扣多资源 (M2.1 Phase A — cost 是 Dictionary[String, int])
 	var cost: Dictionary = check.get("cost", {}) as Dictionary
 	procedure.spend_team_resources(team_id, cost)
@@ -125,6 +129,32 @@ func serialize() -> Dictionary:
 
 
 # ========== 内部 ==========
+
+## M2.4 — 把已 placed building 注册到 ObstructionManager (dual-write 兼容)。
+##
+## 调用前提: building.position_2d 已 set, sync_obstruction_shape() 已调 (apply step 2 完成).
+## obstruction_manager 或 obstruction_shape 任一为 null 时跳过 (老 smoke / 单元测试 stub 兼容)。
+##
+## 与起手注册路径 (procedure.start loop) 共享语义, 后者直接 inline 调 add_static_shape — 此处提
+## 取静态 helper 为 placement command 路径专用; 起手路径 inline 是因为有 procedure 内部上下文,
+## 提 helper 反而绕。
+static func _register_to_obstruction_manager(rts_world: RtsWorldGameplayInstance, building: RtsBuildingActor) -> void:
+	if rts_world.obstruction_manager == null:
+		return
+	if building.obstruction_shape == null:
+		return
+	var shape := building.obstruction_shape
+	var team_str: String = str(building.team_id)
+	building.obstruction_tag = rts_world.obstruction_manager.add_static_shape(
+		building.get_id(),
+		shape.center,
+		shape.rotation_rad,
+		shape.width,
+		shape.height,
+		RtsObstructionFlags.BLOCK_PATHFINDING | RtsObstructionFlags.BLOCK_FOUNDATION,
+		team_str,
+	)
+
 
 ## 工厂分发 — 与 RtsBuildings.create_* 一一对应; 未知 kind 返回 null。
 ##
