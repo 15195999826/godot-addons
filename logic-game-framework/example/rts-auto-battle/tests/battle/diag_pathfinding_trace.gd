@@ -113,15 +113,13 @@ func _spawn_unit(team_id: int, pos: Vector2) -> RtsUnitActor:
 	_world.add_actor(unit)
 	unit.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	add_child(agent)
-	agent.bind_actor(unit, _grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
+	_agents[unit.get_id()] = motion_component
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(
 		RtsUnitClassConfig.UnitClass.MELEE
 	)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	_controllers[unit.get_id()] = controller
 	return unit
 
@@ -131,7 +129,7 @@ func _record_tick(tick: int) -> void:
 		var unit := _world.get_actor(uid) as RtsUnitActor
 		if unit == null or unit.is_dead():
 			continue
-		var agent := _agents[uid] as RtsNavAgent
+		var motion_component := _agents[uid] as RtsMotionComponent
 		var pos := unit.position_2d
 		var vel := unit.velocity
 		var vmag := vel.length()
@@ -142,11 +140,15 @@ func _record_tick(tick: int) -> void:
 		if _grid.has_tile(coord):
 			in_block = _grid.model.is_tile_blocking(coord)
 
-		# final target 与抵达距离
-		var has_t: bool = agent.has_target()
-		var final_t: Vector2 = agent.get_final_target() if has_t else Vector2.ZERO
+		# final target 与抵达距离 (motion: 仅 POINT MoveRequest 有 final target)
+		var has_t: bool = motion_component.motion.has_target()
+		var final_t: Vector2 = Vector2.ZERO
+		if has_t:
+			var req: RtsMoveRequest = motion_component.motion._move_request
+			if req != null and req.type == RtsMoveRequest.Type.POINT:
+				final_t = req.position
 		var dist_final: float = pos.distance_to(final_t) if has_t else -1.0
-		var path_empty: bool = agent.has_empty_path()
+		var path_empty: bool = motion_component.motion._short_path.is_empty()
 
 		# 距 building 矩形最近边的距离 (负 = 内部)
 		var dist_edge: float = _signed_dist_to_rect(pos, BARRACKS_RECT)
@@ -157,9 +159,10 @@ func _record_tick(tick: int) -> void:
 		else:
 			_stationary_ticks[uid] = 0
 
+		# M7d: motion 没 _waypoint_index 概念 (短 path 在 procedure 全局推进), 用 0 占位
 		_trace_lines.append("%d,%s,%.2f,%.2f,%.3f,%.3f,%.3f,%d,%d,%s,%s,%.2f,%.2f,%.2f,%.2f,%s" % [
 			tick, uid, pos.x, pos.y, vel.x, vel.y, vmag,
-			agent._waypoint_index, agent._path.size(),
+			0, motion_component.motion._short_path.size(),
 			str(has_t), str(in_block),
 			final_t.x, final_t.y, dist_final, dist_edge,
 			str(path_empty),
@@ -188,7 +191,7 @@ func _print_summary() -> void:
 
 	for uid in _unit_ids:
 		var unit := _world.get_actor(uid) as RtsUnitActor
-		var agent := _agents[uid] as RtsNavAgent
+		var _motion_component := _agents[uid] as RtsMotionComponent
 		var final_pos := unit.position_2d if unit != null else Vector2.ZERO
 		var dist_to_t := final_pos.distance_to(TARGET_POS) if unit != null else -1.0
 

@@ -168,13 +168,11 @@ func _spawn_unit(unit_class: int, team_id: int, pos: Vector2) -> RtsUnitActor:
 	_world.add_actor(unit)
 	unit.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	add_child(agent)
-	agent.bind_actor(unit, _grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
+	_agents[unit.get_id()] = motion_component
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	_controllers[unit.get_id()] = controller
 	return unit
 
@@ -207,9 +205,9 @@ func _update_event_counts() -> void:
 		var actor := _world.get_actor(uid)
 		if actor == null or not _agents.has(uid):
 			continue
-		var agent := _agents[uid] as RtsNavAgent
-		var has_t: bool = agent.has_target()
-		var psz: int = agent._path.size()
+		var motion_component := _agents[uid] as RtsMotionComponent
+		var has_t: bool = motion_component.motion.has_target()
+		var psz: int = motion_component.motion._short_path.size()
 		if has_t and not (_prev_has_target[uid] as bool):
 			_set_target_events[uid] = (_set_target_events[uid] as int) + 1
 		if has_t and psz != (_prev_path_size[uid] as int) and psz > 0:
@@ -228,12 +226,17 @@ func _record_tick(tick: int) -> void:
 		var unit := actor as RtsUnitActor
 		if unit.is_dead():
 			continue
-		var agent := _agents[uid] as RtsNavAgent
+		var motion_component := _agents[uid] as RtsMotionComponent
 		var ctrl := _controllers[uid] as RtsUnitController
 		var pos := unit.position_2d
 		var vel := unit.velocity
-		var has_t: bool = agent.has_target()
-		var final_t: Vector2 = agent.get_final_target() if has_t else Vector2.ZERO
+		var has_t: bool = motion_component.motion.has_target()
+		var final_t: Vector2 = Vector2.ZERO
+		if has_t:
+			# motion final_target 仅 POINT MoveRequest 有意义;ENTITY/OFFSET 跳过
+			var req: RtsMoveRequest = motion_component.motion._move_request
+			if req != null and req.type == RtsMoveRequest.Type.POINT:
+				final_t = req.position
 		var dist_f: float = pos.distance_to(final_t) if has_t else -1.0
 		var activity_label: String = "?"
 		if ctrl != null and ctrl.current_activity != null:
@@ -260,7 +263,8 @@ func _record_tick(tick: int) -> void:
 			tick, uid, unit.get_team_id(),
 			RtsUnitClassConfig.UnitClass.keys()[unit.unit_class],
 			pos.x, pos.y, vel.x, vel.y, vel.length(),
-			str(has_t), agent._path.size(), str(agent.has_empty_path()),
+			str(has_t), motion_component.motion._short_path.size(),
+			str(motion_component.motion._short_path.is_empty()),
 			final_t.x, final_t.y, dist_f, activity_label,
 			atk_target_id, atk_target_alive,
 			atk_target_pos.x, atk_target_pos.y, atk_dist, atk_range,

@@ -258,7 +258,12 @@ func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
 		else:
 			var next_long: Vector2 = _long_path.pop_back()
 			_request_short_path_to(next_long, facade, world)
-
+			if _short_path.is_empty():
+				# M7d FALLBACK: vertex pathfinder simple-case 返空 path(start ≈ next_long
+				# 直线无障碍 / vertex algo corner case)→ 直接用 next_long 当 short 单 wp
+				# 让 _step 走 long path 的下一段。等价于"没 vertex 绕角效果,但 unit 仍按
+				# long path 推进",跟 M5 LongPath-only 行为一致,避免 unit 站桩死锁。
+				_short_path.push_back(next_long)
 	_step(delta, world)
 
 	# m_FollowKnownImperfectPathCountdown:short_path 走完后倒数 N tick 触发 long retry

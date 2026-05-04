@@ -25,8 +25,8 @@ const ARRIVAL_THRESHOLD: float = 4.0
 ## 目标世界坐标 (像素); 路径终点。
 var target_pos: Vector2
 
-## 通过 bind_runtime 注入的 nav agent。
-var _nav_agent: RtsNavAgent = null
+## M7d — 通过 bind_runtime 注入的 motion component(替代 nav_agent)。
+var _motion: RtsMotionComponent = null
 
 ## 当前正在打的 enemy id (""=无, 走 MoveTo child)
 var _engaging_target_id: String = ""
@@ -38,9 +38,9 @@ func _init(p_target_pos: Vector2) -> void:
 	target_pos = p_target_pos
 
 
-func bind_runtime(nav_agent: RtsNavAgent) -> void:
-	_nav_agent = nav_agent
-	super.bind_runtime(nav_agent)
+func bind_runtime(motion_component: RtsMotionComponent) -> void:
+	_motion = motion_component
+	super.bind_runtime(motion_component)
 
 
 # ========== 公共 API (调方在外部 push 引擎目标) ==========
@@ -99,8 +99,8 @@ func tick(actor: RtsUnitActor, _world: RtsWorldGameplayInstance, _dt: float) -> 
 
 
 func on_last_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void:
-	if _nav_agent != null:
-		_nav_agent.clear_target()
+	if _motion != null:
+		_motion.motion.stop()
 
 
 func is_equivalent_to(other: RtsActivity) -> bool:
@@ -130,5 +130,5 @@ func _build_child_activity() -> void:
 		# MoveTo done → AttackMove done → strategy 接管 RtsAttackActivity 攻 ct.
 		built = RtsMoveToActivity.new(target_pos, false)
 	child_activity = built
-	if _nav_agent != null:
-		child_activity.bind_runtime(_nav_agent)
+	if _motion != null:
+		child_activity.bind_runtime(_motion)

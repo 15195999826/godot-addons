@@ -23,7 +23,7 @@ const MAX_PHASE1_TICKS: int = 200
 
 var _world: RtsWorldGameplayInstance = null
 var _battle_map: RtsBattleMap = null
-var _agent: RtsNavAgent = null
+var _motion_component: RtsMotionComponent = null
 var _actor: RtsUnitActor = null
 var _enemy: RtsUnitActor = null
 
@@ -46,9 +46,7 @@ func _ready() -> void:
 	_actor.set_team_id(0)
 	_world.add_actor(_actor)
 	_actor.position_2d = Vector2(50.0, 50.0)
-	_agent = RtsNavAgent.new()
-	_battle_map.add_child(_agent)
-	_agent.bind_actor(_actor, _battle_map.grid)
+	_motion_component = RtsMotionComponent.attach_default(_actor, _world)
 
 	# Enemy 远端, 让 AttackActivity 有 valid target id (cancel 前永远不会 in-range)
 	_enemy = RtsUnitActor.new(RtsUnitClassConfig.UnitClass.MELEE)
@@ -63,7 +61,7 @@ func _ready() -> void:
 	var move_b := RtsMoveToActivity.new(pos_b)
 	var attack := RtsAttackActivity.new(_enemy.get_id())
 	move_a.queue(move_b).queue(attack)
-	move_a.bind_runtime(_agent)
+	move_a.bind_runtime(_motion_component)
 
 	var dt: float = TICK_INTERVAL_MS / 1000.0
 	var head: RtsActivity = move_a
@@ -138,14 +136,17 @@ func _ready() -> void:
 
 # ========== 移动驱动 (代替 procedure step 4) ==========
 
-## P2.2 拆分后, activity tick 不再调 nav_agent.tick — 移动归 procedure step 4 三段管线。
-## 此 smoke 不接 procedure, 手动模拟 compute_velocity + integrate; 不接 spatial_hash / steering
-## (单 actor 场景, 无邻居 → steering 无作用)。
+## M7d cutover: 调 motion_component.tick 替代旧 nav_agent.compute_velocity + integrate。
+## 此 smoke 不接 procedure → world.pathfinder_facade == null → motion 累 _failed_movements,
+## 35 tick 内 abort。AMBIGUOUS:smoke 要在 M7d.4 改成接真 facade 或者保留为纯 unit-test
+## (跳过移动验证,只测 chain 链路)。
 func _drive_nav(dt: float) -> void:
-	if _agent == null:
+	if _motion_component == null:
 		return
-	_agent.compute_desired_velocity(dt)
-	_agent.integrate(dt)
+	var facade: RtsPathfinderFacade = null
+	if _world != null:
+		facade = _world.pathfinder_facade
+	_motion_component.tick(dt, _world, facade)
 
 
 # ========== 调试输出 helper ==========

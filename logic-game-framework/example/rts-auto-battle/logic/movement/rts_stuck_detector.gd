@@ -74,17 +74,29 @@ func tick(units: Array, controllers: Dictionary) -> void:
 		seen[aid] = true
 
 		var ctrl := controllers.get(aid, null) as RtsUnitController
-		if ctrl == null or ctrl.agent == null:
-			# 没 controller / 没 agent 的单位 (smoke_navigation 类) — 仅初始化 last_pos, 不参与 stuck
+		if ctrl == null or ctrl.motion_component == null:
+			# M7d:没 controller / 没 motion_component 的单位 (smoke_navigation 类 / 老路径) —
+			# 仅初始化 last_pos,不参与 stuck。motion 自带 _failed_movements ≥ 35 abort 机制,
+			# 已覆盖 stuck_detector 的"反复 repath 失败"语义,所以 motion-bearing actor 完全
+			# 跳过 stuck_detector(motion 的 abort 路径会 emit motion_move_failed event 让
+			# activity 自行 cancel)。
 			_ensure_state(aid, unit.position_2d)
 			continue
 
+		var motion := ctrl.motion_component.motion
 		var state := _ensure_state(aid, unit.position_2d)
 
 		# 不算 stuck 的状态 — reset 计数
+		# M7d:nav_agent.has_target / is_at_final_target → motion.has_target + actor 距离判定
+		# (motion 没 final_target 字段;通过 _move_request.position 判 POINT 距离 ≤ ARRIVAL_THRESHOLD
+		# 算"到达")
+		var at_final: bool = false
+		if motion._move_request != null and motion._move_request.type == RtsMoveRequest.Type.POINT:
+			at_final = unit.position_2d.distance_squared_to(motion._move_request.position) \
+				<= RtsUnitMotion.ARRIVAL_THRESHOLD * RtsUnitMotion.ARRIVAL_THRESHOLD
 		if ctrl.is_command_abandoned() \
-				or not ctrl.agent.has_target() \
-				or ctrl.agent.is_at_final_target():
+				or not motion.has_target() \
+				or at_final:
 			state.stuck_ticks = 0
 			state.repath_failures = 0
 			state.last_pos = unit.position_2d
@@ -140,15 +152,31 @@ func _ensure_state(actor_id: String, init_pos: Vector2) -> _State:
 	return state
 
 
-## 触发本地 repath: 重跑 agent.set_target(final_target) 让 A* 再算一次。
-## path 仍空 → 计入 repath_failures; ≥ MAX_REPATH_FAILURES 调 controller.abandon_command。
+## M7d — motion-bearing actor 已被 tick() 头部 motion_component == null 分支跳过,本函数仅在
+## motion-bearing actor 物理位移 < threshold N tick 后被调用(unit 被推墙 / 障碍堵住)。
+##
+## 触发本地 repath: motion.move_to(final_target) 重启请求让 facade A* 再算一次。
+## motion._failed_movements 累达阈值后 motion.has_just_failed() = true → abandon_command;
+## 否则计 repath_failures,≥ MAX_REPATH_FAILURES 也 abandon。
 func _trigger_repath(_unit: RtsUnitActor, ctrl: RtsUnitController, state: _State) -> void:
-	var agent := ctrl.agent
-	if agent == null or not agent.has_target():
+	if ctrl.motion_component == null:
 		return
-	var target_pos: Vector2 = agent.get_final_target()
-	agent.set_target(target_pos)
-	if agent.has_empty_path():
+	var motion := ctrl.motion_component.motion
+	if not motion.has_target():
+		return
+	var move_request := motion._move_request
+	# 仅 POINT MoveRequest 能从 _move_request.position 拿 target;ENTITY MoveRequest 由 activity
+	# 自己处理重 acquire 逻辑,_trigger_repath 仅触发 abandon。
+	if move_request == null or move_request.type != RtsMoveRequest.Type.POINT:
+		state.repath_failures += 1
+		if state.repath_failures >= MAX_REPATH_FAILURES:
+			ctrl.abandon_command()
+			state.repath_failures = 0
+		return
+	var target_pos: Vector2 = move_request.position
+	motion.move_to(target_pos, move_request.min_range, move_request.max_range)
+	if motion.has_just_failed():
+		motion.consume_just_failed()
 		state.repath_failures += 1
 		if state.repath_failures >= MAX_REPATH_FAILURES:
 			ctrl.abandon_command()

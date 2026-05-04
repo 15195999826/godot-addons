@@ -204,12 +204,10 @@ func _spawn_worker(pos: Vector2, controllers: Dictionary) -> RtsUnitActor:
 	_world.add_actor(worker)
 	worker.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	_host.add_child(agent)
-	agent.bind_actor(worker, _grid)
+	var motion_component := RtsMotionComponent.attach_default(worker, _world)
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(worker.unit_class)
-	var controller := RtsUnitController.new(worker, agent, strategy)
+	var controller := RtsUnitController.new(worker, motion_component, strategy)
 	controllers[worker.get_id()] = controller
 
 	return worker

@@ -137,11 +137,14 @@ func _write_actor_row(
 			var ctrl: RtsUnitController = procedure.get_unit_runtime(unit.get_id())
 			if ctrl != null:
 				activity_label = ctrl.get_intent_action()
-				if ctrl.agent != null:
-					has_target = ctrl.agent.has_target()
+				if ctrl.motion_component != null:
+					has_target = ctrl.motion_component.motion.has_target()
 					if has_target:
-						final_target = ctrl.agent.get_final_target()
-						dist_final = pos.distance_to(final_target)
+						# motion final_target 仅 POINT MoveRequest 有意义;ENTITY/OFFSET 跳过
+						var req: RtsMoveRequest = ctrl.motion_component.motion._move_request
+						if req != null and req.type == RtsMoveRequest.Type.POINT:
+							final_target = req.position
+							dist_final = pos.distance_to(final_target)
 
 	# obstruction_radius: M0 没 obstruction_shape — 用 collision_radius 当占位
 	# (M2 起 unit 有 obstruction_shape 后改填 shape.size; 此字段在 M0 已经能填实, 不算占位)

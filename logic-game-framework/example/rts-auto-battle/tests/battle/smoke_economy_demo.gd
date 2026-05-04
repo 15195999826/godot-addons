@@ -68,7 +68,6 @@ var _procedure: RtsAutoBattleProcedure = null
 var _grid: RtsBattleGrid = null
 var _host: Node2D = null
 
-var _agents: Dictionary = {}        # actor_id → RtsNavAgent
 var _controllers: Dictionary = {}   # actor_id → RtsUnitController
 
 var _workers: Array[RtsUnitActor] = []
@@ -267,13 +266,10 @@ func _spawn_worker(pos: Vector2) -> RtsUnitActor:
 	_world.add_actor(worker)
 	worker.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	_host.add_child(agent)
-	agent.bind_actor(worker, _grid)
-	_agents[worker.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(worker, _world)
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(worker.unit_class)
-	var controller := RtsUnitController.new(worker, agent, strategy)
+	var controller := RtsUnitController.new(worker, motion_component, strategy)
 	_controllers[worker.get_id()] = controller
 
 	return worker
@@ -308,13 +304,10 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	_world.add_actor(unit)
 	unit.position_2d = spawn_pos
 
-	var agent := RtsNavAgent.new()
-	_host.add_child(agent)
-	agent.bind_actor(unit, _grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	_controllers[unit.get_id()] = controller
 
 	_procedure.add_unit_to_team(unit, team_id)

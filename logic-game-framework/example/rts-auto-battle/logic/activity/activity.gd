@@ -80,15 +80,19 @@ func on_last_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void
 	pass
 
 
-## 注入 runtime 依赖 (e.g. 当前单位的 nav agent)。
+## 注入 runtime 依赖 (M7d 起:RtsMotionComponent — 含 motion 算法 + actor / obstr_mgr 桥接)。
 ##
-## 子类持 nav_agent 引用时 override + 调 super.bind_runtime, 让 child / next 也得到。
+## 子类持 motion_component 引用时 override + 调 super.bind_runtime, 让 child / next 也得到。
 ## 已绑过的 activity 再次 bind 是幂等无副作用的 (覆盖同一引用)。
-func bind_runtime(nav_agent: RtsNavAgent) -> void:
+##
+## **M7d 切换**:from RtsNavAgent → RtsMotionComponent。activity 通过 component.motion 拿到
+## RtsUnitMotion 调 move_to / move_to_entity / stop API;移动管线由 procedure._world_tick step 4g
+## 调 component.tick 推进(0 A.D. CCmpUnitMotion 复刻)。
+func bind_runtime(motion_component: RtsMotionComponent) -> void:
 	if child_activity != null:
-		child_activity.bind_runtime(nav_agent)
+		child_activity.bind_runtime(motion_component)
 	if next_activity != null:
-		next_activity.bind_runtime(nav_agent)
+		next_activity.bind_runtime(motion_component)
 
 
 ## 是否本帧想触发 basic attack。
@@ -142,20 +146,36 @@ func _should_refresh_nav(target_pos: Vector2) -> bool:
 	return false
 
 
-## 写 nav target + 更新限频状态. nav_agent null 时 no-op (子类需自查).
+## 写 motion target (M7d:from nav_agent.set_target → motion.move_to) + 更新限频状态.
+## motion_component null 时 no-op (子类需自查).
 ##
-## **M5 canonicalize**:
-##   - true (默认):玩家 click move / 自治 idle move,target 是地图坐标 → 走 canonicalize
-##     让玩家点不可达点时 unit 走最近可达 navcell(✋2 体验点)
-##   - false:attack / harvest target 是 actor 中心(可能落 building footprint 内),不走
-##     canonicalize 直接 A*(M4b.3 wire fail lesson:enemy 中心被偏到 ct 旁外缘 → unit 在
-##     attack range 外)
-func _refresh_nav_target(nav_agent: RtsNavAgent, target_pos: Vector2, canonicalize: bool = true) -> void:
-	if nav_agent == null:
+## **M5 canonicalize 行为消化** — M7 motion + 双轨设计下 facade 内部决定 canonicalize:
+## VertexPath short path 自然贴 OBB 边走绕避;LongPath canonicalize 处理"目标 in footprint" 的
+## case。activity 不再传 canonicalize 参数;motion.move_to 直接走 facade.compute_path_immediate
+## (含 hierarchical canonicalize) → unit 走最近可达 navcell。
+##
+## **不变量**:`_canonicalize` 参数保留接口(子类传入)但当前 motion 路径下被忽略 — 留 hook
+## 让未来若 motion 需要 direct mode 时能精准 wire。
+func _refresh_motion_target(
+	motion_component: RtsMotionComponent,
+	target_pos: Vector2,
+	_canonicalize: bool = true,
+) -> void:
+	if motion_component == null:
 		return
-	nav_agent.set_target(target_pos, canonicalize)
+	motion_component.motion.move_to(target_pos, 0.0, 0.0)
 	_last_set_target = target_pos
 	_time_since_nav_refresh = 0.0
+
+
+## M7d — motion abort 反馈钩子。RtsMotionComponent 在 motion._failed_movements ≥ 35 时
+## emit "rts_motion_move_failed" event 给 owner_actor;procedure 主循环 / event_processor 派
+## 发到 controller → controller 通知 current_activity.on_motion_failed。
+##
+## **默认行为**:cancel() 当前 activity(让 reconcile 在下 tick 选新 activity);子类需要更
+## 智能恢复(re-acquire target / 找新资源点 / 切换 drop-off)时 override。
+func on_motion_failed(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void:
+	cancel()
 
 
 # ========== 链式构造工具 ==========

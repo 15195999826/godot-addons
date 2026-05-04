@@ -30,7 +30,6 @@ const STUCK_UNIT_COUNT: int = 3
 var _world: RtsWorldGameplayInstance = null
 var _procedure: RtsAutoBattleProcedure = null
 var _battle_map: RtsBattleMap = null
-var _agents: Dictionary = {}        # actor.id → RtsNavAgent
 var _controllers: Dictionary = {}   # actor.id → RtsUnitController
 var _stuck_units: Array[RtsUnitActor] = []
 var _start_positions: Dictionary = {}  # actor.id → Vector2 (起点)
@@ -155,13 +154,10 @@ func _spawn_stuck_unit(pos: Vector2) -> void:
 	_stuck_units.append(unit)
 	_start_positions[unit.get_id()] = pos
 
-	var agent := RtsNavAgent.new()
-	_battle_map.add_child(agent)
-	agent.bind_actor(unit, _battle_map.grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
 
 	var strategy := RtsAIStrategyFactory.get_strategy(Config.UnitClass.MELEE)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	_controllers[unit.get_id()] = controller
 
 

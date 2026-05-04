@@ -62,7 +62,6 @@ var _battle_map: RtsBattleMap = null
 var _director: RtsBattleDirector = null
 var _world_view: RtsWorldView = null
 
-var _agents: Dictionary = {}        # actor_id → RtsNavAgent
 var _controllers: Dictionary = {}   # actor_id → RtsUnitController
 var _team0_unit_ids: Array[String] = []
 
@@ -213,7 +212,10 @@ func _handle_single_click(pos: Vector2) -> void:
 		if d_sq <= best_d_sq:
 			best_d_sq = d_sq
 			best_id = uid
-	_set_selection([best_id] if best_id != "" else [])
+	var picked: Array[String] = []
+	if best_id != "":
+		picked.append(best_id)
+	_set_selection(picked)
 
 
 func _handle_rect_select(start: Vector2, end: Vector2) -> void:
@@ -288,13 +290,10 @@ func _spawn_unit(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> Rt
 	_world.add_actor(actor)
 	actor.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	_battle_map.add_child(agent)
-	agent.bind_actor(actor, _battle_map.grid)
-	_agents[actor.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(actor, _world)
 
 	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(actor, agent, strategy)
+	var controller := RtsUnitController.new(actor, motion_component, strategy)
 	_controllers[actor.get_id()] = controller
 	return actor
 

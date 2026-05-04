@@ -40,8 +40,8 @@ var target_node_id: String
 ## 累积 harvest progress (D16 per-tick 模型: 满 1 单位 transfer 1 单位资源)
 var harvest_progress: float = 0.0
 
-## 通过 bind_runtime 注入的 nav agent
-var _nav_agent: RtsNavAgent = null
+## M7d — 通过 bind_runtime 注入的 motion component(替代 nav_agent)。
+var _motion: RtsMotionComponent = null
 
 ## Worker stats cache (on_first_run 时缓存; 避免 tick 每帧调 get_stats 分配 StatBlock)。
 ## carry_capacity (满 capacity → DONE 切 ReturnAndDrop); harvest_speed (per-tick progress 增量)
@@ -58,9 +58,9 @@ func _init(p_target_node_id: String) -> void:
 	target_node_id = p_target_node_id
 
 
-func bind_runtime(nav_agent: RtsNavAgent) -> void:
-	_nav_agent = nav_agent
-	super.bind_runtime(nav_agent)
+func bind_runtime(motion_component: RtsMotionComponent) -> void:
+	_motion = motion_component
+	super.bind_runtime(motion_component)
 
 
 # ========== 钩子 ==========
@@ -72,14 +72,15 @@ func on_first_run(actor: RtsUnitActor, world: RtsWorldGameplayInstance) -> void:
 		_carry_capacity = stats.carry_capacity
 		_harvest_speed = stats.harvest_speed
 
-	if world == null or _nav_agent == null:
+	if world == null or _motion == null:
 		return
 	var node := world.get_actor(target_node_id) as RtsResourceNode
 	if node == null or node.is_depleted():
 		return
-	# M5: target=ResourceNode 中心(可能被旁边 ct clearance inflate 阻挡)→ canonicalize=false
-	# 让 LongPath direct-path fallback 直接朝 ResourceNode 中心走过去,distance ≤ HARVEST_RADIUS 触发 harvest。
-	_refresh_nav_target(_nav_agent, node.position_2d, false)
+	# M7d: target=ResourceNode 中心(可能被旁边 ct clearance inflate 阻挡)→ motion.move_to 走
+	# facade.compute_path_immediate 内部 canonicalize,goal 落 impassable 时 mutate 到外缘 navcell;
+	# motion._step 走到外缘 + distance ≤ HARVEST_RADIUS=32 触发 harvest。
+	_refresh_motion_target(_motion, node.position_2d, false)
 
 
 func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bool:
@@ -98,8 +99,8 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 	var dist_sq: float = actor.position_2d.distance_squared_to(node.position_2d)
 	if dist_sq <= HARVEST_RADIUS_SQ:
 		_intent_in_range = true
-		if _nav_agent != null and _nav_agent.has_target():
-			_nav_agent.clear_target()
+		if _motion != null and _motion.motion.has_target():
+			_motion.motion.stop()
 		harvest_progress += _harvest_speed * dt
 		var transferable: int = int(harvest_progress)
 		if transferable > 0:
@@ -110,14 +111,14 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 				harvest_progress -= float(actual)
 	else:
 		_intent_in_range = false
-		if _nav_agent != null and _should_refresh_nav(node.position_2d):
-			_refresh_nav_target(_nav_agent, node.position_2d, false)
+		if _motion != null and _should_refresh_nav(node.position_2d):
+			_refresh_motion_target(_motion, node.position_2d, false)
 	return true
 
 
 func on_last_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void:
-	if _nav_agent != null:
-		_nav_agent.clear_target()
+	if _motion != null:
+		_motion.motion.stop()
 
 
 func is_equivalent_to(other: RtsActivity) -> bool:

@@ -138,12 +138,10 @@ func _spawn_with_controller(
 	world.add_actor(actor)
 	actor.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	battle_map.add_child(agent)
-	agent.bind_actor(actor, battle_map.grid)
+	var motion_component := RtsMotionComponent.attach_default(actor, world)
 
 	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(actor, agent, strategy)
+	var controller := RtsUnitController.new(actor, motion_component, strategy)
 	controllers[actor.get_id()] = controller
 
 	return actor

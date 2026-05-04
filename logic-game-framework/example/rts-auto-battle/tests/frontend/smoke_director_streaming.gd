@@ -25,7 +25,6 @@ var _battle_map: RtsBattleMap = null
 var _procedure: RtsAutoBattleProcedure = null
 var _director: RtsBattleDirector = null
 var _world_view: RtsWorldView = null
-var _agents: Dictionary = {}
 var _controllers: Dictionary = {}
 
 # 信号计数 (验证 director 数据流是否真的流动)
@@ -146,13 +145,10 @@ func _spawn_unit(unit_class, team_id: int, pos: Vector2) -> RtsUnitActor:
 	_world.add_actor(actor)
 	actor.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	_battle_map.add_child(agent)
-	agent.bind_actor(actor, _battle_map.grid)
-	_agents[actor.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(actor, _world)
 
 	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(actor, agent, strategy)
+	var controller := RtsUnitController.new(actor, motion_component, strategy)
 	_controllers[actor.get_id()] = controller
 
 	return actor

@@ -21,7 +21,7 @@
 ##
 ## 关键设计:
 ##   - 不动 GameWorld.init / destroy: caller 自己负责. harness 内只 create_instance + world.end()
-##   - host: Node 参数, 用来 add_child(RtsNavAgent). caller 把自己 (smoke Node) 传进来。
+##   - host: Node 参数 (M7d 后保留兼容; motion_component 是 RefCounted 不需 add_child).
 ##   - 多个 scenario 在同一 smoke 里串跑: caller 在每 scenario 之间不 destroy GameWorld 也行;
 ##     harness 内 world.end() 后, 下一 scenario 调 RtsScenarioHarness.run 时再 create_instance
 ##   - selector 展开: scenario.get_player_commands 用 unit_selector dict 引用 unit_ids,
@@ -46,8 +46,7 @@ const MAX_TICKS_HARD_CAP: int = 2000
 ##   { "success": bool, "ticks": int, "fail_reason": String, "scenario_name": String,
 ##     "events_count": int, "player_commands_count": int }
 ##
-## host 必须是 Node — RtsNavAgent 是 Node-based, 需要 add_child 进 scene tree。
-## 通常 caller (smoke .gd 自身) 直接传 self。
+## host 参数 M7d 后已不再需要 (motion_component 是 RefCounted), 保留兼容; 通常传 self。
 static func run(scenario: RtsScenario, host: Node) -> Dictionary:
 	if scenario == null:
 		return _error_result("scenario is null", "?")
@@ -80,7 +79,6 @@ static func run(scenario: RtsScenario, host: Node) -> Dictionary:
 	var team_building_ids: Dictionary = { 0: [] as Array, 1: [] as Array }
 	var team_actors: Dictionary = { 0: [] as Array, 1: [] as Array }
 	var controllers: Dictionary = {}  # actor_id → RtsUnitController
-	var agents: Dictionary = {}  # actor_id → RtsNavAgent (用于 host parenting)
 
 	# Spawn buildings (顺序记录 ids)
 	var buildings_cfg: Array = scene_config.get("buildings", []) as Array
@@ -116,13 +114,10 @@ static func run(scenario: RtsScenario, host: Node) -> Dictionary:
 		unit.position_2d = pos_u
 		if u_cfg.has("stance"):
 			unit.stance = int(u_cfg["stance"])
-		var agent := RtsNavAgent.new()
-		host.add_child(agent)
-		agent.bind_actor(unit, grid)
+		var motion_component := RtsMotionComponent.attach_default(unit, world)
 		var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(unit_class)
-		var controller := RtsUnitController.new(unit, agent, strategy)
+		var controller := RtsUnitController.new(unit, motion_component, strategy)
 		controllers[unit.get_id()] = controller
-		agents[unit.get_id()] = agent
 		(team_actors[team_id_u] as Array).append(unit)
 		(team_unit_ids[team_id_u] as Array).append(unit.get_id())
 
@@ -248,11 +243,7 @@ static func run(scenario: RtsScenario, host: Node) -> Dictionary:
 		"player_commands_count": procedure.get_player_commands_log().size(),
 	}
 
-	# 清理 nav agent (host 上仍挂着)
-	for aid in agents.keys():
-		var ag: RtsNavAgent = agents[aid]
-		if ag != null and is_instance_valid(ag):
-			ag.queue_free()
+	# M7d: motion_component 是 RefCounted,无需手动清理(controllers dict 释放即可)
 
 	world.end()
 
