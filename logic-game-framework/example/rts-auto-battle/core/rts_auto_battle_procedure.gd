@@ -184,8 +184,10 @@ func _init(
 	# **M2.3 仅实例化**, building / unit / placement 链路改造留 M2.4 / M2.5; 此处 manager 闲置,
 	# 不影响 baseline 0 漂移。grid 为 null 时跳过 (老 smoke 不走 frontend)。
 	if world.rts_grid != null and world.rts_grid.has_navcell_grid():
+		# M5.5: 把 NavcellGrid 提升为 world 一等公民字段;production code 走此直接,不再通过 rts_grid wrapper。
+		world.navcell_grid = world.rts_grid.get_navcell_grid()
 		world.obstruction_manager = RtsObstructionManager.new(
-			world.rts_grid.get_navcell_grid(),
+			world.navcell_grid,
 			world.passability_registry,
 		)
 		# M3.3: 装饰 obstacle cells (frontend RtsBattleMap._mark_obstacle_cells 在 procedure._init
@@ -197,10 +199,9 @@ func _init(
 		# M5.3: PathfinderFacade 顶层入口 (聚合 NavcellGrid + Hierarchical + LongPath)。
 		# nav_agent / activity 调 facade.compute_path_immediate (玩家 click,过 canonicalize) 或
 		# facade.compute_path_direct (AI attack-move,不过 canonicalize)。
-		var navcell_grid: RtsNavcellGrid = world.rts_grid.get_navcell_grid()
-		world.long_pathfinder = RtsLongPathfinder.new(navcell_grid)
+		world.long_pathfinder = RtsLongPathfinder.new(world.navcell_grid)
 		world.pathfinder_facade = RtsPathfinderFacade.new(
-			navcell_grid,
+			world.navcell_grid,
 			world.hierarchical_pathfinder,
 			world.long_pathfinder,
 		)
