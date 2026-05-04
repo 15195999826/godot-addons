@@ -92,14 +92,6 @@ func get_unit_view_count() -> int:
 	return _unit_views.size()
 
 
-## 把 hex 坐标投影到 view 用的 world position。
-## 公共版的 _hex_to_world — 测试 / oracle 要保证用同一份投影函数, 不能各自算。
-## reconciler 用此函数计算 expected view position, 与 _on_actor_position_changed 写入
-## 的 view.global_position 同源。
-func hex_to_world(coord: HexCoord) -> Vector3:
-	return _hex_to_world(coord)
-
-
 # ========== Signal handlers ==========
 
 func _on_actor_added(actor_id: String) -> void:
@@ -120,7 +112,7 @@ func _on_actor_position_changed(actor_id: String, _old_coord: HexCoord, new_coor
 		return
 	var view: FrontendUnitView = _unit_views[actor_id]
 	if is_instance_valid(view):
-		view.set_world_position(_hex_to_world(new_coord))
+		view.set_world_position(hex_to_world(new_coord))
 
 
 func _on_grid_configured(_config: GridMapConfig) -> void:
@@ -186,7 +178,7 @@ func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 	if actor is EnvironmentActor:
 		view.set_environment_style((actor as EnvironmentActor).environment_kind)
 	if hex_pos != null and hex_pos.is_valid():
-		view.set_world_position(_hex_to_world(hex_pos))
+		view.set_world_position(hex_to_world(hex_pos))
 
 
 # ========== 内部：grid ==========
@@ -198,7 +190,7 @@ func _apply_grid_model(model: GridMapModel) -> void:
 	_grid_renderer.render_grid()
 
 
-func _hex_to_world(coord: HexCoord) -> Vector3:
+func hex_to_world(coord: HexCoord) -> Vector3:
 	if coord == null or not coord.is_valid():
 		return Vector3.ZERO
 	var world := _get_world()
