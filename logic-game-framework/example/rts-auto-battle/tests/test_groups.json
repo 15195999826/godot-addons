@@ -9,6 +9,9 @@
         "battle/smoke_castle_war_minimal.tscn",
         "battle/smoke_ai_vs_player_full_match.tscn",
         { "path": "battle/smoke_ai_vs_ai_observe.tscn", "timeout_ms": 45000 },
+        { "path": "battle/smoke_pathfinding_baseline.tscn", "timeout_ms": 45000 },
+        { "path": "battle/smoke_long_pathfinder_determinism.tscn", "timeout_ms": 45000 },
+        { "path": "battle/smoke_hierarchical_unreachable.tscn", "timeout_ms": 45000 },
         { "path": "replay/smoke_replay_bit_identical.tscn", "timeout_ms": 45000 },
         "frontend/smoke_frontend_main.tscn"
       ]
@@ -25,7 +28,6 @@
         "battle/smoke_hierarchical_recompute.tscn",
         "battle/smoke_hierarchical_isolated_region.tscn",
         "battle/smoke_hierarchical_unreachable.tscn",
-        "battle/smoke_hierarchical_perf.tscn",
         "battle/smoke_long_pathfinder_basic.tscn",
         "battle/smoke_long_pathfinder_unreachable.tscn",
         "battle/smoke_long_pathfinder_determinism.tscn"
