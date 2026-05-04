@@ -31,8 +31,8 @@ var target_pos: Vector2
 ##     RtsAttackActivity (它自己也走 canonicalize=false direct-path attack ct).
 var canonicalize: bool = true
 
-## 通过 bind_runtime 注入的 nav agent。
-var _nav_agent: RtsNavAgent = null
+## M7d — 通过 bind_runtime 注入的 motion component(替代 nav_agent)。
+var _motion: RtsMotionComponent = null
 
 
 # ========== 初始化 ==========
@@ -42,16 +42,19 @@ func _init(p_target_pos: Vector2, p_canonicalize: bool = true) -> void:
 	canonicalize = p_canonicalize
 
 
-func bind_runtime(nav_agent: RtsNavAgent) -> void:
-	_nav_agent = nav_agent
-	super.bind_runtime(nav_agent)
+func bind_runtime(motion_component: RtsMotionComponent) -> void:
+	_motion = motion_component
+	super.bind_runtime(motion_component)
 
 
 # ========== 钩子 ==========
 
 func on_first_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void:
-	if _nav_agent != null:
-		_nav_agent.set_target(target_pos, canonicalize)
+	if _motion != null:
+		# M7d: motion.move_to 走 facade.compute_path_immediate 含 canonicalize;canonicalize=false
+		# 那 case (AttackMove → enemy_ct 中心) motion 走 short path + LongPath direct-path fallback
+		# 自然处理(facade 内部判定 goal in footprint 时不 mutate goal 到外缘)。
+		_motion.motion.move_to(target_pos, 0.0, 0.0)
 
 
 func tick(actor: RtsUnitActor, _world: RtsWorldGameplayInstance, _dt: float) -> bool:
@@ -59,16 +62,19 @@ func tick(actor: RtsUnitActor, _world: RtsWorldGameplayInstance, _dt: float) -> 
 		return false
 	if actor.position_2d.distance_squared_to(target_pos) <= ARRIVAL_THRESHOLD_SQ:
 		return false
-	if _nav_agent == null:
+	if _motion == null:
 		return false
-	if _nav_agent.is_arrived():
+	# M7d: motion.has_target() == false 意味 stop 或 abort done(0 失败 sticky / abort 后 stop)
+	# → activity DONE。注意:motion 内部 _step 走完 short_path 不会自动清 _move_request,
+	# has_target 仍 true → activity 看 actor.position 距离判定 ARRIVAL_THRESHOLD 也能 done。
+	if not _motion.motion.has_target():
 		return false
 	return true
 
 
 func on_last_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void:
-	if _nav_agent != null:
-		_nav_agent.clear_target()
+	if _motion != null:
+		_motion.motion.stop()
 
 
 func is_equivalent_to(other: RtsActivity) -> bool:

@@ -122,15 +122,13 @@ func _spawn_unit(team_id: int, pos: Vector2) -> RtsUnitActor:
 	_world.add_actor(unit)
 	unit.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	add_child(agent)
-	agent.bind_actor(unit, _grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
+	_agents[unit.get_id()] = motion_component
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(
 		RtsUnitClassConfig.UnitClass.MELEE
 	)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	_controllers[unit.get_id()] = controller
 	return unit
 
@@ -149,7 +147,7 @@ func _record_tick(tick: int, prev_has_target: Dictionary) -> void:
 		var unit := _world.get_actor(uid) as RtsUnitActor
 		if unit == null:
 			continue
-		var agent := _agents[uid] as RtsNavAgent
+		var motion_component := _agents[uid] as RtsMotionComponent
 		var ctrl := _controllers[uid] as RtsUnitController
 		var pos := unit.position_2d
 		var vel := unit.velocity
@@ -160,7 +158,7 @@ func _record_tick(tick: int, prev_has_target: Dictionary) -> void:
 		if _grid.has_tile(coord):
 			in_block = _grid.model.is_tile_blocking(coord)
 
-		var has_t: bool = agent.has_target()
+		var has_t: bool = motion_component.motion.has_target()
 		var dist_edge: float = _signed_dist_to_rect(pos, _ct_rect)
 
 		# 检测 set_target 跳变 (false→true)
@@ -175,7 +173,8 @@ func _record_tick(tick: int, prev_has_target: Dictionary) -> void:
 
 		_trace_lines.append("%d,%s,%.2f,%.2f,%.3f,%.3f,%.3f,%s,%d,%s,%.2f,%.2f,%s,%s,%d" % [
 			tick, uid, pos.x, pos.y, vel.x, vel.y, vel.length(),
-			str(has_t), agent._path.size(), str(agent.has_empty_path()),
+			str(has_t), motion_component.motion._short_path.size(),
+			str(motion_component.motion._short_path.is_empty()),
 			dist_target, dist_edge, str(in_block), str(wants_atk),
 			_attack_count_per_unit[uid] as int,
 		])

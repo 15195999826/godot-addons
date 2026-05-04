@@ -48,7 +48,6 @@ var _procedure: RtsAutoBattleProcedure = null
 var _grid: RtsBattleGrid = null
 var _host: Node2D = null
 
-var _agents: Dictionary = {}        # actor_id → RtsNavAgent
 var _controllers: Dictionary = {}   # actor_id → RtsUnitController
 
 ## spawn 跟踪 (与 smoke_production 同结构)
@@ -200,13 +199,10 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	_world.add_actor(unit)
 	unit.position_2d = spawn_pos
 
-	var agent := RtsNavAgent.new()
-	_host.add_child(agent)
-	agent.bind_actor(unit, _grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	# P2.6 关键: override_strategy=true 让 SpawnLane 不被 IdleActivity 替换
 	controller.set_activity_chain(RtsAttackMoveActivity.new(TARGET_POS), true)
 	_controllers[unit.get_id()] = controller

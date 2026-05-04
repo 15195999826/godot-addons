@@ -41,7 +41,6 @@ var _procedure: RtsAutoBattleProcedure = null
 var _grid: RtsBattleGrid = null
 var _host: Node2D = null
 
-var _agents: Dictionary = {}        # actor_id → RtsNavAgent
 var _controllers: Dictionary = {}   # actor_id → RtsUnitController
 
 ## spawn 跟踪: actor_id → { team_id, spawn_pos, max_x_after_spawn }
@@ -163,13 +162,10 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	_world.add_actor(unit)
 	unit.position_2d = spawn_pos
 
-	var agent := RtsNavAgent.new()
-	_host.add_child(agent)
-	agent.bind_actor(unit, _grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	# SpawnLane intent: 初始 attack-move 朝对方主基地; strategy.decide 在下个 tick 找到敌人时
 	# 会替换为 AttackActivity (reconcile cancel + flush)。即使被替换, 此 chain 头标记了"march to
 	# target_pos" 意图, 在 enemy 暂时不可达 (DEFENSIVE / HOLD_FIRE 全场无敌时) 仍能驱动单位前进。

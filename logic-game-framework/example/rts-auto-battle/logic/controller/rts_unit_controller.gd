@@ -34,8 +34,10 @@ const ENGAGEMENT_RADIUS_SQ: float = ENGAGEMENT_RADIUS * ENGAGEMENT_RADIUS
 ## 关联的 actor (1:1 owner)
 var actor: RtsUnitActor = null
 
-## 关联的 nav agent (Phase 2 P2.7 接 BattleDirector 时可能调整)
-var agent: RtsNavAgent = null
+## M7d — 关联的 motion component(0 A.D. CCmpUnitMotion 复刻;替代 RtsNavAgent)。
+## activity 通过 bind_runtime(motion_component) 拿到 → 调 motion.move_to / stop;
+## procedure._world_tick step 4g 调 motion_component.tick 推进。
+var motion_component: RtsMotionComponent = null
 
 ## 共享策略实例(无状态, 同 unit_class 多个 actor 共用一个)。
 ## 注意: 这里只是引用 — controller 不写 strategy 内字段。
@@ -65,9 +67,9 @@ var _player_command_active: bool = false
 
 # ========== 初始化 ==========
 
-func _init(p_actor: RtsUnitActor, p_agent: RtsNavAgent, p_strategy: RtsAIStrategy) -> void:
+func _init(p_actor: RtsUnitActor, p_motion_component: RtsMotionComponent, p_strategy: RtsAIStrategy) -> void:
 	actor = p_actor
-	agent = p_agent
+	motion_component = p_motion_component
 	strategy = p_strategy
 
 
@@ -89,7 +91,7 @@ func tick(dt: float, world: RtsWorldGameplayInstance) -> void:
 	if _command_abandoned:
 		# 不跑 strategy.decide, 不替换 current_activity (abandon_command 已设为 Idle)
 		if current_activity != null:
-			current_activity.bind_runtime(agent)
+			current_activity.bind_runtime(motion_component)
 			current_activity = RtsActivity.advance(current_activity, actor, world, dt)
 		return
 
@@ -123,7 +125,7 @@ func tick(dt: float, world: RtsWorldGameplayInstance) -> void:
 							if dsq <= ENGAGEMENT_RADIUS_SQ:
 								engage_id = cache_id
 				am.set_engagement_target(engage_id)
-			current_activity.bind_runtime(agent)
+			current_activity.bind_runtime(motion_component)
 			current_activity = RtsActivity.advance(current_activity, actor, world, dt)
 		if current_activity == null:
 			_player_command_active = false
@@ -146,8 +148,21 @@ func tick(dt: float, world: RtsWorldGameplayInstance) -> void:
 
 	# 3. 绑 runtime + 推进
 	if current_activity != null:
-		current_activity.bind_runtime(agent)
+		current_activity.bind_runtime(motion_component)
 		current_activity = RtsActivity.advance(current_activity, actor, world, dt)
+
+
+## M7d — current_activity.on_motion_failed 派发(motion._failed_movements ≥ 35 abort 触发)。
+##
+## procedure 派发 "rts_motion_move_failed" event 给 owner_actor 后,需要找 actor 对应的
+## controller → 通知 current_activity。controller 暴露此 method 供 procedure 调用。
+##
+## 默认 activity.on_motion_failed = cancel(),让 reconcile 在下 tick 选新 activity。
+## 子类可 override 实现智能恢复(re-acquire target / 找新资源点等)。
+func on_motion_failed(world: RtsWorldGameplayInstance) -> void:
+	if current_activity == null or current_activity.is_done():
+		return
+	current_activity.on_motion_failed(actor, world)
 
 
 # ========== 显式 push (smoke / 未来玩家命令) ==========

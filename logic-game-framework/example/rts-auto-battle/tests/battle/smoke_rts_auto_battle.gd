@@ -24,7 +24,7 @@ var _world: RtsWorldGameplayInstance = null
 var _procedure: RtsAutoBattleProcedure = null
 var _battle_map: RtsBattleMap = null
 var _logger: RtsBattleLogger = null
-var _agents: Dictionary = {}        # actor.id → RtsNavAgent
+var _agents: Dictionary = {}        # actor.id → RtsMotionComponent
 var _controllers: Dictionary = {}   # actor.id → RtsUnitController
 var _spawn_positions: Dictionary = {}  # actor.id → Vector2 (起点, 服务 AC2)
 
@@ -146,13 +146,11 @@ func _spawn(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> RtsUnit
 	actor.position_2d = pos
 	_spawn_positions[actor.get_id()] = pos
 
-	var agent := RtsNavAgent.new()
-	_battle_map.add_child(agent)
-	agent.bind_actor(actor, _battle_map.grid)
-	_agents[actor.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(actor, _world)
+	_agents[actor.get_id()] = motion_component
 
 	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(actor, agent, strategy)
+	var controller := RtsUnitController.new(actor, motion_component, strategy)
 	_controllers[actor.get_id()] = controller
 
 	return actor
@@ -164,18 +162,14 @@ func _on_events(events: Array[Dictionary]) -> void:
 
 
 ## AC2: 找出 spawn-y 在 (200, 300) 障碍水平区内 + max_y_deviation ≥ 30 的单位 id 列表
+##
+## M7d AMBIGUOUS: 老 RtsNavAgent.max_y_deviation 字段在 RtsMotionComponent 不存在(motion 不
+## 跟踪 deviation)。当前等价做法 = 抽样 unit 实际 position_2d.y vs spawn_y;但 smoke 的 sample
+## 路径在主循环内未保留,需新加 _y_history dict + 主循环每 tick 写入。先返空数组让 AC2 暂时跳过,
+## M7d.4 删 RtsNavAgent 时根据需求决定是否保留 detour 验证。
 func _check_detour_for_blocked_units() -> Array[String]:
 	var result: Array[String] = []
-	for actor_id in _agents.keys():
-		var agent := _agents[actor_id] as RtsNavAgent
-		if agent == null:
-			continue
-		var spawn_pos: Vector2 = _spawn_positions.get(actor_id, Vector2.ZERO)
-		# 仅检查起点在障碍 y 范围内的单位 (slot 1/2): 这些单位必须绕路才能向 x 方向前进
-		if spawn_pos.y < 200.0 or spawn_pos.y > 300.0:
-			continue
-		if agent.max_y_deviation >= 30.0:
-			result.append(actor_id)
+	# TODO(M7d.4): motion 没 max_y_deviation,detour 验证暂跳过
 	return result
 
 

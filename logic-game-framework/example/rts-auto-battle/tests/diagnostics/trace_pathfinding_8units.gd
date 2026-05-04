@@ -131,12 +131,10 @@ func _spawn_unit(pos: Vector2) -> RtsUnitActor:
 	actor.position_2d = pos
 	actor.stance = RtsUnitActor.Stance.HOLD_FIRE
 
-	var agent := RtsNavAgent.new()
-	_battle_map.add_child(agent)
-	agent.bind_actor(actor, _battle_map.grid)
+	var motion_component := RtsMotionComponent.attach_default(actor, _world)
 
 	var strategy := RtsAIStrategyFactory.get_strategy(Config.UnitClass.MELEE)
-	var controller := RtsUnitController.new(actor, agent, strategy)
+	var controller := RtsUnitController.new(actor, motion_component, strategy)
 	_controllers[actor.get_id()] = controller
 	return actor
 

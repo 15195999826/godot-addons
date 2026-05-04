@@ -49,6 +49,32 @@ func _init(p_owner: RtsBattleActor, p_motion: RtsUnitMotion) -> void:
 	motion.set_position_2d(p_owner.position_2d)
 
 
+## M7d — convenience factory:从 actor + world 自动推导 pass_class + walk_speed,创建
+## RtsUnitMotion + RtsMotionComponent 并设 owner.motion_component。spawner / smoke 调一行即可。
+##
+## - pass_class:GROUND/AIR 取决于 owner.movement_layer;world.passability_registry 没注册时 null
+## - walk_speed:RtsUnitActor 走 attribute_set.move_speed;非 unit 走默认 80
+##
+## **不变量**:owner.motion_component == 返回的 component(双向 wire)
+static func attach_default(
+	owner: RtsBattleActor,
+	world: RtsWorldGameplayInstance,
+) -> RtsMotionComponent:
+	var pass_class: RtsPassabilityClassConfig = null
+	if world != null and world.passability_registry != null:
+		var class_id: String = "air" if owner.movement_layer == MovementLayer.Layer.AIR else "default"
+		pass_class = world.passability_registry.get_pass_class(class_id)
+	var walk_speed: float = 80.0
+	if owner is RtsUnitActor:
+		var u := owner as RtsUnitActor
+		if u.attribute_set != null:
+			walk_speed = u.attribute_set.move_speed
+	var m := RtsUnitMotion.new(pass_class, walk_speed)
+	var c := RtsMotionComponent.new(owner, m)
+	owner.motion_component = c
+	return c
+
+
 # ========== Tick(M7c.3) ==========
 
 ## 桥 actor ↔ motion ↔ obstr_mgr;procedure._world_tick 在 step 2 内对每个 motion-bearing actor
@@ -111,10 +137,13 @@ func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
 ##
 ## **GameWorld.event_collector null 兼容**:smoke 不 start procedure(单元测试 mock world)时
 ## event_collector 未初始化,跳过 emit;motion abort 行为本身不依赖 event。
+##
+## **不 consume _just_failed flag** — procedure step 4g 末统一 walk motion_actors,dispatch
+## controller.on_motion_failed + 调 motion.consume_just_failed。这样 component 仅"事件源",
+## activity 派发由 procedure 集中做(motion-bearing actor 跨 controller dispatch 一次完整)。
 func _emit_motion_failed_if_needed() -> void:
 	if not motion.has_just_failed():
 		return
-	motion.consume_just_failed()
 	if GameWorld == null or GameWorld.event_collector == null:
 		return
 	var move_request_kind: int = RtsMoveRequest.Type.NONE

@@ -209,14 +209,10 @@ func _init(
 			world.long_pathfinder,
 			world.vertex_pathfinder,
 		)
-		# M5.4: 把 facade + registry 注入所有 nav_agent(_unit_runtimes 是 caller 创建后传入,
-		# agent 已 bind_actor),让 set_target 走 facade.compute_path_immediate / direct 替代
-		# RtsPathfinding.find_path 老路径。
-		for runtime_actor_id in _unit_runtimes:
-			var ctrl: RtsUnitController = _unit_runtimes[runtime_actor_id]
-			if ctrl == null or ctrl.agent == null:
-				continue
-			ctrl.agent.attach_pathfinder(world.pathfinder_facade, world.passability_registry)
+		# M7d — facade 通过 world.pathfinder_facade 一等公民字段访问;motion 在 tick 时
+		# component.tick(delta, world, facade) 直接拿,不需要 procedure 层 attach。
+		# (M5 RtsNavAgent 时代必须显式 attach_pathfinder 因为 nav_agent 是 Node2D 持自己 facade
+		# 引用;M7d motion_component 不持引用,完全无状态依赖)
 
 
 # ========== 生命周期 ==========
@@ -356,33 +352,13 @@ func tick_once() -> void:
 			_invoke_basic_attack(building, world)
 			building.start_attack_cooldown()
 
-	# 4. P2.2 移动管线: spatial_hash → compute_velocity → steering → integrate
-	#    替代 Phase 1 的"nav_agent.tick (compute+integrate 一体) + RtsMinimalPushOut.resolve"。
-	#    新流程让 steering 可以在 nav 写出 desired velocity 后、整合 position 之前修改 velocity,
-	#    实现 separation + deflection 避障 (P2.2 避障层 1+2)。
+	# 4. M7d 移动管线: motion-bearing actor 走 step 4g(motion.tick 接管 compute / integrate
+	#    一体);老 RtsNavAgent / RtsUnitSteering 三段管线(4a compute_velocity + 4b steering +
+	#    4c integrate)已退场。spatial_hash 仍 build 给 stuck_detector / 未来 push_pass(M8)用。
 	var alive_units: Array = world.get_alive_units()
 	if _spatial_hash == null:
 		_spatial_hash = RtsSpatialHash.new()
 	_spatial_hash.update_all(alive_units)
-
-	# 4a. 每个有 nav 的单位写 desired velocity (waypoint 方向 × move_speed; 无 path → 0)
-	for unit in alive_units:
-		var ru := unit as RtsUnitActor
-		var ctrl := _unit_runtimes.get(ru.get_id(), null) as RtsUnitController
-		if ctrl != null and ctrl.agent != null:
-			ctrl.agent.compute_desired_velocity(dt_seconds)
-
-	# 4b. Steering 修改 velocity: separation + deflection (静止单位与建筑跳过)
-	for unit in alive_units:
-		var ru2: RtsUnitActor = unit as RtsUnitActor
-		RtsUnitSteering.apply(ru2, _spatial_hash, world, dt_seconds)
-
-	# 4c. 整合 position += velocity * dt + 推进 waypoint (steering 推过头时跳号)
-	for unit in alive_units:
-		var ru3: RtsUnitActor = unit as RtsUnitActor
-		var ctrl3: RtsUnitController = _unit_runtimes.get(ru3.get_id(), null) as RtsUnitController
-		if ctrl3 != null and ctrl3.agent != null:
-			ctrl3.agent.integrate(dt_seconds)
 
 	# 4d. P2.3 stuck detection: 跟踪本 tick 后实际位移; STUCK_TICK_THRESHOLD 内未动 →
 	#     local repath; 连续 MAX_REPATH_FAILURES 次失败 → controller.abandon_command (Idle 降级)
@@ -397,6 +373,9 @@ func tick_once() -> void:
 	#     baseline 0 漂移。
 	#     **Death unregister deferred** (spec drift): 不在死亡时反注册, _shapes 持续膨胀直到战斗结束,
 	#     procedure GC 时随 manager 一并 release; M5 切 pathfinder 时再加完整 cleanup。
+	#     **M7d**: motion-bearing actor (motion_component != null) 由 component.tick 自行
+	#     move_shape 同步,不再走 _sync_unit_obstruction_shapes 这条;但新 spawn unit 仍需在此
+	#     第一次 add_unit_shape 注册(spawner 创了 motion_component 但没注册 obstr 时兜底)。
 	if world.obstruction_manager != null:
 		_sync_unit_obstruction_shapes(world, alive_units)
 
@@ -805,6 +784,19 @@ func _tick_motion_bearing_actors(world: RtsWorldGameplayInstance, alive_actors: 
 		var component: RtsMotionComponent = actor.motion_component as RtsMotionComponent
 		component.tick(dt, world, facade)
 
+	# M7d — motion abort 派发:walk motion_actors,若 motion.has_just_failed 调 controller.
+	# on_motion_failed 让 activity 处理(默认 cancel,子类 override 可智能恢复);消费 flag。
+	# 顺序与 sort 后 tick 相同,跨 actor 派发 deterministic。
+	for a in motion_actors:
+		var actor: RtsBattleActor = a as RtsBattleActor
+		var component: RtsMotionComponent = actor.motion_component as RtsMotionComponent
+		if not component.motion.has_just_failed():
+			continue
+		component.motion.consume_just_failed()
+		var ctrl: RtsUnitController = _unit_runtimes.get(actor.get_id(), null) as RtsUnitController
+		if ctrl != null:
+			ctrl.on_motion_failed(world)
+
 
 ## R5 P1 #1 sort comparator — `(type: String, spawn_seq: int)` 数值复合 key。
 ##
@@ -838,7 +830,9 @@ func _sync_unit_obstruction_shapes(world: RtsWorldGameplayInstance, alive_units:
 				RtsObstructionFlags.BLOCK_MOVEMENT,
 				str(unit.team_id),
 			)
-		else:
+		elif unit.motion_component == null:
+			# M7d:motion-bearing actor 由 RtsMotionComponent.tick 自己 move_shape;
+			# motion_component == null 的老路径(未迁移 spawner)兜底走此。
 			manager.move_shape(unit.obstruction_tag, unit.position_2d)
 
 

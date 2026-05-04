@@ -92,7 +92,6 @@ const RIGHT_WOOD_NODE_POSITIONS: Array[Vector2] = [
 # 运行时构造的 logic 层对象 (scene tree 之外, 数据驱动)
 var _world: RtsWorldGameplayInstance = null
 var _procedure: RtsAutoBattleProcedure = null
-var _agents: Dictionary = {}        # actor.id → RtsNavAgent (logic 层)
 var _controllers: Dictionary = {}   # actor.id → RtsUnitController (logic 层)
 
 # 关键 actor 引用 (HUD / 玩家命令上下文)
@@ -334,13 +333,10 @@ func _spawn_unit(unit_class: Config.UnitClass, team_id: int, pos: Vector2) -> Rt
 	_world.add_actor(actor)
 	actor.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	_battle_map.add_child(agent)
-	agent.bind_actor(actor, _battle_map.grid)
-	_agents[actor.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(actor, _world)
 
 	var strategy := RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(actor, agent, strategy)
+	var controller := RtsUnitController.new(actor, motion_component, strategy)
 	_controllers[actor.get_id()] = controller
 
 	return actor

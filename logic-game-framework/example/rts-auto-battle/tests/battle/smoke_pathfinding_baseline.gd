@@ -44,7 +44,6 @@ var _procedure: RtsAutoBattleProcedure = null
 var _battle_map: RtsBattleMap = null
 var _trace: PathTraceV2Writer = null
 
-var _agents: Dictionary = {}        # actor_id → RtsNavAgent
 var _controllers: Dictionary = {}   # actor_id → RtsUnitController
 
 
@@ -164,13 +163,10 @@ func _spawn_unit(unit_class: int, team_id: int, pos: Vector2) -> RtsUnitActor:
 	_world.add_actor(unit)
 	unit.position_2d = pos
 
-	var agent := RtsNavAgent.new()
-	_battle_map.add_child(agent)
-	agent.bind_actor(unit, _battle_map.grid)
-	_agents[unit.get_id()] = agent
+	var motion_component := RtsMotionComponent.attach_default(unit, _world)
 
 	var strategy: RtsAIStrategy = RtsAIStrategyFactory.get_strategy(unit_class)
-	var controller := RtsUnitController.new(unit, agent, strategy)
+	var controller := RtsUnitController.new(unit, motion_component, strategy)
 	_controllers[unit.get_id()] = controller
 
 	return unit

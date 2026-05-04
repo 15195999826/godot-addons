@@ -30,8 +30,8 @@ const RANGE_TOLERANCE: float = 1.05
 ## 目标 actor id; 必须是另一队伍的 RtsUnitActor。
 var target_id: String
 
-## 通过 bind_runtime 注入的 nav agent。
-var _nav_agent: RtsNavAgent = null
+## M7d — 通过 bind_runtime 注入的 motion component(替代 nav_agent)。
+var _motion: RtsMotionComponent = null
 
 ## 本帧是否想 attack (in-range 时 true; out-of-range / target dead 时 false)
 var _wants_attack: bool = false
@@ -46,9 +46,9 @@ func _init(p_target_id: String) -> void:
 	target_id = p_target_id
 
 
-func bind_runtime(nav_agent: RtsNavAgent) -> void:
-	_nav_agent = nav_agent
-	super.bind_runtime(nav_agent)
+func bind_runtime(motion_component: RtsMotionComponent) -> void:
+	_motion = motion_component
+	super.bind_runtime(motion_component)
 
 
 # ========== 钩子 ==========
@@ -72,16 +72,16 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 	var atk_range_with_tol: float = atk_range * RANGE_TOLERANCE
 	if dist_sq <= atk_range_with_tol * atk_range_with_tol:
 		_wants_attack = true
-		if _nav_agent != null:
-			_nav_agent.clear_target()
+		if _motion != null:
+			_motion.motion.stop()
 	else:
 		_wants_attack = false
-		if _nav_agent != null and _should_refresh_nav(target.position_2d):
-			# M5: target=enemy actor 中心(可能落 building footprint / clearance inflate 内)
-			# → canonicalize=false 不过 canonicalize,让 LongPath direct-path fallback(终点
-			# impassable 时返回单 waypoint = target.position_2d)直接朝目标走过去 → distance
-			# check 决定 in_range 行为,attack_range 包到 outer cell 即可(M4b.3 lesson)。
-			_refresh_nav_target(_nav_agent, target.position_2d, false)
+		if _motion != null and _should_refresh_nav(target.position_2d):
+			# M7d: motion.move_to 走 facade.compute_path_immediate 默认 canonicalize;target=enemy
+			# 中心 building footprint 内时,facade hierarchical 把 goal mutate 到外缘 navcell;
+			# motion 的 _step 走到 navcell + ARRIVAL_THRESHOLD=4 触发到达。attack_range 包到外缘
+			# 即可(沿用 M4b.3 lesson 的距离判定)。
+			_refresh_motion_target(_motion, target.position_2d, false)
 	return true
 
 
@@ -89,8 +89,8 @@ func on_last_run(actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void:
 	if actor != null:
 		actor.current_target_id = ""
 	_wants_attack = false
-	if _nav_agent != null:
-		_nav_agent.clear_target()
+	if _motion != null:
+		_motion.motion.stop()
 
 
 func wants_to_attack() -> bool:
