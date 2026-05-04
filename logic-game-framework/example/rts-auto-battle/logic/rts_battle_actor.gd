@@ -47,6 +47,23 @@ var collision_profile: CollisionProfile = null
 ## 死亡标志(数据驱动: hp <= 0 时 check_death 设置)
 var _is_dead: bool = false
 
+## M7 — actor 创建时由 caller(procedure 的 _unit_spawner / 测试 smoke)设为
+## `IdGenerator._counter` 数值快照,用作 motion-bearing actor 的 sort key
+## (R5 P1 #1: `(type: String, spawn_seq: int)` 数值复合 key,**不**用 `actor.get_id()`
+## 字典序 — 避免 `Character_10` < `Character_2` 字典序漂,见 data-structures.md §12.5)。
+##
+## 0 = 未设置(老 spawner 未迁移时回退;motion sort 时 0 排最前不影响 deterministic
+## 因为 spawn_seq 在 caller 端单调赋值)。
+var spawn_seq: int = 0
+
+## M7 — 单位 motion 组件;null = 没有 motion(building / 死单位 / 不动 actor);非 null =
+## motion-bearing,procedure._world_tick 收集后按 (type, spawn_seq) 排序逐个 tick。
+##
+## **M7c 阶段**:production callsite 不创 motion_component(activity 仍走 RtsNavAgent),
+## 字段定义但所有 production 单位 = null;motion smoke 内手动构造 component 验证链路。
+## **M7d 阶段**:spawner / _create_unit 在 NavAgent 切走时把 motion_component 设上。
+var motion_component: RefCounted = null
+
 
 # ========== P2.8: 攻击 / 目标 共享字段(单位 + 建筑 都用) ==========
 

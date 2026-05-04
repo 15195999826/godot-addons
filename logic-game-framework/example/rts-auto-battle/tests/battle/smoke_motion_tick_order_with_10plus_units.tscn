@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_motion_tick_order_10plus"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_motion_tick_order_with_10plus_units.gd" id="1_motion_tick_order"]
+
+[node name="RtsSmokeMotionTickOrder10Plus" type="Node"]
+script = ExtResource("1_motion_tick_order")

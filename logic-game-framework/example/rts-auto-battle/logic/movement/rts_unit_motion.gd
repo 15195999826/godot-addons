@@ -46,6 +46,9 @@ const MAX_FAILED_MOVEMENTS: int = 35
 ## best-so-far short path 走完后等多少 tick 触发 long retry(M7b 启用)。
 const KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN: int = 12
 
+## 抵达 waypoint 的距离阈值(像素);跟现有 RtsNavAgent.ARRIVAL_THRESHOLD 一致。
+const ARRIVAL_THRESHOLD: float = 4.0
+
 
 # ========== 字段:模板(unit_kind config 读) ==========
 
@@ -363,21 +366,27 @@ static func _alloc_ticket() -> int:
 	return t
 
 
-# ========== 内部 helper:_step (M7b stub;M7c 真 position update) ==========
+# ========== 内部 helper:_step (M7c 真渐进 position update) ==========
 
-## **M7b stub**:消费一个 short_path waypoint 模拟"我前进了一段",更新 _position_2d
-## 到该 waypoint。M7c 接 walk_speed * delta 渐进 + obstr_mgr.move_shape 同步。
+## 渐进朝 _short_path.back() (next waypoint) 走 step_len = walk_speed * delta;若 step_len 跨过
+## next waypoint(剩余距离 < step_len)则 pop_back + _position_2d = waypoint;path 空时启动 countdown。
 ##
-## 设计上 M7b stub 行为:每 tick 直接 pop short_path 一个 waypoint 设 _position_2d = waypoint。
-## 这让 short_path 走完时 countdown 触发逻辑能进入。
-##
-## **不动 actor / obstr_mgr**(M7c 接);仅 motion 内部 _position_2d mirror。
-func _step(_delta: float, _world: Variant) -> void:
+## **不动 actor / obstr_mgr**(component 桥接):仅 motion 内部 _position_2d。RtsMotionComponent
+## 在 motion.tick 后调 owner.position_2d = motion.get_position_2d() + obstr_mgr.move_shape 同步。
+func _step(delta: float, _world: Variant) -> void:
 	if _short_path.is_empty():
 		return
-	# M7b stub:直接到 next waypoint;M7c 加 walk_speed * delta 渐进 + obstr.move_shape
-	var next_wp: Vector2 = _short_path.pop_back()
-	_position_2d = next_wp
-	# short_path 走完(本次 pop 后空)→ 启动 countdown 给 long retry 机会
-	if _short_path.is_empty() and _follow_known_imperfect_path_countdown == 0:
-		_follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
+	var next_wp: Vector2 = _short_path.back()
+	var to_next: Vector2 = next_wp - _position_2d
+	var dist_to_next: float = to_next.length()
+	var step_len: float = _walk_speed * delta
+
+	if dist_to_next <= step_len or dist_to_next <= ARRIVAL_THRESHOLD:
+		# 跨越 / 抵达 next waypoint:snap 到 waypoint 中心 + pop
+		_short_path.pop_back()
+		_position_2d = next_wp
+		if _short_path.is_empty() and _follow_known_imperfect_path_countdown == 0:
+			_follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
+	else:
+		# 渐进:沿 to_next 方向走 step_len
+		_position_2d += to_next / dist_to_next * step_len
