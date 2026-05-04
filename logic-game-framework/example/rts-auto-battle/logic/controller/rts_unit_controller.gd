@@ -20,6 +20,15 @@ class_name RtsUnitController
 extends RefCounted
 
 
+# ========== 常量 ==========
+
+## AttackMove engagement gate radius (px). cache 命中目标 dist ≤ 此值才切 attack child;
+## 远端目标 unit 继续朝 AttackMove.target_pos 走(实现"沿途遇敌打"语义,远敌不 detour).
+## 100px = 双方 melee spawn 92px 触发互殴 / scout 起手 cache 远端 building (>200px) 不 detour.
+const ENGAGEMENT_RADIUS: float = 100.0
+const ENGAGEMENT_RADIUS_SQ: float = ENGAGEMENT_RADIUS * ENGAGEMENT_RADIUS
+
+
 # ========== 字段 ==========
 
 ## 关联的 actor (1:1 owner)
@@ -88,6 +97,31 @@ func tick(dt: float, world: RtsWorldGameplayInstance) -> void:
 		# P2.6: 玩家命令期间不让 strategy 覆盖。链跑完 (advance 返回 null) 自动清 flag,
 		# 让 strategy 接管下一 tick。
 		if current_activity != null:
+			# AttackMove engagement wire (spec P2.1+P2.4):RtsAttackMoveActivity 走"朝
+			# target_pos 走 + 沿途遇敌切 attack child"语义,engagement_target 由
+			# AutoTargetSystem 写的 actor._cached_target_id 注入,**但加 distance gate** —
+			# 只在 dist_to_cache_target ≤ ENGAGEMENT_RADIUS 时切 attack child,远端 cache 命中
+			# unit 继续朝 target_pos 走(否则 unit detour 朝最远端敌人,丢"朝基地走"语义).
+			# 没 gate 的 wire 把 scout 朝远端 barracks/ground actor detour,scout 永不进 archer
+			# attack_range,castle_war archer 0 hits 复现.
+			if current_activity is RtsAttackMoveActivity:
+				var am := current_activity as RtsAttackMoveActivity
+				var cache_id: String = actor._cached_target_id
+				var engage_id: String = ""
+				if cache_id != "":
+					var cache_actor := world.get_actor(cache_id) as RtsBattleActor
+					# 仅 enemy combat unit 触发 engagement: building 由静态防御自己处理(unit
+					# 不该停下打建筑, 否则 scout flyby archer 会被吸引偏航不进 archer range);
+					# worker 算经济不算战斗(用户规则"路上遇到敌方单位"指军事单位); dist gate
+					# 防 unit detour 远端目标. AttackActivity 本身有 in-range 判 + cooldown,
+					# 这里只控"切不切 attack child", 同 enemy_id 重复 set 是 no-op.
+					if cache_actor is RtsUnitActor and not cache_actor.is_dead():
+						var u := cache_actor as RtsUnitActor
+						if u.unit_class != RtsUnitClassConfig.UnitClass.WORKER:
+							var dsq: float = actor.position_2d.distance_squared_to(u.position_2d)
+							if dsq <= ENGAGEMENT_RADIUS_SQ:
+								engage_id = cache_id
+				am.set_engagement_target(engage_id)
 			current_activity.bind_runtime(agent)
 			current_activity = RtsActivity.advance(current_activity, actor, world, dt)
 		if current_activity == null:
