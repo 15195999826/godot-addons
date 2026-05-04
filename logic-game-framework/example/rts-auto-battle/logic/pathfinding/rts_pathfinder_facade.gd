@@ -1,26 +1,25 @@
-## RtsPathfinderFacade - 顶层寻路 facade (M5 引入)
+## RtsPathfinderFacade - 顶层寻路 facade (M5 引入,M6c 加 short path API)
 ##
 ## 0 A.D. `helpers/PathfinderFacade` 风格 — 把 hierarchical(可达性)+ LongPath(全图 A*)+
-## (M6+ VertexPath 短路径)+ recompute / dirty 调度统一到一个 Refcounted 入口。callsite
-## 不需要知道哪层做了什么,直接 `facade.compute_path_immediate(start, goal, mask)`。
+## VertexPath(短路径)+ recompute / dirty 调度统一到一个 Refcounted 入口。callsite
+## 不需要知道哪层做了什么,直接调统一 API。
 ##
-## **M5 阶段功能**:
-##   1. `compute_path_immediate(start, goal, mask)` = `make_goal_reachable_pathgoal` →
-##      `RtsLongPathfinder.compute_path_immediate`(总是先 canonicalize goal 到 navcell 中心 POINT,
-##       再 A*)
-##   2. `is_goal_reachable(start, goal, mask)` 纯查询(不 mutate goal)
-##   3. `make_goal_reachable(start, goal, mask)` 显式 canonicalize 入口
+## **API 列表**:
+##   1. `compute_path_immediate(start, goal, mask)` — LongPath A* + canonicalize(M5)
+##   2. `compute_path_direct(start, goal, mask)` — LongPath A* 不过 canonicalize(M5)
+##   3. `is_goal_reachable(start, goal, mask)` — 纯查询(M5)
+##   4. `make_goal_reachable(start, goal, mask)` — 显式 canonicalize(M5)
+##   5. `compute_short_path_immediate(req, obstr_mgr)` — VertexPath visibility graph A*(M6c)
 ##
-## **M5 阶段不做**:
-##   - VertexPath 短路径(M6 加)
-##   - check_movement / line-of-sight(M6 加)
-##   - tick / update(grid, dirty)增量(M4c CANCEL,M5 阶段 procedure step 6.7 仍走 M4a lazy
-##     recompute,facade tick 不持 hierarchical update 入口)
+## **M6c facade wire 范围**:加 `_vertex` 字段 + `compute_short_path_immediate` API,委托给
+## `RtsVertexPathfinder.compute_short_path_immediate(req, obstr_mgr)`。**production callsite
+## 暂不消费**(activity / nav_agent / move_units_command 仍走 LongPath)— M7 UnitMotion
+## 整合双轨时才接 production,届时 baseline 漂(short path 字段从占位 -1 变实填,P1 接受)。
 ##
 ## **决策来源**:
 ##   - milestones/M5-long-pathfinder.md §M5.3 facade 雏形
+##   - milestones/M6-vertex-pathfinder.md §M6c.4 (短路径 facade wire 仅 API,production 不接)
 ##   - data-structures.md §7 PathfinderFacade
-##   - M4-hierarchical.md §M4b.3 deferred (M5 解锁条件:canonicalize 切到"总是 navcell 中心")
 class_name RtsPathfinderFacade
 extends RefCounted
 
@@ -36,6 +35,9 @@ var _hierarchical: RtsHierarchicalPathfinder = null
 ## LongPath A*(M5)。
 var _long: RtsLongPathfinder = null
 
+## VertexPath visibility graph A*(M6c 引入;facade wire 仅 API,production callsite 暂不消费)。
+var _vertex: RtsVertexPathfinder = null
+
 
 # ========== 初始化 ==========
 
@@ -43,13 +45,17 @@ func _init(
 	p_grid: RtsNavcellGrid,
 	p_hierarchical: RtsHierarchicalPathfinder,
 	p_long: RtsLongPathfinder,
+	p_vertex: RtsVertexPathfinder = null,
 ) -> void:
 	Log.assert_crash(p_grid != null, "RtsPathfinderFacade", "_init: grid is null")
 	Log.assert_crash(p_hierarchical != null, "RtsPathfinderFacade", "_init: hierarchical is null")
 	Log.assert_crash(p_long != null, "RtsPathfinderFacade", "_init: long is null")
+	# WHY: vertex 默认 null 兼容 M5 callsite (RtsAutoBattleProcedure 旧构造);M6c 起 procedure 应传 vertex
+	# 实例,后续 M7 production callsite 调 compute_short_path_immediate 时强制非空。
 	_grid = p_grid
 	_hierarchical = p_hierarchical
 	_long = p_long
+	_vertex = p_vertex
 
 
 # ========== 公开 API ==========
@@ -93,6 +99,26 @@ func make_goal_reachable(start_world: Vector2, goal: RtsPathGoal, pass_mask: int
 	if not _hierarchical.is_recomputed():
 		return false
 	return _hierarchical.make_goal_reachable_pathgoal(start_world, goal, pass_mask)
+
+
+## VertexPath visibility graph A*(M6c facade wire)— 任意角度短路径,贴 obstruction 边。
+##
+## **跟 compute_path_immediate 区别**:
+##   - compute_path_immediate = LongPath 全图 A* on navcell,8 邻居,粒度 32 px,阶梯形路径
+##   - compute_short_path_immediate = Vertex visibility graph A*,任意角度直线段,贴 OBB / unit
+##     边的"自然绕角"路径
+##
+## **req: RtsShortPathRequest** 字段:start / goal / clearance / range_px / pass_mask /
+## avoid_moving_units / control_group。
+##
+## **空 path 语义**:start ≈ virtual_goal → 单 waypoint = virtual_goal;A* + best-so-far 都没到
+## goal → 空 path,caller 用 `path.is_empty()` 判定 stuck。
+##
+## **production callsite 暂不消费**(M6c 范围)— M7 UnitMotion 整合双轨时接;现在调 = 发
+## production read 链路兼容性 (assert_crash 防 null _vertex)。
+func compute_short_path_immediate(req: RtsShortPathRequest, obstr_mgr: RtsObstructionManager) -> RtsWaypointPath:
+	Log.assert_crash(_vertex != null, "RtsPathfinderFacade", "compute_short_path_immediate: vertex pathfinder not wired (_init 时 p_vertex 传 null);M7 整合双轨前 caller 不应调此 API")
+	return _vertex.compute_short_path_immediate(req, obstr_mgr)
 
 
 ## 直接 A* **不过 canonicalize** — 给 AI attack-move / harvest 等"target 是 actor 中心,

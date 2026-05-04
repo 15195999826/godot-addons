@@ -1,25 +1,30 @@
-## RtsVertexPathfinder - 短程绕避(visibility graph + A*) (M6 引入)
+## RtsVertexPathfinder - 短程绕避(visibility graph + A*) (M6 引入,M6a/b/c 完整)
 ##
 ## 0 A.D. `helpers/VertexPathfinder.cpp` (~1500 行 C++) 的 GDScript 复刻。在 [start, goal] 间
-## 一个有限大小的 search box 内,把 OBB corner / 圆 AABB corner / 搜索框 4 角 / (M6b)terrain
-## 边界中点 / virtual goal vertex 全收为 vertex 候选,跑 lazy visibility A* 找最短路径。
+## 一个有限大小的 search box 内,把 OBB corner / 圆 AABB corner / 搜索框 4 角 / terrain 边界中点
+## / virtual goal vertex 全收为 vertex 候选,跑 lazy visibility A* 找最短路径。
 ##
 ## 跟 LongPath 区别:
 ##   - LongPath = 全图 navcell A*,8 邻居,粒度 = 32 px navcell;路径形状是阶梯形
 ##   - VertexPath = visibility graph A*,任意角度直线段;路径形状贴 obstruction 边
 ##
-## **M6 拆 3 个 sub-phase**(spec README §7,M6a-c 各 ~1.5 周):
-##   - **M6a** (本文件): static OBB only — search bounds + range boundary + lazy visibility +
-##     5 元组 deterministic + (obstruction.tag, corner_index) 字典序;**无** best-so-far /
-##     virtual goal / terrain edges / dynamic units / group filter
-##   - **M6b**: virtual goal + terrain edges + best-so-far fallback
-##   - **M6c**: dynamic units + group filter + facade wire + prototype scene 退役
+## **9 大类边界 case 全实现**(spec data-structures §7.2):
+##   - #1 search bounds toward goal shift / #2 range boundary edges / #3 virtual goal vertex /
+##     #4 terrain edges / #5 lazy visibility / #6 best-so-far fallback / #7 moving unit square
+##     proxy / #8 group filter / #9 tie-break order
+##
+## **M6 sub-phase 历史**:
+##   - **M6a**: search bounds + range boundary + lazy visibility + 5 元组 deterministic
+##   - **M6b**: virtual goal CIRCLE/SQUARE/INVERTED 几何 + terrain edges + best-so-far +
+##     Liang-Barsky 精确化(替代 t-stepping)
+##   - **M6c**: dynamic units (square proxy) + group filter + avoid_moving_units 开关 +
+##     facade wire (compute_short_path_immediate API)
 ##
 ## **决策来源**:
 ##   - data-structures.md §7.2 (核心算法 9 大类边界 case)
 ##   - data-structures.md §12.3 (Determinism vertex 候选顺序 + A* 5 元组 key)
 ##   - interfaces.md §5 (公开 API)
-##   - milestones/M6-vertex-pathfinder.md §M6a (本 sub-phase 范围)
+##   - milestones/M6-vertex-pathfinder.md(完整 spec)
 class_name RtsVertexPathfinder
 extends RefCounted
 
@@ -29,9 +34,9 @@ extends RefCounted
 ## OBB corner 外推 buffer 倍数 — 把 corner 沿 (corner - center) 方向外推 (clearance × 此倍率),
 ## 让 vertex 在 OBB 外刚好够单位身体不撞。
 ##
-## **M6a 用 1.0** — vertex 距 OBB corner 等于单位 clearance,segment_clear 验证时若擦边会被
-## buffer threshold 滤掉(`< buffer` 视为撞)。1.0 在 prototype 足够;M6b 若发现"擦边漏判"
-## 调到 1.1 加 10% 安全余量。
+## **1.0**:vertex 距 OBB corner 等于单位 clearance,segment_clear 验证时若擦边会被 buffer
+## threshold 滤掉(`< buffer` 视为撞)。M6b Liang-Barsky 精确化后擦边判定无误差,1.0 安全
+## 余地 = 1 IEEE ulp(实际无漏判);未来若 demo 出现擦边失败可调到 1.1。
 const OBB_CORNER_OUTSET_FACTOR: float = 1.0
 
 ## A* heap key 浮点 → 整数粒度(0.1 px),用作 deterministic tie-break。
@@ -58,19 +63,15 @@ func _init(grid: RtsNavcellGrid) -> void:
 
 ## 同步寻路:跑 visibility graph A* 找 start → goal 的短路径。
 ##
-## **M6a 阶段限制**:
-##   - 仅处理 static OBB obstructions(unit / 圆 obstruction 跳过)
-##   - 不做 virtual goal canonicalize(直接用 goal.center 作 goal vertex)
-##   - 不做 best-so-far fallback(找不到完整路径直接返回空 path)
-##   - 不做 terrain edges / group filter / avoid_moving_units
-##
 ## **空 path 语义**:
-##   - start == goal cell:返回单 waypoint = goal.center(同 LongPath 兜底)
-##   - 找不到完整可见路径:返回空 path,caller 用 `path.is_empty()` 判定
+##   - start ≈ virtual_goal:返回单 waypoint = virtual_goal(same-point 兜底)
+##   - 找不到完整可见路径 + best-so-far 也没改善 (best_idx == start_idx):返回空 path,caller 用
+##     `path.is_empty()` 判定 stuck;否则返回 best-so-far reconstruct(让 unit 至少朝 goal 走一段)
 ##
-## **Determinism**:
-##   - vertex 候选顺序:[start, goal, OBB corners(按 obstr.tag 升序 × corner_index 0..3),
-##     search bounds 4 角(TL/TR/BL/BR 固定枚举顺序)]
+## **Determinism (§12.3)**:
+##   - vertex 候选顺序:[start, virtual_goal, OBB corners(按 obstr.tag 升序 × get_corners() 4 角),
+##     unit AABB corners(按 obstr.tag 升序 × +x+y/+x-y/-x-y/-x+y),search bounds TL/TR/BL/BR,
+##     terrain edges (j, i) 字典序]
 ##   - A* heap key 5 元组:(f, h, vx_int, vy_int, seq) lex 比较;6th 元素 vertex_idx 仅查找用
 func compute_short_path_immediate(req: RtsShortPathRequest, obstr_mgr: RtsObstructionManager) -> RtsWaypointPath:
 	Log.assert_crash(req != null, "RtsVertexPathfinder", "compute_short_path_immediate: req is null")
@@ -91,14 +92,29 @@ func compute_short_path_immediate(req: RtsShortPathRequest, obstr_mgr: RtsObstru
 	var bounds_circumradius: float = bounds.size.length() * 0.5
 	var nearby: Array = obstr_mgr.get_obstructions_in_range(bounds_center, bounds_circumradius)
 
-	# WHY: nearby 已按 tag 升序 (RtsObstructionManager.get_obstructions_in_range § §12.4),
-	# 此处只过滤 static OBB,statics 维持升序 → vertex 候选生成顺序 deterministic (§12.3)。
+	# Filter (M6c detail #8 group filter + #3 avoid_moving_units 开关):
+	# - control_group != "" + obstr.control_group / control_group_2 任一匹配 → skip(同 group 不互挡)
+	# - avoid_moving_units == false + unit.flags & MOVING → skip(让"挤过"队伍)
+	# WHY: nearby 按 tag 升序 (§12.4),filter 不破坏顺序 → statics / units 维持升序 (§12.3)
 	var statics: Array = []
+	var units: Array = []
+	var has_group_filter: bool = req.control_group != ""
 	for s in nearby:
+		if has_group_filter:
+			if s.control_group == req.control_group:
+				continue
+			if s is RtsObstructionShapeStatic and (s as RtsObstructionShapeStatic).control_group_2 == req.control_group:
+				continue
 		if s is RtsObstructionShapeStatic:
 			statics.append(s)
+		elif s is RtsObstructionShapeUnit:
+			# WHY: avoid_moving_units == false 让 caller 选"挤过队伍",MOVING flag 单位不算障碍
+			if not req.avoid_moving_units and (s.flags & RtsObstructionFlags.MOVING) != 0:
+				continue
+			units.append(s)
 
 	# 顺序契约 (§12.3): start, virtual_goal, OBB corners (statics 升序 × get_corners() 0..3),
+	# unit AABB corners (units 升序 × 4 角 +x+y → +x-y → -x-y → -x+y),
 	# bounds TL/TR/BL/BR, terrain edges (M6b cell (i,j) 字典序)
 	var vertices: Array[Vector2] = []
 	vertices.append(req.start)
@@ -114,6 +130,17 @@ func compute_short_path_immediate(req: RtsShortPathRequest, obstr_mgr: RtsObstru
 			var dir: Vector2 = (c - obb.center).normalized()
 			vertices.append(c + dir * outset)
 
+	# Moving unit square proxy (M6c detail #7): 圆形 obstruction 在 visibility graph 中近似 AABB
+	# 4 corner(0 A.D. 简化避免切线几何 bug);visibility check 时 segment_clear 仍当圆处理
+	# (RtsLineOfSight._segment_to_point_dist + clearance + buffer threshold)。
+	for s in units:
+		var u_shape := s as RtsObstructionShapeUnit
+		var r: float = u_shape.clearance + req.clearance
+		vertices.append(u_shape.center + Vector2(r, r))
+		vertices.append(u_shape.center + Vector2(r, -r))
+		vertices.append(u_shape.center + Vector2(-r, -r))
+		vertices.append(u_shape.center + Vector2(-r, r))
+
 	# WHY: bounds 4 角作 range-boundary vertex,让 A* 能"沿 search box 边缘绕过 OBB" (detail #2);
 	# 没这层时 search box 内 OBB 完全堵住直线 + 无可见 vertex 时 A* 直接 return empty。
 	var br: Rect2 = bounds
@@ -125,7 +152,12 @@ func compute_short_path_immediate(req: RtsShortPathRequest, obstr_mgr: RtsObstru
 	# Terrain edges (detail #4): bounds 内 grid 上 passable / impassable 邻居对中点作 vertex
 	_add_terrain_vertices(vertices, bounds, req.pass_mask)
 
-	return _astar_lazy_visibility(vertices, start_idx, goal_idx, statics, req.clearance)
+	# A* obstacles = statics + units (RtsLineOfSight.segment_clear 双类型 dispatch:Static 用 OBB
+	# 距离;Unit 用 segment-to-point 距离;buffer = req.clearance,unit 自己 clearance 在 segment_clear 内累加)
+	var obstacles: Array = []
+	obstacles.append_array(statics)
+	obstacles.append_array(units)
+	return _astar_lazy_visibility(vertices, start_idx, goal_idx, obstacles, req.clearance)
 
 
 # ========== 内部:Terrain edges (detail #4) ==========
