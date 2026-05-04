@@ -78,6 +78,11 @@
     "flying": {
       "scenes": ["battle/smoke_flying_units.tscn"]
     },
+    "motion": {
+      "scenes": [
+        "battle/smoke_motion_path_storage.tscn"
+      ]
+    },
     "replay": {
       "default_timeout_ms": 45000,
       "scenes": [
