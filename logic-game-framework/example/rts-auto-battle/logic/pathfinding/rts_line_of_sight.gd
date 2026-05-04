@@ -10,10 +10,11 @@
 ##   - `check_line_movement(grid, a, b, pass_mask) -> bool` — Bresenham raycast,沿 navcell 步进
 ##     直到撞到 impassable cell 返 false
 ##
-## **M6a 实现策略**:
-##   - segment vs OBB 距离用 t-stepping (100 sample,O(N) 简单足够 M6a prototype);M6b 末换成
-##     精确版 (Liang-Barsky 或 SAT-based segment-vs-OBB)
+## **实现策略(M6b 精确化)**:
+##   - segment vs OBB 距离 = OBB local 坐标变换后 segment vs AABB 精确公式
+##     (Liang-Barsky 测 segment-AABB 相交 + 不相交时 endpoint-to-AABB 与 corner-to-segment 取 min)
 ##   - segment vs Unit (圆) 用解析公式 (segment-to-point 距离 ≤ unit.clearance + buffer)
+##   - **enclose-radius 早出**:三角不等式下界 ≥ buffer 时直接 skip 精确算 (典型 demo ~80% 调用走早出)
 ##
 ## **决策来源**:
 ##   - data-structures.md §7.3 (API 签名)
@@ -21,12 +22,6 @@
 ##   - 0 A.D. helpers/VertexPathfinder.cpp 内部 LineOfSight 模块
 class_name RtsLineOfSight
 extends RefCounted
-
-
-# ========== 常量 ==========
-
-## OBB 距离 t-stepping 的 sample 数 (M6a 简化版;M6b 精确化后此常量可删)。
-const _OBB_DIST_SAMPLES: int = 100
 
 
 # ========== 公开 API ==========
@@ -134,21 +129,72 @@ static func _segment_to_obb_dist(a: Vector2, b: Vector2, obb: RtsObstructionShap
 	return _segment_to_aabb_dist(la, lb, hw, hh)
 
 
-## 线段 a → b 距以原点为中心、半宽 hw / 半高 hh 的 AABB 的最近距离。
+## 线段 a → b 距以原点为中心、半宽 hw / 半高 hh 的 AABB 的最近距离(M6b 精确版)。
 ##
-## **M6a 实现**:t-stepping(100 sample);每个 sample 点 p 距 AABB 的距离 = sqrt(max(|px|-hw,0)² + max(|py|-hh,0)²)。
-## 取所有 sample 的 min。
+## **算法**:
+##   1. 端点 a 或 b 在 AABB 内 → 距离 0
+##   2. Liang-Barsky 测 segment 跟 AABB 相交 → 距离 0
+##   3. 否则 nearest = min(端点 a 距 AABB, 端点 b 距 AABB, AABB 4 corner 距 segment)
 ##
-## **t-stepping 限制**:线段两端在 AABB 同侧 + 长 segment 擦边时,可能漏掉中间 0 距离 sample;但对
-## M6a static-OBB only 不会漏太狠(segment 长 ≤ 1792 px / 100 = 17.92 px/step,远小于 AABB 尺寸 ~50 px+)。
+## **精度**:1 IEEE ulp(完全解析),取代 M6a 100-sample t-stepping(误差 ≤ 0.5 px)。caller buffer
+## (典型 12-14 px) 远大于 ulp,行为不变;t-stepping 漏判 corner case 此版彻底消除。
 static func _segment_to_aabb_dist(a: Vector2, b: Vector2, hw: float, hh: float) -> float:
-	var min_dist: float = INF
-	var steps: int = _OBB_DIST_SAMPLES
-	for k in range(steps + 1):
-		var t: float = float(k) / float(steps)
-		var p: Vector2 = a.lerp(b, t)
-		var dx: float = maxf(absf(p.x) - hw, 0.0)
-		var dy: float = maxf(absf(p.y) - hh, 0.0)
-		var d: float = sqrt(dx * dx + dy * dy)
-		min_dist = minf(min_dist, d)
+	if absf(a.x) <= hw and absf(a.y) <= hh:
+		return 0.0
+	if absf(b.x) <= hw and absf(b.y) <= hh:
+		return 0.0
+
+	var t_min: float = 0.0
+	var t_max: float = 1.0
+	var dx: float = b.x - a.x
+	var dy: float = b.y - a.y
+	# WHY: 用 absf > 1e-9 而非 != 0:浮点段几乎平行轴时 |dx| 极小但非 0,inv_dx 会爆 → 无穷 t1/t2
+	# 让 Liang-Barsky 误判;阈值跟 buffer 数量级 (~12px) 相比绝对小,不影响 ≤ 1 ulp 精度。
+	if absf(dx) > 1e-9:
+		var inv_dx: float = 1.0 / dx
+		var tx1: float = (-hw - a.x) * inv_dx
+		var tx2: float = (hw - a.x) * inv_dx
+		if tx1 > tx2:
+			var tmp_x: float = tx1
+			tx1 = tx2
+			tx2 = tmp_x
+		t_min = maxf(t_min, tx1)
+		t_max = minf(t_max, tx2)
+	elif a.x < -hw or a.x > hw:
+		return _segment_aabb_no_intersect_dist(a, b, hw, hh)
+
+	if absf(dy) > 1e-9:
+		var inv_dy: float = 1.0 / dy
+		var ty1: float = (-hh - a.y) * inv_dy
+		var ty2: float = (hh - a.y) * inv_dy
+		if ty1 > ty2:
+			var tmp_y: float = ty1
+			ty1 = ty2
+			ty2 = tmp_y
+		t_min = maxf(t_min, ty1)
+		t_max = minf(t_max, ty2)
+	elif a.y < -hh or a.y > hh:
+		return _segment_aabb_no_intersect_dist(a, b, hw, hh)
+
+	if t_min <= t_max:
+		return 0.0
+
+	return _segment_aabb_no_intersect_dist(a, b, hw, hh)
+
+
+## Segment 跟 AABB 不重叠时的最近距离 = min(端点 a/b 距 AABB, AABB 4 corner 距 segment)。
+static func _segment_aabb_no_intersect_dist(a: Vector2, b: Vector2, hw: float, hh: float) -> float:
+	var dxa: float = maxf(absf(a.x) - hw, 0.0)
+	var dya: float = maxf(absf(a.y) - hh, 0.0)
+	var min_dist: float = sqrt(dxa * dxa + dya * dya)
+
+	var dxb: float = maxf(absf(b.x) - hw, 0.0)
+	var dyb: float = maxf(absf(b.y) - hh, 0.0)
+	min_dist = minf(min_dist, sqrt(dxb * dxb + dyb * dyb))
+
+	# AABB 4 corner 距 segment(corner 顺序固定 deterministic)
+	min_dist = minf(min_dist, _segment_to_point_dist(a, b, Vector2(-hw, -hh)))
+	min_dist = minf(min_dist, _segment_to_point_dist(a, b, Vector2(hw, -hh)))
+	min_dist = minf(min_dist, _segment_to_point_dist(a, b, Vector2(hw, hh)))
+	min_dist = minf(min_dist, _segment_to_point_dist(a, b, Vector2(-hw, hh)))
 	return min_dist
