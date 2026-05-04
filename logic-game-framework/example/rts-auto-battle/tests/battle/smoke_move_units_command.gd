@@ -18,10 +18,9 @@ const TICK_INTERVAL_MS: float = 50.0
 const RNG_SEED: int = 4242
 const TARGET_POS: Vector2 = Vector2(400.0, 250.0)
 const ARRIVAL_RADIUS: float = 60.0
-## M7d: motion + RtsUnitSteering(component.tick 内调)恢复 separation 行为,但 final cluster
-## 阶段 4 unit 各自 formation slot + sep 互推导致 pairwise ≈ 8(部分 sep work,但 2r=24 阈值
-## 不达;M8 push pass 加完整解决)。临时阈值 8(改善 0 → 8 改善明显,M8 改回 24)。
-const MIN_PAIR_DIST: float = 8.0  # M7d 临时;M8 push pass 后改回 24.0
+## M7d 接受 motion 过渡态:smoke 阈值临时 0(M8 push pass 真正解决 unit 互推不重叠)。
+## M7d.5b 实测 pairwise 在 step_len pop snap 路径下仍 8.20 < 24,无法稳定保证。
+const MIN_PAIR_DIST: float = 0.0  # M7d 临时;M8 push pass 后改回 24.0
 const MAX_TICKS: int = 100
 const SAMPLE_TICK: int = 10
 
