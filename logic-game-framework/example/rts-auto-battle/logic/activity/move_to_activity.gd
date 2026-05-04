@@ -51,10 +51,9 @@ func bind_runtime(motion_component: RtsMotionComponent) -> void:
 
 func on_first_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> void:
 	if _motion != null:
-		# M7d: motion.move_to 走 facade.compute_path_immediate 含 canonicalize;canonicalize=false
-		# 那 case (AttackMove → enemy_ct 中心) motion 走 short path + LongPath direct-path fallback
-		# 自然处理(facade 内部判定 goal in footprint 时不 mutate goal 到外缘)。
-		_motion.motion.move_to(target_pos, 0.0, 0.0)
+		# M7d: canonicalize 由 activity 字段决定 — 玩家 click 默认 true(走最近可达 navcell);
+		# AttackMove → enemy_ct 中心传 false(走 LongPath direct-path,unit 走过去 ARRIVAL=4 done)
+		_motion.motion.move_to(target_pos, 0.0, 0.0, canonicalize)
 
 
 func tick(actor: RtsUnitActor, _world: RtsWorldGameplayInstance, _dt: float) -> bool:
