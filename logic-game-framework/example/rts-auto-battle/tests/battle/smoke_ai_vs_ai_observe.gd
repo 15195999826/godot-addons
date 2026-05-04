@@ -62,6 +62,8 @@ var _controllers: Dictionary = {}   # actor_id → RtsUnitController
 var _spawned_unit_ids: Array[String] = []
 var _attack_events: Array[Dictionary] = []
 var _death_events: Array[Dictionary] = []
+var _left_ct: RtsBuildingActor = null
+var _right_ct: RtsBuildingActor = null
 
 
 func _ready() -> void:
@@ -80,17 +82,17 @@ func _ready() -> void:
 	_world.set_grid(_grid)
 
 	# 双方 ct + 预放 barracks (mirror Observe preset pre_spawn_barracks_each_side=true)
-	var left_ct := RtsBuildings.create_crystal_tower()
-	left_ct.set_team_id(0)
-	_world.add_actor(left_ct)
-	left_ct.position_2d = LEFT_CT_POS
-	left_ct.sync_obstruction_shape()
+	_left_ct = RtsBuildings.create_crystal_tower()
+	_left_ct.set_team_id(0)
+	_world.add_actor(_left_ct)
+	_left_ct.position_2d = LEFT_CT_POS
+	_left_ct.sync_obstruction_shape()
 
-	var right_ct := RtsBuildings.create_crystal_tower()
-	right_ct.set_team_id(1)
-	_world.add_actor(right_ct)
-	right_ct.position_2d = RIGHT_CT_POS
-	right_ct.sync_obstruction_shape()
+	_right_ct = RtsBuildings.create_crystal_tower()
+	_right_ct.set_team_id(1)
+	_world.add_actor(_right_ct)
+	_right_ct.position_2d = RIGHT_CT_POS
+	_right_ct.sync_obstruction_shape()
 
 	var left_barracks := RtsBuildings.create_barracks()
 	left_barracks.set_team_id(0)
@@ -104,8 +106,8 @@ func _ready() -> void:
 	right_barracks.position_2d = RIGHT_CT_POS + Vector2(-96.0, 0.0)
 	right_barracks.sync_obstruction_shape()
 
-	var left_actors: Array[RtsBattleActor] = [left_ct, left_barracks]
-	var right_actors: Array[RtsBattleActor] = [right_ct, right_barracks]
+	var left_actors: Array[RtsBattleActor] = [_left_ct, left_barracks]
+	var right_actors: Array[RtsBattleActor] = [_right_ct, right_barracks]
 
 	for i in range(NUM_WORKERS):
 		var lp: Vector2 = Vector2(LEFT_WORKER_X, WORKER_BASE_Y + WORKER_DELTA_Y * float(i))
@@ -147,6 +149,8 @@ func _ready() -> void:
 	var ticks: int = _procedure.get_current_tick()
 	var unit_to_unit: int = 0
 	var unit_to_building: int = 0
+	var combat_to_combat: int = 0
+	var combat_to_worker: int = 0
 	for ev in _attack_events:
 		var src_id: String = ev.get("source_actor_id", "")
 		var tgt_id: String = ev.get("target_actor_id", "")
@@ -154,6 +158,13 @@ func _ready() -> void:
 		var tgt := _world.get_actor(tgt_id)
 		if src is RtsUnitActor and tgt is RtsUnitActor:
 			unit_to_unit += 1
+			var src_u := src as RtsUnitActor
+			var tgt_u := tgt as RtsUnitActor
+			if src_u.unit_class != Config.UnitClass.WORKER:
+				if tgt_u.unit_class == Config.UnitClass.WORKER:
+					combat_to_worker += 1
+				else:
+					combat_to_combat += 1
 		elif src is RtsUnitActor and tgt is RtsBuildingActor:
 			unit_to_building += 1
 
@@ -177,12 +188,18 @@ func _ready() -> void:
 		_fail("right team spawned only %d units (expected ≥ 3)" % right_spawned)
 		return
 
-	# 2. 关键断言: unit_to_unit attacks ≥ 5 (锁定 spawner 不重新引入 RtsMoveToActivity+override).
-	#    Repro baseline: override=true → unit_to_unit=5; override=false → unit_to_unit≈25.
-	#    设 ≥ 5 是因为 override=true 时偶尔有 5 次 unit_to_unit (双方在 ct 旁挤一起时 spatial
-	#    碰撞被 AutoTarget 当 mover); 修复后稳定 20+. 用 ≥ 5 + 死亡条件双重锁定排错.
-	if unit_to_unit < 5:
-		_fail("unit_to_unit attacks = %d (expected ≥ 5; spawner may have re-introduced override RtsMoveToActivity, units passed each other without engaging)" % unit_to_unit)
+	# 2. 关键断言: combat_to_combat ≥ 30 (锁定"朝基地走 + 沿途打 combat unit"语义).
+	#    Repro baseline:
+	#      - 旧 RtsMoveToActivity+override (origin bug): unit_to_unit=5  combat→combat≈3 (擦肩)
+	#      - 删 override (strategy 接管 RtsAttackActivity): unit_to_unit=25 combat→combat=14 combat→worker=11
+	#      - AttackMove + gated wire (current): unit_to_unit=82 combat→combat=72 combat→worker=10
+	#    阈值 30 留 2× 头室. wire 失效 / 退化任一会触发 FAIL.
+	if combat_to_combat < 30:
+		_fail("combat→combat attacks = %d (expected ≥ 30; AttackMove engagement wire may have regressed — units not engaging enemy combat units)" % combat_to_combat)
+		return
+	# 3. combat→combat 应该是 unit_to_unit 主体 (不能让 unit 主要打 worker).
+	if combat_to_combat <= combat_to_worker:
+		_fail("combat→combat=%d should dominate combat→worker=%d (units detouring to workers instead of engaging combat)" % [combat_to_combat, combat_to_worker])
 		return
 
 	# 3. 至少 1 个 melee 死亡 (排除 "两边都打建筑没死人" 的伪过场景).
@@ -198,14 +215,15 @@ func _ready() -> void:
 		return
 
 	# 报告
-	print("rts ai_vs_ai_observe smoke: ticks=%d spawned L=%d R=%d attacks_total=%d unit_to_unit=%d unit_to_building=%d melee_deaths=%d" % [
+	print("rts ai_vs_ai_observe smoke: ticks=%d spawned L=%d R=%d attacks_total=%d unit_to_unit=%d (combat→combat=%d combat→worker=%d) unit_to_building=%d melee_deaths=%d" % [
 		ticks, left_spawned, right_spawned,
-		_attack_events.size(), unit_to_unit, unit_to_building, melee_deaths,
+		_attack_events.size(), unit_to_unit, combat_to_combat, combat_to_worker,
+		unit_to_building, melee_deaths,
 	])
 
 	_world.end()
 	GameWorld.destroy()
-	print("SMOKE_TEST_RESULT: PASS - units engaged each other in combat (unit_to_unit=%d ≥ 5, melee_deaths=%d ≥ 1)" % [unit_to_unit, melee_deaths])
+	print("SMOKE_TEST_RESULT: PASS - units engaged enemy combat (combat→combat=%d ≥ 30, > combat→worker=%d, melee_deaths=%d ≥ 1)" % [combat_to_combat, combat_to_worker, melee_deaths])
 	get_tree().quit(0)
 
 
@@ -237,9 +255,10 @@ func _spawn_resource_nodes(positions: Array[Vector2], is_gold: bool) -> void:
 		node.position_2d = pos
 
 
-## production_system 调用; mirror demo_rts_frontend._spawn_unit_for_building 修复版本:
-## **不调 set_activity_chain** — 让 AutoTargetSystem + BasicAttackStrategy 自然驱动 (跟
-## castle_war_minimal smoke 同模式).
+## production_system 调用; mirror demo_rts_frontend._spawn_unit_for_building 行为:
+## set RtsAttackMoveActivity(enemy_ct) + override=true. controller.tick player_command 路径
+## 每 tick 把 actor._cached_target_id 注入 set_engagement_target,加 100px gate 让 unit 仅
+## 在近距遇敌时切 attack(远端 cache 命中不 detour) — 实现"朝基地 + 沿途打"语义.
 func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	if building == null or building.is_dead():
 		return null
@@ -259,6 +278,12 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	unit.stance = building.spawn_unit_stance
 	_procedure.add_unit_to_team(unit, team_id)
 	_spawned_unit_ids.append(unit.get_id())
+
+	var enemy_ct: RtsBuildingActor = _right_ct if team_id == 0 else _left_ct
+	if enemy_ct != null and not enemy_ct.is_dead():
+		var controller := _controllers.get(unit.get_id()) as RtsUnitController
+		if controller != null:
+			controller.set_activity_chain(RtsAttackMoveActivity.new(enemy_ct.position_2d), true)
 	return unit
 
 

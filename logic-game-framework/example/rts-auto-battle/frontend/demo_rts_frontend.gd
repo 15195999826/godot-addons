@@ -375,12 +375,17 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	var unit := _spawn_unit(unit_class, team_id, spawn_pos)
 	unit.stance = building.spawn_unit_stance
 	_procedure.add_unit_to_team(unit, team_id)
-	# 不设 activity_chain — AutoTargetSystem (procedure step 2.5) 全场扫敌写
-	# actor._cached_target_id, BasicAttackStrategy.decide 读 cache 返回 AttackActivity,
-	# 由 controller reconcile 接管 → 单位 approach 最近敌方 actor 并攻击.
-	# 不写 RtsMoveToActivity+override 是因为那条路径会让 controller.tick 跳过 strategy.decide
-	# (`_player_command_active=true`), 单位纯走到敌方 ct, 中途擦肩不打人 — 敌人逼近时不会切
-	# attack 是真实 bug (smoke_ai_vs_ai_observe 锁定). 玩家想改 rally 选中单位下 MoveUnitsCommand.
+	# Rally 规则 = "朝对方基地走 + 沿途遇敌打": set RtsAttackMoveActivity(enemy_ct)
+	# + override=true. controller.tick (player_command 路径) 每 tick 把 actor._cached_target_id
+	# 注入 attack_move.set_engagement_target — 但加 ENGAGEMENT_RADIUS_SQ gate (100px) +
+	# 仅 enemy combat unit 触发(building/worker 不触发,免 detour 远端目标 / 杀农民). 路过
+	# 敌方军事 unit 时切 attack child;敌死 cache 空了切回 MoveTo 续走 enemy_ct. 玩家想改 rally
+	# 选中单位下 MoveUnitsCommand.
+	var enemy_ct: RtsBuildingActor = _right_ct if team_id == 0 else _left_ct
+	if enemy_ct != null and not enemy_ct.is_dead():
+		var controller := _controllers.get(unit.get_id()) as RtsUnitController
+		if controller != null:
+			controller.set_activity_chain(RtsAttackMoveActivity.new(enemy_ct.position_2d), true)
 	return unit
 
 
