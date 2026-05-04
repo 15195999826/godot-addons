@@ -18,9 +18,10 @@ const TICK_INTERVAL_MS: float = 50.0
 const RNG_SEED: int = 4242
 const TARGET_POS: Vector2 = Vector2(400.0, 250.0)
 const ARRIVAL_RADIUS: float = 60.0
-## M7d: motion 没 push pass(M8 修),group formation 抵达后 unit 可能重叠 → 临时接受
-## pairwise overlap;M8 push pass 加入后改回 24.0(2r melee)。详见 task-plan/M8。
-const MIN_PAIR_DIST: float = 0.0  # M7d 临时;M8 push pass 后改回 24.0
+## M7d: motion + RtsUnitSteering(component.tick 内调)恢复 separation 行为,但 final cluster
+## 阶段 4 unit 各自 formation slot + sep 互推导致 pairwise ≈ 8(部分 sep work,但 2r=24 阈值
+## 不达;M8 push pass 加完整解决)。临时阈值 8(改善 0 → 8 改善明显,M8 改回 24)。
+const MIN_PAIR_DIST: float = 8.0  # M7d 临时;M8 push pass 后改回 24.0
 const MAX_TICKS: int = 100
 const SAMPLE_TICK: int = 10
 

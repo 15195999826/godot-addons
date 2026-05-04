@@ -88,14 +88,40 @@ static func attach_default(
 ##   5. set_unit_moving_flag — was_moving != is_moving 切换
 ##
 ## **world == null** smoke 兼容:obstr_mgr 同步路径 noop(world 没 obstruction_manager 字段)。
-func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
+##
+## **M7d**: spatial_hash 非空时插 RtsUnitSteering.apply 让 motion-bearing actor 互推
+## (separation + deflection 复用 nav_agent 时代实现);为 null 时 motion 走 fallback to_next 方向。
+func tick(
+	delta: float,
+	world: Variant,
+	facade: RtsPathfinderFacade,
+	spatial_hash: RtsSpatialHash = null,
+) -> void:
 	# Step 1: 同步 owner → motion
 	motion.set_position_2d(owner_actor.position_2d)
 
-	# Step 2: 推进 motion 状态机
-	motion.tick(delta, world, facade)
+	# Step 2: motion 状态机 path 请求(不渐进 position)
+	motion.handle_path_update(facade, world)
 
-	# Step 3: 写回 motion → owner
+	# Step 3: 算 desired velocity(path 方向 × walk_speed)写 owner.velocity
+	var desired_vel: Vector2 = motion.compute_desired_velocity()
+	owner_actor.velocity = desired_vel
+
+	# Step 4: RtsUnitSteering.apply 加 separation + deflection 改 owner.velocity
+	# (M7d 重新启用,M8 push pass 替代后再删)
+	if spatial_hash != null and world is RtsWorldGameplayInstance:
+		RtsUnitSteering.apply(owner_actor, spatial_hash, world as RtsWorldGameplayInstance, delta)
+
+	# Step 5: 把 steered velocity(含 sep)给 motion 当 _step 方向
+	motion.set_steered_velocity(owner_actor.velocity)
+
+	# Step 6: motion._step 用 _steered_velocity 走(velocity=0 时 fallback to_next 方向)
+	motion._step(delta, world)
+
+	# Step 6.5: countdown tail(motion.tick 复刻;component.tick 不调 motion.tick 必须自己调)
+	motion._tail_countdown_tick()
+
+	# Step 7: 写回 motion → owner
 	var new_pos: Vector2 = motion.get_position_2d()
 	owner_actor.position_2d = new_pos
 

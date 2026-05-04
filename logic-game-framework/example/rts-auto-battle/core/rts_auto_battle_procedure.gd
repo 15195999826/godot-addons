@@ -779,10 +779,12 @@ func _tick_motion_bearing_actors(world: RtsWorldGameplayInstance, alive_actors: 
 		return
 	motion_actors.sort_custom(_compare_motion_actor)
 	var facade: RtsPathfinderFacade = world.pathfinder_facade
+	# M7d: 传 _spatial_hash 给 component → component 内调 RtsUnitSteering.apply 加 separation
+	# (motion-bearing actor 互推,避免 demo 里 8 unit 重叠;M8 push pass 替代后再删)
 	for a in motion_actors:
 		var actor: RtsBattleActor = a as RtsBattleActor
 		var component: RtsMotionComponent = actor.motion_component as RtsMotionComponent
-		component.tick(dt, world, facade)
+		component.tick(dt, world, facade, _spatial_hash)
 
 	# M7d — motion abort 派发:walk motion_actors,若 motion.has_just_failed 调 controller.
 	# on_motion_failed 让 activity 处理(默认 cancel,子类 override 可智能恢复);消费 flag。
