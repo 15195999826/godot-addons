@@ -172,38 +172,11 @@ func _astar(start: Vector2i, goal: Vector2i, pass_mask: int) -> RtsWaypointPath:
 			came_from[nb_pack] = cur_pack
 			var nb_h: int = _octile(Vector2i(nb_i, nb_j), goal)
 			var f: int = new_g + nb_h
-			_heap_insert(open_keys, [f, nb_h, nb_i, nb_j, insertion_seq])
+			RtsPathfinderHeap.insert(open_keys, [f, nb_h, nb_i, nb_j, insertion_seq])
 			insertion_seq += 1
 
 	# Open list 耗尽,找不到路径
 	return RtsWaypointPath.new()
-
-
-## Bsearch + insert 维持 ascending lex order(避免 sort 全列;每次插入 O(N) memmove 但
-## bsearch 步骤 O(log N))。
-##
-## 5 元组 lex compare:从 [0] 开始逐字段比;a < b 则 lo 移 mid+1,否则 hi 移 mid。
-func _heap_insert(arr: Array, key: Array) -> void:
-	var lo: int = 0
-	var hi: int = arr.size()
-	while lo < hi:
-		@warning_ignore("integer_division")
-		var mid: int = (lo + hi) / 2
-		if _key_less(arr[mid], key):
-			lo = mid + 1
-		else:
-			hi = mid
-	arr.insert(lo, key)
-
-
-## 5 元组 lex compare(严格 < ;相等返 false 让 stable sort 走 insertion order)。
-static func _key_less(a: Array, b: Array) -> bool:
-	for i in range(5):
-		if a[i] < b[i]:
-			return true
-		if a[i] > b[i]:
-			return false
-	return false
 
 
 ## Octile heuristic = `(max(di,dj) - min(di,dj)) * COST_HV + min(di,dj) * COST_DIAG`。
