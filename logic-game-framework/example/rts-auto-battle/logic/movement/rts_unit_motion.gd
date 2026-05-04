@@ -154,26 +154,55 @@ func _init(p_pass_class: RtsPassabilityClassConfig = null, p_template_walk_speed
 
 # ========== 公开 API:移动请求 ==========
 
-## 走到点附近;距离落入 [min_r, max_r]。重置 _failed_movements + 清双 path + 清 ticket。
+## 走到点附近;距离落入 [min_r, max_r]。清双 path + 清 ticket;**仅在 target 真变化时**重置
+## _failed_movements(activity 每 0.2s 限频 refresh 同 target 不应清失败计数,否则真 stuck unit
+## 永远累不到 35 → 不 abort → smoke_stuck_recovery 等场景挂)。
 ##
 ## **canonicalize**:
 ##   - true (默认):玩家 click move,goal 落 impassable 时 mutate 到外缘 navcell
 ##   - false:AI attack/harvest/return target 是 actor 中心(可能 building footprint 内),
 ##     走 compute_path_direct + LongPath direct-path fallback,unit 走 distance 判定到达
 func move_to(pos: Vector2, min_r: float, max_r: float, canonicalize: bool = true) -> void:
+	# M7d: target 真变化判定 — < 1px²(0ad refresh 限频 + 2px 抖动阈值之下)算"同 target refresh"
+	var same_target: bool = (
+		_move_request != null
+		and _move_request.type == RtsMoveRequest.Type.POINT
+		and _move_request.position.distance_squared_to(pos) < 1.0
+	)
 	_move_request = RtsMoveRequest.to_point(pos, min_r, max_r)
 	_canonicalize = canonicalize
-	_reset_path_state()
+	_short_path.clear()
+	_long_path.clear()
+	if _expected_path_ticket != null:
+		_expected_path_ticket.clear()
+	if not same_target:
+		# 真新 target → 重置失败计数 + countdown(新机会,不带上次失败 sticky 状态)
+		_failed_movements = 0
+		_follow_known_imperfect_path_countdown = 0
+		_just_failed = false
 
 
-## 接近 entity 到指定距离;eid 必须非空。重置 _failed_movements + 清双 path + 清 ticket。
+## 接近 entity 到指定距离;eid 必须非空。清双 path + 清 ticket;**仅在 target 真变化时**
+## 重置 _failed_movements(参考 move_to 注释)。
 ##
 ## **canonicalize 默认 false** — ENTITY MoveRequest 用于 AI attack/gather,target=actor 中心,
 ## 通常走 direct path(M4b.3 lesson)。
 func move_to_entity(eid: String, min_r: float, max_r: float, canonicalize: bool = false) -> void:
+	var same_target: bool = (
+		_move_request != null
+		and _move_request.type == RtsMoveRequest.Type.ENTITY
+		and _move_request.entity_id == eid
+	)
 	_move_request = RtsMoveRequest.to_entity(eid, min_r, max_r)
 	_canonicalize = canonicalize
-	_reset_path_state()
+	_short_path.clear()
+	_long_path.clear()
+	if _expected_path_ticket != null:
+		_expected_path_ticket.clear()
+	if not same_target:
+		_failed_movements = 0
+		_follow_known_imperfect_path_countdown = 0
+		_just_failed = false
 
 
 ## 跟随 entity 保持 offset(本地坐标);M9 编队用,M7 阶段留接口。

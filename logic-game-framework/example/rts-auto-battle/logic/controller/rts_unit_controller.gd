@@ -157,12 +157,14 @@ func tick(dt: float, world: RtsWorldGameplayInstance) -> void:
 ## procedure 派发 "rts_motion_move_failed" event 给 owner_actor 后,需要找 actor 对应的
 ## controller → 通知 current_activity。controller 暴露此 method 供 procedure 调用。
 ##
-## 默认 activity.on_motion_failed = cancel(),让 reconcile 在下 tick 选新 activity。
-## 子类可 override 实现智能恢复(re-acquire target / 找新资源点等)。
-func on_motion_failed(world: RtsWorldGameplayInstance) -> void:
-	if current_activity == null or current_activity.is_done():
-		return
-	current_activity.on_motion_failed(actor, world)
+## **默认行为**:abandon_command()— motion 自治 abort = stuck abandon 等价语义(P2.3 nav_agent
+## 时代 stuck_detector 连 N 次 repath fail 后 abandon;M7d motion 累 35 fail 直接 abort)。
+## 让 controller 进 abandoned 状态,strategy.decide 不再 propose 直到玩家 / 外部清 flag。
+##
+## **子类 override**:activity 在 abort 前可调 on_motion_failed 智能恢复(re-acquire target,
+## 找新资源点)。当前 default 让 abort = unit idle,语义清晰。
+func on_motion_failed(_world: RtsWorldGameplayInstance) -> void:
+	abandon_command()
 
 
 # ========== 显式 push (smoke / 未来玩家命令) ==========
