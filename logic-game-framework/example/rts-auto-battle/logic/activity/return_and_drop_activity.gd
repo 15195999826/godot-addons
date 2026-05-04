@@ -59,7 +59,9 @@ func on_first_run(actor: RtsUnitActor, world: RtsWorldGameplayInstance) -> void:
 	var building := world.get_actor(drop_off_id) as RtsBuildingActor
 	if building == null or building.is_dead():
 		return
-	_refresh_nav_target(_nav_agent, building.position_2d)
+	# M5: target=building 中心(footprint 阻挡)→ canonicalize=false 让 direct-path fallback
+	# 直接走过去,DROP_OFF_RADIUS check 决定抵达。
+	_refresh_nav_target(_nav_agent, building.position_2d, false)
 
 
 func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bool:
@@ -76,7 +78,7 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 		building = world.get_actor(drop_off_id) as RtsBuildingActor
 		if building == null or building.is_dead():
 			return false
-		_refresh_nav_target(_nav_agent, building.position_2d)
+		_refresh_nav_target(_nav_agent, building.position_2d, false)
 		return true  # 下 tick 再评估距离
 
 	var dist_sq: float = actor.position_2d.distance_squared_to(building.position_2d)
@@ -87,7 +89,7 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 		return false  # 完成 drop, strategy 下 tick 切回 HarvestActivity
 	_intent_arriving = false
 	if _nav_agent != null and _should_refresh_nav(building.position_2d):
-		_refresh_nav_target(_nav_agent, building.position_2d)
+		_refresh_nav_target(_nav_agent, building.position_2d, false)
 	return true
 
 

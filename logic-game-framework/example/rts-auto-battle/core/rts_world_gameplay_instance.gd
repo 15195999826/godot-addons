@@ -41,6 +41,19 @@ var obstruction_manager: RtsObstructionManager = null
 ## M4a recompute > 30 ms / tick (perf 测量后决定)。
 var hierarchical_pathfinder: RtsHierarchicalPathfinder = null
 
+## M5: LongPathfinder 朴素 A* on NavcellGrid;procedure._init 末构造(navcell_grid 之后)。
+## 跟 facade 一起;callsite 一般通过 pathfinder_facade 走,极少直接用 long_pathfinder。
+var long_pathfinder: RtsLongPathfinder = null
+
+## M5: PathfinderFacade 顶层入口(聚合 NavcellGrid + Hierarchical + LongPath)。
+##
+## **接口**:
+##   - `compute_path_immediate(start, goal, mask)` 玩家 click move 走 canonicalize → A*
+##   - `compute_path_direct(start, goal, mask)` AI attack-move / harvest 不过 canonicalize → 直接 A*
+##   - `is_goal_reachable(start, goal, mask)` 纯查询
+##   - `make_goal_reachable(start, goal, mask)` 显式 canonicalize
+var pathfinder_facade: RtsPathfinderFacade = null
+
 
 # ========== 战斗 staging fields (start_rts_battle 写, _create_battle_procedure 读) ==========
 

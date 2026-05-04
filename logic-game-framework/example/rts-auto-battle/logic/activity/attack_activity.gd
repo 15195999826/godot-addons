@@ -77,7 +77,11 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 	else:
 		_wants_attack = false
 		if _nav_agent != null and _should_refresh_nav(target.position_2d):
-			_refresh_nav_target(_nav_agent, target.position_2d)
+			# M5: target=enemy actor 中心(可能落 building footprint / clearance inflate 内)
+			# → canonicalize=false 不过 canonicalize,让 LongPath direct-path fallback(终点
+			# impassable 时返回单 waypoint = target.position_2d)直接朝目标走过去 → distance
+			# check 决定 in_range 行为,attack_range 包到 outer cell 即可(M4b.3 lesson)。
+			_refresh_nav_target(_nav_agent, target.position_2d, false)
 	return true
 
 

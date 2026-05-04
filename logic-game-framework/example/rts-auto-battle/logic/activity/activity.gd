@@ -143,10 +143,17 @@ func _should_refresh_nav(target_pos: Vector2) -> bool:
 
 
 ## 写 nav target + 更新限频状态. nav_agent null 时 no-op (子类需自查).
-func _refresh_nav_target(nav_agent: RtsNavAgent, target_pos: Vector2) -> void:
+##
+## **M5 canonicalize**:
+##   - true (默认):玩家 click move / 自治 idle move,target 是地图坐标 → 走 canonicalize
+##     让玩家点不可达点时 unit 走最近可达 navcell(✋2 体验点)
+##   - false:attack / harvest target 是 actor 中心(可能落 building footprint 内),不走
+##     canonicalize 直接 A*(M4b.3 wire fail lesson:enemy 中心被偏到 ct 旁外缘 → unit 在
+##     attack range 外)
+func _refresh_nav_target(nav_agent: RtsNavAgent, target_pos: Vector2, canonicalize: bool = true) -> void:
 	if nav_agent == null:
 		return
-	nav_agent.set_target(target_pos)
+	nav_agent.set_target(target_pos, canonicalize)
 	_last_set_target = target_pos
 	_time_since_nav_refresh = 0.0
 
