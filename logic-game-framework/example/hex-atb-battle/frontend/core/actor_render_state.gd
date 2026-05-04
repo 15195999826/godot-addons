@@ -54,6 +54,12 @@ var tint_color: Color = Color.WHITE
 ## 死亡动画进度（0.0 = 开始，1.0 = 完成）
 var death_progress: float = 0.0
 
+## bump 临时世界偏移(撞墙 / 撞单位时叠在世界坐标上,不动 hex 逻辑位置)
+var bump_offset: Vector3 = Vector3.ZERO
+
+## bump 临时 mesh 挤压(Vector3 scale;Vector3.ONE = 无形变)
+var bump_squish: Vector3 = Vector3.ONE
+
 
 # ========== Buff 状态 ==========
 
@@ -91,6 +97,8 @@ func duplicate() -> FrontendActorRenderState:
 	copy.flash_progress = flash_progress
 	copy.tint_color = tint_color
 	copy.death_progress = death_progress
+	copy.bump_offset = bump_offset
+	copy.bump_squish = bump_squish
 	for b in buffs:
 		copy.buffs.append(b.duplicate())
 	for s in shields:

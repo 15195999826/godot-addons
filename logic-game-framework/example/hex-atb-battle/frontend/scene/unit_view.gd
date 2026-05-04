@@ -41,7 +41,12 @@ var _name_label_view: FrontendNameLabelView
 
 var _actor_id: String = ""
 var _team: int = 0
+## 逻辑世界坐标(BattleAnimator 每帧通过 set_world_position 推过来,= hex 转出的格中心)
 var _target_position: Vector3 = Vector3.ZERO
+## 朝 _target_position 收敛的平滑位置(每 tick lerp);bump 不走这条,避免被平滑掉
+var _smoothed_position: Vector3 = Vector3.ZERO
+## bump 临时偏移(撞墙 / 撞单位时叠在 _smoothed_position 之上,逻辑位置不变)
+var _bump_offset: Vector3 = Vector3.ZERO
 var _death_tween: Tween
 var _environment_kind: String = ""
 ## 死亡动画 once 策略 flag。play_death() 是 transition event 入口,但同一战斗内
@@ -62,10 +67,18 @@ func _ready() -> void:
 	_name_label_view = FrontendNameLabelView.new()
 	add_child(_name_label_view)
 	_target_position = position
+	_smoothed_position = position
 
 
 func _process(delta: float) -> void:
-	position = position.lerp(_target_position, delta * 15.0)
+	# 死亡动画期间 (_death_tween 在 tween position:y) 让 tween 独占 position,
+	# 否则会和这里的 lerp 互相覆盖。
+	if _death_played:
+		return
+	# _smoothed_position 朝 _target_position 收敛(原 lerp 行为),
+	# 最终 position = 平滑值 + bump_offset(bump 不走 lerp,避免撞击手感被吃掉)。
+	_smoothed_position = _smoothed_position.lerp(_target_position, delta * 15.0)
+	position = _smoothed_position + _bump_offset
 
 
 func _create_mesh() -> void:
@@ -140,6 +153,8 @@ func update_state(new_state: FrontendActorRenderState) -> void:
 	_name_label_view.update_from_state(new_state)
 	_update_flash_effect(new_state.flash_progress)
 	_update_tint_color(new_state.tint_color)
+	_bump_offset = new_state.bump_offset
+	_apply_bump_squish(new_state.bump_squish)
 
 
 ## 设置世界位置
@@ -174,6 +189,14 @@ func _update_tint_color(tint_color: Color) -> void:
 		_base_material.albedo_color = _base_material.albedo_color.blend(tint_color)
 
 
+## 把 bump squish 应用到 mesh(只压 mesh,不压 unit_view 整体 — HP 条 / buff 行 / 名字
+## 留在原位,只有身体被撞凹下去)。死亡动画走 self.scale,不与本 squish 冲突。
+func _apply_bump_squish(squish: Vector3) -> void:
+	if _mesh_instance == null:
+		return
+	_mesh_instance.scale = squish
+
+
 ## 播放死亡动画(once 策略)。已播过则忽略 — 用于 transition event 入口,调方
 ## (BattleAnimator._on_actor_died)不需要做幂等。
 func play_death() -> void:
@@ -195,6 +218,10 @@ func revive() -> void:
 	visible = true
 	scale = Vector3.ONE
 	_death_played = false
+	# 重置 bump 残留,避免上一段录像的 bump_offset 拖到这次播放
+	_bump_offset = Vector3.ZERO
+	if _mesh_instance != null:
+		_mesh_instance.scale = Vector3.ONE
 
 
 func _on_death_animation_finished() -> void:

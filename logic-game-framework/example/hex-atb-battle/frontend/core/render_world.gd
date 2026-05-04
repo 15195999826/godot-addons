@@ -206,6 +206,8 @@ func _apply_action(active_action: FrontendActionScheduler.ActiveAction) -> void:
 			_apply_apply_buff_state_action(action)
 		FrontendVisualAction.ActionType.APPLY_SHIELD_STATE:
 			_apply_apply_shield_state_action(action)
+		FrontendVisualAction.ActionType.BUMP:
+			_apply_bump_action(action, progress)
 
 
 ## 应用移动动作
@@ -400,6 +402,22 @@ func _apply_procedural_vfx_action(action: FrontendProceduralVFXAction, action_id
 	effect_data.intensity = action.intensity
 	effect_data.color = action.tint_color
 	_procedural_effects.append(effect_data)
+
+
+## 应用 bump(撞墙 / 撞单位临时位移弹回)。view 层从 actor.bump_offset / bump_squish
+## 读取并叠加在世界坐标 / mesh scale 上,逻辑位置不变。progress=1 时 snap 回零位,
+## 避免下一段动画继承残留偏移。
+func _apply_bump_action(action: FrontendBumpAction, progress: float) -> void:
+	var actor: FrontendActorRenderState = _actors.get(action.actor_id)
+	if actor == null:
+		return
+	if progress >= 1.0:
+		actor.bump_offset = Vector3.ZERO
+		actor.bump_squish = Vector3.ONE
+	else:
+		actor.bump_offset = action.get_offset(progress)
+		actor.bump_squish = action.get_squish(progress)
+	_dirty_actors[action.actor_id] = true
 
 
 ## 应用死亡动作
