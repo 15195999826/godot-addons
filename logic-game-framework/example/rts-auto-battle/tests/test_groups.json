@@ -1,0 +1,94 @@
+{
+  "namespace": "rts",
+  "default_timeout_ms": 30000,
+  "groups": {
+    "regression": {
+      "required": true,
+      "scenes": [
+        "battle/smoke_rts_auto_battle.tscn",
+        "battle/smoke_castle_war_minimal.tscn",
+        "battle/smoke_ai_vs_player_full_match.tscn",
+        { "path": "battle/smoke_ai_vs_ai_observe.tscn", "timeout_ms": 45000 },
+        { "path": "replay/smoke_replay_bit_identical.tscn", "timeout_ms": 45000 },
+        "frontend/smoke_frontend_main.tscn"
+      ]
+    },
+    "pathfinding": {
+      "default_timeout_ms": 45000,
+      "scenes": [
+        "battle/smoke_navigation.tscn",
+        "battle/smoke_grid_pathfinding.tscn",
+        "battle/smoke_pathfinding_baseline.tscn",
+        "battle/smoke_pathfinding_validation.tscn",
+        "battle/smoke_clearance_inflate.tscn",
+        "battle/smoke_region_id_helper.tscn",
+        "battle/smoke_hierarchical_recompute.tscn",
+        "battle/smoke_hierarchical_isolated_region.tscn",
+        "battle/smoke_hierarchical_unreachable.tscn",
+        "battle/smoke_hierarchical_perf.tscn",
+        "battle/smoke_long_pathfinder_basic.tscn",
+        "battle/smoke_long_pathfinder_unreachable.tscn",
+        "battle/smoke_long_pathfinder_determinism.tscn"
+      ]
+    },
+    "obstruction": {
+      "scenes": [
+        "battle/smoke_obstruction_manager_register.tscn",
+        "battle/smoke_obstruction_manager_query.tscn",
+        "battle/smoke_obstruction_manager_remove.tscn",
+        "battle/smoke_navcell_grid_passability.tscn",
+        "battle/smoke_obstruction_footprint_split.tscn"
+      ]
+    },
+    "combat": {
+      "scenes": [
+        "battle/smoke_attack.tscn",
+        "battle/smoke_auto_target.tscn",
+        "battle/smoke_activity_chain.tscn",
+        "battle/smoke_steering.tscn",
+        "battle/smoke_stuck_recovery.tscn",
+        "battle/smoke_skeleton.tscn",
+        "battle/smoke_minimal_push_out.tscn",
+        "battle/smoke_ai.tscn",
+        "battle/smoke_crystal_tower_win.tscn"
+      ]
+    },
+    "economy": {
+      "default_timeout_ms": 45000,
+      "scenes": [
+        "battle/smoke_production.tscn",
+        "battle/smoke_harvest_loop.tscn",
+        "battle/smoke_resource_nodes.tscn",
+        "battle/smoke_economy_demo.tscn",
+        "battle/smoke_player_command_production.tscn"
+      ]
+    },
+    "command": {
+      "scenes": [
+        "battle/smoke_player_command.tscn",
+        "battle/smoke_move_units_command.tscn"
+      ]
+    },
+    "flying": {
+      "scenes": ["battle/smoke_flying_units.tscn"]
+    },
+    "replay": {
+      "default_timeout_ms": 45000,
+      "scenes": [
+        "replay/smoke_determinism.tscn",
+        "replay/smoke_replay_bit_identical.tscn"
+      ]
+    },
+    "ui": {
+      "scenes": ["frontend/smoke_ui_main_menu.tscn"]
+    },
+    "frontend": {
+      "scenes": [
+        "frontend/smoke_frontend_main.tscn",
+        "frontend/smoke_director_streaming.tscn",
+        "frontend/smoke_tiny_swords_assets.tscn",
+        "frontend/smoke_tiny_swords_animation_browser.tscn"
+      ]
+    }
+  }
+}
