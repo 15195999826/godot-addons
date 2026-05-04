@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_motion_path_storage"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_motion_path_storage.gd" id="1_motion_path_storage"]
+
+[node name="RtsSmokeMotionPathStorage" type="Node"]
+script = ExtResource("1_motion_path_storage")
