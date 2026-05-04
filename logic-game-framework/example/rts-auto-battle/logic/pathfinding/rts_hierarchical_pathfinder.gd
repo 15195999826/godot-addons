@@ -66,6 +66,17 @@ var _global_regions: Dictionary = {}
 ## pass_mask (int) → 下一个分配的 GlobalRegionID(单调递增 cursor)。
 var _next_global_region: Dictionary = {}
 
+## recompute 时存 grid 引用,M4b 查询 API(world ↔ navcell index)需要;调方修改 grid 后
+## 必须重 recompute(M4a 阶段一次性,M4c 阶段 incremental update 时同步刷新)。
+var _grid: RtsNavcellGrid = null
+
+
+# ========== 常量 (M4b 查询) ==========
+
+## 螺旋 / ring scan 最大半径(navcells)。200 × 32 px = 6400 px,足够覆盖正常游戏地图。
+## 超过此半径 find_nearest_* 返 (-1, -1) — 玩家点距离任何可通行区域 6400 px 之外算"找不到"。
+const _MAX_NEAREST_RADIUS: int = 200
+
 
 # ========== 初始化 ==========
 
@@ -115,6 +126,9 @@ func recompute(grid: RtsNavcellGrid, classes: Array[RtsPassabilityClassConfig]) 
 
 		# 3) 计算 GlobalRegionID(R5 P1 #3 修订:起点 = 全量 packed RegionID,含 isolated)
 		_compute_global_regions(pass_mask)
+
+	# 存 grid 引用给 M4b 查询 API(world ↔ navcell index 转换);调方下次 recompute 会刷新。
+	_grid = grid
 
 
 # ========== M4a 内部:per-chunk flood-fill ==========
@@ -306,11 +320,169 @@ func _compute_global_regions(pass_mask: int) -> void:
 	_next_global_region[pass_mask] = next_global
 
 
-# ========== M4a 调试 / smoke 查询(M4b 才接 production)==========
+# ========== M4b 公开查询 API(player command / activity 消费)==========
 
 ## 已经做过 recompute 吗(替代外部 flag 跟踪 lazy 初始化)。
 func is_recomputed() -> bool:
 	return _chunks_w > 0
+
+
+## 取 (i, j) navcell 所属 packed RegionID;impassable / 越界 → INVALID(0)。
+func get_region(i: int, j: int, pass_mask: int) -> int:
+	var chunk_size: int = RtsHierarchicalChunk.CHUNK_SIZE
+	var ci: int = i / chunk_size
+	var cj: int = j / chunk_size
+	var ch: RtsHierarchicalChunk = get_chunk(ci, cj, pass_mask)
+	if ch == null:
+		return RtsRegionIdHelper.INVALID
+	var li: int = i % chunk_size
+	var lj: int = j % chunk_size
+	if li < 0 or li >= chunk_size or lj < 0 or lj >= chunk_size:
+		return RtsRegionIdHelper.INVALID
+	var local_r: int = ch.get_region(li, lj)
+	if local_r == 0:
+		return RtsRegionIdHelper.INVALID
+	return RtsRegionIdHelper.pack(ci, cj, local_r)
+
+
+## 取 (i, j) navcell 所属 GlobalRegionID;impassable / 越界 → 0。
+##
+## 同 GlobalID = 同一连通分量(整图可达);0 永远表示不可通行 / 未知。
+func get_global_region(i: int, j: int, pass_mask: int) -> int:
+	var rid: int = get_region(i, j, pass_mask)
+	if RtsRegionIdHelper.is_invalid(rid):
+		return 0
+	return _global_regions.get(pass_mask, {}).get(rid, 0)
+
+
+## 给定 start_world / goal_world,goal 是否跟 start 同一 GlobalRegion(整图可达)。
+##
+## 不修改任何状态。start 落在 impassable navcell 时返 false(不做 fallback,
+## 跟 make_goal_reachable_point 区分:本 API 是"原 goal 直接可达"判定)。
+func is_goal_reachable_point(start_world: Vector2, goal_world: Vector2, pass_mask: int) -> bool:
+	if _grid == null:
+		return false
+	var start_ij: Vector2i = _grid.nearest_navcell(start_world)
+	var start_g: int = get_global_region(start_ij.x, start_ij.y, pass_mask)
+	if start_g == 0:
+		return false
+	var goal_ij: Vector2i = _grid.nearest_navcell(goal_world)
+	var goal_g: int = get_global_region(goal_ij.x, goal_ij.y, pass_mask)
+	return goal_g == start_g
+
+
+## Canonicalize POINT goal 到最近可达 navcell — 但仅在不可达时改 goal,可达时 no-op。
+##
+## 返回 Dictionary:
+##   - "reachable": bool — true: goal_world 跟 start_world 同一 GlobalRegion;
+##                          false: 不同 / goal 在 impassable / start 在 impassable 全找不到 fallback
+##   - "canonicalized_world": Vector2:
+##                              reachable: **= 原 goal_world**(no-op,不改 baseline 路径)
+##                              !reachable: 跟 start 同 GlobalRegion 的、离 goal 最近的 navcell 中心
+##                              彻底找不到任何可通 navcell:返原 goal_world(兜底,callsite 应记日志)
+##
+## **为什么 reachable=true 时不 canonicalize 到 navcell 中心**:
+## spec §M4b.2 描述"总是 mutate goal 到 POINT navcell 中心"是给 M5 LongPathfinder 用的(它期望
+## navcell 中心点做 A* 起终点)。但 M5 之前 LongPathfinder 不存在,单位走 RtsNavAgent +
+## NavigationAgent2D 路径 — canonicalize 到 navcell 中心会让 target 偏 0-16 px → 改 baseline 路径
+## → 触发 stop runner 第 6 条(M4 不应改路径)。M4b 阶段保留"reachable → no-op"语义,
+## M5 引入 LongPathfinder 时再改成"总是 navcell 中心 canonicalize"+ 接受 P1 baseline 漂。
+##
+## **不**修改 grid / hierarchical 状态(纯查询)。
+func make_goal_reachable_point(
+	start_world: Vector2,
+	goal_world: Vector2,
+	pass_mask: int,
+) -> Dictionary:
+	if _grid == null:
+		return {"reachable": false, "canonicalized_world": goal_world}
+
+	var start_ij: Vector2i = _grid.nearest_navcell(start_world)
+	var start_g: int = get_global_region(start_ij.x, start_ij.y, pass_mask)
+
+	# start 在 impassable navcell → 找最近 passable 作 fallback start
+	if start_g == 0:
+		var fallback: Vector2i = find_nearest_passable_navcell(start_ij, pass_mask)
+		if fallback == Vector2i(-1, -1):
+			return {"reachable": false, "canonicalized_world": goal_world}
+		start_ij = fallback
+		start_g = get_global_region(start_ij.x, start_ij.y, pass_mask)
+		if start_g == 0:
+			return {"reachable": false, "canonicalized_world": goal_world}
+
+	var goal_ij: Vector2i = _grid.nearest_navcell(goal_world)
+	var goal_g: int = get_global_region(goal_ij.x, goal_ij.y, pass_mask)
+
+	if goal_g == start_g and goal_g != 0:
+		# 可达:no-op(M4b 阶段保 baseline,见 docstring)
+		return {"reachable": true, "canonicalized_world": goal_world}
+
+	# 不可达:找跟 start 同 GlobalRegion 的、离 goal 最近的 navcell
+	var nearest: Vector2i = _find_nearest_in_global_region(goal_ij, start_g, pass_mask)
+	if nearest == Vector2i(-1, -1):
+		# 兜底:start 自身一定 ∈ start_g,不应到此(防御 _MAX_NEAREST_RADIUS 内找不到的极端 case)
+		return {"reachable": false, "canonicalized_world": _grid.navcell_center_world(start_ij.x, start_ij.y)}
+	return {"reachable": false, "canonicalized_world": _grid.navcell_center_world(nearest.x, nearest.y)}
+
+
+## 螺旋 / ring scan 找离 start 最近的 passable (任意 GlobalRegion) navcell。
+##
+## start 自身可通就返 start;否则按 chess-board 距离 r=1, 2, 3, ... 外扩,每 ring 内
+## 按 (di, dj) 字典序遍历 → deterministic。超过 _MAX_NEAREST_RADIUS 返 (-1, -1)。
+func find_nearest_passable_navcell(start: Vector2i, pass_mask: int) -> Vector2i:
+	if _grid == null:
+		return Vector2i(-1, -1)
+	if _grid.is_passable(start.x, start.y, pass_mask):
+		return start
+	for r in range(1, _MAX_NEAREST_RADIUS + 1):
+		var found: Vector2i = _scan_ring_for_passable(start, r, pass_mask)
+		if found != Vector2i(-1, -1):
+			return found
+	return Vector2i(-1, -1)
+
+
+## 螺旋 ring scan 找离 start 最近的、属于 target_global GlobalRegion 的 navcell。
+##
+## start 自身已 ∈ target_global 就返 start;否则外扩至 _MAX_NEAREST_RADIUS。
+func _find_nearest_in_global_region(start: Vector2i, target_global: int, pass_mask: int) -> Vector2i:
+	if _grid == null or target_global == 0:
+		return Vector2i(-1, -1)
+	if get_global_region(start.x, start.y, pass_mask) == target_global:
+		return start
+	for r in range(1, _MAX_NEAREST_RADIUS + 1):
+		var found: Vector2i = _scan_ring_for_global(start, r, pass_mask, target_global)
+		if found != Vector2i(-1, -1):
+			return found
+	return Vector2i(-1, -1)
+
+
+## 扫 chess-board 距离 = r 的 ring,按 (di, dj) 字典序找第一个 passable navcell。
+func _scan_ring_for_passable(center: Vector2i, r: int, pass_mask: int) -> Vector2i:
+	for di in range(-r, r + 1):
+		for dj in range(-r, r + 1):
+			if maxi(absi(di), absi(dj)) != r:   # 仅 ring 上(不重复扫内层)
+				continue
+			var i: int = center.x + di
+			var j: int = center.y + dj
+			if _grid.is_passable(i, j, pass_mask):
+				return Vector2i(i, j)
+	return Vector2i(-1, -1)
+
+
+## 扫 chess-board 距离 = r 的 ring,按 (di, dj) 字典序找第一个 ∈ target_global 的 navcell。
+func _scan_ring_for_global(center: Vector2i, r: int, pass_mask: int, target_global: int) -> Vector2i:
+	for di in range(-r, r + 1):
+		for dj in range(-r, r + 1):
+			if maxi(absi(di), absi(dj)) != r:
+				continue
+			var i: int = center.x + di
+			var j: int = center.y + dj
+			if get_global_region(i, j, pass_mask) == target_global:
+				return Vector2i(i, j)
+	return Vector2i(-1, -1)
+
+
+# ========== M4a 调试 / smoke 查询 ==========
 
 
 ## chunks 数据(给 smoke 验证用;production code 应通过 M4b 公开 API)。
