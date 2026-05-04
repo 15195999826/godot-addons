@@ -1,0 +1,14 @@
+{
+  "namespace": "core",
+  "default_timeout_ms": 45000,
+  "groups": {
+    "unit": {
+      "required": true,
+      "scenes": ["run_tests.tscn"]
+    },
+    "skill-preview-env": {
+      "default_timeout_ms": 30000,
+      "scenes": ["smoke_skill_preview_environment.tscn"]
+    }
+  }
+}
