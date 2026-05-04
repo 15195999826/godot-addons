@@ -16,7 +16,17 @@ var map_size: Vector2 = Vector2(500.0, 500.0)
 
 ## RTS 战场 grid wrapper (P1.2 替代 NavigationRegion2D), 由 frontend / smoke 入口注入。
 ## 为 null 时 actor 退化为直线接敌(走 RtsPathfinding.find_path 的 _direct_path 分支)。
+##
+## **M5.5 deprecation**: RtsBattleGrid 在 M5.5 末计划被完全替换为 `navcell_grid: RtsNavcellGrid`
+## 直接持有(spec §M5.5)。M5.5 阶段保留双字段:`rts_grid` 兼容老 smoke / scenario 构造,
+## production code(facade / nav_agent / activity)走 `navcell_grid` 直接 + `obstruction_manager`。
 var rts_grid: RtsBattleGrid = null
+
+## M5.5: NavcellGrid 一等公民引用(从 rts_grid 内部提升)。procedure._init 设值,production code
+## (facade compute / canonicalize / activity nav)直接走此字段,不再通过 rts_grid wrapper。
+##
+## `navcell_grid == rts_grid.get_navcell_grid()` 由 procedure._init 保证;rts_grid null 时 navcell_grid 也 null。
+var navcell_grid: RtsNavcellGrid = null
 
 ## M1: Passability class 注册查询单例 (default / air); procedure._init 末尾按固定顺序注册。
 ## Determinism 关键 — register 顺序固化让 mask 数字 (0x1 default / 0x2 air) 跨 run 不漂。
