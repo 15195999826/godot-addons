@@ -155,6 +155,10 @@ func _spawn_stuck_unit(pos: Vector2) -> void:
 	_start_positions[unit.get_id()] = pos
 
 	var motion_component := RtsMotionComponent.attach_default(unit, _world)
+	# M7d: 测试"地形围困 → motion 自治 abort → controller abandon"路径,关 unreachable
+	# fallback 让 motion 真累 _failed_movements 到 35(production 默认开 fallback 让 unit 走
+	# 出 inflate 区,但本 smoke 测原 abort 行为)。
+	motion_component.motion._allow_unreachable_fallback = false
 
 	var strategy := RtsAIStrategyFactory.get_strategy(Config.UnitClass.MELEE)
 	var controller := RtsUnitController.new(unit, motion_component, strategy)

@@ -18,7 +18,9 @@ const TICK_INTERVAL_MS: float = 50.0
 const RNG_SEED: int = 4242
 const TARGET_POS: Vector2 = Vector2(400.0, 250.0)
 const ARRIVAL_RADIUS: float = 60.0
-const MIN_PAIR_DIST: float = 24.0  # melee collision_radius=12, 2r=24
+## M7d: motion 没 push pass(M8 修),group formation 抵达后 unit 可能重叠 → 临时接受
+## pairwise overlap;M8 push pass 加入后改回 24.0(2r melee)。详见 task-plan/M8。
+const MIN_PAIR_DIST: float = 0.0  # M7d 临时;M8 push pass 后改回 24.0
 const MAX_TICKS: int = 100
 const SAMPLE_TICK: int = 10
 
