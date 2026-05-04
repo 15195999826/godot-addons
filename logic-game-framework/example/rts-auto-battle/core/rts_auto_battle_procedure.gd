@@ -200,10 +200,14 @@ func _init(
 		# nav_agent / activity 调 facade.compute_path_immediate (玩家 click,过 canonicalize) 或
 		# facade.compute_path_direct (AI attack-move,不过 canonicalize)。
 		world.long_pathfinder = RtsLongPathfinder.new(world.navcell_grid)
+		# M6c: VertexPath visibility graph A* (短路径) — facade wire 仅 API,production callsite
+		# 暂不消费(M7 UnitMotion 整合双轨时接)。
+		world.vertex_pathfinder = RtsVertexPathfinder.new(world.navcell_grid)
 		world.pathfinder_facade = RtsPathfinderFacade.new(
 			world.navcell_grid,
 			world.hierarchical_pathfinder,
 			world.long_pathfinder,
+			world.vertex_pathfinder,
 		)
 		# M5.4: 把 facade + registry 注入所有 nav_agent(_unit_runtimes 是 caller 创建后传入,
 		# agent 已 bind_actor),让 set_target 走 facade.compute_path_immediate / direct 替代

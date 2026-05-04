@@ -32,7 +32,9 @@
         "battle/smoke_long_pathfinder_unreachable.tscn",
         "battle/smoke_long_pathfinder_determinism.tscn",
         "battle/smoke_vertex_static_obb.tscn",
-        "battle/smoke_vertex_virtual_goal.tscn"
+        "battle/smoke_vertex_virtual_goal.tscn",
+        "battle/smoke_vertex_corner_walking.tscn",
+        "battle/smoke_vertex_group_filter.tscn"
       ]
     },
     "obstruction": {

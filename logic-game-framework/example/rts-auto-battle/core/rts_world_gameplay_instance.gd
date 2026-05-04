@@ -55,13 +55,18 @@ var hierarchical_pathfinder: RtsHierarchicalPathfinder = null
 ## 跟 facade 一起;callsite 一般通过 pathfinder_facade 走,极少直接用 long_pathfinder。
 var long_pathfinder: RtsLongPathfinder = null
 
-## M5: PathfinderFacade 顶层入口(聚合 NavcellGrid + Hierarchical + LongPath)。
+## M6c: VertexPath visibility graph A*(短路径)— procedure._init 末构造,facade wire 仅 API,
+## production callsite 暂不消费(M7 UnitMotion 整合双轨时接)。
+var vertex_pathfinder: RtsVertexPathfinder = null
+
+## M5: PathfinderFacade 顶层入口(聚合 NavcellGrid + Hierarchical + LongPath + VertexPath)。
 ##
 ## **接口**:
 ##   - `compute_path_immediate(start, goal, mask)` 玩家 click move 走 canonicalize → A*
 ##   - `compute_path_direct(start, goal, mask)` AI attack-move / harvest 不过 canonicalize → 直接 A*
 ##   - `is_goal_reachable(start, goal, mask)` 纯查询
 ##   - `make_goal_reachable(start, goal, mask)` 显式 canonicalize
+##   - `compute_short_path_immediate(req, obstr_mgr)` VertexPath 短路径 A*(M6c API,M7 production 接)
 var pathfinder_facade: RtsPathfinderFacade = null
 
 
