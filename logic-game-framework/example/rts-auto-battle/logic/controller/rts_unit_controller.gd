@@ -110,14 +110,15 @@ func tick(dt: float, world: RtsWorldGameplayInstance) -> void:
 				var engage_id: String = ""
 				if cache_id != "":
 					var cache_actor := world.get_actor(cache_id) as RtsBattleActor
-					# 仅 enemy combat unit 触发 engagement: building 由静态防御自己处理(unit
-					# 不该停下打建筑, 否则 scout flyby archer 会被吸引偏航不进 archer range);
-					# worker 算经济不算战斗(用户规则"路上遇到敌方单位"指军事单位); dist gate
-					# 防 unit detour 远端目标. AttackActivity 本身有 in-range 判 + cooldown,
-					# 这里只控"切不切 attack child", 同 enemy_id 重复 set 是 no-op.
+					# Engagement gate (严格): 只 enemy combat RtsUnitActor (非 WORKER) + dist ≤
+					# ENGAGEMENT_RADIUS_SQ + team_id ≥ 0 (排中立 ResourceNode). 排 building 防
+					# scout flyby barracks 被 dist≈63 吸偏航; 排 worker 防 melee detour 杀农民;
+					# 排中立防 ResourceNode 评分胜出 (AutoTargetSystem 把 team_id=-1 也算 enemy).
+					# 单位走到 enemy ct 旁不 engage = 走完 child=MoveTo 后 AttackMove DONE → strategy
+					# 接管 → AttackActivity 用 canonicalize=false direct-path 打 ct.
 					if cache_actor is RtsUnitActor and not cache_actor.is_dead():
 						var u := cache_actor as RtsUnitActor
-						if u.unit_class != RtsUnitClassConfig.UnitClass.WORKER:
+						if u.unit_class != RtsUnitClassConfig.UnitClass.WORKER and u.get_team_id() >= 0:
 							var dsq: float = actor.position_2d.distance_squared_to(u.position_2d)
 							if dsq <= ENGAGEMENT_RADIUS_SQ:
 								engage_id = cache_id
