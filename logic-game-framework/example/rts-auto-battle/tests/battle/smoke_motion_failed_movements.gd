@@ -93,6 +93,7 @@ func _ready() -> void:
 ## AC2.1: facade 全空 path → 35 tick 内累计 stop
 func _test_failed_movements_accumulates_to_threshold() -> void:
 	var motion := RtsUnitMotion.new()
+	motion._allow_unreachable_fallback = false  # M7d: 关 fallback 测真 unreachable abort 路径
 	motion.set_position_2d(Vector2(0, 0))
 	motion.move_to(Vector2(500, 500), 0.0, 0.0)
 	var facade := MockEmptyPathFacade.new()
@@ -113,6 +114,7 @@ func _test_failed_movements_accumulates_to_threshold() -> void:
 ## AC2.4: has_target false → tick 短路返回,_failed_movements 不再累加
 func _test_stop_short_circuits_tick() -> void:
 	var motion := RtsUnitMotion.new()
+	motion._allow_unreachable_fallback = false
 	motion.set_position_2d(Vector2(0, 0))
 	# 没 move_to → has_target == false → tick 短路
 	var facade := MockEmptyPathFacade.new()
@@ -126,6 +128,7 @@ func _test_stop_short_circuits_tick() -> void:
 ## AC2.2: stop 不 reset failed_movements;move_to 才 reset
 func _test_move_to_resets_failed_movements() -> void:
 	var motion := RtsUnitMotion.new()
+	motion._allow_unreachable_fallback = false
 	motion.set_position_2d(Vector2(0, 0))
 	motion.move_to(Vector2(500, 0), 0, 0)
 	var facade := MockEmptyPathFacade.new()
@@ -213,6 +216,7 @@ func _test_countdown_triggers_long_retry() -> void:
 ## AC2.6 (M7d): _just_failed flag lifecycle — abort 触发 set,consume 清,move_to 也清。
 func _test_just_failed_flag_lifecycle() -> void:
 	var motion := RtsUnitMotion.new()
+	motion._allow_unreachable_fallback = false
 	motion.set_position_2d(Vector2(0, 0))
 	motion.move_to(Vector2(500, 500), 0.0, 0.0)
 	var facade := MockEmptyPathFacade.new()

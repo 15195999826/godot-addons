@@ -159,11 +159,11 @@ func _should_refresh_nav(target_pos: Vector2) -> bool:
 func _refresh_motion_target(
 	motion_component: RtsMotionComponent,
 	target_pos: Vector2,
-	_canonicalize: bool = true,
+	canonicalize: bool = true,
 ) -> void:
 	if motion_component == null:
 		return
-	motion_component.motion.move_to(target_pos, 0.0, 0.0)
+	motion_component.motion.move_to(target_pos, 0.0, 0.0, canonicalize)
 	_last_set_target = target_pos
 	_time_since_nav_refresh = 0.0
 

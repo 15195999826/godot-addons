@@ -87,6 +87,24 @@ var _follow_known_imperfect_path_countdown: int = 0
 ## 清(新请求 = 新机会,不要带上次失败的 sticky 状态)。
 var _just_failed: bool = false
 
+## M7d — 当前 _move_request 是否走 canonicalize(true=玩家 click 落 impassable 点 mutate
+## 到外缘 navcell;false=AI attack/harvest target 是 actor 中心,可能在 footprint 内 → 走
+## compute_path_direct,LongPath direct-path fallback,unit 走过去 distance 判定到达)。
+##
+## 默认 true(对应 nav_agent.set_target 默认 canonicalize=true)。move_to / move_to_entity /
+## move_with_offset 重置时由 caller 决定。
+var _canonicalize: bool = true
+
+## M7d — 当 long_path facade 返空 / vertex short_path 也返空时是否启用 fallback(直奔 goal)。
+##
+## **production 默认 true** — production unit spawn 紧贴 building inflate 内时 long path A*
+## 返空,fallback push goal 让 unit 走出 inflate 区(等价 nav_agent canonicalize=false 老行为)。
+##
+## **smoke unreachable 测试可设 false** — smoke_motion_failed_movements 用 MockEmptyPathFacade
+## 模拟真 unreachable goal,期望 _failed_movements 累 35 触发 self-abort,fallback 会让 unit
+## 永远走 → 测试失效;关 flag 走原 abort 路径。
+var _allow_unreachable_fallback: bool = true
+
 
 # ========== 字段:当前请求 + 异步 ticket ==========
 
@@ -137,14 +155,24 @@ func _init(p_pass_class: RtsPassabilityClassConfig = null, p_template_walk_speed
 # ========== 公开 API:移动请求 ==========
 
 ## 走到点附近;距离落入 [min_r, max_r]。重置 _failed_movements + 清双 path + 清 ticket。
-func move_to(pos: Vector2, min_r: float, max_r: float) -> void:
+##
+## **canonicalize**:
+##   - true (默认):玩家 click move,goal 落 impassable 时 mutate 到外缘 navcell
+##   - false:AI attack/harvest/return target 是 actor 中心(可能 building footprint 内),
+##     走 compute_path_direct + LongPath direct-path fallback,unit 走 distance 判定到达
+func move_to(pos: Vector2, min_r: float, max_r: float, canonicalize: bool = true) -> void:
 	_move_request = RtsMoveRequest.to_point(pos, min_r, max_r)
+	_canonicalize = canonicalize
 	_reset_path_state()
 
 
 ## 接近 entity 到指定距离;eid 必须非空。重置 _failed_movements + 清双 path + 清 ticket。
-func move_to_entity(eid: String, min_r: float, max_r: float) -> void:
+##
+## **canonicalize 默认 false** — ENTITY MoveRequest 用于 AI attack/gather,target=actor 中心,
+## 通常走 direct path(M4b.3 lesson)。
+func move_to_entity(eid: String, min_r: float, max_r: float, canonicalize: bool = false) -> void:
 	_move_request = RtsMoveRequest.to_entity(eid, min_r, max_r)
+	_canonicalize = canonicalize
 	_reset_path_state()
 
 
@@ -152,6 +180,7 @@ func move_to_entity(eid: String, min_r: float, max_r: float) -> void:
 ## 重置 _failed_movements + 清双 path + 清 ticket。
 func move_with_offset(eid: String, off: Vector2) -> void:
 	_move_request = RtsMoveRequest.with_offset(eid, off)
+	_canonicalize = true
 	_reset_path_state()
 
 
@@ -258,7 +287,7 @@ func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
 		else:
 			var next_long: Vector2 = _long_path.pop_back()
 			_request_short_path_to(next_long, facade, world)
-			if _short_path.is_empty():
+			if _short_path.is_empty() and _allow_unreachable_fallback:
 				# M7d FALLBACK: vertex pathfinder simple-case 返空 path(start ≈ next_long
 				# 直线无障碍 / vertex algo corner case)→ 直接用 next_long 当 short 单 wp
 				# 让 _step 走 long path 的下一段。等价于"没 vertex 绕角效果,但 unit 仍按
@@ -312,11 +341,23 @@ func _request_long_path(facade: RtsPathfinderFacade, world: Variant) -> void:
 		return
 	_expected_path_ticket = RtsMotionTicket.new(RtsMotionTicket.Type.LONG_PATH, _alloc_ticket())
 	var pass_mask: int = _resolve_pass_mask()
-	_long_path = facade.compute_path_immediate(_position_2d, goal, pass_mask)
+	# M7d: canonicalize true=compute_path_immediate(玩家 click)/ false=compute_path_direct
+	# (AI attack/harvest target=actor 中心 footprint 内,M4b.3 lesson)
+	if _canonicalize:
+		_long_path = facade.compute_path_immediate(_position_2d, goal, pass_mask)
+	else:
+		_long_path = facade.compute_path_direct(_position_2d, goal, pass_mask)
 	# 同步寻路:facade 返回后立刻 clear ticket(M7+ async 改 callback 时不清这里)
 	_expected_path_ticket.clear()
 	if _long_path.is_empty():
 		_failed_movements += 1
+		# M7d FALLBACK: long path A* 返空(start 在 inflate 内 / unreachable)→ 直接奔 goal
+		# 当 _move_request.type == POINT 时,push goal 当 single-wp long path 让 unit 走直线
+		# 朝 goal,等价于 nav_agent canonicalize=false 老 fallback(M4b.3 lesson:enemy 中心
+		# 在 footprint 内,LongPath direct-path fallback 让 unit 走过去)。production unit
+		# spawn 紧贴 ct 时(spawn_offset=28 在 inflate 内),没 fallback 单位永远 stuck。
+		if _allow_unreachable_fallback and _move_request != null and _move_request.type == RtsMoveRequest.Type.POINT:
+			_long_path.push_back(_move_request.position)
 
 
 ## 请求 short path 直接到 goal(没 long path 中转时);空 path → 调方累加 _failed_movements。

@@ -27,6 +27,7 @@ var _logger: RtsBattleLogger = null
 var _agents: Dictionary = {}        # actor.id → RtsMotionComponent
 var _controllers: Dictionary = {}   # actor.id → RtsUnitController
 var _spawn_positions: Dictionary = {}  # actor.id → Vector2 (起点, 服务 AC2)
+var _max_y_deviation: Dictionary = {}  # M7d: actor.id → float (motion 路径下主循环采样,替代 nav_agent 老 max_y_deviation 字段)
 
 
 func _ready() -> void:
@@ -70,6 +71,16 @@ func _ready() -> void:
 	var max_ticks: int = int(MAX_SECONDS * 1000.0 / TICK_INTERVAL_MS)
 	for i in range(max_ticks):
 		_procedure.tick_once()
+		# M7d: 采样 max_y_deviation(motion 没此字段,smoke 自己跟踪)— 服务 AC2 wall detour 验证
+		for actor_id in _spawn_positions:
+			var actor: RtsBattleActor = _world.get_actor(actor_id) as RtsBattleActor
+			if actor == null or actor.is_dead():
+				continue
+			var spawn_y: float = (_spawn_positions[actor_id] as Vector2).y
+			var y_dev: float = absf(actor.position_2d.y - spawn_y)
+			var prev: float = float(_max_y_deviation.get(actor_id, 0.0))
+			if y_dev > prev:
+				_max_y_deviation[actor_id] = y_dev
 		if _procedure.should_end():
 			break
 
@@ -163,13 +174,19 @@ func _on_events(events: Array[Dictionary]) -> void:
 
 ## AC2: 找出 spawn-y 在 (200, 300) 障碍水平区内 + max_y_deviation ≥ 30 的单位 id 列表
 ##
-## M7d AMBIGUOUS: 老 RtsNavAgent.max_y_deviation 字段在 RtsMotionComponent 不存在(motion 不
-## 跟踪 deviation)。当前等价做法 = 抽样 unit 实际 position_2d.y vs spawn_y;但 smoke 的 sample
-## 路径在主循环内未保留,需新加 _y_history dict + 主循环每 tick 写入。先返空数组让 AC2 暂时跳过,
-## M7d.4 删 RtsNavAgent 时根据需求决定是否保留 detour 验证。
+## **M7d**:RtsMotionComponent 不跟踪 deviation(motion 算法层不该耦合 smoke metric);smoke
+## 主循环每 tick 采样 _max_y_deviation(actor.id → max abs(y - spawn_y))替代老
+## nav_agent.max_y_deviation 字段。
 func _check_detour_for_blocked_units() -> Array[String]:
 	var result: Array[String] = []
-	# TODO(M7d.4): motion 没 max_y_deviation,detour 验证暂跳过
+	for actor_id in _spawn_positions:
+		var spawn_pos: Vector2 = _spawn_positions[actor_id]
+		# 起点在中央障碍 y 范围内([200, 300])才算"被墙挡需绕"
+		if spawn_pos.y < 200.0 or spawn_pos.y > 300.0:
+			continue
+		var y_dev: float = float(_max_y_deviation.get(actor_id, 0.0))
+		if y_dev >= 30.0:
+			result.append(actor_id)
 	return result
 
 
