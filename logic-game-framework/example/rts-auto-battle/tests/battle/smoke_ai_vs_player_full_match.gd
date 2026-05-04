@@ -234,11 +234,9 @@ func _count_team_alive_barracks(p_team_id: int) -> int:
 
 ## production_system 调用; AI team(=0) 的 barracks spawn melee 跟踪进 _ai_spawned_unit_ids。
 ##
-## 与 smoke_economy_demo 同模式 — 不 set_activity_chain, 让 RtsBasicAttackStrategy.decide /
-## AutoTargetSystem 自然驱动: AI MoveUnitsCommand 派出后 unit._player_command_active = true,
-## 走 RtsMoveToActivity 到 right_ct.position; 抵达后 controller._player_command_active 自动清,
-## strategy 接管 → AutoTargetSystem 已在 right_ct 范围 → cached_target_id = right_ct.id →
-## strategy.decide 返 attack activity → unit attack right_ct (mask=GROUND 命中 building OK)。
+## Spawner 给 unit set RtsAttackMoveActivity(enemy_ct) + override=true, 跟 demo 同模式:
+## controller wire 注入 cache 让 unit 沿途遇到 enemy combat unit 切 attack, 没遇到就一路飞到
+## enemy_ct attack 它. AttackActivity (mask=GROUND 命中 building OK) 在 ct attack_range 内开火.
 func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	if building == null or building.is_dead():
 		return null
@@ -271,8 +269,10 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 
 	_procedure.add_unit_to_team(unit, team_id)
 
-	# 仅跟踪 AI team(=0) 的 spawn — 用于 ai_units_spawned + ai_unit_to_ct_attacks 验证
-	if team_id == 0:
+	# AI team=0 的 unit attack-move 到 _right_ct (敌方).
+	# team_id=1 的 unit (本 smoke 不应该 spawn, right team 没 attach computer_player) 不动.
+	if team_id == 0 and _right_ct != null and not _right_ct.is_dead():
+		controller.set_activity_chain(RtsAttackMoveActivity.new(_right_ct.position_2d), true)
 		_ai_spawned_unit_ids.append(unit.get_id())
 	return unit
 

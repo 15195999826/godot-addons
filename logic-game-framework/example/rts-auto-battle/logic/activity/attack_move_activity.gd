@@ -15,6 +15,11 @@ class_name RtsAttackMoveActivity
 extends RtsActivity
 
 
+# ========== 常量 ==========
+
+const ARRIVAL_THRESHOLD: float = 4.0
+
+
 # ========== 字段 ==========
 
 ## 目标世界坐标 (像素); 路径终点。
@@ -62,6 +67,22 @@ func on_first_run(_actor: RtsUnitActor, _world: RtsWorldGameplayInstance) -> voi
 func tick(actor: RtsUnitActor, _world: RtsWorldGameplayInstance, _dt: float) -> bool:
 	if actor == null or actor.is_dead():
 		return false
+	# 已 "靠近" target_pos → AttackMove DONE → strategy 接管 → AttackActivity 攻击 cache target.
+	# 阈值按 movement_layer 分:
+	#   - GROUND: attack_range × 1.05 (footprint 阻挡 melee 卡 ct 外缘 ~30px > ARRIVAL_THRESHOLD,
+	#     用 attack_range 判 = 与 AttackActivity in-range 同阈值,无缝接管)
+	#   - AIR: ARRIVAL_THRESHOLD (飞行能穿 footprint 直达 ct 中心; 用 attack_range early-done 会
+	#     让 scout 站桩在 ct 外某点, 经常恰在防御塔射程边缘外 → 防御塔 0 hits 漏击)
+	# engaging_target_id 非空 (已切 attack 状态) 不走 early-done, attack child 自己跑.
+	if _engaging_target_id == "" and actor.attribute_set != null:
+		var threshold_sq: float
+		if actor.movement_layer == MovementLayer.Layer.AIR:
+			threshold_sq = ARRIVAL_THRESHOLD * ARRIVAL_THRESHOLD
+		else:
+			var atk_with_tol: float = actor.attribute_set.attack_range * 1.05
+			threshold_sq = atk_with_tol * atk_with_tol
+		if actor.position_2d.distance_squared_to(target_pos) <= threshold_sq:
+			return false
 	# child 缺失 (上一 child DONE 或被 cancel 后置 null) → 重建
 	if child_activity == null:
 		_build_child_activity()
@@ -102,7 +123,12 @@ func _build_child_activity() -> void:
 	if _engaging_target_id != "":
 		built = RtsAttackActivity.new(_engaging_target_id)
 	else:
-		built = RtsMoveToActivity.new(target_pos)
+		# canonicalize=false: AttackMove target_pos 通常是 enemy_ct 中心 (落 building footprint
+		# impassable 区), canonicalize=true 会把 goal mutate 到 ct 外缘 navcell, unit 永远走不到
+		# ARRIVAL_THRESHOLD 内 → MoveTo 不 done → AttackMove 不 done → strategy 不接管. 用
+		# canonicalize=false 走 LongPath direct-path fallback, unit 走到 ct 中心附近 ARRIVAL=4 →
+		# MoveTo done → AttackMove done → strategy 接管 RtsAttackActivity 攻 ct.
+		built = RtsMoveToActivity.new(target_pos, false)
 	child_activity = built
 	if _nav_agent != null:
 		child_activity.bind_runtime(_nav_agent)
