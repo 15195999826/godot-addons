@@ -31,7 +31,8 @@
         "battle/smoke_long_pathfinder_basic.tscn",
         "battle/smoke_long_pathfinder_unreachable.tscn",
         "battle/smoke_long_pathfinder_determinism.tscn",
-        "battle/smoke_vertex_static_obb.tscn"
+        "battle/smoke_vertex_static_obb.tscn",
+        "battle/smoke_vertex_virtual_goal.tscn"
       ]
     },
     "obstruction": {
