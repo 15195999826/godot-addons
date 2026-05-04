@@ -80,7 +80,8 @@
     },
     "motion": {
       "scenes": [
-        "battle/smoke_motion_path_storage.tscn"
+        "battle/smoke_motion_path_storage.tscn",
+        "battle/smoke_motion_failed_movements.tscn"
       ]
     },
     "replay": {
