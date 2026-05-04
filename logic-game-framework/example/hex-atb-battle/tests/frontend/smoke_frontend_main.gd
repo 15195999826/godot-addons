@@ -142,11 +142,8 @@ func _on_playback_ended() -> void:
 	# Invariant 5: view ↔ logic 终态对账 (位置 / is_alive / hp / max_hp)
 	# release build 下 demo._final_state 为空 → reconciler SKIPPED, smoke 仍 PASS。
 	# 详见 addons/.../docs/view-logic-reconciliation.md。
-	var final_state: Dictionary = _main_scene.get("_final_state")
-	if final_state == null:
-		final_state = {}
-	var rec := HexBattleViewLogicReconciler.new()
-	var report: HexBattleViewLogicReconciler.ReconcileReport = await rec.reconcile(
+	var final_state: Dictionary = _main_scene.call("get_final_state")
+	var report := await HexBattleViewLogicReconciler.reconcile(
 		final_state, _animator, _world_view, get_tree()
 	)
 	if report.skipped:

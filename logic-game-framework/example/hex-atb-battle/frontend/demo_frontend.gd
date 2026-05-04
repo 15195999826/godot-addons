@@ -285,28 +285,20 @@ func _on_battle_final_state_ready(state: Dictionary) -> void:
 	_final_state = state
 
 
+## 公共 getter 供 smoke / 外部测试拉取上一场 final_state, 不依赖 .get("_final_state") 反射私字段。
+func get_final_state() -> Dictionary:
+	return _final_state
+
+
 func _on_playback_ended() -> void:
 	_controls.set_ended_state()
 	_start_battle_button.disabled = false
 	print("[Main] Playback ended")
-	_run_view_logic_reconciliation()
-
-
-## 跑 view ↔ logic 终态对账。release build 拿不到 final_state 会 SKIPPED 静默通过。
-## 交互态: mismatch 走 push_warning + status label 提示, 不阻塞用户操作。
-## 详见 docs/view-logic-reconciliation.md。
-func _run_view_logic_reconciliation() -> void:
-	if _final_state.is_empty():
-		return
-	var rec := HexBattleViewLogicReconciler.new()
-	var report: HexBattleViewLogicReconciler.ReconcileReport = await rec.reconcile(
-		_final_state, _animator, _world_view, get_tree()
-	)
-	if report.skipped or report.passed:
-		print("[Main] %s" % report.to_human_string())
-		return
-	push_warning("[ViewLogic] %s" % report.to_human_string())
-	_update_status("⚠ View/Logic mismatch: %d field(s), see console" % report.mismatches.size())
+	if not _final_state.is_empty():
+		await HexBattleViewLogicReconciler.reconcile_and_report(
+			_final_state, _animator, _world_view, get_tree(),
+			"Main", _update_status
+		)
 
 
 # ========== UI 控件回调 → animator forward ==========

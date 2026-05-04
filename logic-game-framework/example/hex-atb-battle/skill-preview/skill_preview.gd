@@ -4547,28 +4547,15 @@ func _on_playback_ended() -> void:
 	_reset_button.disabled = false
 	_replay_button.disabled = _last_timeline.is_empty()
 	_refresh_runtime_layout()
-	_run_view_logic_reconciliation()
+	if not _final_state.is_empty():
+		await HexBattleViewLogicReconciler.reconcile_and_report(
+			_final_state, _animator, _world_view, get_tree(),
+			"SkillPreview", _set_status
+		)
 
 
 func _on_battle_final_state_ready(state: Dictionary) -> void:
 	_final_state = state
-
-
-## skill-preview 是交互场景, 不硬 fail; 走 push_warning + status label 提示用户。
-## release build 下 _final_state 为空, reconciler SKIPPED 不打扰。
-## 详见 docs/view-logic-reconciliation.md。
-func _run_view_logic_reconciliation() -> void:
-	if _final_state.is_empty():
-		return
-	var rec := HexBattleViewLogicReconciler.new()
-	var report: HexBattleViewLogicReconciler.ReconcileReport = await rec.reconcile(
-		_final_state, _animator, _world_view, get_tree()
-	)
-	if report.skipped or report.passed:
-		print("[SkillPreview] %s" % report.to_human_string())
-		return
-	push_warning("[ViewLogic] %s" % report.to_human_string())
-	_set_status("⚠ View/Logic mismatch: %d field(s) — see console" % report.mismatches.size())
 
 
 ## 用户主动重置: world 状态归零到 _actors 数据模型对应的"战前"。清 console log

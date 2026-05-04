@@ -117,7 +117,7 @@ func get_alive_actors() -> Array[CharacterActor]:
 	return result
 
 
-## ========== Final state snapshot (debug-only) ==========
+# ========== Final state snapshot (debug-only) ==========
 
 ## battle_finished handler: debug build 下抓 actor 终态发给 oracle。
 ## release 包零开销 (early return)。详见 battle_final_state_ready signal 注释。
