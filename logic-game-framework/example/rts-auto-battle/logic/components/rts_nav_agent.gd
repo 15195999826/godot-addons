@@ -36,7 +36,20 @@ const ARRIVAL_THRESHOLD_SQ: float = ARRIVAL_THRESHOLD * ARRIVAL_THRESHOLD
 var actor: RtsBattleActor = null
 var grid: RtsBattleGrid = null
 
-## 当前路径(world 坐标 waypoint 列表), set_target 时由 RtsPathfinding.find_path 填充
+## M5: PathfinderFacade 引用(procedure._init 末注入 world.pathfinder_facade);facade 优先,
+## facade==null 时 fallback 老 RtsPathfinding.find_path 路径(旧 smoke 不走 procedure)。
+var facade: RtsPathfinderFacade = null
+
+## M5: per-actor pass_mask cache(GROUND→default mask / AIR→air mask),bind_actor 时算。
+##
+## 0 = invalid(facade 路径不可用,fallback 走 grid + layer)。
+var _pass_mask: int = 0
+
+## 当前路径(world 坐标 waypoint 列表), set_target 时填充。
+##
+## **Forward iteration**:`_path[_waypoint_index]` 是下一个目标 → ++_waypoint_index 推进。
+## 来源 = M5 facade RtsWaypointPath.waypoints reverse(facade 反向存储,我们这层 forward 用)
+## 或 M5 之前 RtsPathfinding.find_path Array[Vector2]。
 var _path: Array[Vector2] = []
 
 ## 当前正在前进的 waypoint 索引(_path[_waypoint_index] 即"下一个目标点")
@@ -75,23 +88,66 @@ func set_grid(p_grid: RtsBattleGrid) -> void:
 	grid = p_grid
 
 
+## M5: 注入 PathfinderFacade + 算 pass_mask cache(procedure._init 末调,grid 之后)。
+##
+## facade null 时 nav_agent 退回老 RtsPathfinding.find_path 路径(旧 smoke 不走 procedure)。
+func attach_pathfinder(p_facade: RtsPathfinderFacade, p_registry: RtsPassabilityClassRegistry) -> void:
+	facade = p_facade
+	if actor != null and p_registry != null:
+		var class_id: String = "air" if actor.movement_layer == MovementLayer.Layer.AIR else "default"
+		_pass_mask = p_registry.get_mask(class_id)
+	else:
+		_pass_mask = 0
+
+
 # ========== 寻路 API ==========
 
 ## 设置目标点(世界坐标)。立即跑 A* 拿 waypoint 列表, 后续 tick 沿 waypoint 推进。
 ##
 ## 寻路失败(grid 未绑 / 找不到路径)时清空 path → tick 时 actor 速度归零, 调方下次再试。
-func set_target(target_world_pos: Vector2) -> void:
+##
+## **M5 canonicalize 参数**:
+##   - true(默认):走 facade.compute_path_immediate — 玩家 click 走 canonicalize,goal 落
+##     impassable 区时 mutate 到外缘 navcell(✋2 体验点 = unit 走最近可达,不死循环)
+##   - false:走 facade.compute_path_direct — AI attack-move / harvest 等 "target 是 actor 中心,
+##     可能在 footprint 内" 的 callsite,不 canonicalize 直接 A*(避免 M4b.3 wire fail lesson:
+##     enemy 中心被偏到 ct 旁外缘 → unit 在 attack range 外永远打不到)
+##
+## **facade null fallback**(旧 smoke 不走 procedure):退回 RtsPathfinding.find_path 老路径,
+## canonicalize 参数被忽略。
+func set_target(target_world_pos: Vector2, canonicalize: bool = true) -> void:
 	_final_target = target_world_pos
 	_has_target = true
 	if not _has_first_target:
 		first_target_position = target_world_pos
 		_has_first_target = true
 
-	if grid == null or actor == null:
+	if actor == null:
 		_path = []
 		_waypoint_index = 0
 		return
 
+	# M5 facade 路径(优先):走 RtsLongPathfinder + canonicalize 选择
+	if facade != null and _pass_mask != 0:
+		var goal := RtsPathGoal.new(RtsPathGoal.Type.POINT, target_world_pos)
+		var wp_path: RtsWaypointPath
+		if canonicalize:
+			wp_path = facade.compute_path_immediate(actor.position_2d, goal, _pass_mask)
+		else:
+			wp_path = facade.compute_path_direct(actor.position_2d, goal, _pass_mask)
+		# Reverse 到 forward array(facade RtsWaypointPath 反向存储:waypoints[0]=goal,
+		# [size-1]=next-step;nav_agent 老 forward iter:_path[0]=next-step,_path[size-1]=goal)
+		_path = []
+		for k in range(wp_path.size() - 1, -1, -1):
+			_path.append(wp_path.waypoints[k])
+		_waypoint_index = 0
+		return
+
+	# Fallback:老 RtsPathfinding.find_path(旧 smoke 不走 procedure 时;M5.5 删 RtsBattleGrid 后此路径同步删)
+	if grid == null:
+		_path = []
+		_waypoint_index = 0
+		return
 	var layer: int = actor.movement_layer
 	_path = RtsPathfinding.find_path(grid, actor.position_2d, target_world_pos, layer)
 	_waypoint_index = 0

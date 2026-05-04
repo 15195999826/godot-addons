@@ -194,6 +194,24 @@ func _init(
 		_register_decorative_obstacles_to_manager(world)
 		# M4a: Hierarchical pathfinder 实例 (空数据; tick step 6.7 lazy recompute)
 		world.hierarchical_pathfinder = RtsHierarchicalPathfinder.new()
+		# M5.3: PathfinderFacade 顶层入口 (聚合 NavcellGrid + Hierarchical + LongPath)。
+		# nav_agent / activity 调 facade.compute_path_immediate (玩家 click,过 canonicalize) 或
+		# facade.compute_path_direct (AI attack-move,不过 canonicalize)。
+		var navcell_grid: RtsNavcellGrid = world.rts_grid.get_navcell_grid()
+		world.long_pathfinder = RtsLongPathfinder.new(navcell_grid)
+		world.pathfinder_facade = RtsPathfinderFacade.new(
+			navcell_grid,
+			world.hierarchical_pathfinder,
+			world.long_pathfinder,
+		)
+		# M5.4: 把 facade + registry 注入所有 nav_agent(_unit_runtimes 是 caller 创建后传入,
+		# agent 已 bind_actor),让 set_target 走 facade.compute_path_immediate / direct 替代
+		# RtsPathfinding.find_path 老路径。
+		for runtime_actor_id in _unit_runtimes:
+			var ctrl: RtsUnitController = _unit_runtimes[runtime_actor_id]
+			if ctrl == null or ctrl.agent == null:
+				continue
+			ctrl.agent.attach_pathfinder(world.pathfinder_facade, world.passability_registry)
 
 
 # ========== 生命周期 ==========

@@ -77,7 +77,9 @@ func on_first_run(actor: RtsUnitActor, world: RtsWorldGameplayInstance) -> void:
 	var node := world.get_actor(target_node_id) as RtsResourceNode
 	if node == null or node.is_depleted():
 		return
-	_refresh_nav_target(_nav_agent, node.position_2d)
+	# M5: target=ResourceNode 中心(可能被旁边 ct clearance inflate 阻挡)→ canonicalize=false
+	# 让 LongPath direct-path fallback 直接朝 ResourceNode 中心走过去,distance ≤ HARVEST_RADIUS 触发 harvest。
+	_refresh_nav_target(_nav_agent, node.position_2d, false)
 
 
 func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bool:
@@ -109,7 +111,7 @@ func tick(actor: RtsUnitActor, world: RtsWorldGameplayInstance, dt: float) -> bo
 	else:
 		_intent_in_range = false
 		if _nav_agent != null and _should_refresh_nav(node.position_2d):
-			_refresh_nav_target(_nav_agent, node.position_2d)
+			_refresh_nav_target(_nav_agent, node.position_2d, false)
 	return true
 
 

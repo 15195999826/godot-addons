@@ -389,6 +389,10 @@ func is_goal_reachable_point(start_world: Vector2, goal_world: Vector2, pass_mas
 ## M5 引入 LongPathfinder 时再改成"总是 navcell 中心 canonicalize"+ 接受 P1 baseline 漂。
 ##
 ## **不**修改 grid / hierarchical 状态(纯查询)。
+##
+## **M5 替代项**:`make_goal_reachable_pathgoal(start_world, goal: RtsPathGoal, pass_mask)`
+## 切到 spec 原方案"总是 mutate 到 navcell 中心",支持 PathGoal 抽象。本 method 保留作 M4b
+## smoke / 旧调方使用,production code 应走 M5 PathGoal 版本。
 func make_goal_reachable_point(
 	start_world: Vector2,
 	goal_world: Vector2,
@@ -423,6 +427,74 @@ func make_goal_reachable_point(
 		# 兜底:start 自身一定 ∈ start_g,不应到此(防御 _MAX_NEAREST_RADIUS 内找不到的极端 case)
 		return {"reachable": false, "canonicalized_world": _grid.navcell_center_world(start_ij.x, start_ij.y)}
 	return {"reachable": false, "canonicalized_world": _grid.navcell_center_world(nearest.x, nearest.y)}
+
+
+## M5 PathGoal-aware canonicalize:**总是 mutate goal 到 navcell 中心 POINT**。
+##
+## 跟 `make_goal_reachable_point` 区别:
+##   - reachable case 也 mutate(M4b 临时方案"reachable → no-op"被 M5 替代);**接受 P1 baseline 漂**
+##   - 接受 RtsPathGoal 抽象(M5 阶段只处 POINT,M6+ CIRCLE/SQUARE 时按几何取 reference point)
+##   - mutate goal in-place:type → POINT, center → navcell 中心, hw/hh → 0, u/v 重置
+##
+## **返回**:bool reachable —— true: goal 在 start GlobalRegion 内;false: 不可达 + canonicalize
+## 到同 region 离 goal 最近 navcell 中心(callsite 仍可继续 LongPath,只是会走到外缘)。
+##
+## **start 在 impassable**:find_nearest_passable_navcell fallback,跟 _point 版同行为。
+##
+## **CIRCLE/SQUARE goal**(M6+ 才需要):本 M5 版本 fallback 用 goal.center 做 reference,精确
+## 几何 nearest 留 M6 实现 + 加 _navcell_in_goal 暴力扫 helper。
+##
+## **决策来源**:M4-hierarchical.md §M4b.3 deferred 段 + M5-long-pathfinder.md §M5.3 facade。
+func make_goal_reachable_pathgoal(
+	start_world: Vector2,
+	goal: RtsPathGoal,
+	pass_mask: int,
+) -> bool:
+	if _grid == null or goal == null:
+		return false
+
+	var start_ij: Vector2i = _grid.nearest_navcell(start_world)
+	var start_g: int = get_global_region(start_ij.x, start_ij.y, pass_mask)
+
+	# start fallback impassable case
+	if start_g == 0:
+		var fallback: Vector2i = find_nearest_passable_navcell(start_ij, pass_mask)
+		if fallback == Vector2i(-1, -1):
+			return false
+		start_ij = fallback
+		start_g = get_global_region(start_ij.x, start_ij.y, pass_mask)
+		if start_g == 0:
+			return false
+
+	# Goal reference point — M5 阶段所有 type 都用 center;M6 改 CIRCLE / SQUARE 几何 nearest
+	var goal_ref_world: Vector2 = goal.center
+	var goal_ij: Vector2i = _grid.nearest_navcell(goal_ref_world)
+	var goal_g: int = get_global_region(goal_ij.x, goal_ij.y, pass_mask)
+
+	var target_ij: Vector2i
+	var reachable: bool
+	if goal_g == start_g and goal_g != 0:
+		# 可达:goal_ij 直接是 target;mutate 到 navcell 中心(M5 切换语义)
+		target_ij = goal_ij
+		reachable = true
+	else:
+		# 不可达:找 start 同 GlobalRegion 离 goal 最近 navcell
+		var nearest: Vector2i = _find_nearest_in_global_region(goal_ij, start_g, pass_mask)
+		if nearest == Vector2i(-1, -1):
+			# 兜底:不修改 goal,返 false
+			return false
+		target_ij = nearest
+		reachable = false
+
+	# Mutate goal in-place to navcell center POINT
+	goal.type = RtsPathGoal.Type.POINT
+	goal.center = _grid.navcell_center_world(target_ij.x, target_ij.y)
+	goal.hw = 0.0
+	goal.hh = 0.0
+	goal.u = Vector2(1, 0)
+	goal.v = Vector2(0, 1)
+
+	return reachable
 
 
 ## 螺旋 / ring scan 找离 start 最近的 passable (任意 GlobalRegion) navcell。
