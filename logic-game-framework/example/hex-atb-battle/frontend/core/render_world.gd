@@ -236,7 +236,11 @@ func _apply_apply_hp_delta_action(action: FrontendApplyHPDeltaAction) -> void:
 		print("[Frontend:RenderWorld] ⚠️ ApplyHPDelta 找不到 actor: %s" % action.actor_id)
 		return
 	actor.target_hp = clampf(actor.target_hp + action.delta, 0.0, actor.max_hp)
-	_set_actor_alive(actor, actor.target_hp > 0.0)
+	# 死亡 sticky:只允许 alive→dead transition。dead→alive 复活语义未支持
+	# (见 _set_actor_alive 注释), 否则同帧 death + heal 会把 view 翻回 alive,
+	# 与逻辑层 is_dead sticky 漂出 view-logic mismatch。
+	if actor.is_alive and actor.target_hp <= 0.0:
+		_set_actor_alive(actor, false)
 	_dirty_actors[action.actor_id] = true
 
 
