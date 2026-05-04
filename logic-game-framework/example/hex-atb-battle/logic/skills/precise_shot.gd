@@ -65,6 +65,7 @@ static var ABILITY := (
 			HexBattleSkillHelpers.owner_position_resolver(),
 			HexBattleSkillHelpers.target_position_resolver(),
 		)])
+		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
 		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()

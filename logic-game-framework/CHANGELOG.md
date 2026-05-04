@@ -12,6 +12,54 @@
 
 ---
 
+## [Unreleased] — 2026-05-04 hex-atb-battle — Atomic displacement + ActionLockStatus
+
+Push / knockback remains a one-keyframe atomic logic operation, then grants a timed target-side action lock (`status_action_lock`) to prevent the pushed actor from starting its own next action while preserving passive triggers and in-flight timelines. See design note.
+
+→ [docs/design-notes/2026-05-04-displacement-atomic-by-design.md](docs/design-notes/2026-05-04-displacement-atomic-by-design.md)
+
+### Added
+
+- **`example/hex-atb-battle/logic/buffs/action_lock_status.gd`** — generic timed action-lock status with `action_locked` / `cant_act` component tags and reason tag support (`displacement_stagger` for Push V1).
+- **`example/hex-atb-battle/frontend/visualizers/displacement_visualizer.gd`** — translates `actor_displaced` into `FrontendMoveAction`, using event `action_lock_duration_ms` as the animation duration.
+- **`example/hex-atb-battle/tests/battle/smoke_knockback_punch.gd`** — adds action-lock metadata/status and ATB gate expiry cases.
+
+### Changed
+
+- **`example/hex-atb-battle/logic/actions/push_action.gd`** — writes `actual_distance` / `action_lock_duration_ms` / `collision_action_lock_bonus_ms` to displacement events and grants `status_action_lock` to surviving character targets.
+- **`example/hex-atb-battle/logic/character_actor.gd`** — `can_act()` now treats `cant_act` as an actor-level action gate, so ATB stays full and is not reset while locked.
+- **`example/hex-atb-battle/logic/skills/*.gd`** — active skills add `NoTagCondition(cant_act)` as a direct-activation safety gate. `Move` remains unchanged because it uses `ActivateInstanceConfig`; AI move is covered by the actor gate.
+- **`example/hex-atb-battle/core/events/battle_events.gd`** — `ActorDisplacedEvent` / `PushBlockedEvent` carry action-lock metadata for replay/frontend consumers.
+
+---
+
+## [Unreleased] — 2026-05-04 hex-atb-battle — View ↔ Logic 终态对账 oracle
+
+战斗结束后引入一个**端到端对账系统**:逻辑层在 `battle_finished` 之后 emit 一份完整的 actor 终态 snapshot,表演层在 playback 收尾时跑 reconciler 对账每个 actor 的 `position` / `is_alive` / `hp` / `max_hp`,任一字段漂移即报告 mismatch (`actor_id` + `field` + 详情)。
+
+定位"漏 visualizer / visualizer 翻译错"这类**漂移类回归**——具体引出场景:击退机制 `ActorDisplacedEvent` 没有对应 visualizer,logic 改了 `actor.hex_position` 而 view 仍渲染原位,既有 logic smoke (只断言 events) 与 frontend smoke (只断言不崩) 之间的中间层无人验证。oracle 不绑特定 ability,任何战斗 smoke 跑过即可触发对账。
+
+**debug-only 协议**: 仅在 `OS.has_feature("debug")` 下计算并 emit final_state,release 包零开销;oracle 收到空 final_state 视为 SKIPPED 不 fail,smoke 在 release 跑也不会假阳性。
+
+**死者特殊处理**: 跳过 `position` (`FrontendUnitView.play_death` 修改 transform 是纯视觉装饰),`hp` / `max_hp` / `is_alive` 照查 (logic ability_set 不主动清 buff,view BuffVisualizer 也不主动清,双方对称)。详见参考文档。
+
+→ [example/hex-atb-battle/docs/view-logic-reconciliation.md](example/hex-atb-battle/docs/view-logic-reconciliation.md)
+
+### Added
+
+- **`example/hex-atb-battle/core/hex_world_gameplay_instance.gd`** — 新增 `signal battle_final_state_ready(final_state: Dictionary)` + `_emit_final_state_if_debug` (battle_finished handler, base 类先 connect 保证早于子类 demo._on_battle_finished / SkillPreviewWorldGI 子类 handler 跑) + `_build_final_state_snapshot` / `_build_actor_snapshot` (复用 `HexBattleActor.get_attribute_snapshot` / `get_ability_snapshot` / `get_tag_snapshot`)
+- **`example/hex-atb-battle/frontend/world_view.gd`** — `hex_to_world(coord)` public 包装,oracle 与 `_on_actor_position_changed` 用同一份投影函数
+- **`example/hex-atb-battle/tests/frontend/view_logic_reconciler.gd`** — `HexBattleViewLogicReconciler` (RefCounted) + 嵌套 `Mismatch` / `ReconcileReport`;入口 `reconcile(final_state, animator, world_view, tree, settle_timeout_sec, position_epsilon, hp_epsilon)`;含 settle loop (`Time.get_ticks_msec` + `await tree.process_frame` 等 view position lerp 收敛) + 字段 diff (不 short-circuit,收齐所有 mismatch)
+- **`example/hex-atb-battle/docs/view-logic-reconciliation.md`** — 完整参考文档:双源对账模型 / 字段全集表 / 死者特殊处理详细论证 / settle loop 设计 / debug-pub gate / 接入步骤清单 / 扩展点 (buffs / shields / tags 留 follow-up)
+
+### 待处理
+
+- **接入 `smoke_frontend_main` + skill-preview** — Phase 4 实施中,需 push_action / action_lock_status 修改稳定后再统一 smoke 验证
+- **buff / shield 列表对账** — 需先解耦 `FrontendBuffVisualizer.BUFF_REGISTRY` 白名单,oracle 才能反查"应该有哪些 BuffSummary";暂以 view-side single-direction 检查为最小集
+- **DisplacementVisualizer (`actor_displaced` event 翻译)** — 已由 Atomic displacement + ActionLockStatus 变更落地,oracle 可用 push scenario 覆盖 position drift
+
+---
+
 ## [Unreleased] — 2026-05-04 RTS Pathfinding M3 Epic / M2 — ObstructionManager (Shape 数据库 + Spatial Index)
 
 M3 Epic 第三个 milestone(M0 Footprint 拆分 + M1 Navcell Grid 已 archived 2026-05-04)。引入 `RtsObstructionManager` 作为所有 obstruction shape(单位圆 + 建筑 OBB)的统一数据库,替换 M0/M1 阶段"actor 自管 obstruction_shape + grid 自管 placement_map"的散乱状态;同时引入完整 `RtsObstructionFlags` 枚举(6 flag)+ `RtsObstructionTestFilter` 抽象 + `RtsSpatialIndex`(uniform grid bucket 256 px)+ 完整 SAT OBB-OBB 重叠测试。

@@ -9,6 +9,19 @@ class_name HexWorldGameplayInstance
 extends WorldGameplayInstance
 
 
+# ========== 信号 ==========
+
+## 战斗结束后发布逻辑层 actor 终态 snapshot, 供 view-logic 一致性 oracle 对账。
+## 仅在 debug build 下 emit (OS.has_feature("debug"))。release 包不算不发, 零开销。
+##
+## 与 framework 的 battle_finished 配对发出: 同一次 tick 内, base GI 的 handler 先于
+## 子类 (HexDemoWorldGI / SkillPreviewWorldGI) 的 _on_battle_finished 跑, 因此 snapshot
+## 数据是子类 end() / _save_replay 之前的干净终态。
+##
+## 数据契约见 docs/view-logic-reconciliation.md。
+signal battle_final_state_ready(final_state: Dictionary)
+
+
 # ========== 字段 ==========
 
 ## 可选战斗日志。HexBattle 在 battle_finished 时从 procedure 镜像过来;
@@ -23,6 +36,9 @@ var logger: HexBattleLogger = null
 func _init(id_value: String = "") -> void:
 	super._init(id_value if id_value != "" else IdGenerator.generate("world"))
 	type = "hex_world"
+	# connect 在 super._init 之后, 子类 connect 之前 — 保证 base handler 先于子类 handler
+	# 跑, snapshot 数据在 demo.end() / _save_replay / reset 之前抓取。
+	battle_finished.connect(_emit_final_state_if_debug)
 
 
 # ========== Grid ==========
@@ -99,6 +115,57 @@ func get_alive_actors() -> Array[CharacterActor]:
 		if actor is CharacterActor and not (actor as CharacterActor).is_dead():
 			result.append(actor as CharacterActor)
 	return result
+
+
+## ========== Final state snapshot (debug-only) ==========
+
+## battle_finished handler: debug build 下抓 actor 终态发给 oracle。
+## release 包零开销 (early return)。详见 battle_final_state_ready signal 注释。
+func _emit_final_state_if_debug(_timeline: Dictionary) -> void:
+	if not OS.has_feature("debug"):
+		return
+	battle_final_state_ready.emit(_build_final_state_snapshot())
+
+
+## 拼装 final_state schema:
+## {
+##   "actors": {
+##     "<actor_id>": {
+##       "id":            String,
+##       "type":          String,                  # "Character" / "Environment"
+##       "is_dead":       bool,
+##       "hex_position":  Dictionary,              # {q, r} or {} if invalid
+##       "attribute":     Dictionary,              # 子类 get_attribute_snapshot 决定字段
+##       "abilities":     Array[Dictionary],       # [{instance_id, config_id}, ...]
+##       "tags":          Dictionary,              # tag_container snapshot
+##     }
+##   }
+## }
+##
+## 死者也包含在内 (is_dead=true) — 死者的 buff/shield 仍挂在 ability_set 上, 对账时
+## 仍要逐字段比 (位置例外, 见 reconciler 注释)。
+func _build_final_state_snapshot() -> Dictionary:
+	var actors_snapshot := {}
+	for actor: Actor in get_actors():
+		if actor is HexBattleActor:
+			var battle_actor := actor as HexBattleActor
+			actors_snapshot[battle_actor.get_id()] = _build_actor_snapshot(battle_actor)
+	return { "actors": actors_snapshot }
+
+
+func _build_actor_snapshot(actor: HexBattleActor) -> Dictionary:
+	var pos: Dictionary = {}
+	if actor.hex_position != null and actor.hex_position.is_valid():
+		pos = actor.hex_position.to_dict()
+	return {
+		"id":           actor.get_id(),
+		"type":         actor.type,
+		"is_dead":      actor.is_dead(),
+		"hex_position": pos,
+		"attribute":    actor.get_attribute_snapshot(),
+		"abilities":    actor.get_ability_snapshot(),
+		"tags":         actor.get_tag_snapshot(),
+	}
 
 
 ## 把 ProjectileSystem.tick 产生的投射物事件 (HIT/MISS) 广播给所有存活 actor

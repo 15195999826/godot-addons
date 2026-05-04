@@ -290,6 +290,9 @@ class ActorDisplacedEvent extends GameEvent.Base:
 	var to_hex: Dictionary = {}
 	var displacement_kind: String = ""  # "knockback" | (future) "pull" | "scatter"
 	var source_actor_id: String = ""
+	var actual_distance: int = 0
+	var action_lock_duration_ms: float = 0.0
+	var collision_action_lock_bonus_ms: float = 0.0
 
 	func _init() -> void:
 		kind = "actor_displaced"
@@ -299,7 +302,10 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		p_from_hex: Dictionary,
 		p_to_hex: Dictionary,
 		p_displacement_kind: String,
-		p_source_actor_id: String
+		p_source_actor_id: String,
+		p_actual_distance: int = 0,
+		p_action_lock_duration_ms: float = 0.0,
+		p_collision_action_lock_bonus_ms: float = 0.0
 	) -> ActorDisplacedEvent:
 		var e := ActorDisplacedEvent.new()
 		e.actor_id = p_actor_id
@@ -307,6 +313,9 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		e.to_hex = p_to_hex
 		e.displacement_kind = p_displacement_kind
 		e.source_actor_id = p_source_actor_id
+		e.actual_distance = p_actual_distance
+		e.action_lock_duration_ms = p_action_lock_duration_ms
+		e.collision_action_lock_bonus_ms = p_collision_action_lock_bonus_ms
 		return e
 
 	func to_dict() -> Dictionary:
@@ -317,6 +326,9 @@ class ActorDisplacedEvent extends GameEvent.Base:
 			"to_hex": to_hex,
 			"displacement_kind": displacement_kind,
 			"source_actor_id": source_actor_id,
+			"actual_distance": actual_distance,
+			"action_lock_duration_ms": action_lock_duration_ms,
+			"collision_action_lock_bonus_ms": collision_action_lock_bonus_ms,
 		}
 
 	static func from_dict(d: Dictionary) -> ActorDisplacedEvent:
@@ -326,6 +338,9 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		e.to_hex = d.get("to_hex", {}) as Dictionary
 		e.displacement_kind = d.get("displacement_kind", "") as String
 		e.source_actor_id = d.get("source_actor_id", "") as String
+		e.actual_distance = d.get("actual_distance", 0) as int
+		e.action_lock_duration_ms = d.get("action_lock_duration_ms", 0.0) as float
+		e.collision_action_lock_bonus_ms = d.get("collision_action_lock_bonus_ms", 0.0) as float
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
@@ -349,6 +364,9 @@ class PushBlockedEvent extends GameEvent.Base:
 	var blocked_by: String = ""               # "edge" | "actor"
 	var blocker_actor_id: String = ""         # 当 blocked_by == "actor" 时的 blocker id, 否则 ""
 	var source_actor_id: String = ""
+	var actual_distance: int = 0
+	var action_lock_duration_ms: float = 0.0
+	var collision_action_lock_bonus_ms: float = 0.0
 
 	func _init() -> void:
 		kind = "push_blocked"
@@ -359,7 +377,10 @@ class PushBlockedEvent extends GameEvent.Base:
 		p_attempted_to_hex: Dictionary,
 		p_blocked_by: String,
 		p_blocker_actor_id: String,
-		p_source_actor_id: String
+		p_source_actor_id: String,
+		p_actual_distance: int = 0,
+		p_action_lock_duration_ms: float = 0.0,
+		p_collision_action_lock_bonus_ms: float = 0.0
 	) -> PushBlockedEvent:
 		var e := PushBlockedEvent.new()
 		e.actor_id = p_actor_id
@@ -368,6 +389,9 @@ class PushBlockedEvent extends GameEvent.Base:
 		e.blocked_by = p_blocked_by
 		e.blocker_actor_id = p_blocker_actor_id
 		e.source_actor_id = p_source_actor_id
+		e.actual_distance = p_actual_distance
+		e.action_lock_duration_ms = p_action_lock_duration_ms
+		e.collision_action_lock_bonus_ms = p_collision_action_lock_bonus_ms
 		return e
 
 	func to_dict() -> Dictionary:
@@ -379,6 +403,9 @@ class PushBlockedEvent extends GameEvent.Base:
 			"blocked_by": blocked_by,
 			"blocker_actor_id": blocker_actor_id,
 			"source_actor_id": source_actor_id,
+			"actual_distance": actual_distance,
+			"action_lock_duration_ms": action_lock_duration_ms,
+			"collision_action_lock_bonus_ms": collision_action_lock_bonus_ms,
 		}
 
 	static func from_dict(d: Dictionary) -> PushBlockedEvent:
@@ -389,6 +416,9 @@ class PushBlockedEvent extends GameEvent.Base:
 		e.blocked_by = d.get("blocked_by", "") as String
 		e.blocker_actor_id = d.get("blocker_actor_id", "") as String
 		e.source_actor_id = d.get("source_actor_id", "") as String
+		e.actual_distance = d.get("actual_distance", 0) as int
+		e.action_lock_duration_ms = d.get("action_lock_duration_ms", 0.0) as float
+		e.collision_action_lock_bonus_ms = d.get("collision_action_lock_bonus_ms", 0.0) as float
 		return e
 
 	static func is_match(d: Dictionary) -> bool:

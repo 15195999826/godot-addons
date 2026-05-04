@@ -146,7 +146,11 @@ func accumulate_atb(dt: float) -> void:
 
 ## 是否可以行动
 func can_act() -> bool:
-	return _atb_gauge >= ATB_FULL
+	if _atb_gauge < ATB_FULL:
+		return false
+	if ability_set != null and ability_set.has_tag(HexBattleActionLockStatus.TAG_CANT_ACT):
+		return false
+	return true
 
 
 ## 重置 ATB

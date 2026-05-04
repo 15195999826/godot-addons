@@ -92,6 +92,14 @@ func get_unit_view_count() -> int:
 	return _unit_views.size()
 
 
+## 把 hex 坐标投影到 view 用的 world position。
+## 公共版的 _hex_to_world — 测试 / oracle 要保证用同一份投影函数, 不能各自算。
+## reconciler 用此函数计算 expected view position, 与 _on_actor_position_changed 写入
+## 的 view.global_position 同源。
+func hex_to_world(coord: HexCoord) -> Vector3:
+	return _hex_to_world(coord)
+
+
 # ========== Signal handlers ==========
 
 func _on_actor_added(actor_id: String) -> void:
