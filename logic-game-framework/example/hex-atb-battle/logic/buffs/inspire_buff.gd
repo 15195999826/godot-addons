@@ -19,7 +19,7 @@ static var INSPIRE_BUFF := (
 	.config_id("buff_inspire")
 	.display_name("振奋")
 	.description("防御力 +10，持续 2 秒")
-	.ability_tags(["buff", "inspire"])
+	.ability_tags(["buff", "positive"])
 	# 属性修改：防御力 +10
 	.component_config(
 		StatModifierConfig.builder()

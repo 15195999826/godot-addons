@@ -3,7 +3,7 @@
 > 实施 [`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md) 16 个示范技能的进度快照。
 > 每完成一个技能就更新本文档。配合 `lgf-new-logic-skill` skill 使用 —— 实现新技能前先读这里的「pattern 速查」找最近的参考实现。
 
-最后更新：2026-04-29
+最后更新：2026-05-04
 
 ---
 
@@ -11,13 +11,13 @@
 
 | Tier | 进度 | 说明 |
 |---|---|---|
-| Tier 1 — MVP | 🟡 4 / 6 | 核心 pattern 验证 |
+| Tier 1 — MVP | 🟡 5 / 6 | 核心 pattern 验证 |
 | Tier 2 — 中级 | 🟡 4 / 6 | 多原语组合 |
 | Tier 3 — 高级 | 🟡 1 / 4 | 跨系统 |
-| **合计** | **9 / 16** | |
+| **合计** | **10 / 16** | |
 
-**当前焦点** ：暂无；上一个落地的是 Knockback Punch (Tier 1 #4，forced displacement 基础设施 + 击退拳实现，2026-04-29)。
-**下一个建议**：Expose (Tier 1 #5) — 易伤标记, PreEvent modify_intent 增伤 + duration buff, 完成 Tier 1 阶段 4/6→5/6。
+**当前焦点** ：暂无；上一个落地的是 Expose (Tier 1 #5，PreEvent modify_intent 第一个生产用例 + buff tag positive/negative 二分迁移，2026-05-04)。
+**下一个建议**：Execute (Tier 1 #6) — 斩杀, HP% 阈值条件分支 Action, 完成 Tier 1 阶段 5/6→6/6。
 
 ---
 
@@ -40,7 +40,7 @@
 | 2 | Poison | 🔵 已落地 | poison | `skills/poison.gd` + `buffs/poison_buff.gd` + `actions/poison_tick_action.gd` | `poison_scenario.gd` |
 | 3 | Ward | 🔵 V1 已落地 | ward | `skills/ward.gd` + `buffs/ward_buff.gd` + `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` + `actions/apply_shield_action.gd` | `shield_basic_absorb` / `shield_full_absorb_no_thorns` / `shield_priority_order` |
 | 4 | Knockback Punch | 🔵 已落地 | knockback_punch | `skills/knockback_punch.gd` + `actions/push_action.gd` + `events/battle_events.gd` (ActorDisplacedEvent + PushBlockedEvent) | `example/hex-atb-battle/tests/battle/smoke_knockback_punch.gd` (7 cases) |
-| 5 | Expose | ⚫ 未做 | — | — | — |
+| 5 | Expose | 🔵 已落地 | expose | `skills/expose.gd` + `buffs/expose_buff.gd` (PreEventConfig + TimeDurationConfig) | `expose_scenario.gd` |
 | 6 | Execute | ⚫ 未做 | — | — | — |
 
 ### Tier 2 — 中级
@@ -104,12 +104,12 @@
 | On Death 反应 | deathrattle_aoe | PostEvent on death event + 死亡 actor 上下文可用 |
 | 移动 / 寻路 | move | start_move / apply_move 两阶段 action |
 | forced displacement (击退/拉拽/推开) | knockback_punch | PushAction raycast N 格 + CollisionProfile 数据驱动结算 + ActorDisplacedEvent / PushBlockedEvent 拆事件;`distance` / `displacement_kind` 参数化让 pull / wind_torrent / N>1 直接复用 |
+| 易伤 / 增伤 debuff(改受伤) | expose | PreEventConfig + Modification.multiply 在 pre_damage 阶段放大目标受伤;filter 仅"target == owner"维度;TimeDurationConfig 自动 expire;**LGF PreEvent modify_intent 第一个生产用例**(ward 已迁到 ShieldComponent) |
 
 ### 还没有落地参考的 pattern（做的时候记得回来填）
 
 | 想做什么 | design 对应技能 | 备注 |
 |---|---|---|
-| 易伤 / 增伤 debuff | Expose (#5) | 对比 Poison：不直接扣血而是改受伤 |
 | 条件分支伤害 / 斩杀 | Execute (#6) | Condition + 分支 Action |
 | 链锁 / 跳目标 | Chain Lightning (#9) | 动态目标选择 + visited 用 local var |
 | 瞬移突袭 | Shadow Step (#12) | 坐标计算 + 失败容错 |
@@ -131,13 +131,16 @@ design 文档写的时候 LGF 框架还在演进，落地时部分 pattern 调�
 | Mend | 落地名 `mend` | 实际叫 `holy_heal` | 命名调整 |
 | Thorns | 落地名 `thorns` | 实际叫 `thorn`（单数） | 命名调整 + reflect_damage_action 抽出复用 |
 | Strike 变体 | "远程版 / 多段攻击 / 武器系数"列为变体方向 | swift_strike / precise_shot 已作为独立技能落地 | 提前实现以验证 projectile / multi-keyframe pattern |
+| Expose 范式 | 拆 `ExposeAbility` 主动 + `ExposePreEventAbility` 拦截器(基于 tag) | 合并为单 buff ability(主动 grant `HexBattleExposeBuff`,buff 自带 PreEventConfig + TimeDurationConfig) | 与 Poison 同样的范式迁移:tag-based state → buff component state(LGF 后续约定 buff 可有状态) |
+| Expose `cue_id` | design 卡未指定 | 复用 `melee_slash` 而非新增 `debuff_glow` cue 类型 | 表演层接入清单原则(SKILL.md §7.3)— 优先复用现有 cue,无专属视觉资产时不编新名 |
+| Buff `ability_tags` 全量 | 散乱描述性 tag(`debuff` / `dot` / `poison` / `shield` / `ward` / `surge` / `inspire`) | **统一 positive / negative 二分**:`["buff","positive"]` 或 `["buff","negative"]` | 用户反馈"原 tag 写得意义不明",2026-05-04 随 Expose 落地一起收敛 4 个既有 buff(Poison/Ward/Surge/Inspire) |
 
 ---
 
 ## 📌 阶段标记（按 design 文档第八节 roadmap）
 
 - [x] **阶段 1** — 核心 pattern（Strike / Poison / Ward）✅
-- [ ] **阶段 2** — 机制词典扩展（Expose / Knockback / Execute / Fireball）—— Fireball + Knockback 已做，剩 Expose / Execute
+- [ ] **阶段 2** — 机制词典扩展（Expose / Knockback / Execute / Fireball）—— Fireball + Knockback + Expose 已做，剩 Execute
 - [ ] **阶段 3** — 复杂组合（Decimating Smash / Thorns / Chain Lightning / Mend）—— Decimating ≈ Crushing Blow / Thorns / Mend ≈ Holy Heal 已做，剩 Chain Lightning
 - [ ] **阶段 4** — 框架深度（Shadow Step / Deathrattle / Stance / Demon Form / Summon Totem）—— Deathrattle 已做，剩 4 个
 

@@ -35,6 +35,7 @@ static func _build_manifest() -> Array[_Entry]:
 	arr.append(_Entry.new(HexBattleSurge.ABILITY,        [HexBattleSurge.SURGE_TIMELINE]))
 	arr.append(_Entry.new(HexBattleWallBreaker.ABILITY,  [HexBattleWallBreaker.WALL_BREAKER_TIMELINE]))
 	arr.append(_Entry.new(HexBattleKnockbackPunch.ABILITY, [HexBattleKnockbackPunch.KNOCKBACK_PUNCH_TIMELINE]))
+	arr.append(_Entry.new(HexBattleExpose.ABILITY,        [HexBattleExpose.EXPOSE_TIMELINE]))
 	# Pure passives(no timeline)
 	arr.append(_Entry.new(HexBattleThorn.ABILITY,           []))
 	arr.append(_Entry.new(HexBattleDeathrattleAoe.ABILITY,  []))
@@ -43,6 +44,7 @@ static func _build_manifest() -> Array[_Entry]:
 	# Buffs(non-skill ability,但其 tick timeline 也要注册)
 	arr.append(_Entry.new(HexBattlePoisonBuff.POISON_BUFF,  [HexBattlePoisonBuff.POISON_TICK_TIMELINE]))
 	arr.append(_Entry.new(HexBattleSurgeBuff.SURGE_BUFF,    [HexBattleSurgeBuff.SURGE_TICK_TIMELINE]))
+	arr.append(_Entry.new(HexBattleExposeBuff.EXPOSE_BUFF,  []))
 	return arr
 
 

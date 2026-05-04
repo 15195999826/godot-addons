@@ -24,7 +24,7 @@ static var SURGE_BUFF := (
 	.config_id(CONFIG_ID)
 	.display_name("涌动")
 	.description("挂上立即生效,3 stacks,每 2s 减 1")
-	.ability_tags(["buff", "surge"])
+	.ability_tags(["buff", "positive"])
 	.stacks(DEFAULT_STACKS, MAX_STACKS, Ability.OVERFLOW_CAP)
 	.component_config(
 		ActivateInstanceConfig.builder()

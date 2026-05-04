@@ -33,7 +33,7 @@ static var POISON_BUFF := (
 	.config_id(CONFIG_ID)
 	.display_name("中毒")
 	.description("每 2 秒受到 = 当前层数的 PURE 伤害，然后层数 -1")
-	.ability_tags(["buff", "debuff", "dot", "poison"])
+	.ability_tags(["buff", "negative"])
 	.stacks(DEFAULT_INITIAL_STACKS, POISON_MAX_STACKS, Ability.OVERFLOW_CAP)
 	.component_config(
 		ActivateInstanceConfig.builder()
