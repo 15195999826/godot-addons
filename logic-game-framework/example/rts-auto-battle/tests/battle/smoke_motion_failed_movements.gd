@@ -167,6 +167,9 @@ func _test_path_update_needed() -> void:
 ## 12 tick 后 _long_path 清空
 func _test_countdown_triggers_long_retry() -> void:
 	var motion := RtsUnitMotion.new()
+	# WHY: 走 _step 真渐进路径(M7c 改);设大 walk_speed 让 1 tick 跨过 short_wp 触发 pop_back +
+	# countdown 启动。stub 时代直接 pop short_path,不需要 walk_speed 调大。
+	motion._walk_speed = 100000.0
 	motion.set_position_2d(Vector2(0, 0))
 	motion.move_to(Vector2(500, 0), 0, 0)
 	var facade := MockSinglePathFacade.new()
@@ -174,8 +177,9 @@ func _test_countdown_triggers_long_retry() -> void:
 	# tick 1:_path_update_needed → _request_long_path → _long_path = [long_wp]
 	#         _short_path empty + _long_path 非空 → pop _long_path → _request_short_path_to →
 	#         _short_path = [short_wp]
-	#         _step → pop _short_path → _short_path empty → 启动 countdown = 12
-	#         tick 末 countdown 倒数 → 11
+	#         _step → walk_speed × delta = 100000 × 0.05 = 5000 px > short_wp dist → pop short_wp +
+	#                _short_path empty → 启动 countdown = 12
+	#         tick 末:_short_path 空 + countdown > 0 → countdown 倒数 → 11
 	motion.tick(0.05, null, facade)
 
 	if motion._follow_known_imperfect_path_countdown == 0:

@@ -400,6 +400,18 @@ func tick_once() -> void:
 	if world.obstruction_manager != null:
 		_sync_unit_obstruction_shapes(world, alive_units)
 
+	# 4g. M7c — Motion-bearing actor tick (production callsite 仍走 nav_agent;此 step 仅当
+	#     actor.motion_component 非 null 时跑 motion.tick → component 桥接 obstr_mgr 同步 +
+	#     position_2d 写回)。
+	#
+	#     **R5 P1 #1**: 排序 key = `(actor.type: String, actor.spawn_seq: int)` 数值复合 key,
+	#     **不**用 actor.get_id() 字典序 (Character_10 < Character_2 字典序漂,见
+	#     data-structures.md §12.5)。
+	#
+	#     **M7c 阶段**: production callsite 不创 motion_component (activity 仍走 RtsNavAgent),
+	#     此 step 实际跑空集合,baseline / replay 0 漂。M7d 切 activity 时此 step 真激活。
+	_tick_motion_bearing_actors(world, alive_actors, dt_seconds)
+
 	# 4e. P2.5 production system: 走全部 alive RtsBuildingActor, 累积 production_progress_ms,
 	#     满周期触发 _unit_spawner 回调 (smoke / 调方负责实际 add_actor + nav agent + controller +
 	#     add_unit_to_team + initial activity chain)。
@@ -764,6 +776,43 @@ func _register_decorative_obstacles_to_manager(world: RtsWorldGameplayInstance) 
 			flags,
 			"decorative",
 		)
+
+
+## M7c — 收集 motion-bearing actor (motion_component != null) → 按 (type, spawn_seq) 数值
+## 复合 key 排序 → 逐个 component.tick(delta, world, facade)。
+##
+## **R5 P1 #1**: 排序 key 必须用 `(type: String, spawn_seq: int)` 数值复合 key,**不**用
+## `actor.get_id()` 字符串字典序 — `Character_10` < `Character_2` (`'1' < '2'`),≥ 10 同 kind
+## unit 时 spawn 序列漂(见 data-structures.md §12.5)。
+##
+## **M7c 阶段** production callsite 不创 motion_component → 此函数实际跑空集合,baseline 0 漂。
+## M7d 切 activity 时此函数真激活。
+##
+## **Determinism**: stable sort by 复合 key;同 (type, spawn_seq) 不可能(spawn_seq 全局递增,
+## 单调唯一)。
+func _tick_motion_bearing_actors(world: RtsWorldGameplayInstance, alive_actors: Array, dt: float) -> void:
+	var motion_actors: Array = []
+	for a in alive_actors:
+		var actor: RtsBattleActor = a as RtsBattleActor
+		if actor != null and actor.motion_component != null:
+			motion_actors.append(actor)
+	if motion_actors.is_empty():
+		return
+	motion_actors.sort_custom(_compare_motion_actor)
+	var facade: RtsPathfinderFacade = world.pathfinder_facade
+	for a in motion_actors:
+		var actor: RtsBattleActor = a as RtsBattleActor
+		var component: RtsMotionComponent = actor.motion_component as RtsMotionComponent
+		component.tick(dt, world, facade)
+
+
+## R5 P1 #1 sort comparator — `(type: String, spawn_seq: int)` 数值复合 key。
+##
+## 跨 type 走 String < (type 名固定且短,跨 run 稳定);同 type 内走 spawn_seq < (整数比较跨平台稳定)。
+static func _compare_motion_actor(a: RtsBattleActor, b: RtsBattleActor) -> bool:
+	if a.type != b.type:
+		return a.type < b.type
+	return a.spawn_seq < b.spawn_seq
 
 
 ## M2.5 — 每 tick 末 sync 所有 alive unit 的 obstruction shape 到 ObstructionManager。

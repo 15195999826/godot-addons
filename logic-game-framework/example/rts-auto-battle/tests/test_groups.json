@@ -81,7 +81,9 @@
     "motion": {
       "scenes": [
         "battle/smoke_motion_path_storage.tscn",
-        "battle/smoke_motion_failed_movements.tscn"
+        "battle/smoke_motion_failed_movements.tscn",
+        "battle/smoke_motion_obstruction_sync.tscn",
+        "battle/smoke_motion_tick_order_with_10plus_units.tscn"
       ]
     },
     "replay": {
