@@ -37,6 +37,12 @@ var _camera_rig: LomoCameraRig
 var _player_controller: LomoPlayerController
 var _controls: FrontendPlaybackControls
 
+## debug-only: 缓存 logic 终态 snapshot, 由 battle_final_state_ready signal 填充。
+## release build 下 base GI 不 emit, 此字段保持空 — playback_ended 时跑 reconciler
+## 收到空 state 视为 SKIPPED 不 fail。详见 docs/view-logic-reconciliation.md。
+## 同时供 smoke_frontend_main 通过 _main_scene.get("_final_state") 读取。
+var _final_state: Dictionary = {}
+
 
 # ========== 生命周期 ==========
 
@@ -225,6 +231,10 @@ func _on_start_battle_button_pressed() -> void:
 	_battle = HexDemoWorldGameplayInstance.new()
 	GameWorld.create_instance(func() -> GameplayInstance: return _battle)
 	_battle.battle_finished.connect(_on_battle_finished)
+	# 对账 oracle: 在 battle_finished 之前 connect, 让 base GI 的 emit 顺序
+	# (base handler -> 子类 demo._on_battle_finished) 把 final_state 先送达。
+	_battle.battle_final_state_ready.connect(_on_battle_final_state_ready)
+	_final_state = {}
 
 	# 先 bind_world(空 world,无 actor) 再 start —— start 内部会 add_actor 触发
 	# WorldView spawn unit views,顺序反过来会让 view 漏听。
@@ -271,10 +281,32 @@ func _on_frame_changed(current_frame: int, total_frames: int) -> void:
 	_controls.update_frame_info(current_frame, total_frames)
 
 
+func _on_battle_final_state_ready(state: Dictionary) -> void:
+	_final_state = state
+
+
 func _on_playback_ended() -> void:
 	_controls.set_ended_state()
 	_start_battle_button.disabled = false
 	print("[Main] Playback ended")
+	_run_view_logic_reconciliation()
+
+
+## 跑 view ↔ logic 终态对账。release build 拿不到 final_state 会 SKIPPED 静默通过。
+## 交互态: mismatch 走 push_warning + status label 提示, 不阻塞用户操作。
+## 详见 docs/view-logic-reconciliation.md。
+func _run_view_logic_reconciliation() -> void:
+	if _final_state.is_empty():
+		return
+	var rec := HexBattleViewLogicReconciler.new()
+	var report: HexBattleViewLogicReconciler.ReconcileReport = await rec.reconcile(
+		_final_state, _animator, _world_view, get_tree()
+	)
+	if report.skipped or report.passed:
+		print("[Main] %s" % report.to_human_string())
+		return
+	push_warning("[ViewLogic] %s" % report.to_human_string())
+	_update_status("⚠ View/Logic mismatch: %d field(s), see console" % report.mismatches.size())
 
 
 # ========== UI 控件回调 → animator forward ==========

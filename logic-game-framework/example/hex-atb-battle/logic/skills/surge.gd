@@ -39,6 +39,7 @@ static var ABILITY := (
 				HexBattleSurgeBuff.SURGE_BUFF
 			),
 		])
+		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
 		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()

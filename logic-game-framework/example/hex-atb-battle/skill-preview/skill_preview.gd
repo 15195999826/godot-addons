@@ -170,6 +170,12 @@ var _player_controller: LomoPlayerController
 var _hex_selection_cursor: MeshInstance3D = null
 var _hex_selection_cursor_material: StandardMaterial3D = null
 
+## debug-only: 当前战斗的 logic 终态 snapshot, 由 battle_final_state_ready 填充。
+## 每次 START 前清空, _on_playback_ended 跑 reconciler 时读取。
+## release build base GI 不 emit, 此字段保持空 → reconciler SKIPPED 静默。
+## 详见 docs/view-logic-reconciliation.md。
+var _final_state: Dictionary = {}
+
 ## true: 战斗 procedure 运行中 / animator 播放中, 禁止编辑 UI 修改 world
 var _is_playing: bool = false
 var _playback_mode: bool = false
@@ -360,6 +366,7 @@ func _init_world_stack() -> void:
 	GameWorld.create_instance(func() -> GameplayInstance: return _world)
 	_world.start()
 	_world.battle_finished.connect(_on_battle_finished)
+	_world.battle_final_state_ready.connect(_on_battle_final_state_ready)
 
 	_setup_camera_and_env()
 
@@ -4345,6 +4352,9 @@ func _on_start_pressed() -> void:
 
 	_log_battle_start(setups, int(_max_ticks_input.value))
 
+	# 清上一场的 final_state, 让 reconciler SKIP/PASS/FAIL 状态对应当前这一场。
+	_final_state = {}
+
 	_world.queue_preview(setups, false)
 
 	var participants: Array[Actor] = []
@@ -4537,6 +4547,28 @@ func _on_playback_ended() -> void:
 	_reset_button.disabled = false
 	_replay_button.disabled = _last_timeline.is_empty()
 	_refresh_runtime_layout()
+	_run_view_logic_reconciliation()
+
+
+func _on_battle_final_state_ready(state: Dictionary) -> void:
+	_final_state = state
+
+
+## skill-preview 是交互场景, 不硬 fail; 走 push_warning + status label 提示用户。
+## release build 下 _final_state 为空, reconciler SKIPPED 不打扰。
+## 详见 docs/view-logic-reconciliation.md。
+func _run_view_logic_reconciliation() -> void:
+	if _final_state.is_empty():
+		return
+	var rec := HexBattleViewLogicReconciler.new()
+	var report: HexBattleViewLogicReconciler.ReconcileReport = await rec.reconcile(
+		_final_state, _animator, _world_view, get_tree()
+	)
+	if report.skipped or report.passed:
+		print("[SkillPreview] %s" % report.to_human_string())
+		return
+	push_warning("[ViewLogic] %s" % report.to_human_string())
+	_set_status("⚠ View/Logic mismatch: %d field(s) — see console" % report.mismatches.size())
 
 
 ## 用户主动重置: world 状态归零到 _actors 数据模型对应的"战前"。清 console log

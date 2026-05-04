@@ -120,9 +120,20 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		final_pos = next
 
 	var all_events: Array[Dictionary] = []
+	var displaced := not final_pos.equals(original_pos)
+	var actual_distance := original_pos.distance_to(final_pos)
+	var collision_action_lock_bonus_ms := (
+		HexBattleActionLockStatus.COLLISION_ACTION_LOCK_BONUS_MS
+		if blocked_by != "" else 0.0
+	)
+	var action_lock_duration_ms := 0.0
+	if displaced or blocked_by != "":
+		action_lock_duration_ms = HexBattleActionLockStatus.compute_displacement_duration_ms(
+			actual_distance,
+			collision_action_lock_bonus_ms
+		)
 
 	# ========== 实际移动 + ActorDisplacedEvent ==========
-	var displaced := not final_pos.equals(original_pos)
 	if displaced:
 		var moved := battle.grid.move_occupant(original_pos, final_pos)
 		if moved:
@@ -133,12 +144,18 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 				final_pos.to_dict(),
 				_displacement_kind,
 				caster_id,
+				actual_distance,
+				action_lock_duration_ms,
+				collision_action_lock_bonus_ms,
 			)
 			all_events.append(ctx.event_collector.push(displaced_event.to_dict()))
 		else:
 			push_warning("[PushAction] grid.move_occupant failed: %s -> %s" % [
 				original_pos, final_pos
 			])
+			displaced = false
+			if blocked_by == "":
+				action_lock_duration_ms = 0.0
 
 	# ========== 阻挡 + 碰撞伤害 ==========
 	if blocked_by != "":
@@ -150,6 +167,9 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			blocked_by,
 			blocker_id,
 			caster_id,
+			actual_distance,
+			action_lock_duration_ms,
+			collision_action_lock_bonus_ms,
 		)
 		all_events.append(ctx.event_collector.push(blocked_event.to_dict()))
 
@@ -175,10 +195,36 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 					_push_collision_damage(blocker.get_id(), blocker_dmg, caster_id, ctx, battle)
 				)
 
+	if (displaced or blocked_by != "") and action_lock_duration_ms > 0.0 and not target.is_dead():
+		_grant_displacement_action_lock(target, action_lock_duration_ms, caster_id, battle)
+
 	return ActionResult.create_success_result(all_events, {
 		"displaced": displaced,
 		"blocked_by": blocked_by,
+		"actual_distance": actual_distance,
+		"action_lock_duration_ms": action_lock_duration_ms,
 	})
+
+
+func _grant_displacement_action_lock(
+	target: HexBattleActor,
+	duration_ms: float,
+	source_caster_id: String,
+	battle: HexWorldGameplayInstance
+) -> void:
+	if not (target is CharacterActor):
+		return
+	var character := target as CharacterActor
+	var action_lock := Ability.new(
+		HexBattleActionLockStatus.create_config(
+			duration_ms,
+			HexBattleActionLockStatus.REASON_DISPLACEMENT_STAGGER,
+			HexBattleActionLockStatus.REASON_DISPLACEMENT_STAGGER
+		),
+		character.get_id(),
+		source_caster_id
+	)
+	character.ability_set.grant_ability(action_lock, battle)
 
 
 ## inline collision damage helper.

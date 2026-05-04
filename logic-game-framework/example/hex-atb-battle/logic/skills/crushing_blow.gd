@@ -39,6 +39,7 @@ static var ABILITY := (
 			Resolvers.float_val(90.0),
 			BattleEvents.DamageType.PHYSICAL
 		)])
+		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
 		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()

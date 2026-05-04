@@ -1,6 +1,6 @@
 ## Smoke: Knockback Punch (Tier 1 #4) — forced displacement + collision pattern
 ##
-## 验证 7 个 case:
+## 验证 9 个 case:
 ##   1. free push       → target 移动 1 格, ActorDisplacedEvent
 ##   2. edge            → target 不动, PushBlockedEvent(blocked_by="edge"), 1pt collision damage to target
 ##   3. stone_wall      → target 不动, PushBlockedEvent(blocked_by="actor", blocker=wall),
@@ -10,6 +10,8 @@
 ##   5b. direct target stone_wall    → can_use_skill_on() == false (ALLOWED_TARGET_KINDS=["Character"])
 ##   6. killed by base damage  → 整段 push 跳过 (0 ActorDisplaced / 0 PushBlocked / 0 collision)
 ##   7. collision deterministic → N 次 trial, 每次 collision damage 都 == 1.0 (无暴击)
+##   8. action lock metadata/status → push event 写 action_lock_duration_ms, target 获得 status_action_lock
+##   9. cant_act gate → ATB 满但不决策不 reset; action lock 到期后恢复主动行动
 extends Node
 
 
@@ -33,6 +35,10 @@ func _ready() -> void:
 	if not _phase_killed_by_base_damage():
 		return
 	if not _phase_collision_deterministic():
+		return
+	if not _phase_action_lock_metadata_and_status():
+		return
+	if not _phase_action_lock_blocks_atb_then_expires():
 		return
 
 	print("SMOKE_TEST_RESULT: PASS - all knockback_punch checks passed")
@@ -428,6 +434,185 @@ func _phase_collision_deterministic() -> bool:
 
 
 # ============================================================
+# Phase 8: action lock metadata/status (case 8)
+# ============================================================
+
+func _phase_action_lock_metadata_and_status() -> bool:
+	var scene := {
+		"map": {"rows": 9, "cols": 9},
+		"caster":  {"class": "WARRIOR", "pos": [0, 0], "atk": 10, "hp": 100},
+		"enemies": [{"class": "WARRIOR", "pos": [1, 0], "hp": 1000}],
+	}
+	var actions: Array[Dictionary] = [
+		{"caster": "caster", "skill": HexBattleKnockbackPunch.ABILITY, "target": "enemy_0"},
+	]
+	var result := HexBattleSkillScenarioHarness.run_with_actions(scene, actions, 80)
+	if not result.get("success", false):
+		_fail("action_lock_metadata: harness failed: %s" % str(result.get("errors", [])))
+		return false
+
+	var enemy_id := str((result["enemy_ids"] as Array)[0])
+	var replay: Dictionary = result.get("replay", {})
+	var expected_duration := HexBattleActionLockStatus.compute_displacement_duration_ms(1, 0.0)
+
+	var displaced := _find_events(replay, "actor_displaced")
+	if displaced.size() != 1:
+		_fail("action_lock_metadata: expected 1 actor_displaced, got %d" % displaced.size())
+		return false
+	var disp: Dictionary = displaced[0]
+	if int(disp.get("actual_distance", -1)) != 1:
+		_fail("action_lock_metadata: actual_distance expected 1, got %s" % str(disp.get("actual_distance")))
+		return false
+	if abs(float(disp.get("action_lock_duration_ms", -1.0)) - expected_duration) > 0.01:
+		_fail("action_lock_metadata: action_lock_duration_ms expected %.1f, got %s" % [
+			expected_duration, str(disp.get("action_lock_duration_ms"))
+		])
+		return false
+	if abs(float(disp.get("collision_action_lock_bonus_ms", -1.0))) > 0.01:
+		_fail("action_lock_metadata: collision_action_lock_bonus_ms expected 0")
+		return false
+
+	var granted := _find_ability_granted(replay, enemy_id, HexBattleActionLockStatus.CONFIG_ID)
+	if granted.is_empty():
+		_fail("action_lock_metadata: expected AbilityGranted(status_action_lock) on pushed target")
+		return false
+	var ability: Dictionary = granted.get("ability", {}) as Dictionary
+	var metadata: Dictionary = ability.get("metadata", {}) as Dictionary
+	if str(metadata.get("reason", "")) != HexBattleActionLockStatus.REASON_DISPLACEMENT_STAGGER:
+		_fail("action_lock_metadata: status reason expected displacement_stagger")
+		return false
+	if abs(float(metadata.get("duration_ms", -1.0)) - expected_duration) > 0.01:
+		_fail("action_lock_metadata: status duration metadata mismatch")
+		return false
+	var ability_tags: Array = ability.get("abilityTags", [])
+	if not ability_tags.has(HexBattleActionLockStatus.TAG_ACTION_LOCKED):
+		_fail("action_lock_metadata: abilityTags missing action_locked")
+		return false
+	if not ability_tags.has(HexBattleActionLockStatus.REASON_DISPLACEMENT_STAGGER):
+		_fail("action_lock_metadata: abilityTags missing displacement_stagger")
+		return false
+
+	print("  [PASS] action lock metadata/status: event duration + status grant")
+	return true
+
+
+# ============================================================
+# Phase 9: action lock gates ATB without reset, then expires (case 9)
+# ============================================================
+
+func _phase_action_lock_blocks_atb_then_expires() -> bool:
+	GameWorld.init()
+	HexBattleAllSkills.register_all_timelines()
+
+	var battle := GameWorld.create_instance(func() -> GameplayInstance:
+		var inst := HexWorldGameplayInstance.new()
+		var grid_cfg := GridMapConfig.new()
+		grid_cfg.grid_type = GridMapConfig.GridType.HEX
+		grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
+		grid_cfg.rows = 9
+		grid_cfg.columns = 9
+		inst.configure_grid(grid_cfg)
+		return inst
+	) as HexWorldGameplayInstance
+	if battle == null:
+		_fail("action_lock_gate: failed to create battle")
+		return false
+
+	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
+	battle.add_actor(caster)
+	caster.set_team_id(0)
+	caster.equip_abilities()
+	if not battle.grid.place_occupant(HexCoord.new(0, 0), caster):
+		_fail("action_lock_gate: failed to place caster")
+		GameWorld.destroy()
+		return false
+	caster.hex_position = HexCoord.new(0, 0)
+
+	var enemy := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
+	battle.add_actor(enemy)
+	enemy.set_team_id(1)
+	enemy.equip_abilities()
+	enemy.attribute_set.set_max_hp_base(1000.0)
+	enemy.attribute_set.set_hp_base(1000.0)
+	if not battle.grid.place_occupant(HexCoord.new(1, 0), enemy):
+		_fail("action_lock_gate: failed to place enemy")
+		GameWorld.destroy()
+		return false
+	enemy.hex_position = HexCoord.new(1, 0)
+
+	battle.start()
+
+	var duration := HexBattleActionLockStatus.compute_displacement_duration_ms(1, 0.0)
+	var action_lock := Ability.new(
+		HexBattleActionLockStatus.create_config(
+			duration,
+			HexBattleActionLockStatus.REASON_DISPLACEMENT_STAGGER,
+			HexBattleActionLockStatus.REASON_DISPLACEMENT_STAGGER
+		),
+		caster.get_id(),
+		enemy.get_id()
+	)
+	caster.ability_set.grant_ability(action_lock, battle)
+	caster.accumulate_atb(100000.0)
+	if caster.get_atb_gauge() < CharacterActor.ATB_FULL:
+		_fail("action_lock_gate: setup failed, caster ATB not full")
+		GameWorld.destroy()
+		return false
+
+	var skill := caster.get_skill_ability()
+	var direct_event := {
+		"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
+		"abilityInstanceId": skill.id,
+		"sourceId": caster.get_id(),
+		"target_actor_id": enemy.get_id(),
+		"logicTime": 0.0,
+	}
+	caster.ability_set.receive_event(direct_event, battle)
+	if skill.get_executing_instances().size() != 0:
+		_fail("action_lock_gate: direct active skill activation should be blocked by cant_act")
+		GameWorld.destroy()
+		return false
+
+	var left_team: Array[CharacterActor] = [caster]
+	var right_team: Array[CharacterActor] = [enemy]
+	var procedure := HexBattleProcedure.new(battle, left_team, right_team, {
+		"logging": false,
+		"recording": false,
+	})
+	procedure.start()
+
+	procedure.tick_once()
+	if not caster.ability_set.has_tag(HexBattleActionLockStatus.TAG_CANT_ACT):
+		_fail("action_lock_gate: cant_act expired too early")
+		GameWorld.destroy()
+		return false
+	if caster.get_atb_gauge() < CharacterActor.ATB_FULL:
+		_fail("action_lock_gate: ATB reset while cant_act was active")
+		GameWorld.destroy()
+		return false
+
+	var recovered_and_acted := false
+	for _i in range(10):
+		procedure.tick_once()
+		if not caster.ability_set.has_tag(HexBattleActionLockStatus.TAG_CANT_ACT):
+			if caster.get_atb_gauge() >= CharacterActor.ATB_FULL:
+				_fail("action_lock_gate: action lock expired but caster did not spend ready action")
+				GameWorld.destroy()
+				return false
+			recovered_and_acted = true
+			break
+
+	if not recovered_and_acted:
+		_fail("action_lock_gate: action lock did not expire within expected ticks")
+		GameWorld.destroy()
+		return false
+
+	GameWorld.destroy()
+	print("  [PASS] action lock gate: ATB held during cant_act, action resumes after expiry")
+	return true
+
+
+# ============================================================
 # Helpers
 # ============================================================
 
@@ -451,6 +636,17 @@ func _filter_damage(replay: Dictionary, target_id: String) -> Array:
 		if str((ev as Dictionary).get("target_actor_id", "")) == target_id:
 			result.append(ev)
 	return result
+
+
+func _find_ability_granted(replay: Dictionary, actor_id: String, config_id: String) -> Dictionary:
+	for ev in _find_events(replay, GameEvent.ABILITY_GRANTED_EVENT):
+		var ev_dict := ev as Dictionary
+		if str(ev_dict.get("actorId", "")) != actor_id:
+			continue
+		var ability: Dictionary = ev_dict.get("ability", {}) as Dictionary
+		if str(ability.get("configId", "")) == config_id:
+			return ev_dict
+	return {}
 
 
 func _has_damage_amount(events: Array, amount: float) -> bool:

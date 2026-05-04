@@ -139,6 +139,26 @@ func _on_playback_ended() -> void:
 			_fail("Actor %s hp out of range: %.2f / %.2f" % [actor_id, st.visual_hp, st.max_hp])
 			return
 
+	# Invariant 5: view ↔ logic 终态对账 (位置 / is_alive / hp / max_hp)
+	# release build 下 demo._final_state 为空 → reconciler SKIPPED, smoke 仍 PASS。
+	# 详见 addons/.../docs/view-logic-reconciliation.md。
+	var final_state: Dictionary = _main_scene.get("_final_state")
+	if final_state == null:
+		final_state = {}
+	var rec := HexBattleViewLogicReconciler.new()
+	var report: HexBattleViewLogicReconciler.ReconcileReport = await rec.reconcile(
+		final_state, _animator, _world_view, get_tree()
+	)
+	if report.skipped:
+		print("  + reconciliation   = SKIPPED (%s)" % report.skip_reason)
+	elif not report.passed:
+		_fail("view-logic reconcile: %s" % report.to_human_string())
+		return
+	else:
+		print("  + reconciliation   = PASS (%d actors, %d ms settle, drift %.4f)" % [
+			report.actor_count, report.settle_time_ms, report.settle_max_drift,
+		])
+
 	_pass(tot, cur, unit_count, snapshot.size())
 
 

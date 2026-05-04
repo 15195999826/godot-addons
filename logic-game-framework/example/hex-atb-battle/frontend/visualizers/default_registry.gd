@@ -10,6 +10,7 @@ static func create() -> FrontendVisualizerRegistry:
 	
 	# 注册所有默认 Visualizer
 	registry.register(FrontendMoveVisualizer.new())
+	registry.register(FrontendDisplacementVisualizer.new())
 	registry.register(FrontendDamageVisualizer.new())
 	registry.register(FrontendHealVisualizer.new())
 	registry.register(FrontendDeathVisualizer.new())

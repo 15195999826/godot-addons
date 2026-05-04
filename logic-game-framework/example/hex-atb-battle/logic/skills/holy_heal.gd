@@ -42,6 +42,7 @@ static var ABILITY := (
 			HexBattleTargetSelectors.current_target(),
 			Resolvers.float_val(40.0)
 		)])
+		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
 		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()
