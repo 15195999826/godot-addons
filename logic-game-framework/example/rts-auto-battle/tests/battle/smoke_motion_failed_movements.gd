@@ -18,10 +18,14 @@
 ## **AC2.5 — _path_update_needed 判定**: _long_path 空 + ticket null → true;_long_path 非空 →
 ##   false;_long_path 空但 ticket active → false。
 ##
+## **AC2.6 (M7d)**: motion 累达阈值 abort 时 set _just_failed flag → has_just_failed() == true;
+##   consume_just_failed() 后 has_just_failed() == false (idempotent);move_to() 重置 flag
+##   (新请求 = 新机会,不带 stale failure)。
+##
 ## **不验证**(M7c/d 范围):
-##   - _step 真 position update + obstr_mgr.move_shape → M7c
-##   - actor sort by (kind, spawn_seq) — RtsWorld.tick 顺序 → M7c
-##   - emit MoveFailed event 给 activity → M7d
+##   - _step 真 position update + obstr_mgr.move_shape → M7c (smoke_motion_obstruction_sync)
+##   - actor sort by (kind, spawn_seq) — RtsWorld.tick 顺序 → M7c (smoke_motion_tick_order)
+##   - RtsMotionComponent emit "rts_motion_move_failed" event → 集成 smoke 验证(activity 监听)
 extends Node
 
 
@@ -72,9 +76,10 @@ func _ready() -> void:
 	_test_move_to_resets_failed_movements()
 	_test_path_update_needed()
 	_test_countdown_triggers_long_retry()
+	_test_just_failed_flag_lifecycle()
 
 	if _failures.is_empty():
-		print("SMOKE_TEST_RESULT: PASS - motion_failed_movements — AC2.1-2.5 all OK")
+		print("SMOKE_TEST_RESULT: PASS - motion_failed_movements — AC2.1-2.6 all OK")
 		get_tree().quit(0)
 	else:
 		var msg: String = "SMOKE_TEST_RESULT: FAIL - " + ", ".join(_failures)
@@ -203,3 +208,45 @@ func _test_countdown_triggers_long_retry() -> void:
 	# 我们验证 countdown 至少能归 0 一次(motion 状态机正常推进)
 	if motion._follow_known_imperfect_path_countdown != 0:
 		_failures.append("AC2.3c: countdown didn't reach 0 after 12 ticks (got %d)" % motion._follow_known_imperfect_path_countdown)
+
+
+## AC2.6 (M7d): _just_failed flag lifecycle — abort 触发 set,consume 清,move_to 也清。
+func _test_just_failed_flag_lifecycle() -> void:
+	var motion := RtsUnitMotion.new()
+	motion.set_position_2d(Vector2(0, 0))
+	motion.move_to(Vector2(500, 500), 0.0, 0.0)
+	var facade := MockEmptyPathFacade.new()
+
+	# 起步 _just_failed 应为 false
+	if motion.has_just_failed():
+		_failures.append("AC2.6a: just_failed should be false on fresh move_to")
+
+	# 累到阈值后 abort → has_just_failed = true
+	for i in range(40):
+		motion.tick(0.05, null, facade)
+		if motion.has_just_failed():
+			break
+
+	if not motion.has_just_failed():
+		_failures.append("AC2.6b: just_failed should be true after threshold abort (failed=%d, has_target=%s)" % [motion._failed_movements, motion.has_target()])
+
+	# Idempotent consume:消费一次后 false;再调 has_just_failed 仍 false
+	motion.consume_just_failed()
+	if motion.has_just_failed():
+		_failures.append("AC2.6c: just_failed should be false after consume")
+	motion.consume_just_failed()  # 二次 consume 是 idempotent
+	if motion.has_just_failed():
+		_failures.append("AC2.6d: consume should be idempotent")
+
+	# 新 move_to 重置 flag (即使没 consume) — 防止 stale flag 跨请求泄漏
+	# 模拟:再次 abort 后不 consume,直接 move_to → flag 应该被清
+	motion.move_to(Vector2(500, 500), 0.0, 0.0)  # reset _failed_movements
+	for i in range(40):
+		motion.tick(0.05, null, facade)
+		if motion.has_just_failed():
+			break
+	if not motion.has_just_failed():
+		_failures.append("AC2.6e: just_failed should be set again after second abort")
+	motion.move_to(Vector2(0, 0), 0.0, 0.0)
+	if motion.has_just_failed():
+		_failures.append("AC2.6f: move_to should clear stale just_failed flag")

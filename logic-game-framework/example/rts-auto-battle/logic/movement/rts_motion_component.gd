@@ -95,6 +95,37 @@ func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
 		obstr_mgr.set_unit_moving_flag(owner_actor.obstruction_tag, is_moving)
 		_was_moving = is_moving
 
+	# Step 6 (M7d): MoveFailed event 反馈给 activity — motion 累达 35 失败次数 abort 时触发
+	_emit_motion_failed_if_needed()
+
+
+# ========== MoveFailed event 反馈(M7d) ==========
+
+## 检查 motion 是否上 tick abort,若是则 emit "rts_motion_move_failed" event 给 owner_actor。
+##
+## **触发条件**:motion._failed_movements 累达 35 → motion._abort_due_to_failure() set _just_failed
+## flag + stop()。本 component tick 末调此函数 emit event 给 actor → activity 监听处理。
+##
+## **不变量**:同一次 abort 只 emit 一次(consume_just_failed 清 flag);motion.move_to_*
+## 重置 _failed_movements 时 _reset_path_state 也清 _just_failed,不会有 stale flag。
+##
+## **GameWorld.event_collector null 兼容**:smoke 不 start procedure(单元测试 mock world)时
+## event_collector 未初始化,跳过 emit;motion abort 行为本身不依赖 event。
+func _emit_motion_failed_if_needed() -> void:
+	if not motion.has_just_failed():
+		return
+	motion.consume_just_failed()
+	if GameWorld == null or GameWorld.event_collector == null:
+		return
+	var move_request_kind: int = RtsMoveRequest.Type.NONE
+	if motion._move_request != null:
+		move_request_kind = motion._move_request.type
+	GameWorld.event_collector.push(RtsBattleEvents.make_motion_move_failed(
+		owner_actor.get_id(),
+		motion._failed_movements,
+		move_request_kind,
+	))
+
 
 # ========== Clearance 同步(D2 不变量) ==========
 

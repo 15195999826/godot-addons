@@ -17,6 +17,9 @@ const POST_DAMAGE_EVENT := "rts_post_damage"
 const ATTACK_RESOLVED_EVENT := "rts_attack_resolved"  # 用于 logger / AC3 兵种行为断言
 const ACTOR_DIED_EVENT := "rts_actor_died"
 
+# M7d - motion abort 反馈给 activity (failed_movements >= 35 时 motion 触发)
+const MOTION_MOVE_FAILED_EVENT := "rts_motion_move_failed"
+
 
 ## 构造 PreDamage event(供 attack action 调 EventProcessor.process_pre_event 用)
 static func make_pre_damage(source_id: String, target_id: String, damage: float) -> Dictionary:
@@ -72,4 +75,20 @@ static func make_actor_died(actor_id: String, killer_id: String) -> Dictionary:
 		"kind": ACTOR_DIED_EVENT,
 		"actor_id": actor_id,
 		"killer_id": killer_id,
+	}
+
+
+## 构造 MotionMoveFailed event (M7d) — RtsMotionComponent 在 motion._failed_movements 累达
+## MAX_FAILED_MOVEMENTS=35 触发 abort 时 emit 给 owner_actor。activity 监听后:
+##   - attack: re-acquire target / abort
+##   - harvest: reset 状态 / 找新 node
+##   - move_to: end activity (玩家 click 到不可达点)
+##
+## **fail_count** 字段记最后累计值供 debug;**move_request_kind** 让 activity 决定是否需 retry。
+static func make_motion_move_failed(actor_id: String, fail_count: int, move_request_kind: int) -> Dictionary:
+	return {
+		"kind": MOTION_MOVE_FAILED_EVENT,
+		"actor_id": actor_id,
+		"fail_count": fail_count,
+		"move_request_kind": move_request_kind,
 	}

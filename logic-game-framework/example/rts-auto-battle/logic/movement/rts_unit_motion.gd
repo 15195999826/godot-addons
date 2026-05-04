@@ -79,6 +79,14 @@ var _failed_movements: int = 0
 ## best-so-far short path 走完后倒数 N tick 触发 long retry(M7b 启用)。
 var _follow_known_imperfect_path_countdown: int = 0
 
+## M7d — 上一次 tick 是否因 _failed_movements 累达阈值 abort(MAX_FAILED_MOVEMENTS=35)。
+## RtsMotionComponent 在 motion.tick 后查 has_just_failed() → emit "motion_move_failed"
+## event 给 owner_actor → activity 监听 abort/重选目标。consume_just_failed() 清 flag。
+##
+## **不变量**:flag 只由 _abort_due_to_failure() 设;move_to_*() 通过 _reset_path_state()
+## 清(新请求 = 新机会,不要带上次失败的 sticky 状态)。
+var _just_failed: bool = false
+
 
 # ========== 字段:当前请求 + 异步 ticket ==========
 
@@ -158,6 +166,30 @@ func stop() -> void:
 	# 跟 0ad CCmpUnitMotion 行为一致(StopMoving 不重置 m_FailedMovements)。
 
 
+## 是否上 tick 因 failed_movements 累达阈值 abort(M7d 启用 — RtsMotionComponent 查询)。
+##
+## consume_just_failed() 清 flag;新 move_to() 也会清(通过 _reset_path_state)。
+func has_just_failed() -> bool:
+	return _just_failed
+
+
+## 消费 _just_failed flag(component 在 emit "motion_move_failed" event 后调)。
+##
+## 同 tick 多次 consume 是 idempotent(consume 后再查 has_just_failed = false)。
+func consume_just_failed() -> void:
+	_just_failed = false
+
+
+## 内部:failed_movements 累达阈值时调,set _just_failed flag + stop()。
+##
+## **不变量**:仅 tick 内部累达阈值时调;move_to_* 重置 _failed_movements 时不调。
+## 设计选择:flag 跟 stop() 解耦 — 公开 stop() 不破坏 _failed_movements / _just_failed
+## 计数(activity 自己 cancel 走 stop() 路径不应误触发 MoveFailed event)。
+func _abort_due_to_failure() -> void:
+	_just_failed = true
+	stop()
+
+
 # ========== 公开 API:状态查询 ==========
 
 ## 当前是否有 active 移动请求(_move_request 非空且 type != NONE)。
@@ -221,7 +253,7 @@ func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
 			if _short_path.is_empty():
 				_failed_movements += 1
 				if _failed_movements >= MAX_FAILED_MOVEMENTS:
-					stop()
+					_abort_due_to_failure()
 				return
 		else:
 			var next_long: Vector2 = _long_path.pop_back()
@@ -241,10 +273,11 @@ func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
 
 # ========== 内部 helper ==========
 
-## move_to_* 共用:清双 path、清 ticket、reset _failed_movements、reset countdown。
+## move_to_* 共用:清双 path、清 ticket、reset _failed_movements、reset countdown、清 just_failed。
 func _reset_path_state() -> void:
 	_failed_movements = 0
 	_follow_known_imperfect_path_countdown = 0
+	_just_failed = false
 	_short_path.clear()
 	_long_path.clear()
 	if _expected_path_ticket != null:
