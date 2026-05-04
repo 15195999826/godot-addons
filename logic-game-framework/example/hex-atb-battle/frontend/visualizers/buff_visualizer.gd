@@ -30,6 +30,11 @@ const BUFF_REGISTRY := {
 		"color": Color(0.6, 0.2, 0.8),
 		"primary_source": PrimarySource.STACKS,
 	},
+	HexBattleExposeBuff.CONFIG_ID: {
+		"short": "E",
+		"color": Color(0.9, 0.4, 0.2),  # 橙红, 区分 Poison 紫色
+		"primary_source": PrimarySource.NONE,  # 无 stacks, 仅 duration
+	},
 	HexBattleWardBuff.CONFIG_ID: {
 		"short": "S",
 		"color": Color(0.3, 0.5, 1.0),

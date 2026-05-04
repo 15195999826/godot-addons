@@ -19,7 +19,7 @@ static var WARD_BUFF := (
 	.config_id(CONFIG_ID)
 	.display_name("护盾")
 	.description("吸收 30 点伤害，持续 6 秒")
-	.ability_tags(["buff", "shield", "ward"])
+	.ability_tags(["buff", "positive"])
 	.component_config(HexBattleShieldComponentConfig.new(
 		SHIELD_CAPACITY,
 		["all"],
