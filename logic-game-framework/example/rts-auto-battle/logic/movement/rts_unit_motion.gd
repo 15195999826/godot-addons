@@ -132,6 +132,13 @@ var _short_path: RtsWaypointPath = null
 ## **不变量**:tick 期间 _position_2d 是 motion 唯一的位置真相;tick 外 owner 是真相。
 var _position_2d: Vector2 = Vector2.ZERO
 
+## M7d — RtsMotionComponent 在 tick 头部写入 RtsUnitSteering.apply 后的 actor.velocity(含
+## separation + deflection)。_step 用此 velocity 当方向走;为 ZERO 时 fallback 朝 next_wp 直走。
+##
+## **不变量**:component 写完 motion.tick 前必须 set_steered_velocity;motion.tick 末由
+## component 调 reset(避免下 tick 残留 stale velocity)。
+var _steered_velocity: Vector2 = Vector2.ZERO
+
 
 # ========== Static 计数器 ==========
 
@@ -279,6 +286,26 @@ func get_position_2d() -> Vector2:
 	return _position_2d
 
 
+## M7d — 设 _steered_velocity(component 在 tick 头部 RtsUnitSteering.apply 后调)。
+func set_steered_velocity(v: Vector2) -> void:
+	_steered_velocity = v
+
+
+## 当前 _step 推 next_wp 的方向(component 写 actor.velocity 用)。
+##
+## 返 ZERO 当 motion 没 short path / has_target=false。否则返 (next_wp - position).normalized()
+## * _walk_speed(等价 nav_agent 老 compute_desired_velocity 行为)。
+func compute_desired_velocity() -> Vector2:
+	if _short_path.is_empty():
+		return Vector2.ZERO
+	var next_wp: Vector2 = _short_path.back()
+	var to_next: Vector2 = next_wp - _position_2d
+	var dist: float = to_next.length()
+	if dist <= 0.0001:
+		return Vector2.ZERO
+	return (to_next / dist) * _walk_speed
+
+
 # ========== 公开 API:tick 状态机(M7b) ==========
 
 ## 主 tick — 推进 motion 一步;调用前 component 必须 `set_position_2d(owner.position_2d)`,
@@ -299,6 +326,35 @@ func get_position_2d() -> Vector2:
 ##     的 goal 中心需要 world.get_actor(eid).position_2d,M7b 阶段 ENTITY 路径返 null goal
 ##   - `facade: RtsPathfinderFacade` — 寻路调用方
 func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
+	# M7d: tick 拆两步给 RtsMotionComponent 中间插 RtsUnitSteering.apply (separation):
+	#   1. handle_path_update — path 请求 / 失败累加 / fallback
+	#   2. _step — 渐进位置 update(用 _steered_velocity 当方向)
+	# component 在两步之间调 RtsUnitSteering.apply 改 actor.velocity 后 set_steered_velocity。
+	# 老 motion.tick 直接调两步 + tail countdown,smoke 单元测试 mock facade 不依赖 component 也兼容。
+	handle_path_update(facade, world)
+	_step(delta, world)
+
+	# Tail: m_FollowKnownImperfectPathCountdown — short_path 走完后倒数 N tick 触发 long retry
+	# (best-so-far short path 可能未到真 goal,countdown 给 long path 重新规划机会)。component
+	# 调 _step 而不调本 tick 时也需要倒数,故 component.tick 也要复刻这个 tail(M7d.4)。
+	_tail_countdown_tick()
+
+
+## M7d — countdown tail 单独抽出来给 component.tick 复刻调用。
+func _tail_countdown_tick() -> void:
+	if _short_path.is_empty() and _follow_known_imperfect_path_countdown > 0:
+		_follow_known_imperfect_path_countdown -= 1
+		if _follow_known_imperfect_path_countdown == 0:
+			_long_path.clear()
+			if _expected_path_ticket != null:
+				_expected_path_ticket.clear()
+
+
+## M7d — Motion.tick step 1:path 请求 + 失败累加 + fallback;不渐进 position(留 _step)。
+##
+## **签名说明**:此 method **public** 是为让 RtsMotionComponent 显式分步调用(中间插
+## RtsUnitSteering.apply)。直接 motion.tick 用法不变。
+func handle_path_update(facade: RtsPathfinderFacade, world: Variant) -> void:
 	if not has_target():
 		return
 
@@ -322,7 +378,6 @@ func tick(delta: float, world: Variant, facade: RtsPathfinderFacade) -> void:
 				# 让 _step 走 long path 的下一段。等价于"没 vertex 绕角效果,但 unit 仍按
 				# long path 推进",跟 M5 LongPath-only 行为一致,避免 unit 站桩死锁。
 				_short_path.push_back(next_long)
-	_step(delta, world)
 
 	# m_FollowKnownImperfectPathCountdown:short_path 走完后倒数 N tick 触发 long retry
 	# (best-so-far short path 可能未到真 goal,countdown 给 long path 重新规划机会)
@@ -479,10 +534,19 @@ static func _alloc_ticket() -> int:
 ## 渐进朝 _short_path.back() (next waypoint) 走 step_len = walk_speed * delta;若 step_len 跨过
 ## next waypoint(剩余距离 < step_len)则 pop_back + _position_2d = waypoint;path 空时启动 countdown。
 ##
+## **M7d 末态**:component 在 tick 之前给 owner_actor.velocity 写 desired velocity(path 方向)
+## 后调 RtsUnitSteering.apply 加 separation;_step 用 owner_actor.velocity 当方向走(已含 sep
+## 偏转)。velocity == 0 时 fallback 朝 to_next 方向走(deterministic 兜底)。
+##
 ## **不动 actor / obstr_mgr**(component 桥接):仅 motion 内部 _position_2d。RtsMotionComponent
 ## 在 motion.tick 后调 owner.position_2d = motion.get_position_2d() + obstr_mgr.move_shape 同步。
 func _step(delta: float, _world: Variant) -> void:
 	if _short_path.is_empty():
+		# M7d: 没 path 但 _steered_velocity 非空 = 静止单位收到 separation push(纯 sep_force,
+		# 没 path desired velocity)。让 unit 受推力移动,避免 cluster 重叠。等价于 nav_agent 时代
+		# RtsUnitSteering 静止 unit 也 sep 的行为(spec line 10-12)。
+		if _steered_velocity != Vector2.ZERO:
+			_position_2d += _steered_velocity * delta
 		return
 	var next_wp: Vector2 = _short_path.back()
 	var to_next: Vector2 = next_wp - _position_2d
@@ -496,5 +560,9 @@ func _step(delta: float, _world: Variant) -> void:
 		if _short_path.is_empty() and _follow_known_imperfect_path_countdown == 0:
 			_follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
 	else:
-		# 渐进:沿 to_next 方向走 step_len
-		_position_2d += to_next / dist_to_next * step_len
+		# M7d: 渐进 — 优先用 _steered_velocity(component 已写入 RtsUnitSteering 后 actor.velocity)
+		# 当方向走;velocity == 0 时 fallback 朝 to_next 方向(deterministic 兜底,跟 M7c 行为一致)。
+		if _steered_velocity != Vector2.ZERO:
+			_position_2d += _steered_velocity * delta
+		else:
+			_position_2d += to_next / dist_to_next * step_len
