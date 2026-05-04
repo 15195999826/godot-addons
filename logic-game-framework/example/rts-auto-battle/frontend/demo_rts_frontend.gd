@@ -375,15 +375,12 @@ func _spawn_unit_for_building(building: RtsBuildingActor) -> RtsUnitActor:
 	var unit := _spawn_unit(unit_class, team_id, spawn_pos)
 	unit.stance = building.spawn_unit_stance
 	_procedure.add_unit_to_team(unit, team_id)
-	# 默认 rally 到对方 ct: 给 spawn 出来的单位 set MoveTo 敌方 ct (跟 RtsComputerPlayer
-	# attack-move 路径一致). 单位走到 ct 范围 → AutoTargetSystem 自动 acquire ct → 开打.
-	# 不设的话单位停在 spawn 点等 AutoTarget LOS 探敌, 但敌人离得远时永远不动.
-	# 玩家想改 rally 可以选中单位再下 RtsMoveUnitsCommand.
-	var enemy_ct: RtsBuildingActor = _right_ct if team_id == 0 else _left_ct
-	if enemy_ct != null and not enemy_ct.is_dead():
-		var controller := _controllers.get(unit.get_id()) as RtsUnitController
-		if controller != null:
-			controller.set_activity_chain(RtsMoveToActivity.new(enemy_ct.position_2d), true)
+	# 不设 activity_chain — AutoTargetSystem (procedure step 2.5) 全场扫敌写
+	# actor._cached_target_id, BasicAttackStrategy.decide 读 cache 返回 AttackActivity,
+	# 由 controller reconcile 接管 → 单位 approach 最近敌方 actor 并攻击.
+	# 不写 RtsMoveToActivity+override 是因为那条路径会让 controller.tick 跳过 strategy.decide
+	# (`_player_command_active=true`), 单位纯走到敌方 ct, 中途擦肩不打人 — 敌人逼近时不会切
+	# attack 是真实 bug (smoke_ai_vs_ai_observe 锁定). 玩家想改 rally 选中单位下 MoveUnitsCommand.
 	return unit
 
 
