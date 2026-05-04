@@ -553,16 +553,23 @@ func _step(delta: float, _world: Variant) -> void:
 	var dist_to_next: float = to_next.length()
 	var step_len: float = _walk_speed * delta
 
-	if dist_to_next <= step_len or dist_to_next <= ARRIVAL_THRESHOLD:
-		# 跨越 / 抵达 next waypoint:snap 到 waypoint 中心 + pop
+	# M7d: 永不 snap 让 separation 累积偏离始终保留(M6 nav_agent.integrate 风格)。
+	#   1. 渐进朝 next_wp 走(优先 _steered_velocity 含 sep,无 sep fallback to_next 方向)
+	#   2. 若 step_amt 跨过 next_wp,cap 到 dist_to_next(避免飞过头)
+	#   3. 走完后再判断 ARRIVAL:dist <= ARRIVAL 触发 pop short
+	var move_vec: Vector2
+	if _steered_velocity != Vector2.ZERO:
+		move_vec = _steered_velocity * delta
+	else:
+		# walk_speed 大 cap 不超 dist(避免飞过头),velocity 已含 sep 不需再 cap
+		var cap_step: float = min(step_len, dist_to_next)
+		move_vec = (to_next / dist_to_next) * cap_step
+	_position_2d += move_vec
+
+	# 走完后判断 ARRIVAL — 距离 <= ARRIVAL_THRESHOLD 触发 pop;不 snap _position_2d 让
+	# separation 偏离保留(group formation 4 unit 同 final_pos 时不互相覆盖到一点)
+	var dist_after: float = (next_wp - _position_2d).length()
+	if dist_after <= ARRIVAL_THRESHOLD:
 		_short_path.pop_back()
-		_position_2d = next_wp
 		if _short_path.is_empty() and _follow_known_imperfect_path_countdown == 0:
 			_follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
-	else:
-		# M7d: 渐进 — 优先用 _steered_velocity(component 已写入 RtsUnitSteering 后 actor.velocity)
-		# 当方向走;velocity == 0 时 fallback 朝 to_next 方向(deterministic 兜底,跟 M7c 行为一致)。
-		if _steered_velocity != Vector2.ZERO:
-			_position_2d += _steered_velocity * delta
-		else:
-			_position_2d += to_next / dist_to_next * step_len
