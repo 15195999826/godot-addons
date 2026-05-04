@@ -1,9 +1,11 @@
-## RTS auto-battle navigation smoke (M0.4 → P1.2 grid 重写)
+## RTS auto-battle navigation smoke (M0.4 → P1.2 grid 重写 → M5 facade retrofit)
 ##
 ## 验证: 单个 melee 单位从 (50, 250) 走到 (450, 250), 中央 (200..300, 200..300) 障碍迫使绕路;
 ## 12 秒 procedure tick 内应抵达终点 ± 10 px, 且 max_y_deviation ≥ 30 (绕路证据)。
 ##
 ## P1.2 重写: 不再依赖 NavigationServer2D / await physics_frame; A* on grid 是同步算法。
+## M5 retrofit: attach RtsPathfinderFacade 让 nav_agent.set_target 走 facade.compute_path_immediate
+## (canonicalize=true) 而非老 RtsPathfinding fallback 路径,跟 production 链路一致。
 extends Node
 
 
@@ -47,6 +49,22 @@ func _ready() -> void:
 	_agent = RtsNavAgent.new()
 	_battle_map.add_child(_agent)
 	_agent.bind_actor(_actor, _battle_map.grid)
+
+	# M5 retrofit: attach facade 让 nav_agent 走 production 链路(canonicalize+A*) 替代老 fallback。
+	# attach_passability_registry 触发 navcell_grid 构造 + 回填已有 model.is_tile_blocking obstacle。
+	var registry := RtsPassabilityClassRegistry.new()
+	var ground_cfg := RtsPassabilityClassConfig.new()
+	ground_cfg.class_name_id = "default"
+	ground_cfg.clearance = 14.0
+	registry.register(ground_cfg)
+	_battle_map.grid.attach_passability_registry(registry)
+	var navcell_grid: RtsNavcellGrid = _battle_map.grid.get_navcell_grid()
+	var hp := RtsHierarchicalPathfinder.new()
+	hp.recompute(navcell_grid, registry.get_classes())
+	var lp := RtsLongPathfinder.new(navcell_grid)
+	var facade := RtsPathfinderFacade.new(navcell_grid, hp, lp)
+	_agent.attach_pathfinder(facade, registry)
+
 	_agent.set_target(_target_pos)
 
 	# Right team must have at least 1 actor for _check_battle_end not to immediately judge.
@@ -77,9 +95,9 @@ func _ready() -> void:
 
 	_procedure.finish()
 
-	# 断言抵达
+	# 断言抵达 — 阈值 20 px 接受 canonicalize 把 target 落到 navcell 中心(navcell_size=32 → ≤ 16 px 偏移)
 	var final_dist_to_target := _actor.position_2d.distance_to(_target_pos)
-	if final_dist_to_target > 10.0:
+	if final_dist_to_target > 20.0:
 		_fail("did not arrive: final pos %s, dist to target %.2f" % [_actor.position_2d, final_dist_to_target])
 		return
 

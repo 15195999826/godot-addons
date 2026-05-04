@@ -1,12 +1,14 @@
-## RTS grid pathfinding smoke (P1.2)
+## RTS grid pathfinding smoke (P1.2 → M5 facade retrofit)
 ##
-## 验证 RtsBattleGrid + RtsPathfinding + RtsNavAgent (无 NavigationServer2D 依赖):
+## 验证 NavcellGrid + PathfinderFacade + RtsNavAgent (无 NavigationServer2D 依赖):
 ##   1. 单个 melee 单位从 (50, 250) → (450, 250), 中央 grid cells (6..9, 6..9) blocking
 ##   2. 5 秒 procedure tick 内应抵达终点 ± 10 px
 ##   3. 中途 max_y_deviation ≥ 30 (绕路证据)
 ##
-## 与 smoke_navigation.tscn 的差异: 这个 smoke 直接断言 grid + A* 链路, 不依赖
-## procedure / per_tick callback (更隔离, 服务 P1.2 acceptance 单点验证)。
+## 与 smoke_navigation.tscn 的差异: 这个 smoke 不跑 procedure tick_once,直接断 nav_agent.tick
+## + facade A* 链路(更隔离,服务 P1.2 acceptance 单点验证)。
+##
+## M5 retrofit: attach RtsPathfinderFacade 让 set_target 走 production 链路替代老 RtsPathfinding。
 extends Node
 
 
@@ -33,6 +35,21 @@ func _ready() -> void:
 	var agent := RtsNavAgent.new()
 	battle_map.add_child(agent)
 	agent.bind_actor(actor, battle_map.grid)
+
+	# M5 retrofit: attach facade 让 nav_agent 走 production 链路替代老 fallback。
+	var registry := RtsPassabilityClassRegistry.new()
+	var ground_cfg := RtsPassabilityClassConfig.new()
+	ground_cfg.class_name_id = "default"
+	ground_cfg.clearance = 14.0
+	registry.register(ground_cfg)
+	battle_map.grid.attach_passability_registry(registry)
+	var navcell_grid: RtsNavcellGrid = battle_map.grid.get_navcell_grid()
+	var hp := RtsHierarchicalPathfinder.new()
+	hp.recompute(navcell_grid, registry.get_classes())
+	var lp := RtsLongPathfinder.new(navcell_grid)
+	var facade := RtsPathfinderFacade.new(navcell_grid, hp, lp)
+	agent.attach_pathfinder(facade, registry)
+
 	agent.set_target(target_pos)
 
 	# 验证 path 已生成 (find_path 应能找到绕过中央 obstacle 的路径)
@@ -47,9 +64,9 @@ func _ready() -> void:
 		if agent.is_arrived():
 			break
 
-	# 抵达断言
+	# 抵达断言 — 阈值 20 px 接受 canonicalize 把 target 落到 navcell 中心(navcell_size=32 → ≤ 16 px 偏移)
 	var final_dist := actor.position_2d.distance_to(target_pos)
-	if final_dist > 10.0:
+	if final_dist > 20.0:
 		_fail("did not arrive: final_pos=%s dist=%.2f" % [actor.position_2d, final_dist])
 		return
 
