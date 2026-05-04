@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_long_pathfinder_unreachable"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_long_pathfinder_unreachable.gd" id="1_long_unreach"]
+
+[node name="RtsSmokeLongPathfinderUnreachable" type="Node"]
+script = ExtResource("1_long_unreach")
