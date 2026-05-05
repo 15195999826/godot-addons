@@ -1,6 +1,7 @@
 ## RtsLongPathfinder - 朴素 A* on RtsNavcellGrid (M5)
-## Deprecated fixture-only implementation. Production pathfinding goes through
-## `RtsPathfinderFacade` and delegates to `addons/sim-nav-map`.
+## Archived fixture-only implementation. Production pathfinding goes through
+## `RtsPathfinderFacade` and delegates to `addons/sim-nav-map`; new navigation
+## work belongs in `sim-nav-map` or an adapter.
 ##
 ## 0 A.D. `LongPathfinder` (helpers/LongPathfinder.h/cpp) 的 GDScript 朴素复刻。**D6 决策**:
 ## 不做 JPS + JumpPointCache,纯朴素 A*,100 单位 / 1024² grid 规模够用。M5 末若 perf 不够

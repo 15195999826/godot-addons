@@ -8,6 +8,9 @@
 
 它不是 RTS movement system，也不是 game entity model。单位如何移动、推挤、让路、编队、停止、重规划，默认属于应用层。
 
+当前 public API 边界见 [`public-api.md`](public-api.md)，稳定 smoke 入口见
+[`smoke-matrix.md`](smoke-matrix.md)。
+
 ## 目录边界
 
 ```text
@@ -95,15 +98,17 @@ tracked 参考笔记包括：
 
 ### 1. 插件收口
 
-目标：让 `sim-nav-map` 成为清晰、可维护的 addon baseline。
+状态：已收口为当前 addon baseline。
+
+目标：保持 `sim-nav-map` 是清晰、可维护的 navigation addon，而不是继续扩成 application movement system。
 
 范围：
 
-- 梳理 public API / internal helper
-- 更新 README / mental model / usage examples
-- 明确 adapter pattern
-- 清理 smoke matrix
-- 标记或迁移旧 RTS-private pathfinder fixture
+- 维护 public API / internal helper 边界
+- 保持 README / mental model / usage examples 对齐
+- 保持 adapter pattern 清晰
+- 维护 `simnav/smoke` 和 `rtslab/smoke` 两个稳定回归入口
+- 将旧 RTS-private pathfinder fixture 视为 archived compatibility coverage
 
 不做：
 
@@ -155,5 +160,6 @@ tracked 参考笔记包括：
 - `SimNavObstructionShape*` 是 navigation projection DTO，不是 game entity 基类。
 - `rts-pathfinding-lab` 是 plugin-local example，不是 public API。
 - `0ad-source` 是参考源码，不是 vendored dependency。
+- 旧 RTS-private pathfinder fixture 是历史兼容覆盖，不是新的 `sim-nav-map` work queue。
 - movement policy 默认留在 example / game layer。
 - core addon 只吸收可复用的 navigation mechanism。

@@ -58,9 +58,16 @@ vertex paths, and request queue behavior.
 
 ## Usage Mental Model
 
-项目层如何接入 `sim-nav-map`，见 [`docs/mental-model.md`](docs/mental-model.md)。
+项目层如何接入 `sim-nav-map`，见 [`docs/usage.md`](docs/usage.md) 和
+[`docs/mental-model.md`](docs/mental-model.md)。
 简短版本：game units / buildings 不应该继承 `SimNavObstructionShape*`；
 项目层 adapter 应该把真实 entity 投影成 navigation shapes，再交给 path query。
+
+Public API 边界见 [`docs/public-api.md`](docs/public-api.md)。当前稳定入口是
+`SimNavMap`、passability / obstruction projection DTO、`SimNavPathGoal`、
+`SimNavWaypointPath`、hierarchical / long / vertex pathfinder、facade 和 request
+queue。`SimNavHierarchicalChunk`、`SimNavJumpPointHit`、`SimNavPathfinderHeap`
+和 `SimNavRegionIdHelper` 仍是 internal helper。
 
 ## Example Lab
 
@@ -75,7 +82,9 @@ movement policy、selection、replan budget、push behavior、HUD 和 smoke regr
 
 ## Roadmap And References
 
+- [`docs/public-api.md`](docs/public-api.md): 当前 public API / internal helper 边界。
 - [`docs/feature-roadmap.md`](docs/feature-roadmap.md): 未来开发路线和 core / example / reference 边界。
+- [`docs/smoke-matrix.md`](docs/smoke-matrix.md): 稳定 smoke 入口和 legacy RTS fixture 边界。
 - [`docs/references/`](docs/references/): 0 A.D. 架构笔记和本地源码参考路径。
 
 ## Boundaries
@@ -93,8 +102,8 @@ stack.
 
 ## Future Directions
 
-- Stabilize the public API around `SimNavMap`, `SimNavPathGoal`,
-  `SimNavPathfinderFacade`, and `SimNavPathRequestQueue`.
+- Keep the documented public API around `SimNavMap`, `SimNavPathGoal`,
+  `SimNavPathfinderFacade`, and `SimNavPathRequestQueue` stable.
 - Formalize cache invalidation for static map edits, dynamic obstruction edits,
   hierarchical regions, and jump-point caches.
 - Add larger-map and higher-unit-count performance scenarios before tuning data
@@ -103,7 +112,7 @@ stack.
   waypoint quality.
 - Add debug rendering helpers for navcells, dirty cells, regions, obstruction
   shapes, and selected paths.
-- Move old RTS example fixture pathfinders out of production paths once all
-  consumers use `sim-nav-map` directly or through a facade.
+- Keep old RTS private pathfinder fixtures as archived compatibility coverage;
+  new navigation work should target `sim-nav-map` or an adapter.
 - Keep crowd steering, formation ranking, unit priority, and push policy outside
   the core addon unless a future game requirement proves a reusable boundary.
