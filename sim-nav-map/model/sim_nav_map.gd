@@ -11,6 +11,7 @@ var navcells_per_tile: int = 1
 var _terrain_tile_map: SimNavTerrainTileMap = null
 var _passability_registry: SimNavPassabilityClassRegistry = SimNavPassabilityClassRegistry.new()
 var _navcell_data: PackedInt32Array = PackedInt32Array()
+var _terrain_navcell_data: PackedInt32Array = PackedInt32Array()
 var _obstruction_navcell_data: PackedInt32Array = PackedInt32Array()
 var _dirtiness: PackedByteArray = PackedByteArray()
 var _obstruction_dirtiness: PackedByteArray = PackedByteArray()
@@ -37,6 +38,7 @@ func _init(
 	_static_obstruction_index = SimNavSpatialIndex.new(_default_spatial_cell_size())
 	_dynamic_obstruction_index = SimNavSpatialIndex.new(_default_spatial_cell_size())
 	_navcell_data.resize(width * height)
+	_terrain_navcell_data.resize(width * height)
 	_obstruction_navcell_data.resize(width * height)
 	_dirtiness.resize(width * height)
 	_obstruction_dirtiness.resize(width * height)
@@ -46,6 +48,7 @@ func _init(
 func register_passability_class(config: SimNavPassabilityClassConfig) -> int:
 	var mask := _passability_registry.register(config)
 	if mask != 0:
+		rebuild_terrain_passability()
 		_mark_all_static_obstructions_dirty()
 	return mask
 
@@ -75,11 +78,26 @@ func get_terrain_tile_data(tile: Vector2i) -> int:
 
 
 func set_terrain_tile_data(tile: Vector2i, value: int) -> void:
+	if not _terrain_tile_map.is_valid_tile(tile):
+		return
+	var old_value := _terrain_tile_map.get_tile_data(tile)
+	if old_value == value:
+		return
 	_terrain_tile_map.set_tile_data(tile, value)
+	_rebuild_terrain_tile_passability(tile)
 
 
 func get_navcell_terrain_data(coord: Vector2i) -> int:
 	return _terrain_tile_map.get_navcell_terrain_data(coord)
+
+
+func rebuild_terrain_passability() -> int:
+	var changed_count := 0
+	for y in range(height):
+		for x in range(width):
+			if _set_terrain_navcell_data(Vector2i(x, y), _blocked_mask_for_terrain_navcell(Vector2i(x, y)), true):
+				changed_count += 1
+	return changed_count
 
 
 func add_static_obstruction(shape: SimNavObstructionShapeStatic) -> int:
@@ -243,7 +261,7 @@ func get_navcell_data(coord: Vector2i) -> int:
 	if not is_valid_navcell(coord):
 		return 0
 	var idx := _index(coord)
-	return int(_navcell_data[idx]) | int(_obstruction_navcell_data[idx])
+	return int(_navcell_data[idx]) | int(_terrain_navcell_data[idx]) | int(_obstruction_navcell_data[idx])
 
 
 func set_navcell_data(coord: Vector2i, value: int) -> void:
@@ -375,6 +393,51 @@ func _clear_obstruction_navcell_data() -> void:
 		_obstruction_navcell_data[i] = 0
 
 
+func _rebuild_terrain_tile_passability(tile: Vector2i) -> int:
+	if not _terrain_tile_map.is_valid_tile(tile):
+		return 0
+	var changed_count := 0
+	var start := _terrain_tile_map.tile_origin_navcell(tile)
+	var end_x := mini(width - 1, start.x + navcells_per_tile - 1)
+	var end_y := mini(height - 1, start.y + navcells_per_tile - 1)
+	for y in range(start.y, end_y + 1):
+		for x in range(start.x, end_x + 1):
+			var coord := Vector2i(x, y)
+			if _set_terrain_navcell_data(coord, _blocked_mask_for_terrain_navcell(coord), true):
+				changed_count += 1
+	return changed_count
+
+
+func _set_terrain_navcell_data(coord: Vector2i, value: int, mark_dirty: bool) -> bool:
+	if not is_valid_navcell(coord):
+		return false
+	var idx := _index(coord)
+	if int(_terrain_navcell_data[idx]) == value:
+		return false
+	var old_value := get_navcell_data(coord)
+	_terrain_navcell_data[idx] = value
+	if mark_dirty and old_value != get_navcell_data(coord):
+		_dirtiness[idx] = 1
+		return true
+	return false
+
+
+func _blocked_mask_for_terrain_navcell(coord: Vector2i) -> int:
+	return _blocked_mask_for_terrain_data(get_navcell_terrain_data(coord))
+
+
+func _blocked_mask_for_terrain_data(terrain_data: int) -> int:
+	var result := 0
+	for config in _passability_registry.get_classes():
+		if not config.affects_pathfinding:
+			continue
+		if config.terrain_mask == 0:
+			continue
+		if (terrain_data & config.terrain_mask) != 0:
+			result |= 1 << config.bit_index
+	return result
+
+
 func _or_obstruction_navcell_data_internal(coord: Vector2i, mask: int, mark_dirty: bool) -> void:
 	if not is_valid_navcell(coord):
 		return
@@ -390,7 +453,7 @@ func _or_obstruction_navcell_data_internal(coord: Vector2i, mask: int, mark_dirt
 
 func _mark_rebuild_changes_dirty(old_data: PackedInt32Array) -> void:
 	for i in range(_navcell_data.size()):
-		var next_value := int(_navcell_data[i]) | int(_obstruction_navcell_data[i])
+		var next_value := int(_navcell_data[i]) | int(_terrain_navcell_data[i]) | int(_obstruction_navcell_data[i])
 		if int(old_data[i]) != next_value:
 			_dirtiness[i] = 1
 
@@ -399,7 +462,7 @@ func _compose_navcell_data() -> PackedInt32Array:
 	var result := PackedInt32Array()
 	result.resize(_navcell_data.size())
 	for i in range(_navcell_data.size()):
-		result[i] = int(_navcell_data[i]) | int(_obstruction_navcell_data[i])
+		result[i] = int(_navcell_data[i]) | int(_terrain_navcell_data[i]) | int(_obstruction_navcell_data[i])
 	return result
 
 

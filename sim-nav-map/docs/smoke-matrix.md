@@ -30,9 +30,9 @@ git -C addons diff --check
 ```
 
 `simnav/smoke` is the core addon contract. It verifies reusable navigation
-primitives: map state, passability, terrain data access, obstruction projection,
-dirty lifecycle, reachability, long/short query behavior, cache invalidation,
-and request queue behavior.
+primitives: map state, passability, terrain data access and derived terrain
+passability, obstruction projection, dirty lifecycle, reachability, long/short
+query behavior, cache invalidation, and request queue behavior.
 
 `rtslab/smoke` is the adapter/playable regression contract. It verifies that
 `examples/rts-pathfinding-lab` can consume the core addon through its adapter and
@@ -45,6 +45,26 @@ Feature 1 may start only after both baseline groups pass, this document and
 `docs/references/0ad-source/` remains untracked. Feature-specific smoke added by
 later roadmap items should be registered into `simnav/smoke` for core addon
 contracts or `rtslab/smoke` for lab adapter/playable contracts.
+
+## Feature 1 Terrain Passability Contract
+
+Feature 1 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_terrain_tile_map.tscn` in
+  `simnav/smoke`: verifies terrain tile projection, terrain mask -> navcell
+  passability derivation, dirty marking on terrain edit, class-specific terrain
+  masks, and rebuild stability.
+- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
+  `simnav/smoke`: verifies the public map-level terrain edit and rebuild entry
+  points.
+- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_terrain_adapter.tscn`
+  in `rtslab/smoke`: verifies the lab adapter can project a terrain preset into
+  `SimNavMap` and query two passability classes without adding ship gameplay or
+  lab movement policy to core.
+
+Feature 2 may start when these Feature 1 smoke contracts, the default lab
+playable regression, `git -C addons diff --check`, and the
+`docs/references/0ad-source/` untracked check are all green.
 
 ## Discovery Contract
 
@@ -66,7 +86,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 
 - public API constructor/default contracts
 - passability class registration
-- terrain tile data
+- terrain tile data and terrain-derived navcell passability
 - dirty navcell lifecycle
 - spatial index queries
 - path goal geometry
@@ -82,6 +102,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 `rtslab/smoke` covers:
 
 - the headless lab movement/pathfinding contract
+- the lab terrain preset adapter contract
 - the real lab scene loading path
 
 ## Legacy RTS Fixture Boundary

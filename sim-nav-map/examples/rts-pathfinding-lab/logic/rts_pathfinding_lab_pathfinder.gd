@@ -28,6 +28,56 @@ func prewarm_static_context(static_obstacles: Array[RtsPathfindingLabObstacle]) 
 	_get_static_nav_context(static_obstacles)
 
 
+func build_terrain_nav_context(
+	terrain_tiles: Dictionary,
+	passability_configs: Array[SimNavPassabilityClassConfig],
+	p_navcells_per_tile: int = 2
+) -> Dictionary:
+	var width := int(ceil(map_size.x / cell_size))
+	var height := int(ceil(map_size.y / cell_size))
+	var nav_map := SimNavMap.new(width, height, cell_size, Vector2.ZERO, p_navcells_per_tile)
+	var pass_masks: Dictionary = {}
+	var recompute_masks: Array[int] = []
+	for config in passability_configs:
+		var mask := nav_map.register_passability_class(config)
+		pass_masks[config.class_name_id] = mask
+		if mask != 0:
+			recompute_masks.append(mask)
+	for tile_key in terrain_tiles.keys():
+		var tile: Vector2i = tile_key
+		nav_map.set_terrain_tile_data(tile, int(terrain_tiles[tile_key]))
+	var hierarchical := SimNavHierarchicalPathfinder.new()
+	hierarchical.recompute(nav_map, recompute_masks)
+	return {
+		"nav_map": nav_map,
+		"pass_masks": pass_masks,
+		"hierarchical": hierarchical,
+	}
+
+
+func plan_path_with_terrain_context(
+	start: Vector2,
+	goal: Vector2,
+	terrain_context: Dictionary,
+	passability_class_name: String
+) -> Array[Vector2]:
+	var nav_map := terrain_context.get("nav_map", null) as SimNavMap
+	var hierarchical := terrain_context.get("hierarchical", null) as SimNavHierarchicalPathfinder
+	var pass_masks: Dictionary = terrain_context.get("pass_masks", {})
+	var pass_mask := int(pass_masks.get(passability_class_name, 0))
+	if nav_map == null or pass_mask == 0:
+		return []
+	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
+	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
+	var path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, SimNavPathGoal.point(goal), pass_mask))
+	last_report = {
+		"used_terrain_context": true,
+		"passability_class_name": passability_class_name,
+		"path_size": path.size(),
+	}
+	return path
+
+
 func plan_path(
 	start: Vector2,
 	goal: Vector2,
