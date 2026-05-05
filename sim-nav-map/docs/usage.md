@@ -18,17 +18,40 @@ dynamic obstructions, and dirty tracking. It does not own game units.
 ## 2. Register Passability
 
 ```gdscript
+const TERRAIN_WATER := 1
+const TERRAIN_CLIFF := 2
+
 var ground := SimNavPassabilityClassConfig.new()
 ground.class_name_id = "ground"
 ground.clearance = unit_radius
 ground.affects_pathfinding = true
+ground.terrain_mask = TERRAIN_WATER | TERRAIN_CLIFF
 var ground_mask := nav_map.register_passability_class(ground)
 ```
 
 Keep passability names project-owned. The addon only assigns masks and evaluates
 map/path queries against those masks.
+`terrain_mask` is a project-owned bitmask over terrain tile data: if a terrain
+tile contains any bit from a class's `terrain_mask`, the covered navcells are
+blocked for that class.
 
-## 3. Project Entities Into Shapes
+## 3. Project Terrain Data
+
+```gdscript
+nav_map.set_terrain_tile_data(Vector2i(3, 2), TERRAIN_WATER)
+```
+
+Use `SimNavMap.set_terrain_tile_data()` for edits that should affect path
+queries. It stores the raw terrain tile value, derives navcell passability for
+registered classes, and marks changed navcells dirty. If a map tool edits
+`nav_map.get_terrain_tile_map()` directly, call
+`nav_map.rebuild_terrain_passability()` before rebuilding reachability or
+querying paths.
+
+Terrain remains navigation input, not gameplay. The addon does not define land,
+water, ship behavior, terrain art, or movement rules.
+
+## 4. Project Entities Into Shapes
 
 Static obstacles:
 
@@ -58,7 +81,7 @@ nav_map.replace_dynamic_obstructions([unit_shape])
 Do not subclass `SimNavObstructionShape*` for real game entities. Treat shapes as
 projection DTOs created by an adapter.
 
-## 4. Query A Long Path
+## 5. Query A Long Path
 
 ```gdscript
 var hierarchical := SimNavHierarchicalPathfinder.new()
@@ -79,7 +102,7 @@ before long-path search. For `POINT` goals, it may rewrite the supplied
 `SimNavPathRequestQueue`, if the original command target must remain unchanged.
 If your game wants different fallback behavior, keep that policy in the adapter.
 
-## 5. Query A Short Path
+## 6. Query A Short Path
 
 ```gdscript
 var request := SimNavShortPathRequest.new()
@@ -98,7 +121,7 @@ var path := vertex_pathfinder.compute_short_path_immediate(request)
 Short-path query policy, such as control-group filtering and moving-unit
 avoidance, is request data supplied by the caller.
 
-## 6. Queue Requests
+## 7. Queue Requests
 
 Use `SimNavPathRequestQueue` when a caller wants to process long/short path
 requests through a small frame budget or worker batch:
@@ -114,7 +137,7 @@ The queue clones the submitted `SimNavPathGoal` / `SimNavShortPathRequest` at
 enqueue time. Later mutations to the caller-owned goal/request do not change the
 queued work item.
 
-## 7. Consume The Result
+## 8. Consume The Result
 
 `SimNavWaypointPath` is a plan, not movement execution. The caller decides:
 

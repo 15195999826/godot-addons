@@ -5,6 +5,7 @@
     "smoke": {
       "scenes": [
         "smoke/smoke_rts_pathfinding_lab.tscn",
+        "smoke/smoke_rts_pathfinding_lab_terrain_adapter.tscn",
         "smoke/smoke_rts_pathfinding_lab_scene_load.tscn"
       ]
     }

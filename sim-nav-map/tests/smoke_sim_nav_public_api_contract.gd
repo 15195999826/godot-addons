@@ -44,6 +44,7 @@ func _test_constructor_defaults() -> void:
 	_assert_equal_int(-1, config.bit_index, "passability config bit_index should start unassigned")
 	_assert_float(0.0, config.clearance, "passability config clearance should default to zero")
 	_assert_true(config.affects_pathfinding, "passability config should affect pathfinding by default")
+	_assert_equal_int(0, config.terrain_mask, "passability config terrain_mask should default to zero")
 
 	var static_shape := SimNavObstructionShapeStatic.new()
 	_assert_equal_int(SimNavObstructionShape.Type.STATIC, static_shape.type, "static obstruction should set base type")
@@ -71,8 +72,13 @@ func _test_map_projection_entry_points() -> void:
 	var nav_map := SimNavMap.new(8, 6, 8.0, Vector2.ZERO, 2)
 	var ground_mask := nav_map.register_passability_class(_class_config("ground", 0.0, true))
 	_assert_equal_int(1, ground_mask, "map should register first passability mask")
+	var terrain_ground := _class_config("terrain_ground", 0.0, true)
+	terrain_ground.terrain_mask = 0x20
+	var terrain_ground_mask := nav_map.register_passability_class(terrain_ground)
 	nav_map.set_terrain_tile_data(Vector2i(1, 0), 0x20)
 	_assert_equal_int(0x20, nav_map.get_navcell_terrain_data(Vector2i(2, 1)), "map should expose terrain tile data through navcells")
+	_assert_false(nav_map.is_passable_navcell(Vector2i(2, 1), terrain_ground_mask), "map should derive terrain passability from terrain_mask")
+	_assert_equal_int(0, nav_map.rebuild_terrain_passability(), "unchanged terrain passability rebuild should be stable")
 
 	var static_shape := SimNavObstructionShapeStatic.new()
 	static_shape.entity_id = "wall"

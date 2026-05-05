@@ -25,7 +25,7 @@ These classes are the supported integration surface for game/example adapters:
 
 | Class | Responsibility |
 |---|---|
-| `SimNavMap` | Central map state: navcell geometry, terrain data, passability classes, obstruction data, dirty tracking, world/navcell conversion. |
+| `SimNavMap` | Central map state: navcell geometry, terrain data, derived terrain passability, passability classes, obstruction data, dirty tracking, world/navcell conversion. |
 | `SimNavPassabilityClassConfig` | Per-class passability configuration: name, clearance, terrain mask, and pathfinding participation. |
 | `SimNavPassabilityClassRegistry` | Registers passability classes and assigns masks. Usually accessed through `SimNavMap`. |
 | `SimNavTerrainTileMap` | Coarser terrain tile data used by `SimNavMap`. Usually accessed through `SimNavMap`. |
@@ -59,7 +59,7 @@ methods remain implementation details.
   `get_passability_classes()`, `get_passability_mask()`.
 - Terrain: `get_terrain_tile_map()`, `navcell_to_terrain_tile()`,
   `get_terrain_tile_data()`, `set_terrain_tile_data()`,
-  `get_navcell_terrain_data()`.
+  `get_navcell_terrain_data()`, `rebuild_terrain_passability()`.
 - Obstructions: `add_static_obstruction()`, `add_dynamic_obstruction()`,
   `remove_obstruction()`, `move_obstruction()`, `clear_dynamic_obstructions()`,
   `replace_dynamic_obstructions()`, `get_obstruction_shape()`,
@@ -73,6 +73,8 @@ methods remain implementation details.
 - Navcell helpers: `navcell_center_world()`, `world_to_navcell()`,
   `is_passable_navcell()`, `get_navcell_data()`, `set_navcell_data()`,
   `or_navcell_data()`, `and_navcell_data()`, `is_valid_navcell()`.
+  `get_navcell_data()` composes manual/base navcell data, derived terrain
+  passability, and static obstruction raster data.
 
 Projection DTOs:
 
@@ -89,12 +91,22 @@ Projection DTOs:
 
 - `SimNavPassabilityClassConfig` is a field DTO: `class_name_id`, `bit_index`,
   `clearance`, `affects_pathfinding`, and `terrain_mask`.
+- `terrain_mask` is interpreted against `SimNavTerrainTileMap` tile data. When
+  `(tile_data & terrain_mask) != 0`, that passability class is blocked for every
+  navcell covered by the terrain tile. `terrain_mask == 0` means terrain data
+  does not block that class. Terrain bits remain project-owned, so a game can
+  map bits to water, cliff, slope, shore, material, or other navigation surface
+  inputs without making those concepts core gameplay policy.
 - `SimNavPassabilityClassRegistry` exposes `register()`, `get_pass_class()`,
   `get_mask()`, `get_class_by_mask()`, `get_classes()`, `max_clearance()`, and
   `size()`.
 - `SimNavTerrainTileMap` exposes `navcell_to_tile()`, `tile_origin_navcell()`,
   `is_valid_tile()`, `get_tile_data()`, `set_tile_data()`, and
   `get_navcell_terrain_data()`.
+- Prefer `SimNavMap.set_terrain_tile_data()` for terrain edits. It updates the
+  raw tile data, derives terrain passability into navcells, and marks changed
+  navcells dirty. If a tool edits `SimNavTerrainTileMap` directly, call
+  `SimNavMap.rebuild_terrain_passability()` before path queries.
 
 ### Path Queries
 

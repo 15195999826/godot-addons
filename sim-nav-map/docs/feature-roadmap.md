@@ -23,6 +23,15 @@ V1 已具备：
 - dirty lifecycle、hierarchical reachability、long pathfinder、vertex short pathfinder。
 - path request queue 和 lab adapter smoke。
 
+Feature 1 已补齐：
+
+- `SimNavMap.set_terrain_tile_data()` 会把 terrain tile data 派生成 navcell
+  passability，并 mark changed navcells dirty。
+- `SimNavPassabilityClassConfig.terrain_mask` 按 class 解释 terrain bits，让同一
+  terrain surface 对 ground / ship / unrestricted 等 class 有不同 passability。
+- `rts-pathfinding-lab` 只新增 terrain preset adapter smoke，不把 ship gameplay、
+  terrain edit UI 或 movement policy 上提到 core。
+
 V1 不承诺：
 
 - 完整 RTS movement system。
@@ -223,6 +232,27 @@ class 的 navcell mask。地图 / terrain 是寻路基础能力的一部分，�
 ```powershell
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
+
+### 完成记录
+
+Feature 1 的当前完成契约：
+
+- core terrain contract 在 `smoke_sim_nav_terrain_tile_map.tscn` 和
+  `smoke_sim_nav_public_api_contract.tscn` 中覆盖。
+- lab adapter contract 在
+  `smoke_rts_pathfinding_lab_terrain_adapter.tscn` 中覆盖。
+- terrain-derived passability 只写入 core navigation data；lab movement、
+  selection、command、formation、ship gameplay、HUD policy 仍是 non-scope。
+
+### Feature 2 入口条件
+
+进入 Feature 2 前必须先确认：
+
+- `./tools/run_tests.ps1 simnav/smoke rtslab/smoke` 通过。
+- `git -C addons diff --check` 通过。
+- `git -C addons status --short -- sim-nav-map/docs/references/0ad-source` 无输出。
+- Feature 2 只围绕 passability class / clearance rasterization，不把 lab gameplay
+  policy、dirty cache lifecycle 扩展或 request/result DTO 一并带入。
 
 ## Feature 2: Class-Aware Clearance Rasterization
 
