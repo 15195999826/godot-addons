@@ -398,10 +398,13 @@ func _rebuild_terrain_tile_passability(tile: Vector2i) -> int:
 		return 0
 	var changed_count := 0
 	var start := _terrain_tile_map.tile_origin_navcell(tile)
-	var end_x := mini(width - 1, start.x + navcells_per_tile - 1)
-	var end_y := mini(height - 1, start.y + navcells_per_tile - 1)
-	for y in range(start.y, end_y + 1):
-		for x in range(start.x, end_x + 1):
+	var terrain_padding := _clearance_navcell_padding(_passability_registry.max_clearance())
+	var start_x := maxi(0, start.x - terrain_padding)
+	var start_y := maxi(0, start.y - terrain_padding)
+	var end_x := mini(width - 1, start.x + navcells_per_tile - 1 + terrain_padding)
+	var end_y := mini(height - 1, start.y + navcells_per_tile - 1 + terrain_padding)
+	for y in range(start_y, end_y + 1):
+		for x in range(start_x, end_x + 1):
 			var coord := Vector2i(x, y)
 			if _set_terrain_navcell_data(coord, _blocked_mask_for_terrain_navcell(coord), true):
 				changed_count += 1
@@ -423,19 +426,78 @@ func _set_terrain_navcell_data(coord: Vector2i, value: int, mark_dirty: bool) ->
 
 
 func _blocked_mask_for_terrain_navcell(coord: Vector2i) -> int:
-	return _blocked_mask_for_terrain_data(get_navcell_terrain_data(coord))
+	var result := 0
+	for config in _passability_registry.get_classes():
+		if _terrain_blocks_navcell_for_class(coord, config):
+			result |= 1 << config.bit_index
+	return result
 
 
 func _blocked_mask_for_terrain_data(terrain_data: int) -> int:
 	var result := 0
 	for config in _passability_registry.get_classes():
-		if not config.affects_pathfinding:
-			continue
-		if config.terrain_mask == 0:
-			continue
-		if (terrain_data & config.terrain_mask) != 0:
+		if _terrain_data_blocks_class(terrain_data, config):
 			result |= 1 << config.bit_index
 	return result
+
+
+func _terrain_blocks_navcell_for_class(coord: Vector2i, config: SimNavPassabilityClassConfig) -> bool:
+	if not is_valid_navcell(coord):
+		return false
+	if not _class_uses_terrain_mask(config):
+		return false
+	if config.clearance <= 0.0:
+		return _terrain_data_blocks_class(get_navcell_terrain_data(coord), config)
+	var center_world := navcell_center_world(coord)
+	var padding := _clearance_navcell_padding(config.clearance)
+	var start_x := maxi(0, coord.x - padding)
+	var end_x := mini(width - 1, coord.x + padding)
+	var start_y := maxi(0, coord.y - padding)
+	var end_y := mini(height - 1, coord.y + padding)
+	for y in range(start_y, end_y + 1):
+		for x in range(start_x, end_x + 1):
+			var terrain_coord := Vector2i(x, y)
+			if not _terrain_data_blocks_class(get_navcell_terrain_data(terrain_coord), config):
+				continue
+			if _point_overlaps_navcell_rect_with_clearance(center_world, terrain_coord, config.clearance):
+				return true
+	return false
+
+
+func _terrain_data_blocks_class(terrain_data: int, config: SimNavPassabilityClassConfig) -> bool:
+	if not _class_uses_terrain_mask(config):
+		return false
+	return (terrain_data & config.terrain_mask) != 0
+
+
+func _class_uses_terrain_mask(config: SimNavPassabilityClassConfig) -> bool:
+	if config == null:
+		return false
+	if not config.affects_pathfinding:
+		return false
+	return config.terrain_mask != 0
+
+
+func _point_overlaps_navcell_rect_with_clearance(point: Vector2, coord: Vector2i, clearance: float) -> bool:
+	var min_world := origin + Vector2(float(coord.x), float(coord.y)) * navcell_size
+	var max_world := min_world + Vector2(navcell_size, navcell_size)
+	var dx := 0.0
+	if point.x < min_world.x:
+		dx = min_world.x - point.x
+	elif point.x > max_world.x:
+		dx = point.x - max_world.x
+	var dy := 0.0
+	if point.y < min_world.y:
+		dy = min_world.y - point.y
+	elif point.y > max_world.y:
+		dy = point.y - max_world.y
+	return dx * dx + dy * dy <= clearance * clearance + 0.001
+
+
+func _clearance_navcell_padding(clearance: float) -> int:
+	if clearance <= 0.0:
+		return 0
+	return int(ceil(clearance / maxf(navcell_size, 0.001))) + 1
 
 
 func _or_obstruction_navcell_data_internal(coord: Vector2i, mask: int, mark_dirty: bool) -> void:
