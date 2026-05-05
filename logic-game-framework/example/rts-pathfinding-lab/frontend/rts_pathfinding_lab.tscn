@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://rts_pathfinding_lab_scene"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-pathfinding-lab/frontend/rts_pathfinding_lab.gd" id="1_lab"]
+
+[node name="RtsPathfindingLab" type="Node2D"]
+script = ExtResource("1_lab")
+

@@ -1,0 +1,12 @@
+{
+  "namespace": "rtslab",
+  "default_timeout_ms": 45000,
+  "groups": {
+    "smoke": {
+      "scenes": [
+        "smoke/smoke_rts_pathfinding_lab.tscn",
+        "smoke/smoke_rts_pathfinding_lab_scene_load.tscn"
+      ]
+    }
+  }
+}
