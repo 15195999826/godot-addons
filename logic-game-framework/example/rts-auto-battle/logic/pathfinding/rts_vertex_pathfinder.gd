@@ -1,4 +1,6 @@
 ## RtsVertexPathfinder - 短程绕避(visibility graph + A*) (M6 引入,M6a/b/c 完整)
+## Deprecated fixture-only implementation. Production pathfinding goes through
+## `RtsPathfinderFacade` and delegates to `addons/sim-nav-map`.
 ##
 ## 0 A.D. `helpers/VertexPathfinder.cpp` (~1500 行 C++) 的 GDScript 复刻。在 [start, goal] 间
 ## 一个有限大小的 search box 内,把 OBB corner / 圆 AABB corner / 搜索框 4 角 / terrain 边界中点

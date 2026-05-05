@@ -1,0 +1,23 @@
+{
+  "namespace": "simnav",
+  "default_timeout_ms": 30000,
+  "groups": {
+    "smoke": {
+      "scenes": [
+        "smoke_sim_nav_passability_registry.tscn",
+        "smoke_sim_nav_terrain_tile_map.tscn",
+        "smoke_sim_nav_dirty_lifecycle.tscn",
+        "smoke_sim_nav_spatial_index.tscn",
+        "smoke_sim_nav_path_goal.tscn",
+        "smoke_sim_nav_map_tracer.tscn",
+        "smoke_sim_nav_obstruction_manager.tscn",
+        "smoke_sim_nav_hierarchical_reachability.tscn",
+        "smoke_sim_nav_hierarchical_dirty_recompute.tscn",
+        "smoke_sim_nav_jump_point_cache.tscn",
+        "smoke_sim_nav_long_pathfinder.tscn",
+        "smoke_sim_nav_vertex_pathfinder.tscn",
+        "smoke_sim_nav_path_request_queue.tscn"
+      ]
+    }
+  }
+}

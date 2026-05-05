@@ -22,6 +22,10 @@ var _drag_start: Vector2 = Vector2.ZERO
 var _drag_current: Vector2 = Vector2.ZERO
 var _is_dragging: bool = false
 var _last_action: String = "ready"
+var _last_step_usec: int = 0
+var _max_step_usec: int = 0
+var _total_step_usec: int = 0
+var _measured_step_count: int = 0
 
 
 func _ready() -> void:
@@ -36,7 +40,12 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if not _paused:
+		var step_start_usec := Time.get_ticks_usec()
 		_world.step(minf(delta, 0.05))
+		_last_step_usec = Time.get_ticks_usec() - step_start_usec
+		_max_step_usec = maxi(_max_step_usec, _last_step_usec)
+		_total_step_usec += _last_step_usec
+		_measured_step_count += 1
 	_update_hud()
 	queue_redraw()
 
@@ -65,6 +74,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R:
 				_world.setup_default()
 				_selected_unit_ids = _world.get_mobile_unit_ids()
+				_reset_perf_metrics()
 				_last_action = "reset"
 			KEY_SPACE:
 				_paused = not _paused
@@ -192,7 +202,8 @@ func _draw_grid() -> void:
 
 func _update_hud() -> void:
 	var metrics := _world.analyze_movement()
-	_hud.text = "RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space pause | G group=%s | D dynamic=%s\narrived %d/%d  max_final_error %.1f  max_overlap %.2f  obstacle_violations %d  ticks %d" % [
+	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
+	_hud.text = "RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space pause | G group=%s | D dynamic=%s\narrived %d/%d  max_final_error %.1f  max_overlap %.2f  obstacle_violations %d  ticks %d\nworld.step %.2fms  avg %.2fms  max %.2fms  replans %d/%d pending %d" % [
 		_mode_name(),
 		_selected_unit_ids.size(),
 		_last_action,
@@ -204,6 +215,12 @@ func _update_hud() -> void:
 		float(metrics.get("max_overlap", 0.0)),
 		int(metrics.get("obstacle_violations", 0)),
 		int(metrics.get("ticks", 0)),
+		float(_last_step_usec) / 1000.0,
+		avg_step_msec,
+		float(_max_step_usec) / 1000.0,
+		int(metrics.get("last_replans_this_tick", 0)),
+		int(metrics.get("max_replans_per_tick", 0)),
+		int(metrics.get("pending_replans", 0)),
 	]
 
 
@@ -225,3 +242,10 @@ func _rect_from_points(a: Vector2, b: Vector2) -> Rect2:
 	var pos := Vector2(minf(a.x, b.x), minf(a.y, b.y))
 	var end := Vector2(maxf(a.x, b.x), maxf(a.y, b.y))
 	return Rect2(pos, end - pos)
+
+
+func _reset_perf_metrics() -> void:
+	_last_step_usec = 0
+	_max_step_usec = 0
+	_total_step_usec = 0
+	_measured_step_count = 0
