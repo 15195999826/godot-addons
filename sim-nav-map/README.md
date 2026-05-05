@@ -56,6 +56,28 @@ lifecycle, spatial index queries, path goals, map tracing, obstruction manager,
 hierarchical reachability and dirty recompute, jump-point cache, long paths,
 vertex paths, and request queue behavior.
 
+## Usage Mental Model
+
+项目层如何接入 `sim-nav-map`，见 [`docs/mental-model.md`](docs/mental-model.md)。
+简短版本：game units / buildings 不应该继承 `SimNavObstructionShape*`；
+项目层 adapter 应该把真实 entity 投影成 navigation shapes，再交给 path query。
+
+## Example Lab
+
+插件内的 playable usage sample 位于
+[`examples/rts-pathfinding-lab/`](examples/rts-pathfinding-lab/)。它负责 adapter、
+movement policy、selection、replan budget、push behavior、HUD 和 smoke regression；
+这些都不是 core addon public API。
+
+```powershell
+./tools/run_tests.ps1 rtslab/smoke
+```
+
+## Roadmap And References
+
+- [`docs/feature-roadmap.md`](docs/feature-roadmap.md): 未来开发路线和 core / example / reference 边界。
+- [`docs/references/`](docs/references/): 0 A.D. 架构笔记和本地源码参考路径。
+
 ## Boundaries
 
 The addon owns map/pathfinding primitives only. It does not currently own unit

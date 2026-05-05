@@ -2,8 +2,8 @@ class_name RtsPathfindingLabPathfinder
 extends RefCounted
 
 
-const LabObstacle := preload("res://addons/logic-game-framework/example/rts-pathfinding-lab/logic/rts_pathfinding_lab_obstacle.gd")
-const LabUnit := preload("res://addons/logic-game-framework/example/rts-pathfinding-lab/logic/rts_pathfinding_lab_unit.gd")
+const LabObstacle := preload("res://addons/sim-nav-map/examples/rts-pathfinding-lab/logic/rts_pathfinding_lab_obstacle.gd")
+const LabUnit := preload("res://addons/sim-nav-map/examples/rts-pathfinding-lab/logic/rts_pathfinding_lab_unit.gd")
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var cell_size: float = 16.0

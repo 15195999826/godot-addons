@@ -1,7 +1,7 @@
 extends Node
 
 
-const LAB_SCENE_PATH: String = "res://addons/logic-game-framework/example/rts-pathfinding-lab/frontend/rts_pathfinding_lab.tscn"
+const LAB_SCENE_PATH: String = "res://addons/sim-nav-map/examples/rts-pathfinding-lab/frontend/rts_pathfinding_lab.tscn"
 const MODE_COMMAND: int = 0
 const MODE_OBSTACLE: int = 1
 const MODE_BLOCKER: int = 2
