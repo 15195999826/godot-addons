@@ -79,6 +79,22 @@ var _failed_movements: int = 0
 ## best-so-far short path 走完后倒数 N tick 触发 long retry(M7b 启用)。
 var _follow_known_imperfect_path_countdown: int = 0
 
+## 0ad-refactor Phase B — 当前 turn 速度(单位 px/s)。post_move 内 update_movement_state 写,
+## pre_move 内 needUpdate 决策读。0ad CCmpUnitMotion.h:233 m_CurrentSpeed.
+var _current_speed: float = 0.0
+
+## 0ad-refactor Phase B — 上一 turn 速度(单位 px/s)。pre_move 内 needUpdate 决策读,post_move
+## 内 update_movement_state 把 _current_speed 拷到此(下次 pre_move 时此为"上次")。0ad
+## CCmpUnitMotion.h:m_LastTurnSpeed。决策动机:0 A.D. needUpdate 判定 = current OR last OR
+## moveRequest 非空 — last 字段让"刚停下"的单位本 turn 仍跑完整 PostMove(写回最终位置)。
+var _last_turn_speed: float = 0.0
+
+## 0ad-refactor Phase C — Push pair 力度按 weight ratio 分配:重单位推轻单位多,轻单位推
+## 重单位少。0 A.D. CCmpUnitMotion::GetWeight。RtsMotionComponent.attach_default 默认设
+## walk_speed × 0.1(0 A.D. template 简化默认等价 — 普通单位 walk_speed=80 → weight=8,
+## 重型单位 walk_speed 高 → 重 weight)。
+var _weight: float = 8.0
+
 ## M7d — 上一次 tick 是否因 _failed_movements 累达阈值 abort(MAX_FAILED_MOVEMENTS=35)。
 ## RtsMotionComponent 在 motion.tick 后查 has_just_failed() → emit "motion_move_failed"
 ## event 给 owner_actor → activity 监听 abort/重选目标。consume_just_failed() 清 flag。
@@ -274,6 +290,17 @@ func get_clearance() -> float:
 func set_clearance(c: float) -> void:
 	Log.assert_crash(c > 0.0, "RtsUnitMotion", "set_clearance: c must be > 0, got %f" % c)
 	_clearance = c
+
+
+## 0ad-refactor Phase C — Push pair 力度 weight ratio 用;> 0 才合法。
+## RtsMotionComponent.attach_default 默认设 walk_speed × 0.1。
+func get_weight() -> float:
+	return _weight
+
+
+func set_weight(w: float) -> void:
+	Log.assert_crash(w > 0.0, "RtsUnitMotion", "set_weight: w must be > 0, got %f" % w)
+	_weight = w
 
 
 ## 同步 actor 位置进 motion(M7b/c component 每 tick 在 motion.tick 前调)。
@@ -573,3 +600,224 @@ func _step(delta: float, _world: Variant) -> void:
 		_short_path.pop_back()
 		if _short_path.is_empty() and _follow_known_imperfect_path_countdown == 0:
 			_follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
+
+
+# ========== 0ad-refactor Phase B: PreMove / Move / PostMove (Manager 调用) ==========
+
+## 0ad CCmpUnitMotion::PreMove(MotionState&) 复刻 — Manager 在 5 阶段 step 1 调,所有 unit
+## 顺序跑过 一次。
+##
+## **职责**:把 actor 当前位置 snapshot 进 state.initial_pos / state.pos;按 (currentSpeed,
+## lastTurnSpeed, moveRequest) 三元组算 state.need_update;按 `_pushing && moveRequest != NONE`
+## 算 state.is_moving + 切 obstr_mgr FLAG_MOVING;state.push 清零(累 push 起点)。
+##
+## **不变量**(末态):
+##   - state.initial_pos == state.pos == actor.position_2d
+##   - state.push == ZERO
+##   - state.pushing_pressure 上 turn 末已 decay 过(本 turn 累加用此为基础)
+##   - state.is_moving == has_target() (老 0ad 还检 m_Pushing flag,我们 unconditional pushing)
+##   - obstr_mgr FLAG_MOVING == state.is_moving (如果 actor 注册了 obstr)
+##
+## **决策来源**:0 A.D. CCmpUnitMotion.h:1036-1058
+func pre_move(state: RtsMotionState, actor: RtsBattleActor, world: Variant) -> void:
+	state.initial_pos = actor.position_2d
+	state.pos = actor.position_2d
+	state.push = Vector2.ZERO
+	# motion 内部 mirror 也同步,handle_path_update 内部读 _position_2d 算 long path 起点
+	_position_2d = actor.position_2d
+
+	state.ignore = not _block_movement
+	state.was_obstructed = false
+	state.went_straight = false
+
+	# need_update = 在世(暂用 not is_dead 等价) AND (curSpeed != 0 OR lastTurnSpeed != 0 OR
+	# moveRequest != NONE)。0 A.D. CCmpUnitMotion.h:1044-1045。
+	var alive: bool = actor != null and not actor.is_dead()
+	var has_speed: bool = absf(_current_speed) > 0.001 or absf(_last_turn_speed) > 0.001
+	var has_request: bool = has_target()
+	state.need_update = alive and (has_speed or has_request)
+
+	state.is_moving = _block_movement and has_request
+	state.control_group = str(actor.team_id)
+
+	# obstr_mgr FLAG_MOVING 切换(若注册了 unit shape)
+	if world != null and world.has_method("get") and actor.obstruction_tag != 0:
+		var obstr_mgr_var = world.get("obstruction_manager")
+		if obstr_mgr_var != null:
+			var obstr_mgr: RtsObstructionManager = obstr_mgr_var as RtsObstructionManager
+			obstr_mgr.set_unit_moving_flag(actor.obstruction_tag, state.is_moving)
+			# control_group 同步(0ad 也是 PreMove 时 sync;Phase A 起 attach_default 已设过,
+			# 此处兜底覆盖,防止 actor.team_id 中途变化时漂)
+			obstr_mgr.set_unit_control_group(actor.obstruction_tag, state.control_group)
+
+
+## 0ad CCmpUnitMotion::Move(MotionState&, dt) 复刻 — Manager 在 5 阶段 step 2 调,所有 unit
+## 顺序跑过 一次,推进 state.pos(不直接 mutate actor)。
+##
+## **职责**:
+##   1. handle_path_update:无 long path 时申请,失败累 _failed_movements 阈值后 abort
+##   2. perform_move:timeLeft 循环消费 short_path 真 snap 到 waypoint(替代老 _step
+##      "永不 snap"),单 tick 可能跨多 waypoint;返 was_obstructed
+##
+## **不变量**(末态):
+##   - state.pos = 走完一段 path 后的位置(可能 snap 到 waypoint,可能在两 waypoint 之间)
+##   - state.was_obstructed = perform_move 内是否被 obstacle 阻挡
+##   - state.went_straight 仍 false(Phase B try_going_straight_to_target 暂不实现,留 Phase D
+##     调优)
+##
+## **决策来源**:0 A.D. CCmpUnitMotion.h:1060-1070
+func move(state: RtsMotionState, _actor: RtsBattleActor, dt: float, world: Variant, facade: RtsPathfinderFacade) -> void:
+	if not state.need_update:
+		return
+	if not has_target():
+		return
+
+	# Path 申请 + 失败累加 + fallback。复用 motion 现有 handle_path_update(读 _position_2d,
+	# 已在 pre_move 同步)。
+	handle_path_update(facade, world)
+
+	# perform_move:timeLeft 循环 + 真 waypoint snap。
+	state.was_obstructed = perform_move(state, dt)
+
+
+## 0ad CCmpUnitMotion::PostMove(MotionState&, dt) 复刻 — Manager 在 5 阶段 step 5 调,把
+## state.pos 写回 actor + sync obstr_mgr + update 速度状态 + handle obstructed + emit failed event。
+##
+## **Phase B 阶段**(push 还没拆 single Push/PushAdjust):PostMove 早跑(Push 之前),让老
+## _legacy_pass_2_push_pass 看 PostMove 写回的 actor.position_2d。Phase C 切真 Push/PushAdjust
+## 时 PostMove 移到末尾。
+##
+## **不变量**(末态):
+##   - actor.position_2d == state.pos
+##   - obstr_mgr.get_shape(actor.obstruction_tag).center == state.pos
+##   - _last_turn_speed == _current_speed (本次)→ 下次 pre_move 算 needUpdate 用
+##   - _current_speed = (state.pos - state.initial_pos).length() / dt
+##   - 若 has_just_failed → emit motion_move_failed event
+##
+## **决策来源**:0 A.D. CCmpUnitMotion.h:1072-1110
+func post_move(state: RtsMotionState, actor: RtsBattleActor, dt: float, world: Variant) -> void:
+	if not state.need_update:
+		# 完全静止 unit:_last_turn_speed 仍要拷过去(下次 pre_move 算 needUpdate 用)
+		_last_turn_speed = _current_speed
+		_current_speed = 0.0
+		return
+
+	var offset: Vector2 = state.pos - state.initial_pos
+	var dist: float = offset.length()
+
+	if state.pos != state.initial_pos:
+		actor.position_2d = state.pos
+		_position_2d = state.pos
+		_update_movement_state(dist / dt)
+	else:
+		_update_movement_state(0.0)
+
+	# Sync obstr_mgr.move_shape(若注册了 unit shape)
+	if world != null and world.has_method("get") and actor.obstruction_tag != 0:
+		var obstr_mgr_var = world.get("obstruction_manager")
+		if obstr_mgr_var != null:
+			var obstr_mgr: RtsObstructionManager = obstr_mgr_var as RtsObstructionManager
+			obstr_mgr.move_shape(actor.obstruction_tag, state.pos)
+
+	# Handle obstructed move:若 was_obstructed 且未真位移 → 累 _failed_movements;
+	# 若未 obstructed 且有位移 → reset _failed_movements(0ad CCmpUnitMotion.h:1086-1090)。
+	if state.was_obstructed and dist < 0.001:
+		_failed_movements += 1
+		if _failed_movements >= MAX_FAILED_MOVEMENTS:
+			_abort_due_to_failure()
+	elif not state.was_obstructed and dist > 0.001:
+		_failed_movements = 0
+
+
+## 0ad-refactor Phase B — perform_move:timeLeft 循环 + 真 waypoint snap(替代老 _step "永不
+## snap")。0 A.D. CCmpUnitMotion.h:1141-1310 PerformMove 简化复刻(无加减速 / 无转向限制 /
+## 无 CheckMovement 验证 — Phase D 调优时按需加)。
+##
+## **算法**:
+##   1. timeLeft = dt 起步
+##   2. while timeLeft > 0:
+##      a. _short_path 空 → _long_path 非空时 pop next_long 当 short_path single wp;
+##         _long_path 也空 → break(到底)
+##      b. 算 dist_to_next = ||next_wp - state.pos||;max_dist = walk_speed × timeLeft
+##      c. dist_to_next ≤ max_dist:**真 snap** state.pos = next_wp,pop short_path;
+##         timeLeft -= dist_to_next / walk_speed;continue
+##      d. 否则:走 max_dist 朝 next_wp,timeLeft = 0,break
+##
+## **关键差异 vs 老 _step**:
+##   - 老 _step 每 tick 走 walk_speed × delta 一段,不 snap(ARRIVAL_THRESHOLD pop short 但
+##     pos 不 snap 到 waypoint),单 tick 不能跨 waypoint。配 push_pass 互推 → 终态抖动死循环。
+##   - 新 perform_move timeLeft 循环 + 真 snap,单 tick 可能 snap 多个 waypoint;到达 final
+##     waypoint 时 pos = waypoint,timeLeft 还有剩则 break(没 path 可走)。
+##
+## **返回**: was_obstructed flag。当前简化版恒 false(Phase D 加 CheckMovement 验证 push 后
+## 不穿墙时,fail → return true)。
+func perform_move(state: RtsMotionState, dt: float) -> bool:
+	var time_left: float = dt
+	var was_obstructed: bool = false
+	# 0ad-refactor Phase D — 进入时是否有 path:用于区分 "真走完 path"(末态 stop)vs
+	# "handle_path_update 给空 path"(_failed_movements 累阈值前不 stop, 让 stuck/unreachable
+	# 场景能正常 _abort_due_to_failure)。
+	var entered_with_path: bool = (not _short_path.is_empty()) or (not _long_path.is_empty())
+
+	while time_left > 0.0:
+		if _short_path.is_empty():
+			# 没 short path → 尝试从 long path pop next 当 short
+			if _long_path.is_empty():
+				break  # 真到底 — pre_move handle_path_update 已申请过 long,空 = 真 unreachable
+			var next_long: Vector2 = _long_path.pop_back()
+			_short_path.push_back(next_long)
+
+		var next_wp: Vector2 = _short_path.back()
+		var to_next: Vector2 = next_wp - state.pos
+		var dist_to_next: float = to_next.length()
+		var max_dist: float = _walk_speed * time_left
+
+		if dist_to_next <= max_dist:
+			# 真 snap 到 waypoint;时间消费 = dist_to_next / walk_speed
+			state.pos = next_wp
+			_short_path.pop_back()
+			if _walk_speed > 0.0001:
+				time_left -= dist_to_next / _walk_speed
+			else:
+				break  # walk_speed = 0 防 div0 死循环
+			# 极小步走完,可能 dist_to_next ~ 0 → time_left ~ unchanged;continue 让下次 iter
+			# 处理下一 waypoint。loop 上界保护:_short_path.is_empty() + _long_path.is_empty()
+			# break 出去。
+		else:
+			# 一 turn 走不到 next_wp → 朝它走 max_dist
+			state.pos += (to_next / dist_to_next) * max_dist
+			time_left = 0.0
+
+	# 0ad-refactor Phase D — 真"走完 path" 才 stop():
+	#   - entered_with_path: 进入时有 path(handle_path_update 找到 path)
+	#   - 末态 short + long 都空:走完了
+	#   - 配对 = unit 真抵达 path 终点 → stop(),让 push 不被每 tick handle_path_update 拉回
+	#     path 终点(否则 push 推开的位移每 tick 被抹掉,5/6 同 final waypoint 死循环重叠)。
+	#
+	# 这是 0 A.D. MoveSucceeded 简化版(0ad 用 obstr_mgr.is_in_point_range 判 PossiblyAtDestination,
+	# 我们简化为 "path 走完即视为成功")。activity 后续看 actor.position 距 target_pos ≤
+	# ARRIVAL_THRESHOLD(4 px)判 activity done;若 path canonicalize 把 goal 推到 unreachable
+	# navcell(5/6 case),unit 抵达 path 终点但 distance > ARRIVAL_THRESHOLD,activity 不
+	# 会 done — 但 motion 已 stop,push 不被拉回,unit 自然散开。
+	#
+	# **区分 unreachable**:if entered_with_path = false(handle_path_update 给空 path),
+	# 说明 path 真 unreachable,_failed_movements 已在 _request_long_path 内 += 1。不 stop,
+	# 让 _failed_movements 累 35 触发 _abort_due_to_failure(stuck_recovery 路径)。
+	if entered_with_path and _short_path.is_empty() and _long_path.is_empty():
+		stop()
+	elif _short_path.is_empty() and _follow_known_imperfect_path_countdown == 0:
+		# 还有 long_path 但 short empty → 老 known imperfect 路径(short pathfinder corner case),
+		# 等 12 tick 让 long retry。不 stop, 给 path 一次重算机会。
+		_follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
+
+	return was_obstructed
+
+
+## 0ad-refactor Phase B — update_movement_state:更新 _current_speed / _last_turn_speed
+## (post_move 内调,根据本 turn 实际位移 / dt)。
+##
+## 0 A.D. CCmpUnitMotion::UpdateMovementState 简化版 — 0ad 还更新 m_LastSpeed / m_FacePointAfterMove
+## 等字段,我们 Phase B 阶段不需要(无转向限制)。
+func _update_movement_state(actual_speed: float) -> void:
+	_last_turn_speed = _current_speed
+	_current_speed = actual_speed

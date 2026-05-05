@@ -67,6 +67,41 @@ RTS 示例使用的整理版美术资产目录。来源为 `D:\tmp\Tiny Swords R
 - `resources/tools/`：工具资源。
 - `devices/{barrel,tnt}/`：爆炸桶、TNT 这类场景装置；颜色由文件名表达。
 
+## Current State
+
+本目录已经完成的是“资产入库 + 第一版动画录用”，不是完整地形系统：
+
+- 已入库：`decor/`、`terrain/`、`ui/`、`units/`、`effects/`、`scene_objects/` 下的整理版图片资源。
+- 已录用动画：写在 `animation_library.json`，当前为 34 个 accepted asset、592 个 accepted sequence。
+- 待合入动画：`frame_manifest.json` 里扫描到但未被 `animation_library.json` 录用的条目，会在动画浏览器里显示为 `Pending`。
+- 未处理重点：`terrain/` 目前只是资源归档，还没有设计 tilemap 规则、地形拼接规则、寻路/阻挡语义或 RTS 地图渲染使用方式。
+
+### Accepted Animation Scope
+
+- `resource/gold_mine`、`resource/gold_pickup`：金矿状态和金币 pickup。
+- `resource/tree`、`resource/tree_1` 到 `resource/tree_4`、`resource/wood_pickup`：树木、树桩和木材 pickup。`Tree.png` 拆为 `idle` / `hit` / `stump`；`Tree1-4` 是独立 idle 树。
+- `resource/sheep_free_pack`、`resource/happy_sheep`、`resource/meat_pickup`：两套羊分开录用，避免把不同羊混成一个 asset。
+- `building/knights/*`、`building/goblins/*`：Update 010 建筑状态；`wood_tower` 彩色塔按 4 帧动画录用。
+- `unit/pawn/*`、`unit/warrior/*`、`unit/lancer/*`、`unit/archer/*`、`unit/common/dead`：RTS 示例第一批单位动画。
+
+### Unit Animation Rules
+
+- Unit 统一暴露 8 个方向，由浏览器的 direction buttons 切换。
+- Pawn 源 sheet 只有单方向；西向方向用 `flip_h=true`，metadata 标记为 `fallback_horizontal_flip`。
+- Warrior 同方向有双攻击，录用为 `attack_1` / `attack_2`。
+- Lancer 来自 Free Pack 多方向 strip；只录用 `idle` / `run` / `attack`，不录用 `Defense`。
+- Archer 有部分方向原生射击帧，缺失方向用 horizontal flip 补齐。
+- 所有 unit 共用 `unit/common/dead`。
+
+### Terrain Follow-Up
+
+下一步需要单独探索 `terrain/`：
+
+- 确认 `ground/overlays`、`water/base`、`water/foam`、`water/rocks`、`bridge` 的真实拼接方式。
+- 判断是做 Godot `TileSet/TileMapLayer`，还是先做 RTS 示例专用的静态地形 renderer。
+- 明确 terrain 和 gameplay 的边界：哪些只是视觉，哪些需要产生 pathing cost、water/land mask、building placement mask。
+- 基于参考场景补一个 terrain smoke/showcase，验证水、草地、岸边、桥、阴影和装饰物的组合效果。
+
 ## Preview
 
 动画浏览器场景：

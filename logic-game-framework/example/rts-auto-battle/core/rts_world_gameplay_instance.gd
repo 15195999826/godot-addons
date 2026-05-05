@@ -69,6 +69,16 @@ var vertex_pathfinder: RtsVertexPathfinder = null
 ##   - `compute_short_path_immediate(req, obstr_mgr)` VertexPath 短路径 A*(M6c API,M7 production 接)
 var pathfinder_facade: RtsPathfinderFacade = null
 
+## 0 A.D. CCmpUnitMotionManager 复刻 — procedure._init 末构造(facade 之后)。procedure
+## ._world_tick step 4g 一行调 `unit_motion_manager.move_units(alive_actors, dt)` 替代老
+## `_tick_motion_bearing_actors`(Phase A 起 Manager 接管 motion + push 中央协调)。
+##
+## **Phase A**(当前): Manager 内部走 legacy 路径(Pass 1 component.tick + Pass 2 push_pass × N),
+## 行为等价老路径,replay byte-identical 不退。
+## **Phase B**: PreMove/Move/PostMove 真实现替代 Pass 1。
+## **Phase C**: 单次 Push/PushAdjust + pushing_pressure 替代 Pass 2,13 处 0ad diff 全 fix。
+var unit_motion_manager: RtsUnitMotionManager = null
+
 
 # ========== 战斗 staging fields (start_rts_battle 写, _create_battle_procedure 读) ==========
 

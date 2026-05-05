@@ -30,6 +30,11 @@ extends Resource
 ## demo 是否创建 BuildPanel + placement ghost (false 时 AI vs AI observe 模式).
 @export var show_build_panel: bool = true
 
+## 起手是否给双方各预放 1 barracks (绕过 RtsComputerPlayer 默认落点跟 CT inflate clearance
+## 蹭碰导致的左队 cells_blocked 死锁; 预放后 AI 看 BARRACKS_CAP=1 跳过 build → attack 决策
+## 正常). 仅 AI vs AI 模式有意义 (没玩家干预填补 build).
+@export var pre_spawn_barracks_each_side: bool = false
+
 
 # ========== 工厂 (3 预设) ==========
 
@@ -66,16 +71,21 @@ static func create_resource_scarce_1v1() -> RtsMatchPreset:
 
 
 ## AI vs AI 观战 — 玩家不能 build (BuildPanel 隐藏); 双 AI 自跑 → 看战术展开.
+##
+## 起手 500/500 (够双方各起一个 barracks 立刻开兵) + worker 持续 harvest → 看着金币涨
+## (vs Classic 1v1 起手 100/100 一造完 barracks HUD 数字反掉, observe 没 BuildPanel
+## 提示就显得"经济停滞").
 static func create_ai_vs_ai_observe() -> RtsMatchPreset:
 	var p := RtsMatchPreset.new()
 	p.name = "AI vs AI Observation"
 	p.description = "Spectate two AIs duel — no build panel; pan camera and watch."
-	p.starting_resources_left = {"gold": 100, "wood": 100}
-	p.starting_resources_right = {"gold": 100, "wood": 100}
+	p.starting_resources_left = {"gold": 500, "wood": 500}
+	p.starting_resources_right = {"gold": 500, "wood": 500}
 	p.num_workers_per_team = 5
 	p.attach_left_ai = true
 	p.attach_right_ai = true
 	p.show_build_panel = false
+	p.pre_spawn_barracks_each_side = true
 	return p
 
 

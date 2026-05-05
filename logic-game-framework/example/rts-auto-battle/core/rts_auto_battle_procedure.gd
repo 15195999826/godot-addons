@@ -26,7 +26,6 @@ const MAX_TICKS := 1800
 ## 调方仍可在 opts.tick_interval_ms 覆盖(老 smoke 起步用 50ms 也支持向后兼容)。
 const RTS_TICK_INTERVAL_MS := 1000.0 / 30.0
 
-
 # ========== 字段 ==========
 
 var left_team: Array[RtsBattleActor] = []
@@ -214,6 +213,14 @@ func _init(
 		# (M5 RtsNavAgent 时代必须显式 attach_pathfinder 因为 nav_agent 是 Node2D 持自己 facade
 		# 引用;M7d motion_component 不持引用,完全无状态依赖)
 
+	# 0ad-refactor Phase A — UnitMotionManager 接管 step 4g motion + push 中央协调。
+	# 放 if (rts_grid + navcell_grid) 块**外**:老 smoke grid==null 时也 init, Manager 跑
+	# 空集合 motion_actors 即时返回,不依赖 facade / obstruction_manager。
+	# Phase A 内部走 legacy 路径(Pass 1 component.tick + Pass 2 push_pass × N),0 行为变化;
+	# Phase B/C 切真实 PreMove/Move/PostMove + Push/PushAdjust。
+	if world.unit_motion_manager == null:
+		world.unit_motion_manager = RtsUnitMotionManager.new(world)
+
 
 # ========== 生命周期 ==========
 
@@ -379,17 +386,16 @@ func tick_once() -> void:
 	if world.obstruction_manager != null:
 		_sync_unit_obstruction_shapes(world, alive_units)
 
-	# 4g. M7c — Motion-bearing actor tick (production callsite 仍走 nav_agent;此 step 仅当
-	#     actor.motion_component 非 null 时跑 motion.tick → component 桥接 obstr_mgr 同步 +
-	#     position_2d 写回)。
+	# 4g. 0ad-refactor Phase A — UnitMotionManager 接管 motion + push 中央协调。
+	#     Manager 内部按 (kind, spawn_seq) 数值复合 key 排序 → Pass 1 motion tick + Pass 2
+	#     push pass × N (Phase A legacy);abort dispatch 留 procedure(_unit_runtimes 私有)。
 	#
 	#     **R5 P1 #1**: 排序 key = `(actor.type: String, actor.spawn_seq: int)` 数值复合 key,
 	#     **不**用 actor.get_id() 字典序 (Character_10 < Character_2 字典序漂,见
 	#     data-structures.md §12.5)。
-	#
-	#     **M7c 阶段**: production callsite 不创 motion_component (activity 仍走 RtsNavAgent),
-	#     此 step 实际跑空集合,baseline / replay 0 漂。M7d 切 activity 时此 step 真激活。
-	_tick_motion_bearing_actors(world, alive_actors, dt_seconds)
+	if world.unit_motion_manager != null:
+		world.unit_motion_manager.move_units(alive_actors, dt_seconds)
+		_dispatch_motion_failed(world, alive_actors)
 
 	# 4e. P2.5 production system: 走全部 alive RtsBuildingActor, 累积 production_progress_ms,
 	#     满周期触发 _unit_spawner 回调 (smoke / 调方负责实际 add_actor + nav agent + controller +
@@ -757,19 +763,14 @@ func _register_decorative_obstacles_to_manager(world: RtsWorldGameplayInstance) 
 		)
 
 
-## M7c — 收集 motion-bearing actor (motion_component != null) → 按 (type, spawn_seq) 数值
-## 复合 key 排序 → 逐个 component.tick(delta, world, facade)。
+## 0ad-refactor Phase A — motion abort 派发(从老 `_tick_motion_bearing_actors` 末尾抽出)。
 ##
-## **R5 P1 #1**: 排序 key 必须用 `(type: String, spawn_seq: int)` 数值复合 key,**不**用
-## `actor.get_id()` 字符串字典序 — `Character_10` < `Character_2` (`'1' < '2'`),≥ 10 同 kind
-## unit 时 spawn 序列漂(见 data-structures.md §12.5)。
+## Manager.move_units 不做 abort dispatch — `_unit_runtimes` 是 procedure 私有, 不向 Manager
+## 暴露;procedure 在 step 4g 调完 Manager 后单独走此 helper,跨 actor 派发顺序按 (kind,
+## spawn_seq) 同 Manager 排序一致,deterministic。
 ##
-## **M7c 阶段** production callsite 不创 motion_component → 此函数实际跑空集合,baseline 0 漂。
-## M7d 切 activity 时此函数真激活。
-##
-## **Determinism**: stable sort by 复合 key;同 (type, spawn_seq) 不可能(spawn_seq 全局递增,
-## 单调唯一)。
-func _tick_motion_bearing_actors(world: RtsWorldGameplayInstance, alive_actors: Array, dt: float) -> void:
+## 仅当 `motion.has_just_failed()` 时调 `controller.on_motion_failed(world)` + consume flag。
+func _dispatch_motion_failed(world: RtsWorldGameplayInstance, alive_actors: Array) -> void:
 	var motion_actors: Array = []
 	for a in alive_actors:
 		var actor: RtsBattleActor = a as RtsBattleActor
@@ -778,17 +779,6 @@ func _tick_motion_bearing_actors(world: RtsWorldGameplayInstance, alive_actors: 
 	if motion_actors.is_empty():
 		return
 	motion_actors.sort_custom(_compare_motion_actor)
-	var facade: RtsPathfinderFacade = world.pathfinder_facade
-	# M7d: 传 _spatial_hash 给 component → component 内调 RtsUnitSteering.apply 加 separation
-	# (motion-bearing actor 互推,避免 demo 里 8 unit 重叠;M8 push pass 替代后再删)
-	for a in motion_actors:
-		var actor: RtsBattleActor = a as RtsBattleActor
-		var component: RtsMotionComponent = actor.motion_component as RtsMotionComponent
-		component.tick(dt, world, facade, _spatial_hash)
-
-	# M7d — motion abort 派发:walk motion_actors,若 motion.has_just_failed 调 controller.
-	# on_motion_failed 让 activity 处理(默认 cancel,子类 override 可智能恢复);消费 flag。
-	# 顺序与 sort 后 tick 相同,跨 actor 派发 deterministic。
 	for a in motion_actors:
 		var actor: RtsBattleActor = a as RtsBattleActor
 		var component: RtsMotionComponent = actor.motion_component as RtsMotionComponent
@@ -803,6 +793,9 @@ func _tick_motion_bearing_actors(world: RtsWorldGameplayInstance, alive_actors: 
 ## R5 P1 #1 sort comparator — `(type: String, spawn_seq: int)` 数值复合 key。
 ##
 ## 跨 type 走 String < (type 名固定且短,跨 run 稳定);同 type 内走 spawn_seq < (整数比较跨平台稳定)。
+##
+## **保留 static 形式** — `RtsUnitMotionManager._collect_motion_actors` 排序时直接引用此 method;
+## 也被 `smoke_motion_tick_order_with_10plus_units` 测试 sort key 行为(R5 P1 #1)断言。
 static func _compare_motion_actor(a: RtsBattleActor, b: RtsBattleActor) -> bool:
 	if a.type != b.type:
 		return a.type < b.type

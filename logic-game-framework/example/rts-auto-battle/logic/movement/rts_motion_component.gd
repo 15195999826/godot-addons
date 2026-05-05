@@ -70,8 +70,15 @@ static func attach_default(
 		if u.attribute_set != null:
 			walk_speed = u.attribute_set.move_speed
 	var m := RtsUnitMotion.new(pass_class, walk_speed)
+	# 0ad-refactor Phase C — weight 默认 = walk_speed × 0.1(跟 0 A.D. template 简化默认等价);
+	# Push pairwise 用此做 force ratio,重单位推轻单位多。
+	m.set_weight(maxf(walk_speed * 0.1, 0.001))  # maxf 防 walk_speed=0 时 weight=0 触发 assert
 	var c := RtsMotionComponent.new(owner, m)
 	owner.motion_component = c
+	# M8.1 — sync control_group when caller already registered obstr;
+	# procedure._sync_unit_obstruction_shapes 首次注册时也传 str(team_id) 兜底。
+	if owner.obstruction_tag != 0 and world != null and world.obstruction_manager != null:
+		world.obstruction_manager.set_unit_control_group(owner.obstruction_tag, str(owner.team_id))
 	return c
 
 
@@ -89,13 +96,13 @@ static func attach_default(
 ##
 ## **world == null** smoke 兼容:obstr_mgr 同步路径 noop(world 没 obstruction_manager 字段)。
 ##
-## **M7d**: spatial_hash 非空时插 RtsUnitSteering.apply 让 motion-bearing actor 互推
-## (separation + deflection 复用 nav_agent 时代实现);为 null 时 motion 走 fallback to_next 方向。
+## **M8**: sep_force hack 退场,push_pass(procedure pass 2)接管 separation 语义。
+## spatial_hash 参数保留接口对称(stuck_detector 仍读),component.tick 内不用。
 func tick(
 	delta: float,
 	world: Variant,
 	facade: RtsPathfinderFacade,
-	spatial_hash: RtsSpatialHash = null,
+	_spatial_hash: RtsSpatialHash = null,
 ) -> void:
 	# Step 1: 同步 owner → motion
 	motion.set_position_2d(owner_actor.position_2d)
@@ -107,25 +114,20 @@ func tick(
 	var desired_vel: Vector2 = motion.compute_desired_velocity()
 	owner_actor.velocity = desired_vel
 
-	# Step 4: RtsUnitSteering.apply 加 separation + deflection 改 owner.velocity
-	# (M7d 重新启用,M8 push pass 替代后再删)
-	if spatial_hash != null and world is RtsWorldGameplayInstance:
-		RtsUnitSteering.apply(owner_actor, spatial_hash, world as RtsWorldGameplayInstance, delta)
-
-	# Step 5: 把 steered velocity(含 sep)给 motion 当 _step 方向
+	# Step 4: 把 desired velocity 给 motion 当 _step 方向(M8 sep_force 退场后 = path 方向无 sep)
 	motion.set_steered_velocity(owner_actor.velocity)
 
-	# Step 6: motion._step 用 _steered_velocity 走(velocity=0 时 fallback to_next 方向)
+	# Step 5: motion._step 用 _steered_velocity 走(velocity=0 时 fallback to_next 方向)
 	motion._step(delta, world)
 
-	# Step 6.5: countdown tail(motion.tick 复刻;component.tick 不调 motion.tick 必须自己调)
+	# Step 6: countdown tail(motion.tick 复刻;component.tick 不调 motion.tick 必须自己调)
 	motion._tail_countdown_tick()
 
 	# Step 7: 写回 motion → owner
 	var new_pos: Vector2 = motion.get_position_2d()
 	owner_actor.position_2d = new_pos
 
-	# Step 4 + 5: 同步 obstr_mgr(若有)
+	# Step 8: 同步 obstr_mgr(若有)
 	if world == null:
 		return
 	if not world.has_method("get"):
@@ -137,10 +139,10 @@ func tick(
 		# 未注册 unit shape — 静默跳过(老 actor 未迁移时);M2.5 起 spawner 应注册
 		return
 
-	# Step 4: move_shape 同步 obstr center 到新位置
+	# Step 8a: move_shape 同步 obstr center 到新位置
 	obstr_mgr.move_shape(owner_actor.obstruction_tag, new_pos)
 
-	# Step 5: FLAG_MOVING 切换(was_moving != is_moving 才调)
+	# Step 8b: FLAG_MOVING 切换(was_moving != is_moving 才调)
 	# motion has_target + short_path 非空 = 还在走;否则 = 不动
 	var is_moving: bool = motion.has_target() and not motion._short_path.is_empty()
 	if _was_moving != is_moving:
