@@ -63,6 +63,7 @@ SimNavMap
 
 - `SimNavMap`
 - `SimNavPassabilityClassConfig` / `SimNavPassabilityClassRegistry`
+- `SimNavObstructionShape`，作为 obstruction query 返回的 base DTO 类型
 - `SimNavObstructionShapeStatic` / `SimNavObstructionShapeUnit`
 - `SimNavPathGoal` / `SimNavWaypointPath`
 - `SimNavHierarchicalPathfinder`

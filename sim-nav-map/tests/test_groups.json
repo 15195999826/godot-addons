@@ -5,6 +5,7 @@
     "smoke": {
       "scenes": [
         "smoke_sim_nav_passability_registry.tscn",
+        "smoke_sim_nav_public_api_contract.tscn",
         "smoke_sim_nav_terrain_tile_map.tscn",
         "smoke_sim_nav_dirty_lifecycle.tscn",
         "smoke_sim_nav_spatial_index.tscn",

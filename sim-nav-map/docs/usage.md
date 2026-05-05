@@ -74,8 +74,10 @@ var path := facade.compute_path_immediate(
 ```
 
 `SimNavPathfinderFacade` canonicalizes unreachable goals to a reachable navcell
-before long-path search. If your game wants different fallback behavior, keep
-that policy in the adapter.
+before long-path search. For `POINT` goals, it may rewrite the supplied
+`SimNavPathGoal` object to that reachable navcell. Clone the goal first, or use
+`SimNavPathRequestQueue`, if the original command target must remain unchanged.
+If your game wants different fallback behavior, keep that policy in the adapter.
 
 ## 5. Query A Short Path
 
@@ -96,7 +98,23 @@ var path := vertex_pathfinder.compute_short_path_immediate(request)
 Short-path query policy, such as control-group filtering and moving-unit
 avoidance, is request data supplied by the caller.
 
-## 6. Consume The Result
+## 6. Queue Requests
+
+Use `SimNavPathRequestQueue` when a caller wants to process long/short path
+requests through a small frame budget or worker batch:
+
+```gdscript
+var queue := SimNavPathRequestQueue.new(facade, vertex_pathfinder)
+var ticket := queue.enqueue_long_path(unit.position, SimNavPathGoal.point(target_position), ground_mask)
+queue.process_budget(1)
+var path := queue.take_result(ticket)
+```
+
+The queue clones the submitted `SimNavPathGoal` / `SimNavShortPathRequest` at
+enqueue time. Later mutations to the caller-owned goal/request do not change the
+queued work item.
+
+## 7. Consume The Result
 
 `SimNavWaypointPath` is a plan, not movement execution. The caller decides:
 

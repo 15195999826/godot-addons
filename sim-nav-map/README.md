@@ -51,10 +51,11 @@ Smoke tests live in `tests/` and are registered as the `simnav/smoke` group:
 ./tools/run_tests.ps1 simnav/smoke
 ```
 
-The current smoke group covers passability registration, terrain tiles, dirty
-lifecycle, spatial index queries, path goals, map tracing, obstruction manager,
-hierarchical reachability and dirty recompute, jump-point cache, long paths,
-vertex paths, and request queue behavior.
+The current smoke group covers public API constructor/default contracts,
+passability registration, terrain tiles, dirty lifecycle, spatial index queries,
+path goals, map tracing, obstruction manager, hierarchical reachability and
+dirty recompute, jump-point cache, long paths, vertex paths, request queue
+behavior, and queued request cloning.
 
 ## Usage Mental Model
 
@@ -66,8 +67,10 @@ vertex paths, and request queue behavior.
 Public API 边界见 [`docs/public-api.md`](docs/public-api.md)。当前稳定入口是
 `SimNavMap`、passability / obstruction projection DTO、`SimNavPathGoal`、
 `SimNavWaypointPath`、hierarchical / long / vertex pathfinder、facade 和 request
-queue。`SimNavHierarchicalChunk`、`SimNavJumpPointHit`、`SimNavPathfinderHeap`
-和 `SimNavRegionIdHelper` 仍是 internal helper。
+queue。`SimNavObstructionShape` 是 map query 返回的 base DTO 类型；
+adapter input 仍应使用 `SimNavObstructionShapeStatic` 或
+`SimNavObstructionShapeUnit`。`SimNavHierarchicalChunk`、`SimNavJumpPointHit`、
+`SimNavPathfinderHeap` 和 `SimNavRegionIdHelper` 仍是 internal helper。
 
 ## Example Lab
 
