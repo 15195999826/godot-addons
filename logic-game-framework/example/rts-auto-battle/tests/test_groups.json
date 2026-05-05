@@ -13,6 +13,8 @@
         { "path": "battle/smoke_long_pathfinder_determinism.tscn", "timeout_ms": 45000 },
         { "path": "battle/smoke_hierarchical_unreachable.tscn", "timeout_ms": 45000 },
         { "path": "replay/smoke_replay_bit_identical.tscn", "timeout_ms": 45000 },
+        "battle/smoke_group_push_pass.tscn",
+        "battle/smoke_group_movement_unity.tscn",
         "frontend/smoke_frontend_main.tscn"
       ]
     },
@@ -51,10 +53,8 @@
         "battle/smoke_attack.tscn",
         "battle/smoke_auto_target.tscn",
         "battle/smoke_activity_chain.tscn",
-        "battle/smoke_steering.tscn",
         "battle/smoke_stuck_recovery.tscn",
         "battle/smoke_skeleton.tscn",
-        "battle/smoke_minimal_push_out.tscn",
         "battle/smoke_ai.tscn",
         "battle/smoke_crystal_tower_win.tscn"
       ]
@@ -83,7 +83,9 @@
         "battle/smoke_motion_path_storage.tscn",
         "battle/smoke_motion_failed_movements.tscn",
         "battle/smoke_motion_obstruction_sync.tscn",
-        "battle/smoke_motion_tick_order_with_10plus_units.tscn"
+        "battle/smoke_motion_tick_order_with_10plus_units.tscn",
+        "battle/smoke_group_push_pass.tscn",
+        "battle/smoke_group_movement_unity.tscn"
       ]
     },
     "replay": {
