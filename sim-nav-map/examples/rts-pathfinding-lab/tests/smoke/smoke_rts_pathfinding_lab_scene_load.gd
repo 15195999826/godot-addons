@@ -158,6 +158,12 @@ func _export_debug_log(world: RtsPathfindingLabWorld) -> void:
 	var metrics: Dictionary = world_data.get("metrics", {}) as Dictionary
 	if int(metrics.get("mobile_count", 0)) != world.get_mobile_units().size():
 		_failures.append("exported log metrics should include mobile_count")
+	if not world_data.has("last_step_profile"):
+		_failures.append("exported log should include last_step_profile")
+	if not world_data.has("movement_debug"):
+		_failures.append("exported log should include movement_debug")
+	if not world_data.has("recent_plan_reports"):
+		_failures.append("exported log should include recent_plan_reports")
 	var recent_events: Array = data.get("recent_events", []) as Array
 	if recent_events.is_empty():
 		_failures.append("exported log should include recent events")

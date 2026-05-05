@@ -13,9 +13,10 @@ enum ToolMode {
 const DRAG_SELECT_THRESHOLD: float = 5.0
 const OBSTACLE_SIZE: Vector2 = Vector2(74.0, 74.0)
 const LOG_DIR: String = "user://rts_pathfinding_lab_logs"
-const MAX_EVENT_LOG_ENTRIES: int = 160
+const MAX_EVENT_LOG_ENTRIES: int = 240
 const TRACE_EXPORT_LIMIT: int = 240
-const SLOW_STEP_LOG_THRESHOLD_USEC: int = 50000
+const SLOW_STEP_LOG_THRESHOLD_USEC: int = 20000
+const POSITION_JUMP_LOG_THRESHOLD: float = 24.0
 
 var _world: RtsPathfindingLabWorld = null
 var _paused: bool = false
@@ -55,18 +56,23 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if not _paused:
+		var positions_before := _mobile_position_snapshot()
 		var step_start_usec := Time.get_ticks_usec()
 		_world.step(minf(delta, 0.05))
 		_last_step_usec = Time.get_ticks_usec() - step_start_usec
 		_max_step_usec = maxi(_max_step_usec, _last_step_usec)
 		_total_step_usec += _last_step_usec
 		_measured_step_count += 1
+		_record_position_jumps(positions_before)
 		if _last_step_usec >= SLOW_STEP_LOG_THRESHOLD_USEC:
 			_record_event("slow_step", {
 				"step_usec": _last_step_usec,
 				"max_step_usec": _max_step_usec,
 				"tick": _world.tick_count,
 				"metrics": _world.analyze_movement(),
+				"world_step_profile": _world.last_step_profile,
+				"movement_debug": _world.movement_debug_snapshot(),
+				"recent_plan_reports": _world.recent_plan_reports.duplicate(true),
 				"pathfinder_last_report": _world.pathfinder.last_report,
 			})
 	_update_hud()
@@ -136,17 +142,36 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> void:
 		return
 	match _mode:
 		ToolMode.OBSTACLE:
+			var obstacle_start_usec := Time.get_ticks_usec()
 			var obstacle_id := _world.add_static_obstacle(mb.position, OBSTACLE_SIZE)
+			var obstacle_edit_usec := Time.get_ticks_usec() - obstacle_start_usec
 			_last_action = "placed %s" % obstacle_id
-			_record_event("place_obstacle", {"id": obstacle_id, "position": mb.position})
+			_record_event("place_obstacle", {
+				"id": obstacle_id,
+				"position": mb.position,
+				"edit_usec": obstacle_edit_usec,
+				"world_step_profile": _world.last_step_profile,
+			})
 		ToolMode.BLOCKER:
+			var blocker_start_usec := Time.get_ticks_usec()
 			var blocker_id := _world.add_blocker(mb.position)
+			var blocker_edit_usec := Time.get_ticks_usec() - blocker_start_usec
 			_last_action = "placed %s" % blocker_id
-			_record_event("place_blocker", {"id": blocker_id, "position": mb.position})
+			_record_event("place_blocker", {
+				"id": blocker_id,
+				"position": mb.position,
+				"edit_usec": blocker_edit_usec,
+			})
 		ToolMode.ERASE:
+			var erase_start_usec := Time.get_ticks_usec()
 			var removed_id := _world.remove_nearest_editable(mb.position)
+			var erase_edit_usec := Time.get_ticks_usec() - erase_start_usec
 			_last_action = "removed %s" % removed_id if removed_id != "" else "nothing to erase"
-			_record_event("erase", {"removed_id": removed_id, "position": mb.position})
+			_record_event("erase", {
+				"removed_id": removed_id,
+				"position": mb.position,
+				"edit_usec": erase_edit_usec,
+			})
 	queue_redraw()
 
 
@@ -254,6 +279,9 @@ func _build_export_snapshot() -> Dictionary:
 		"world": {
 			"tick_count": _world.tick_count,
 			"metrics": metrics,
+			"last_step_profile": _world.last_step_profile,
+			"movement_debug": _world.movement_debug_snapshot(),
+			"recent_plan_reports": _world.recent_plan_reports.duplicate(true),
 			"group_filter_enabled": _world.group_filter_enabled,
 			"avoid_moving_units_enabled": _world.avoid_moving_units_enabled,
 			"pending_replans": int(metrics.get("pending_replans", 0)),
@@ -318,6 +346,38 @@ func _record_event(kind: String, data: Dictionary) -> void:
 	})
 	while _event_log.size() > MAX_EVENT_LOG_ENTRIES:
 		_event_log.pop_front()
+
+
+func _mobile_position_snapshot() -> Dictionary:
+	var result: Dictionary = {}
+	if _world == null:
+		return result
+	for unit in _world.get_mobile_units():
+		result[unit.id] = unit.position
+	return result
+
+
+func _record_position_jumps(positions_before: Dictionary) -> void:
+	for unit in _world.get_mobile_units():
+		if not positions_before.has(unit.id):
+			continue
+		var before: Vector2 = positions_before[unit.id] as Vector2
+		var distance := before.distance_to(unit.position)
+		if distance < POSITION_JUMP_LOG_THRESHOLD:
+			continue
+		_record_event("position_jump", {
+			"unit_id": unit.id,
+			"from": before,
+			"to": unit.position,
+			"distance": distance,
+			"target": unit.target,
+			"arrived": unit.arrived,
+			"has_move_order": unit.has_move_order,
+			"path_index": unit.path_index,
+			"path_size": unit.path.size(),
+			"world_step_profile": _world.last_step_profile,
+			"pathfinder_last_report": _world.pathfinder.last_report,
+		})
 
 
 func _vector_array_snapshot(points: Array[Vector2], limit: int) -> Array[Dictionary]:
