@@ -16,6 +16,36 @@ Run both with:
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
 
+## V1 Baseline Guard Contract
+
+Feature 0 is the post-`sim-nav-map-v1.0.0` regression guard. It does not add a
+navigation capability; it keeps the public API docs, smoke groups, and example
+boundary aligned so later roadmap work can be compared against the V1 baseline.
+
+Baseline gate:
+
+```powershell
+./tools/run_tests.ps1 simnav/smoke rtslab/smoke
+git -C addons diff --check
+```
+
+`simnav/smoke` is the core addon contract. It verifies reusable navigation
+primitives: map state, passability, terrain data access, obstruction projection,
+dirty lifecycle, reachability, long/short query behavior, cache invalidation,
+and request queue behavior.
+
+`rtslab/smoke` is the adapter/playable regression contract. It verifies that
+`examples/rts-pathfinding-lab` can consume the core addon through its adapter and
+that the real lab scene still loads. Lab movement, HUD, formation offsets,
+toggle UX, push behavior, and replan cadence remain application policy and do
+not become `sim-nav-map` public API.
+
+Feature 1 may start only after both baseline groups pass, this document and
+`public-api.md` still describe the same boundary, and
+`docs/references/0ad-source/` remains untracked. Feature-specific smoke added by
+later roadmap items should be registered into `simnav/smoke` for core addon
+contracts or `rtslab/smoke` for lab adapter/playable contracts.
+
 ## Discovery Contract
 
 `tools/run_tests.ps1` discovers sim-nav-map manifests from:
