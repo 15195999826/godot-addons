@@ -34,6 +34,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 
 `simnav/smoke` covers:
 
+- public API constructor/default contracts
 - passability class registration
 - terrain tile data
 - dirty navcell lifecycle
@@ -46,6 +47,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 - long pathfinder
 - vertex pathfinder
 - path request queue
+- queued request cloning
 
 `rtslab/smoke` covers:
 
@@ -66,6 +68,8 @@ New `sim-nav-map` core coverage should not be added to `rts/pathfinding`.
 - `README.md`, `docs/mental-model.md`, `docs/public-api.md`,
   `docs/feature-roadmap.md`, and this file agree on the same boundary.
 - `simnav/smoke` and `rtslab/smoke` are discoverable by `./tools/run_tests.ps1 -List`.
+- `simnav/smoke` includes `smoke_sim_nav_public_api_contract.tscn` for the
+  current public entry-point boundary.
 - Old RTS private pathfinder wording points to archived compatibility, not a
   future implementation path.
 - `addons/sim-nav-map/docs/references/0ad-source/` remains untracked.

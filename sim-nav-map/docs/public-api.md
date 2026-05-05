@@ -6,6 +6,19 @@ This file defines the current public boundary for `addons/sim-nav-map`.
 game entities, movement integration, steering, pushing, formation, combat, UI, or
 editor workflow.
 
+## Audit Status
+
+This document is audited against the current `class_name` set in:
+
+```text
+addons/sim-nav-map/{core,model,obstruction,pathfinding}/
+```
+
+Public API smoke coverage is registered in `simnav/smoke`, including
+`smoke_sim_nav_public_api_contract.tscn` for constructor/defaults, map projection
+entry points, dirty/cache lifecycle, long/short query boundaries, and queued
+request cloning.
+
 ## Stable Entry Points
 
 These classes are the supported integration surface for game/example adapters:
@@ -17,6 +30,7 @@ These classes are the supported integration surface for game/example adapters:
 | `SimNavPassabilityClassRegistry` | Registers passability classes and assigns masks. Usually accessed through `SimNavMap`. |
 | `SimNavTerrainTileMap` | Coarser terrain tile data used by `SimNavMap`. Usually accessed through `SimNavMap`. |
 | `SimNavObstructionFlags` | Shared obstruction flags such as `BLOCK_PATHFINDING`, `BLOCK_MOVEMENT`, and `MOVING`. |
+| `SimNavObstructionShape` | Base projection DTO returned by map/manager query APIs. Adapters normally instantiate `Static` or `Unit`, not this base class. |
 | `SimNavObstructionShapeStatic` | Static oriented rectangle projection for buildings, walls, rocks, blockers, and terrain-like obstacles. |
 | `SimNavObstructionShapeUnit` | Dynamic circular projection for units. This is not a unit model. |
 | `SimNavPathGoal` | Path target geometry: point, circle, square, and inverted variants. |
@@ -27,6 +41,92 @@ These classes are the supported integration surface for game/example adapters:
 | `SimNavShortPathRequest` | Request DTO for short-path queries. |
 | `SimNavPathfinderFacade` | Synchronous long-path facade with reachable-goal canonicalization. |
 | `SimNavPathRequestQueue` | Budgeted/worker batch queue for long and short path requests. |
+
+## Public Function Boundary
+
+General rule: non-underscore methods on stable entry-point classes are supported
+unless this document marks them as diagnostics/test support. Underscore-prefixed
+methods remain implementation details.
+
+### Map And Projection
+
+`SimNavMap` public entry points:
+
+- Constructor: `SimNavMap.new(width, height, navcell_size, origin, navcells_per_tile)`.
+  `navcells_per_tile` is clamped to at least `1`; default constructor creates an
+  empty clean map.
+- Passability: `register_passability_class()`, `get_passability_registry()`,
+  `get_passability_classes()`, `get_passability_mask()`.
+- Terrain: `get_terrain_tile_map()`, `navcell_to_terrain_tile()`,
+  `get_terrain_tile_data()`, `set_terrain_tile_data()`,
+  `get_navcell_terrain_data()`.
+- Obstructions: `add_static_obstruction()`, `add_dynamic_obstruction()`,
+  `remove_obstruction()`, `move_obstruction()`, `clear_dynamic_obstructions()`,
+  `replace_dynamic_obstructions()`, `get_obstruction_shape()`,
+  `get_obstruction_shapes_in_range()`, `get_static_obstruction_shapes()`,
+  `get_dynamic_obstruction_shapes()`.
+- Dirty/raster lifecycle: `rebuild_dirty()`, `rasterize_dirty_obstructions()`,
+  `mark_dirty_navcell()`, `is_dirty_navcell()`, `collect_dirty_navcells()`,
+  `collect_dirty_obstruction_navcells()`, `has_dirty_navcells()`,
+  `has_dirty_obstruction_navcells()`, `clear_dirty_navcells()`,
+  `clear_dirty_obstruction_navcells()`.
+- Navcell helpers: `navcell_center_world()`, `world_to_navcell()`,
+  `is_passable_navcell()`, `get_navcell_data()`, `set_navcell_data()`,
+  `or_navcell_data()`, `and_navcell_data()`, `is_valid_navcell()`.
+
+Projection DTOs:
+
+- `SimNavObstructionShapeStatic`: public fields from the base shape plus
+  `width`, `height`, `rotation_rad`; methods `get_corners()`, `get_axes()`,
+  `contains_point()`, and `contains_point_with_clearance()`.
+- `SimNavObstructionShapeUnit`: public fields from the base shape plus
+  `clearance`, `moving`; method `contains_point()`.
+- `SimNavObstructionShape`: base fields `type`, `tag`, `entity_id`, `center`,
+  `flags`, `control_group`, and `control_group_2`. Treat it as a returned base
+  type, not as an adapter input type.
+
+### Passability And Terrain
+
+- `SimNavPassabilityClassConfig` is a field DTO: `class_name_id`, `bit_index`,
+  `clearance`, `affects_pathfinding`, and `terrain_mask`.
+- `SimNavPassabilityClassRegistry` exposes `register()`, `get_pass_class()`,
+  `get_mask()`, `get_class_by_mask()`, `get_classes()`, `max_clearance()`, and
+  `size()`.
+- `SimNavTerrainTileMap` exposes `navcell_to_tile()`, `tile_origin_navcell()`,
+  `is_valid_tile()`, `get_tile_data()`, `set_tile_data()`, and
+  `get_navcell_terrain_data()`.
+
+### Path Queries
+
+- `SimNavPathGoal` exposes factories `point()`, `circle()`,
+  `inverted_circle()`, `square()`, and `inverted_square()`, plus
+  `navcell_contains_goal()`, `contains_point()`, `distance_to_point()`, and
+  `nearest_point_on_goal()`.
+- `SimNavWaypointPath` exposes `waypoints`, `size()`, `is_empty()`, `back()`,
+  `pop_back()`, `push_back()`, and `clear()`. Stored waypoints are consumed by
+  callers; movement execution is outside the addon.
+- `SimNavHierarchicalPathfinder` exposes `recompute()`, `recompute_dirty()`,
+  `is_recomputed()`, `get_region()`, `get_global_region()`,
+  `is_navcell_reachable()`, `make_goal_reachable_navcell()`, and
+  `find_nearest_passable_navcell()` for integration. `get_chunk()`,
+  `get_global_regions()`, and `next_global_region()` are diagnostics/test
+  support and should not become game logic dependencies.
+- `SimNavLongPathfinder` exposes `compute_path_immediate()` and
+  `invalidate_jump_point_cache()`. Dirty navcells invalidate the jump-point cache
+  before subsequent queries.
+- `SimNavVertexPathfinder` exposes `compute_short_path_immediate()`.
+- `SimNavShortPathRequest` is a field DTO: `start`, `goal`, `clearance`,
+  `range_px`, `pass_mask`, `avoid_moving_units`, and `control_group`.
+- `SimNavPathfinderFacade` exposes `compute_path_immediate()`. For `POINT`
+  goals, when a recomputed `SimNavHierarchicalPathfinder` is present, the facade
+  may canonicalize the supplied goal object in place to the nearest reachable
+  navcell before delegating to `SimNavLongPathfinder`.
+- `SimNavPathRequestQueue` exposes `enqueue_long_path()`, `enqueue_short_path()`,
+  `cancel()`, `process_budget()`, `start_worker()`, `is_worker_running()`,
+  `collect_worker_results()`, `has_result()`, `take_result()`,
+  `pending_count()`, `result_count()`, and `clear()`. Queue enqueue clones the
+  supplied goal/request data, so later caller-side mutation does not alter the
+  queued request.
 
 ## Adapter Boundary
 
