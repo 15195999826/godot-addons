@@ -1,7 +1,7 @@
 extends Node2D
 
 
-const LabWorld := preload("res://addons/logic-game-framework/example/rts-pathfinding-lab/logic/rts_pathfinding_lab_world.gd")
+const LabWorld := preload("res://addons/sim-nav-map/examples/rts-pathfinding-lab/logic/rts_pathfinding_lab_world.gd")
 
 enum ToolMode {
 	COMMAND,

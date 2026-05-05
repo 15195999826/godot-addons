@@ -59,7 +59,7 @@ goal so units can stop cleanly at building edges.
 Open:
 
 ```text
-addons/logic-game-framework/example/rts-pathfinding-lab/frontend/rts_pathfinding_lab.tscn
+addons/sim-nav-map/examples/rts-pathfinding-lab/frontend/rts_pathfinding_lab.tscn
 ```
 
 Controls:

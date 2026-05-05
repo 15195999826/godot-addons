@@ -1,4 +1,4 @@
 # 0 A.D. 源码本地参考副本(sparse checkout 自 github.com/0ad/0ad,sparse: source/simulation2/)
 # 仅供开发者对照参考,不进仓 — 避免 GPL 代码混入 + 体积膨胀
-# 拉取方法见: example/rts-auto-battle/docs/references/0ad-source-setup.md
-example/rts-auto-battle/docs/references/0ad-source/
+# 拉取方法见: docs/references/0ad-source-setup.md
+docs/references/0ad-source/
