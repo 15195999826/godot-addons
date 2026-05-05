@@ -8,7 +8,9 @@ const LabUnit := preload("res://addons/logic-game-framework/example/rts-pathfind
 
 const MOBILE_GROUP_ID: String = "blue"
 const REPLAN_INTERVAL: float = 0.45
+const REPLAN_BUDGET_PER_TICK: int = 1
 const ARRIVE_EPSILON: float = 8.0
+const OVERLAP_RESOLVE_ITERATIONS: int = 4
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var obstacles: Array[RtsPathfindingLabObstacle] = []
@@ -18,8 +20,12 @@ var group_filter_enabled: bool = true
 var avoid_moving_units_enabled: bool = true
 var current_target: Vector2 = Vector2(610.0, 210.0)
 var tick_count: int = 0
+var last_replans_this_tick: int = 0
+var max_replans_per_tick: int = 0
+var total_replans: int = 0
 var _obstacle_seq: int = 0
 var _blocker_seq: int = 0
+var _replan_queue: Array[String] = []
 
 
 func _init() -> void:
@@ -49,6 +55,11 @@ func setup_default() -> void:
 	units.append(LabUnit.new("red_blocker_s", "red", Vector2(455.0, 275.0), 14.0, 0.0, false))
 	current_target = Vector2(610.0, 210.0)
 	tick_count = 0
+	last_replans_this_tick = 0
+	max_replans_per_tick = 0
+	total_replans = 0
+	_replan_queue.clear()
+	pathfinder.prewarm_static_context(obstacles)
 	set_group_target(current_target)
 
 
@@ -74,12 +85,17 @@ func set_units_target(unit_ids: Array[String], target: Vector2) -> void:
 		var unit := target_units[i]
 		unit.target = _clamp_to_map(target + offsets[i])
 		unit.arrived = false
+		unit.has_move_order = true
 		unit.replan_timer = REPLAN_INTERVAL
-		_plan_unit(unit)
+		unit.path.clear()
+		unit.path_index = 0
+		_enqueue_replan(unit.id)
 
 
 func step(delta: float) -> void:
 	tick_count += 1
+	last_replans_this_tick = 0
+	_process_replan_budget()
 	var mobile_units := get_mobile_units()
 	mobile_units.sort_custom(func(a: RtsPathfindingLabUnit, b: RtsPathfindingLabUnit) -> bool:
 		return a.id < b.id
@@ -88,13 +104,15 @@ func step(delta: float) -> void:
 		if unit.arrived:
 			continue
 		unit.replan_timer += delta
-		if unit.replan_timer >= REPLAN_INTERVAL or unit.path_index >= unit.path.size():
-			_plan_unit(unit)
 		_move_unit(unit, delta)
+		if not unit.arrived and (unit.replan_timer >= REPLAN_INTERVAL or unit.path_index >= unit.path.size()):
+			_enqueue_replan(unit.id)
 	_resolve_overlaps()
 	for unit in mobile_units:
 		_push_out_static_obstacles(unit)
-		if unit.position.distance_to(unit.target) > ARRIVE_EPSILON:
+		if not unit.has_move_order:
+			_settle_idle_unit(unit)
+		elif unit.position.distance_to(unit.target) > ARRIVE_EPSILON:
 			unit.arrived = false
 		unit.append_trace_point()
 
@@ -144,6 +162,7 @@ func add_static_obstacle(center: Vector2, size: Vector2 = Vector2(74.0, 74.0)) -
 	_obstacle_seq += 1
 	var obstacle_id := "custom_obstacle_%d" % _obstacle_seq
 	obstacles.append(LabObstacle.new(obstacle_id, _clamp_to_map(center), size))
+	pathfinder.prewarm_static_context(obstacles)
 	_replan_all_mobile()
 	return obstacle_id
 
@@ -181,6 +200,7 @@ func remove_nearest_editable(point: Vector2, max_distance: float = 44.0) -> Stri
 	if best_kind == "obstacle":
 		var removed_obstacle := obstacles[best_index]
 		obstacles.remove_at(best_index)
+		pathfinder.prewarm_static_context(obstacles)
 		_replan_all_mobile()
 		return removed_obstacle.id
 	var removed_unit := units[best_index]
@@ -236,6 +256,13 @@ func analyze_movement() -> Dictionary:
 		"obstacle_violations": obstacle_violations,
 		"trace_points": trace_points,
 		"ticks": tick_count,
+		"last_replans_this_tick": last_replans_this_tick,
+		"max_replans_per_tick": max_replans_per_tick,
+		"pending_replans": _replan_queue.size(),
+		"total_replans": total_replans,
+		"active_move_orders": _active_move_order_count(),
+		"static_context_cache_hits": pathfinder.static_context_cache_hits,
+		"static_context_cache_misses": pathfinder.static_context_cache_misses,
 	}
 
 
@@ -253,19 +280,44 @@ func _plan_unit(unit: RtsPathfindingLabUnit) -> void:
 		avoid_moving_units_enabled,
 		group_filter_enabled
 	)
+	if bool(pathfinder.last_report.get("used_make_goal_reachable", false)):
+		unit.target = pathfinder.last_report.get("reachable_goal", unit.target) as Vector2
 	unit.set_path(planned_path)
 	unit.replan_timer = 0.0
 
 
 func _replan_all_mobile() -> void:
 	for unit in get_mobile_units():
+		if not unit.has_move_order:
+			continue
 		unit.replan_timer = REPLAN_INTERVAL
+		_enqueue_replan(unit.id)
+
+
+func _enqueue_replan(unit_id: String) -> void:
+	if not _replan_queue.has(unit_id):
+		_replan_queue.append(unit_id)
+
+
+func _process_replan_budget() -> void:
+	var planned_count := 0
+	while planned_count < REPLAN_BUDGET_PER_TICK and not _replan_queue.is_empty():
+		var unit_id := String(_replan_queue.pop_front())
+		var unit := get_unit_by_id(unit_id)
+		if unit == null or not unit.mobile or unit.arrived:
+			continue
 		_plan_unit(unit)
+		planned_count += 1
+	last_replans_this_tick = planned_count
+	max_replans_per_tick = maxi(max_replans_per_tick, planned_count)
+	total_replans += planned_count
 
 
 func _move_unit(unit: RtsPathfindingLabUnit, delta: float) -> void:
 	if unit.path.is_empty():
 		unit.arrived = unit.position.distance_to(unit.target) <= ARRIVE_EPSILON
+		if unit.arrived:
+			unit.has_move_order = false
 		return
 	var waypoint := unit.current_waypoint()
 	var to_waypoint := waypoint - unit.position
@@ -279,29 +331,35 @@ func _move_unit(unit: RtsPathfindingLabUnit, delta: float) -> void:
 	if unit.path_index >= unit.path.size() and unit.position.distance_to(unit.target) <= ARRIVE_EPSILON:
 		unit.position = unit.target
 		unit.arrived = true
+		unit.has_move_order = false
 
 
 func _resolve_overlaps() -> void:
-	for i in range(units.size()):
-		for j in range(i + 1, units.size()):
-			var a := units[i]
-			var b := units[j]
-			var min_dist := a.radius + b.radius
-			var delta := b.position - a.position
-			var dist := delta.length()
-			if dist >= min_dist or dist <= 0.0001:
-				continue
-			var dir := delta / dist
-			var push := (min_dist - dist) + 0.1
-			if a.mobile and b.mobile:
-				a.position -= dir * push * 0.5
-				b.position += dir * push * 0.5
-			elif a.mobile:
-				a.position -= dir * push
-			elif b.mobile:
-				b.position += dir * push
-			a.position = _clamp_to_map(a.position)
-			b.position = _clamp_to_map(b.position)
+	for _iteration in range(OVERLAP_RESOLVE_ITERATIONS):
+		var changed := false
+		for i in range(units.size()):
+			for j in range(i + 1, units.size()):
+				var a := units[i]
+				var b := units[j]
+				var min_dist := a.radius + b.radius
+				var delta := b.position - a.position
+				var dist := delta.length()
+				if dist >= min_dist or dist <= 0.0001:
+					continue
+				var dir := delta / dist
+				var push := (min_dist - dist) + 0.1
+				if a.mobile and b.mobile:
+					a.position -= dir * push * 0.5
+					b.position += dir * push * 0.5
+				elif a.mobile:
+					a.position -= dir * push
+				elif b.mobile:
+					b.position += dir * push
+				a.position = _clamp_to_map(a.position)
+				b.position = _clamp_to_map(b.position)
+				changed = true
+		if not changed:
+			return
 
 
 func _push_out_static_obstacles(unit: RtsPathfindingLabUnit) -> void:
@@ -323,6 +381,22 @@ func _push_out_static_obstacles(unit: RtsPathfindingLabUnit) -> void:
 		else:
 			unit.position.y = rect.position.y + rect.size.y + 0.5
 		unit.position = _clamp_to_map(unit.position)
+
+
+func _settle_idle_unit(unit: RtsPathfindingLabUnit) -> void:
+	unit.target = unit.position
+	unit.path.clear()
+	unit.path_index = 0
+	unit.arrived = true
+	unit.replan_timer = 0.0
+
+
+func _active_move_order_count() -> int:
+	var result := 0
+	for unit in get_mobile_units():
+		if unit.has_move_order:
+			result += 1
+	return result
 
 
 func _formation_offsets(count: int) -> Array[Vector2]:

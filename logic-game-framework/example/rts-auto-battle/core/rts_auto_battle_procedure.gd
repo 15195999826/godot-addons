@@ -193,21 +193,13 @@ func _init(
 		#   之前调 grid.mark_obstacle_cell, 那时 manager 还未出生) 补登记成 1×1 cell OBB shape 进
 		#   manager。让 rasterize_if_dirty 增量重写时这些 cells 不被清掉。
 		_register_decorative_obstacles_to_manager(world)
-		# M4a: Hierarchical pathfinder 实例 (空数据; tick step 6.7 lazy recompute)
-		world.hierarchical_pathfinder = RtsHierarchicalPathfinder.new()
-		# M5.3: PathfinderFacade 顶层入口 (聚合 NavcellGrid + Hierarchical + LongPath)。
-		# nav_agent / activity 调 facade.compute_path_immediate (玩家 click,过 canonicalize) 或
-		# facade.compute_path_direct (AI attack-move,不过 canonicalize)。
-		world.long_pathfinder = RtsLongPathfinder.new(world.navcell_grid)
-		# M6c: VertexPath visibility graph A* (短路径) — facade wire 仅 API,production callsite
-		# 暂不消费(M7 UnitMotion 整合双轨时接)。
-		world.vertex_pathfinder = RtsVertexPathfinder.new(world.navcell_grid)
-		world.pathfinder_facade = RtsPathfinderFacade.new(
-			world.navcell_grid,
-			world.hierarchical_pathfinder,
-			world.long_pathfinder,
-			world.vertex_pathfinder,
-		)
+		# P8: production no longer constructs the old RTS private hierarchical / long / vertex
+		# pathfinders. RtsPathfinderFacade remains the RTS-shaped adapter and delegates to
+		# addons/sim-nav-map internally.
+		world.hierarchical_pathfinder = null
+		world.long_pathfinder = null
+		world.vertex_pathfinder = null
+		world.pathfinder_facade = RtsPathfinderFacade.new(world.navcell_grid)
 		# M7d — facade 通过 world.pathfinder_facade 一等公民字段访问;motion 在 tick 时
 		# component.tick(delta, world, facade) 直接拿,不需要 procedure 层 attach。
 		# (M5 RtsNavAgent 时代必须显式 attach_pathfinder 因为 nav_agent 是 Node2D 持自己 facade
@@ -431,23 +423,17 @@ func tick_once() -> void:
 			world.passability_registry,
 		)
 
-	# 6.7 M4a — Hierarchical Pathfinder 首次 tick lazy recompute。
-	#     **为什么 lazy 不在 procedure.start()**: M3 baseline 起手 navcell grid 不含 building OBB
-	#     (rasterize 在 step 6.6 才跑); start() 里 recompute 会让 grid 提前含 building → tick 1
-	#     strategy 决策走非 stale grid → 改路径 → 破 replay bit-identical。step 6.6 之后做
-	#     recompute 才能跟 M3 既有时序兼容。
-	#     **R5 P1-2 invariant**: recompute 只读 dirty 不清,step 7.5 末端统一清。
-	#     **M4c 启用后此处改 incremental update** (perf 触发: full recompute > 30 ms / tick)。
+	# 6.7 P8 — Mark SimNav reachability ready after rasterize.
+	#     保留旧时序: canonicalize 不在 start() 提前启用,避免 tick 1 读到未 rasterize 的
+	#     derived path grid。真正 reachability recompute 由 RtsPathfinderFacade 内部基于 SimNavMap
+	#     每次请求构建,旧 RtsHierarchicalPathfinder 不再由 production 构造。
 	if (
-		world.hierarchical_pathfinder != null
-		and not world.hierarchical_pathfinder.is_recomputed()
+		world.pathfinder_facade != null
+		and not world.pathfinder_facade.is_reachability_ready()
 		and world.rts_grid != null
 		and world.rts_grid.has_navcell_grid()
 	):
-		world.hierarchical_pathfinder.recompute(
-			world.rts_grid.get_navcell_grid(),
-			world.passability_registry.get_classes(),
-		)
+		world.pathfinder_facade.mark_reachability_ready()
 
 	# 7. 胜负判定
 	if _current_tick >= MAX_TICKS:

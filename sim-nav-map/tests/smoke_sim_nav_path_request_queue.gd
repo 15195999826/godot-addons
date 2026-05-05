@@ -1,0 +1,216 @@
+extends Node
+
+
+var _failures: Array[String] = []
+
+
+func _ready() -> void:
+	_run()
+	if _failures.is_empty():
+		print("SMOKE_TEST_RESULT: PASS - sim-nav-map path request queue")
+		get_tree().quit(0)
+		return
+	for failure in _failures:
+		push_error(failure)
+	print("SMOKE_TEST_RESULT: FAIL - %s" % "; ".join(_failures))
+	get_tree().quit(1)
+
+
+func _run() -> void:
+	_test_ticket_ids_are_nonzero_monotonic()
+	_test_budget_processes_fifo()
+	_test_cancel_pending_skips_without_spending_budget()
+	_test_cancel_result_removes_stale_result()
+	_test_short_request_result()
+	_test_deterministic_repeated_queue()
+	_test_worker_batch_collects_results_and_filters_cancelled_ticket()
+
+
+func _test_ticket_ids_are_nonzero_monotonic() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var ticket_a := queue.enqueue_long_path(
+		nav_map.navcell_center_world(Vector2i(1, 1)),
+		SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(4, 1))),
+		pass_mask
+	)
+	var ticket_b := queue.enqueue_long_path(
+		nav_map.navcell_center_world(Vector2i(1, 1)),
+		SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(5, 1))),
+		pass_mask
+	)
+	_assert_equal(1, ticket_a, "first async ticket should be non-zero and start at 1")
+	_assert_equal(2, ticket_b, "tickets should increase monotonically")
+
+
+func _test_budget_processes_fifo() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var start := nav_map.navcell_center_world(Vector2i(1, 1))
+	var ticket_a := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(4, 1))), pass_mask)
+	var ticket_b := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(5, 1))), pass_mask)
+
+	_assert_equal(1, queue.process_budget(1), "budget=1 should process one request")
+	_assert_true(queue.has_result(ticket_a), "first ticket should have result after first budget step")
+	_assert_false(queue.has_result(ticket_b), "second ticket should wait for next budget step")
+	var path_a := queue.take_result(ticket_a)
+	_assert_equal_vec(nav_map.navcell_center_world(Vector2i(4, 1)), path_a.waypoints[0], "first result should match first queued goal")
+
+	_assert_equal(1, queue.process_budget(1), "second budget step should process second request")
+	var path_b := queue.take_result(ticket_b)
+	_assert_equal_vec(nav_map.navcell_center_world(Vector2i(5, 1)), path_b.waypoints[0], "second result should match second queued goal")
+
+
+func _test_cancel_pending_skips_without_spending_budget() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var start := nav_map.navcell_center_world(Vector2i(1, 1))
+	var ticket_a := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(4, 1))), pass_mask)
+	var ticket_b := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(5, 1))), pass_mask)
+
+	_assert_true(queue.cancel(ticket_a), "cancel should remove pending first request")
+	_assert_equal(1, queue.process_budget(1), "cancelled pending request should not spend budget")
+	_assert_false(queue.has_result(ticket_a), "cancelled pending ticket should not produce stale result")
+	_assert_true(queue.has_result(ticket_b), "next live ticket should be processed by same budget")
+
+
+func _test_cancel_result_removes_stale_result() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var ticket := queue.enqueue_long_path(
+		nav_map.navcell_center_world(Vector2i(1, 1)),
+		SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(4, 1))),
+		pass_mask
+	)
+	queue.process_budget(1)
+	_assert_true(queue.has_result(ticket), "processed ticket should have result before cancellation")
+	_assert_true(queue.cancel(ticket), "cancel should remove already-computed stale result")
+	_assert_null(queue.take_result(ticket), "cancelled computed ticket should not be takeable")
+
+
+func _test_short_request_result() -> void:
+	var fixture := _make_short_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var request := SimNavShortPathRequest.new()
+	request.start = Vector2(10.0, 50.0)
+	request.goal = SimNavPathGoal.point(Vector2(90.0, 50.0))
+	request.clearance = 6.0
+	request.range_px = 160.0
+	request.pass_mask = 1
+	var ticket := queue.enqueue_short_path(request)
+	_assert_equal(1, queue.process_budget(1), "short request should be processed by budget")
+	var path := queue.take_result(ticket)
+	_assert_equal(1, path.size(), "direct short request should produce single-goal path")
+	_assert_equal_vec(request.goal.center, path.waypoints[0], "short request result should match goal")
+
+
+func _test_deterministic_repeated_queue() -> void:
+	var signature_a := _run_deterministic_queue_once()
+	var signature_b := _run_deterministic_queue_once()
+	_assert_equal_str(signature_a, signature_b, "same queued request should produce deterministic result")
+
+
+func _test_worker_batch_collects_results_and_filters_cancelled_ticket() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var start := nav_map.navcell_center_world(Vector2i(1, 1))
+	var ticket_a := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(4, 1))), pass_mask)
+	var ticket_b := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(5, 1))), pass_mask)
+
+	_assert_equal(2, queue.start_worker(), "worker should take all pending requests by default")
+	_assert_true(queue.cancel(ticket_a), "cancel should mark in-flight worker ticket stale")
+	_assert_equal(1, queue.collect_worker_results(true), "worker collect should skip cancelled ticket")
+	_assert_false(queue.has_result(ticket_a), "cancelled in-flight ticket should not produce result")
+	_assert_true(queue.has_result(ticket_b), "live in-flight ticket should produce result")
+	var path_b := queue.take_result(ticket_b)
+	_assert_equal_vec(nav_map.navcell_center_world(Vector2i(5, 1)), path_b.waypoints[0], "worker result should match second queued goal")
+
+
+func _run_deterministic_queue_once() -> String:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var ticket := queue.enqueue_long_path(
+		nav_map.navcell_center_world(Vector2i(1, 1)),
+		SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(6, 1))),
+		pass_mask
+	)
+	queue.process_budget(1)
+	return _path_signature(queue.take_result(ticket))
+
+
+func _make_long_fixture() -> Dictionary:
+	var nav_map := SimNavMap.new(8, 3, 8.0, Vector2.ZERO, 4)
+	var pass_mask := _register_ground(nav_map)
+	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
+	var facade := SimNavPathfinderFacade.new(nav_map, null, long_pathfinder)
+	return {
+		"nav_map": nav_map,
+		"pass_mask": pass_mask,
+		"queue": SimNavPathRequestQueue.new(facade, null),
+	}
+
+
+func _make_short_fixture() -> Dictionary:
+	var nav_map := SimNavMap.new(16, 16, 8.0, Vector2.ZERO, 4)
+	_register_ground(nav_map)
+	return {
+		"nav_map": nav_map,
+		"queue": SimNavPathRequestQueue.new(null, SimNavVertexPathfinder.new(nav_map)),
+	}
+
+
+func _register_ground(nav_map: SimNavMap) -> int:
+	var ground := SimNavPassabilityClassConfig.new()
+	ground.class_name_id = "ground"
+	ground.clearance = 0.0
+	ground.affects_pathfinding = true
+	return nav_map.register_passability_class(ground)
+
+
+func _path_signature(path: SimNavWaypointPath) -> String:
+	var cells: Array[String] = []
+	for point in path.waypoints:
+		cells.append("%.1f,%.1f" % [point.x, point.y])
+	return "|".join(cells)
+
+
+func _assert_true(value: bool, message: String) -> void:
+	if not value:
+		_failures.append(message)
+
+
+func _assert_false(value: bool, message: String) -> void:
+	if value:
+		_failures.append(message)
+
+
+func _assert_null(value: Variant, message: String) -> void:
+	if value != null:
+		_failures.append(message)
+
+
+func _assert_equal(expected: int, actual: int, message: String) -> void:
+	if expected != actual:
+		_failures.append("%s (expected=%d actual=%d)" % [message, expected, actual])
+
+
+func _assert_equal_str(expected: String, actual: String, message: String) -> void:
+	if expected != actual:
+		_failures.append("%s (expected=%s actual=%s)" % [message, expected, actual])
+
+
+func _assert_equal_vec(expected: Vector2, actual: Vector2, message: String) -> void:
+	if expected.distance_to(actual) > 0.01:
+		_failures.append("%s (expected=%s actual=%s)" % [message, str(expected), str(actual)])

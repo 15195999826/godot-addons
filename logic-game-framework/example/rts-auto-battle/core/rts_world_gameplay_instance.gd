@@ -40,26 +40,18 @@ var passability_registry: RtsPassabilityClassRegistry = null
 ## ObstructionManager 闲置不影响 baseline。
 var obstruction_manager: RtsObstructionManager = null
 
-## M4: Hierarchical pathfinder 实例 (chunk + region 可达性查询); procedure._init 末尾构造
-## (obstruction_manager 之后)。grid 为 null 时此字段也是 null。
-##
-## **M4a 阶段**: 仅实例化 + 首次 tick step 6.7 lazy recompute; production code (player
-## commands / activity) **不消费** — 0 漂移保 replay bit-identical。
-## **M4b 阶段**: player commands 调 make_goal_reachable canonicalize goal → 改变路径 →
-## 接受新 baseline (P1)。
-## **M4c 阶段**(可选): tick step 6.7 改 incremental update 替代 lazy recompute;触发条件 =
-## M4a recompute > 30 ms / tick (perf 测量后决定)。
+## Legacy RTS-private hierarchical pathfinder.
+## P8: production uses `RtsPathfinderFacade` backed by `addons/sim-nav-map`; this field stays
+## only for older fixture smoke / compatibility until the old pathfinding test stack is retired.
 var hierarchical_pathfinder: RtsHierarchicalPathfinder = null
 
-## M5: LongPathfinder 朴素 A* on NavcellGrid;procedure._init 末构造(navcell_grid 之后)。
-## 跟 facade 一起;callsite 一般通过 pathfinder_facade 走,极少直接用 long_pathfinder。
+## Legacy RTS-private long pathfinder. Not constructed by production after P8.
 var long_pathfinder: RtsLongPathfinder = null
 
-## M6c: VertexPath visibility graph A*(短路径)— procedure._init 末构造,facade wire 仅 API,
-## production callsite 暂不消费(M7 UnitMotion 整合双轨时接)。
+## Legacy RTS-private vertex pathfinder. Not constructed by production after P8.
 var vertex_pathfinder: RtsVertexPathfinder = null
 
-## M5: PathfinderFacade 顶层入口(聚合 NavcellGrid + Hierarchical + LongPath + VertexPath)。
+## PathfinderFacade 顶层入口。P8 后这是 RTS production 到 `addons/sim-nav-map` 的 adapter。
 ##
 ## **接口**:
 ##   - `compute_path_immediate(start, goal, mask)` 玩家 click move 走 canonicalize → A*

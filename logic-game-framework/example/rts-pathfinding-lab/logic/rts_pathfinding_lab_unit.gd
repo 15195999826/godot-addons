@@ -11,6 +11,7 @@ var speed: float = 95.0
 var mobile: bool = true
 var blocks_pathfinding: bool = true
 var arrived: bool = false
+var has_move_order: bool = false
 var path: Array[Vector2] = []
 var path_index: int = 0
 var trace: Array[Vector2] = []
@@ -39,6 +40,8 @@ func set_path(points: Array[Vector2]) -> void:
 	path = points.duplicate()
 	path_index = 0
 	arrived = path.is_empty() and position.distance_to(target) <= radius
+	if arrived:
+		has_move_order = false
 
 
 func current_waypoint() -> Vector2:
@@ -50,4 +53,3 @@ func current_waypoint() -> Vector2:
 func append_trace_point() -> void:
 	if trace.is_empty() or trace.back().distance_to(position) >= 4.0:
 		trace.append(position)
-

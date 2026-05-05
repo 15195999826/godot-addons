@@ -5,19 +5,27 @@ extends RefCounted
 const LabObstacle := preload("res://addons/logic-game-framework/example/rts-pathfinding-lab/logic/rts_pathfinding_lab_obstacle.gd")
 const LabUnit := preload("res://addons/logic-game-framework/example/rts-pathfinding-lab/logic/rts_pathfinding_lab_unit.gd")
 
-const CORNER_OUTSET_MIN: float = 5.0
-const INF: float = 1.0e20
-
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var cell_size: float = 16.0
 var unit_radius: float = 11.0
 var last_report: Dictionary = {}
+var _cached_static_signature: String = ""
+var _cached_nav_map: SimNavMap = null
+var _cached_pass_mask: int = 0
+var _cached_hierarchical: SimNavHierarchicalPathfinder = null
+var _last_context_cache_hit: bool = false
+var static_context_cache_hits: int = 0
+var static_context_cache_misses: int = 0
 
 
 func _init(p_map_size: Vector2 = Vector2(720.0, 420.0), p_cell_size: float = 16.0, p_unit_radius: float = 11.0) -> void:
 	map_size = p_map_size
 	cell_size = p_cell_size
 	unit_radius = p_unit_radius
+
+
+func prewarm_static_context(static_obstacles: Array[RtsPathfindingLabObstacle]) -> void:
+	_get_static_nav_context(static_obstacles)
 
 
 func plan_path(
@@ -30,13 +38,34 @@ func plan_path(
 	group_filter_enabled: bool
 ) -> Array[Vector2]:
 	var active_obstacles := _build_active_obstacles(static_obstacles, units, moving_group_id, avoid_moving_units, group_filter_enabled)
+	var nav_context := _get_static_nav_context(static_obstacles)
+	var nav_map: SimNavMap = nav_context["nav_map"]
+	var pass_mask := int(nav_context["pass_mask"])
+	var hierarchical: SimNavHierarchicalPathfinder = nav_context["hierarchical"]
+	nav_map.replace_dynamic_obstructions(_build_dynamic_obstruction_shapes(
+		units,
+		moving_group_id,
+		avoid_moving_units,
+		group_filter_enabled
+	))
+
 	var reachable_goal := goal
 	var used_make_goal_reachable := false
 	if not is_point_passable(goal, active_obstacles, unit_radius):
-		reachable_goal = _make_goal_reachable(goal, active_obstacles, unit_radius)
+		reachable_goal = _make_goal_reachable_with_nav(nav_map, hierarchical, start, goal, pass_mask)
 		used_make_goal_reachable = true
 
-	var vertex_path := _find_vertex_path(start, reachable_goal, active_obstacles, unit_radius)
+	var short_request := SimNavShortPathRequest.new()
+	short_request.start = start
+	short_request.goal = SimNavPathGoal.point(reachable_goal)
+	short_request.clearance = unit_radius
+	short_request.range_px = map_size.length()
+	short_request.pass_mask = pass_mask
+	short_request.avoid_moving_units = avoid_moving_units
+	short_request.control_group = moving_group_id if group_filter_enabled else ""
+	var vertex_pathfinder := SimNavVertexPathfinder.new(nav_map)
+	var sim_vertex_path := vertex_pathfinder.compute_short_path_immediate(short_request)
+	var vertex_path := _waypoint_path_to_forward_array(sim_vertex_path)
 	if not vertex_path.is_empty():
 		last_report = {
 			"used_vertex": true,
@@ -44,17 +73,21 @@ func plan_path(
 			"used_make_goal_reachable": used_make_goal_reachable,
 			"reachable_goal": reachable_goal,
 			"path_size": vertex_path.size(),
+			"static_context_cache_hit": _last_context_cache_hit,
 		}
 		return vertex_path
 
-	var grid_path := _find_grid_path(start, reachable_goal, active_obstacles, unit_radius)
-	var smoothed := _string_pull(start, grid_path, active_obstacles, unit_radius)
+	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
+	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
+	var long_path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, SimNavPathGoal.point(reachable_goal), pass_mask))
+	var smoothed := _string_pull(start, long_path, active_obstacles, unit_radius)
 	last_report = {
 		"used_vertex": false,
 		"used_grid_fallback": true,
 		"used_make_goal_reachable": used_make_goal_reachable,
 		"reachable_goal": reachable_goal,
 		"path_size": smoothed.size(),
+		"static_context_cache_hit": _last_context_cache_hit,
 	}
 	return smoothed
 
@@ -62,8 +95,8 @@ func plan_path(
 func is_point_passable(point: Vector2, obstacles: Array[RtsPathfindingLabObstacle], clearance: float) -> bool:
 	if point.x < 0.0 or point.y < 0.0 or point.x > map_size.x or point.y > map_size.y:
 		return false
-	for obstacle in obstacles:
-		if obstacle.get_inflated_rect(clearance).has_point(point):
+	for shape in _obstacles_to_static_shapes(obstacles):
+		if shape.contains_point_with_clearance(point, clearance):
 			return false
 	return true
 
@@ -75,10 +108,7 @@ func segment_clear(a: Vector2, b: Vector2, obstacles: Array[RtsPathfindingLabObs
 		return false
 	if a.y > map_size.y + 1.0 or b.y > map_size.y + 1.0:
 		return false
-	for obstacle in obstacles:
-		if _segment_intersects_rect(a, b, obstacle.get_inflated_rect(clearance)):
-			return false
-	return true
+	return SimNavLineOfSight.segment_clear(a, b, _obstacles_to_static_shapes(obstacles), clearance)
 
 
 func build_obstacles_for_analysis(
@@ -118,155 +148,133 @@ func _build_active_obstacles(
 	return result
 
 
-func _find_vertex_path(
-	start: Vector2,
-	goal: Vector2,
-	obstacles: Array[RtsPathfindingLabObstacle],
-	clearance: float
-) -> Array[Vector2]:
-	if segment_clear(start, goal, obstacles, clearance):
-		return [goal]
+func _build_dynamic_obstruction_shapes(
+	units: Array[RtsPathfindingLabUnit],
+	moving_group_id: String,
+	avoid_moving_units: bool,
+	group_filter_enabled: bool
+) -> Array[SimNavObstructionShapeUnit]:
+	var result: Array[SimNavObstructionShapeUnit] = []
+	if not avoid_moving_units:
+		return result
 
-	var vertices: Array[Vector2] = [start, goal]
-	var sorted_obstacles := obstacles.duplicate()
+	var sorted_units := units.duplicate()
+	sorted_units.sort_custom(func(a: RtsPathfindingLabUnit, b: RtsPathfindingLabUnit) -> bool:
+		return a.id < b.id
+	)
+	for unit in sorted_units:
+		if not unit.blocks_pathfinding:
+			continue
+		if group_filter_enabled and unit.group_id == moving_group_id:
+			continue
+		var shape := SimNavObstructionShapeUnit.new()
+		shape.entity_id = unit.id
+		shape.center = unit.position
+		shape.clearance = unit.radius
+		shape.flags = SimNavObstructionFlags.BLOCK_MOVEMENT
+		if unit.mobile:
+			shape.flags |= SimNavObstructionFlags.MOVING
+			shape.moving = true
+		shape.control_group = unit.group_id
+		result.append(shape)
+	return result
+
+
+func _get_static_nav_context(static_obstacles: Array[RtsPathfindingLabObstacle]) -> Dictionary:
+	var signature := _static_obstacles_signature(static_obstacles)
+	_last_context_cache_hit = (
+		_cached_nav_map != null
+		and _cached_hierarchical != null
+		and _cached_static_signature == signature
+	)
+	if not _last_context_cache_hit:
+		static_context_cache_misses += 1
+		var nav_context := _build_nav_context(static_obstacles)
+		_cached_static_signature = signature
+		_cached_nav_map = nav_context["nav_map"] as SimNavMap
+		_cached_pass_mask = int(nav_context["pass_mask"])
+		_cached_hierarchical = SimNavHierarchicalPathfinder.new()
+		_cached_hierarchical.recompute(_cached_nav_map, [_cached_pass_mask])
+	else:
+		static_context_cache_hits += 1
+	return {
+		"nav_map": _cached_nav_map,
+		"pass_mask": _cached_pass_mask,
+		"hierarchical": _cached_hierarchical,
+	}
+
+
+func _static_obstacles_signature(static_obstacles: Array[RtsPathfindingLabObstacle]) -> String:
+	var parts: Array[String] = []
+	var sorted_obstacles := static_obstacles.duplicate()
 	sorted_obstacles.sort_custom(func(a: RtsPathfindingLabObstacle, b: RtsPathfindingLabObstacle) -> bool:
 		return a.id < b.id
 	)
-	var outset: float = maxf(CORNER_OUTSET_MIN, clearance * 0.45)
 	for obstacle in sorted_obstacles:
-		for corner in obstacle.get_inflated_corners(clearance, outset):
-			if is_point_passable(corner, obstacles, clearance * 0.15):
-				vertices.append(corner)
-
-	return _astar_visibility(vertices, obstacles, clearance)
-
-
-func _astar_visibility(
-	vertices: Array[Vector2],
-	obstacles: Array[RtsPathfindingLabObstacle],
-	clearance: float
-) -> Array[Vector2]:
-	var open: Array[int] = [0]
-	var came_from: Dictionary = {}
-	var g_score: Dictionary = {0: 0.0}
-	var closed: Dictionary = {}
-
-	while not open.is_empty():
-		var current := _pop_best_vertex(open, vertices, g_score)
-		if current == 1:
-			return _reconstruct_vertex_path(vertices, came_from, current)
-		closed[current] = true
-
-		for next_idx in range(vertices.size()):
-			if next_idx == current or closed.has(next_idx):
-				continue
-			if not segment_clear(vertices[current], vertices[next_idx], obstacles, clearance):
-				continue
-			var tentative: float = float(g_score.get(current, INF)) + vertices[current].distance_to(vertices[next_idx])
-			if tentative >= float(g_score.get(next_idx, INF)):
-				continue
-			came_from[next_idx] = current
-			g_score[next_idx] = tentative
-			if not open.has(next_idx):
-				open.append(next_idx)
-	return []
+		parts.append("%s:%d:%d:%d:%d" % [
+			obstacle.id,
+			int(roundf(obstacle.center.x * 10.0)),
+			int(roundf(obstacle.center.y * 10.0)),
+			int(roundf(obstacle.size.x * 10.0)),
+			int(roundf(obstacle.size.y * 10.0)),
+		])
+	return "|".join(parts)
 
 
-func _pop_best_vertex(open: Array[int], vertices: Array[Vector2], g_score: Dictionary) -> int:
-	var best_pos := 0
-	var best_idx := open[0]
-	var best_f: float = float(g_score.get(best_idx, INF)) + vertices[best_idx].distance_to(vertices[1])
-	var best_h: float = vertices[best_idx].distance_to(vertices[1])
-	for k in range(1, open.size()):
-		var idx: int = open[k]
-		var h := vertices[idx].distance_to(vertices[1])
-		var f: float = float(g_score.get(idx, INF)) + h
-		if f < best_f or (is_equal_approx(f, best_f) and (h < best_h or (is_equal_approx(h, best_h) and idx < best_idx))):
-			best_pos = k
-			best_idx = idx
-			best_f = f
-			best_h = h
-	open.remove_at(best_pos)
-	return best_idx
+func _build_nav_context(obstacles: Array[RtsPathfindingLabObstacle]) -> Dictionary:
+	var width := int(ceil(map_size.x / cell_size))
+	var height := int(ceil(map_size.y / cell_size))
+	var nav_map := SimNavMap.new(width, height, cell_size, Vector2.ZERO, 1)
+	var ground := SimNavPassabilityClassConfig.new()
+	ground.class_name_id = "ground"
+	ground.clearance = unit_radius
+	ground.affects_pathfinding = true
+	var pass_mask := nav_map.register_passability_class(ground)
+	for shape in _obstacles_to_static_shapes(obstacles):
+		nav_map.add_static_obstruction(shape)
+	nav_map.rebuild_dirty()
+	return {
+		"nav_map": nav_map,
+		"pass_mask": pass_mask,
+	}
 
 
-func _reconstruct_vertex_path(vertices: Array[Vector2], came_from: Dictionary, current: int) -> Array[Vector2]:
-	var reversed_path: Array[Vector2] = [vertices[current]]
-	while came_from.has(current):
-		current = int(came_from[current])
-		if current != 0:
-			reversed_path.append(vertices[current])
-	reversed_path.reverse()
-	return reversed_path
+func _obstacles_to_static_shapes(obstacles: Array[RtsPathfindingLabObstacle]) -> Array[SimNavObstructionShapeStatic]:
+	var shapes: Array[SimNavObstructionShapeStatic] = []
+	for obstacle in obstacles:
+		shapes.append(_lab_obstacle_to_static_shape(obstacle))
+	return shapes
 
 
-func _find_grid_path(
+func _lab_obstacle_to_static_shape(obstacle: RtsPathfindingLabObstacle) -> SimNavObstructionShapeStatic:
+	var shape := SimNavObstructionShapeStatic.new()
+	shape.entity_id = obstacle.id
+	shape.center = obstacle.center
+	shape.width = obstacle.size.x
+	shape.height = obstacle.size.y
+	shape.flags = SimNavObstructionFlags.BLOCK_PATHFINDING
+	return shape
+
+
+func _make_goal_reachable_with_nav(
+	nav_map: SimNavMap,
+	hierarchical: SimNavHierarchicalPathfinder,
 	start: Vector2,
 	goal: Vector2,
-	obstacles: Array[RtsPathfindingLabObstacle],
-	clearance: float
-) -> Array[Vector2]:
-	var start_cell := _world_to_cell(start)
-	var goal_cell := _world_to_cell(goal)
-	if not _is_cell_passable(goal_cell, obstacles, clearance, start_cell):
-		goal_cell = _nearest_passable_cell(goal_cell, obstacles, clearance, start_cell)
-
-	var open: Array[Vector2i] = [start_cell]
-	var came_from: Dictionary = {}
-	var g_score: Dictionary = {start_cell: 0.0}
-	var closed: Dictionary = {}
-
-	while not open.is_empty():
-		var current := _pop_best_cell(open, goal_cell, g_score)
-		if current == goal_cell:
-			var points := _reconstruct_cell_path(came_from, current, start_cell)
-			points.append(goal)
-			return points
-		closed[current] = true
-
-		for nb in _neighbors(current):
-			if closed.has(nb):
-				continue
-			if not _is_cell_passable(nb, obstacles, clearance, start_cell):
-				continue
-			var step_cost := _cell_center(current).distance_to(_cell_center(nb))
-			var tentative: float = float(g_score.get(current, INF)) + step_cost
-			if tentative >= float(g_score.get(nb, INF)):
-				continue
-			came_from[nb] = current
-			g_score[nb] = tentative
-			if not open.has(nb):
-				open.append(nb)
-	return []
+	pass_mask: int
+) -> Vector2:
+	var start_cell := nav_map.world_to_navcell(start)
+	var goal_cell := nav_map.world_to_navcell(goal)
+	var reachable_cell := hierarchical.make_goal_reachable_navcell(start_cell, goal_cell, pass_mask)
+	return nav_map.navcell_center_world(reachable_cell)
 
 
-func _pop_best_cell(open: Array[Vector2i], goal_cell: Vector2i, g_score: Dictionary) -> Vector2i:
-	var best_pos := 0
-	var best_cell := open[0]
-	var best_h := _cell_center(best_cell).distance_to(_cell_center(goal_cell))
-	var best_f: float = float(g_score.get(best_cell, INF)) + best_h
-	for k in range(1, open.size()):
-		var cell: Vector2i = open[k]
-		var h := _cell_center(cell).distance_to(_cell_center(goal_cell))
-		var f: float = float(g_score.get(cell, INF)) + h
-		if f < best_f or (is_equal_approx(f, best_f) and (h < best_h or (is_equal_approx(h, best_h) and _cell_key_less(cell, best_cell)))):
-			best_pos = k
-			best_cell = cell
-			best_f = f
-			best_h = h
-	open.remove_at(best_pos)
-	return best_cell
-
-
-func _reconstruct_cell_path(came_from: Dictionary, current: Vector2i, start_cell: Vector2i) -> Array[Vector2]:
-	var cells: Array[Vector2i] = []
-	while current != start_cell:
-		cells.append(current)
-		current = came_from[current] as Vector2i
-	cells.reverse()
+func _waypoint_path_to_forward_array(path: SimNavWaypointPath) -> Array[Vector2]:
 	var result: Array[Vector2] = []
-	for cell in cells:
-		result.append(_cell_center(cell))
+	if path == null:
+		return result
+	for i in range(path.waypoints.size() - 1, -1, -1):
+		result.append(path.waypoints[i])
 	return result
 
 
@@ -291,120 +299,3 @@ func _string_pull(
 		anchor = raw_path[chosen]
 		idx = chosen + 1
 	return result
-
-
-func _make_goal_reachable(
-	goal: Vector2,
-	obstacles: Array[RtsPathfindingLabObstacle],
-	clearance: float
-) -> Vector2:
-	var goal_cell := _world_to_cell(goal)
-	var passable_cell := _nearest_passable_cell(goal_cell, obstacles, clearance, Vector2i(-999999, -999999))
-	return _cell_center(passable_cell)
-
-
-func _nearest_passable_cell(
-	origin: Vector2i,
-	obstacles: Array[RtsPathfindingLabObstacle],
-	clearance: float,
-	start_cell: Vector2i
-) -> Vector2i:
-	if _is_cell_passable(origin, obstacles, clearance, start_cell):
-		return origin
-	var max_radius := maxi(_grid_width(), _grid_height())
-	for radius in range(1, max_radius + 1):
-		for y in range(origin.y - radius, origin.y + radius + 1):
-			for x in range(origin.x - radius, origin.x + radius + 1):
-				if x != origin.x - radius and x != origin.x + radius and y != origin.y - radius and y != origin.y + radius:
-					continue
-				var cell := Vector2i(x, y)
-				if _is_cell_passable(cell, obstacles, clearance, start_cell):
-					return cell
-	return origin
-
-
-func _neighbors(cell: Vector2i) -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
-	for y in range(cell.y - 1, cell.y + 2):
-		for x in range(cell.x - 1, cell.x + 2):
-			if x == cell.x and y == cell.y:
-				continue
-			result.append(Vector2i(x, y))
-	return result
-
-
-func _is_cell_passable(
-	cell: Vector2i,
-	obstacles: Array[RtsPathfindingLabObstacle],
-	clearance: float,
-	start_cell: Vector2i
-) -> bool:
-	if cell == start_cell:
-		return true
-	if cell.x < 0 or cell.y < 0 or cell.x >= _grid_width() or cell.y >= _grid_height():
-		return false
-	return is_point_passable(_cell_center(cell), obstacles, clearance)
-
-
-func _world_to_cell(point: Vector2) -> Vector2i:
-	var x := clampi(int(floor(point.x / cell_size)), 0, _grid_width() - 1)
-	var y := clampi(int(floor(point.y / cell_size)), 0, _grid_height() - 1)
-	return Vector2i(x, y)
-
-
-func _cell_center(cell: Vector2i) -> Vector2:
-	return Vector2((float(cell.x) + 0.5) * cell_size, (float(cell.y) + 0.5) * cell_size)
-
-
-func _grid_width() -> int:
-	return int(ceil(map_size.x / cell_size))
-
-
-func _grid_height() -> int:
-	return int(ceil(map_size.y / cell_size))
-
-
-func _cell_key_less(a: Vector2i, b: Vector2i) -> bool:
-	if a.y != b.y:
-		return a.y < b.y
-	return a.x < b.x
-
-
-static func _segment_intersects_rect(a: Vector2, b: Vector2, rect: Rect2) -> bool:
-	if rect.has_point(a) or rect.has_point(b):
-		return true
-	var p0 := rect.position
-	var p1 := Vector2(rect.position.x + rect.size.x, rect.position.y)
-	var p2 := rect.position + rect.size
-	var p3 := Vector2(rect.position.x, rect.position.y + rect.size.y)
-	return _segments_intersect(a, b, p0, p1) \
-		or _segments_intersect(a, b, p1, p2) \
-		or _segments_intersect(a, b, p2, p3) \
-		or _segments_intersect(a, b, p3, p0)
-
-
-static func _segments_intersect(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> bool:
-	var r := b - a
-	var s := d - c
-	var denom := _cross(r, s)
-	var qp := c - a
-	if absf(denom) <= 0.00001:
-		if absf(_cross(qp, r)) > 0.00001:
-			return false
-		var rr := r.length_squared()
-		if rr <= 0.00001:
-			return a.distance_to(c) <= 0.00001
-		var t0 := qp.dot(r) / rr
-		var t1 := t0 + s.dot(r) / rr
-		if t0 > t1:
-			var tmp := t0
-			t0 = t1
-			t1 = tmp
-		return maxf(t0, 0.0) <= minf(t1, 1.0)
-	var t := _cross(qp, s) / denom
-	var u := _cross(qp, r) / denom
-	return t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0
-
-
-static func _cross(a: Vector2, b: Vector2) -> float:
-	return a.x * b.y - a.y * b.x
