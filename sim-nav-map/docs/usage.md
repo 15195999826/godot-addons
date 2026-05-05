@@ -31,9 +31,12 @@ var ground_mask := nav_map.register_passability_class(ground)
 
 Keep passability names project-owned. The addon only assigns masks and evaluates
 map/path queries against those masks.
-`terrain_mask` is a project-owned bitmask over terrain tile data: if a terrain
-tile contains any bit from a class's `terrain_mask`, the covered navcells are
-blocked for that class.
+`clearance` is the path-center radius for this class. The same terrain or static
+obstruction can therefore block a large class while a small class remains
+passable. `terrain_mask` is a project-owned bitmask over terrain tile data: if a
+terrain tile contains any bit from a class's `terrain_mask`, the covered navcells
+and any navcell whose class-radius overlaps that blocked terrain are blocked for
+that class.
 
 ## 3. Project Terrain Data
 
@@ -43,8 +46,8 @@ nav_map.set_terrain_tile_data(Vector2i(3, 2), TERRAIN_WATER)
 
 Use `SimNavMap.set_terrain_tile_data()` for edits that should affect path
 queries. It stores the raw terrain tile value, derives navcell passability for
-registered classes, and marks changed navcells dirty. If a map tool edits
-`nav_map.get_terrain_tile_map()` directly, call
+registered classes, expands each class by its `clearance`, and marks changed
+navcells dirty. If a map tool edits `nav_map.get_terrain_tile_map()` directly, call
 `nav_map.rebuild_terrain_passability()` before rebuilding reachability or
 querying paths.
 
@@ -65,6 +68,10 @@ shape.flags = SimNavObstructionFlags.BLOCK_PATHFINDING
 var tag := nav_map.add_static_obstruction(shape)
 nav_map.rebuild_dirty()
 ```
+
+Static obstructions rasterize per registered passability class. A class with
+larger `clearance` blocks extra neighboring navcells, while a smaller class can
+still use a narrow gap if its own clearance fits.
 
 Dynamic unit blockers:
 

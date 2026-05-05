@@ -17,7 +17,9 @@ addons/sim-nav-map/{core,model,obstruction,pathfinding}/
 Public API smoke coverage is registered in `simnav/smoke`, including
 `smoke_sim_nav_public_api_contract.tscn` for constructor/defaults, map projection
 entry points, dirty/cache lifecycle, long/short query boundaries, and queued
-request cloning.
+request cloning. Feature-specific coverage includes
+`smoke_sim_nav_clearance_rasterization.tscn` for class-aware terrain/static
+clearance rasterization.
 
 ## Stable Entry Points
 
@@ -25,7 +27,7 @@ These classes are the supported integration surface for game/example adapters:
 
 | Class | Responsibility |
 |---|---|
-| `SimNavMap` | Central map state: navcell geometry, terrain data, derived terrain passability, passability classes, obstruction data, dirty tracking, world/navcell conversion. |
+| `SimNavMap` | Central map state: navcell geometry, terrain data, derived terrain passability, class-aware clearance raster data, obstruction data, dirty tracking, world/navcell conversion. |
 | `SimNavPassabilityClassConfig` | Per-class passability configuration: name, clearance, terrain mask, and pathfinding participation. |
 | `SimNavPassabilityClassRegistry` | Registers passability classes and assigns masks. Usually accessed through `SimNavMap`. |
 | `SimNavTerrainTileMap` | Coarser terrain tile data used by `SimNavMap`. Usually accessed through `SimNavMap`. |
@@ -91,12 +93,18 @@ Projection DTOs:
 
 - `SimNavPassabilityClassConfig` is a field DTO: `class_name_id`, `bit_index`,
   `clearance`, `affects_pathfinding`, and `terrain_mask`.
+- `clearance` is the path-center radius for that passability class. During
+  navcell rasterization, terrain and static obstruction masks are expanded by
+  this radius for the class's bit. `clearance == 0` means only the terrain cell
+  or static shape footprint blocks that class.
 - `terrain_mask` is interpreted against `SimNavTerrainTileMap` tile data. When
-  `(tile_data & terrain_mask) != 0`, that passability class is blocked for every
-  navcell covered by the terrain tile. `terrain_mask == 0` means terrain data
-  does not block that class. Terrain bits remain project-owned, so a game can
-  map bits to water, cliff, slope, shore, material, or other navigation surface
-  inputs without making those concepts core gameplay policy.
+  `(tile_data & terrain_mask) != 0`, the tile's navcells are blocked for that
+  passability class and neighboring navcells are also blocked when the class
+  `clearance` circle around the navcell center overlaps the blocked terrain
+  navcell rectangle. `terrain_mask == 0` means terrain data does not block that
+  class. Terrain bits remain project-owned, so a game can map bits to water,
+  cliff, slope, shore, material, or other navigation surface inputs without
+  making those concepts core gameplay policy.
 - `SimNavPassabilityClassRegistry` exposes `register()`, `get_pass_class()`,
   `get_mask()`, `get_class_by_mask()`, `get_classes()`, `max_clearance()`, and
   `size()`.
@@ -104,9 +112,22 @@ Projection DTOs:
   `is_valid_tile()`, `get_tile_data()`, `set_tile_data()`, and
   `get_navcell_terrain_data()`.
 - Prefer `SimNavMap.set_terrain_tile_data()` for terrain edits. It updates the
-  raw tile data, derives terrain passability into navcells, and marks changed
-  navcells dirty. If a tool edits `SimNavTerrainTileMap` directly, call
+  raw tile data, derives clearance-expanded terrain passability into navcells,
+  and marks changed navcells dirty. A terrain edit recomputes the edited tile
+  plus the surrounding navcells that may be affected by registered class
+  clearances. If a tool edits `SimNavTerrainTileMap` directly, call
   `SimNavMap.rebuild_terrain_passability()` before path queries.
+
+### Static Obstruction Rasterization
+
+- Static obstructions with `SimNavObstructionFlags.BLOCK_PATHFINDING` rasterize
+  into the same composed navcell passability data used by terrain.
+- For each registered pathfinding class, `SimNavMap` tests the navcell center
+  against `SimNavObstructionShapeStatic.contains_point_with_clearance(point,
+  config.clearance)`. This lets the same static obstruction block a large class
+  while still allowing a small class through a narrow gap.
+- Dynamic unit obstructions are not baked into long-range navcell data. They
+  remain short-path/local-query input.
 
 ### Path Queries
 

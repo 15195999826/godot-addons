@@ -66,6 +66,28 @@ Feature 2 may start when these Feature 1 smoke contracts, the default lab
 playable regression, `git -C addons diff --check`, and the
 `docs/references/0ad-source/` untracked check are all green.
 
+## Feature 2 Clearance Rasterization Contract
+
+Feature 2 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_clearance_rasterization.tscn` in
+  `simnav/smoke`: verifies class-specific `clearance` expansion for terrain and
+  static obstruction rasterization, different masks for small/large classes on
+  the same terrain/obstruction, dirty marking when clearance-expanded terrain is
+  cleared, and long-path behavior through a one-navcell gap.
+- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_clearance_adapter.tscn`
+  in `rtslab/smoke`: verifies the lab adapter can build a terrain context with
+  small/large passability classes and consume the resulting reachability/path
+  difference without promoting unit type, movement, selection, command, or
+  formation policy into core.
+
+Feature 3 may start when these Feature 2 smoke contracts, the existing terrain
+and lab playable regressions, `git -C addons diff --check`, and the
+`docs/references/0ad-source/` untracked check are all green. Feature 3 should
+start from dirty edit/cache lifecycle only; it should not introduce reachability
+result DTOs, long path result contracts, short filters, line validation, queue
+expansion, scale diagnostics, or lab gameplay policy in the same step.
+
 ## Discovery Contract
 
 `tools/run_tests.ps1` discovers sim-nav-map manifests from:
@@ -87,6 +109,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 - public API constructor/default contracts
 - passability class registration
 - terrain tile data and terrain-derived navcell passability
+- class-aware clearance rasterization for terrain and static obstructions
 - dirty navcell lifecycle
 - spatial index queries
 - path goal geometry
@@ -103,6 +126,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 
 - the headless lab movement/pathfinding contract
 - the lab terrain preset adapter contract
+- the lab small/large clearance adapter contract
 - the real lab scene loading path
 
 ## Legacy RTS Fixture Boundary

@@ -32,6 +32,15 @@ Feature 1 已补齐：
 - `rts-pathfinding-lab` 只新增 terrain preset adapter smoke，不把 ship gameplay、
   terrain edit UI 或 movement policy 上提到 core。
 
+Feature 2 已补齐：
+
+- `SimNavPassabilityClassConfig.clearance` 参与 terrain-derived passability 和
+  static obstruction rasterization。
+- 同一 blocked terrain / static obstruction 可以对 small / large class 产生不同
+  passability mask，long path 会按各自 mask 判断窄缝能否通过。
+- `rts-pathfinding-lab` 只新增 small / large clearance adapter smoke，不把 unit
+  type、movement、selection、command、formation policy 上提到 core。
+
 V1 不承诺：
 
 - 完整 RTS movement system。
@@ -309,6 +318,35 @@ navigation obstacle”。
 ```powershell
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
+
+### 完成记录
+
+Feature 2 的当前完成契约：
+
+- core clearance contract 在 `smoke_sim_nav_clearance_rasterization.tscn` 中覆盖。
+- terrain blocked navcell 会按 class `clearance` 外扩到相邻 navcell；清除 terrain
+  时也会重算 clearance-expanded 影响范围并 mark changed navcells dirty。
+- static obstruction rasterization 继续使用
+  `SimNavObstructionShapeStatic.contains_point_with_clearance(point,
+  config.clearance)`，同一 obstruction 可以得到 small / large 不同 mask。
+- lab adapter contract 在
+  `smoke_rts_pathfinding_lab_clearance_adapter.tscn` 中覆盖。
+- 未实现 Feature 3+ 的 dirty cache lifecycle、reachability result DTO、long path
+  result contract、short path filter、line validation、request queue expansion 或
+  scale diagnostics；也未实现 ship gameplay、formation、push/yield、HUD policy 或
+  game-specific movement policy。
+
+### Feature 3 入口条件
+
+进入 Feature 3 前必须先确认：
+
+- `./tools/run_tests.ps1 simnav/smoke rtslab/smoke` 通过。
+- `git -C addons diff --check` 通过。
+- `git -C addons status --short -- sim-nav-map/docs/references/0ad-source` 无输出。
+- Feature 3 只围绕 terrain/static obstruction edit 后的 dirty recompute 和 cache
+  invalidation lifecycle；不要同时引入 reachability result DTO、long path result
+  contract、short path filter、line validation、request queue expansion、scale
+  diagnostics 或 lab gameplay policy。
 
 ## Feature 3: Dirty Edit And Cache Lifecycle
 
