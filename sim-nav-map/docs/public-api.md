@@ -19,7 +19,9 @@ Public API smoke coverage is registered in `simnav/smoke`, including
 entry points, dirty/cache lifecycle, long/short query boundaries, and queued
 request cloning. Feature-specific coverage includes
 `smoke_sim_nav_clearance_rasterization.tscn` for class-aware terrain/static
-clearance rasterization.
+clearance rasterization, `smoke_sim_nav_dirty_lifecycle.tscn` for dirty
+edit/cache lifecycle, and `smoke_sim_nav_reachability_query.tscn` for explicit
+reachability and canonical goal metadata.
 
 ## Stable Entry Points
 
@@ -36,6 +38,7 @@ These classes are the supported integration surface for game/example adapters:
 | `SimNavObstructionShapeStatic` | Static oriented rectangle projection for buildings, walls, rocks, blockers, and terrain-like obstacles. |
 | `SimNavObstructionShapeUnit` | Dynamic circular projection for units. This is not a unit model. |
 | `SimNavPathGoal` | Path target geometry: point, circle, square, and inverted variants. |
+| `SimNavReachabilityResult` | Result DTO for explicit reachability/canonical goal queries. |
 | `SimNavWaypointPath` | Returned path container. Callers own movement along these waypoints. |
 | `SimNavHierarchicalPathfinder` | Reachability and nearest reachable navcell canonicalization. |
 | `SimNavLongPathfinder` | Long navcell path search. |
@@ -132,28 +135,45 @@ Projection DTOs:
 ### Path Queries
 
 - `SimNavPathGoal` exposes factories `point()`, `circle()`,
-  `inverted_circle()`, `square()`, and `inverted_square()`, plus
-  `navcell_contains_goal()`, `contains_point()`, `distance_to_point()`, and
-  `nearest_point_on_goal()`.
+   `inverted_circle()`, `square()`, and `inverted_square()`, plus
+   `navcell_contains_goal()`, `contains_point()`, `distance_to_point()`, and
+   `nearest_point_on_goal()`, `clone()`, and `copy_from()`.
+- `SimNavReachabilityResult` exposes:
+  - booleans `is_reachable` and `canonicalized`;
+  - failure reason strings `none`, `not_recomputed`, `invalid_query`,
+    `no_start_region`, `original_goal_unreachable`, and `no_reachable_goal`;
+  - metadata `pass_mask`, `passability_class_name`, `start_navcell`,
+    `effective_start_navcell`, `canonical_navcell`, `start_global_region`,
+    `canonical_global_region`, `query_goal`, and `canonical_goal`;
+  - helpers `has_canonical_goal()` and `is_failure()`.
+  `is_reachable == false` can still return a canonical fallback goal when
+  `canonicalized == true`; adapter policy decides whether to move there, notify,
+  retry, or cancel.
 - `SimNavWaypointPath` exposes `waypoints`, `size()`, `is_empty()`, `back()`,
-  `pop_back()`, `push_back()`, and `clear()`. Stored waypoints are consumed by
-  callers; movement execution is outside the addon.
+   `pop_back()`, `push_back()`, and `clear()`. Stored waypoints are consumed by
+   callers; movement execution is outside the addon.
 - `SimNavHierarchicalPathfinder` exposes `recompute()`, `recompute_dirty()`,
-  `is_recomputed()`, `get_region()`, `get_global_region()`,
-  `is_navcell_reachable()`, `make_goal_reachable_navcell()`, and
-  `find_nearest_passable_navcell()` for integration. `get_chunk()`,
-  `get_global_regions()`, and `next_global_region()` are diagnostics/test
-  support and should not become game logic dependencies.
+   `is_recomputed()`, `get_region()`, `get_global_region()`,
+   `is_navcell_reachable()`, `query_goal_reachability()`,
+   `make_goal_reachable_navcell()`, and `find_nearest_passable_navcell()` for
+   integration. `get_chunk()`,
+   `get_global_regions()`, and `next_global_region()` are diagnostics/test
+   support and should not become game logic dependencies.
 - `SimNavLongPathfinder` exposes `compute_path_immediate()` and
   `invalidate_jump_point_cache()`. Dirty navcells invalidate the jump-point cache
   before subsequent queries.
 - `SimNavVertexPathfinder` exposes `compute_short_path_immediate()`.
 - `SimNavShortPathRequest` is a field DTO: `start`, `goal`, `clearance`,
   `range_px`, `pass_mask`, `avoid_moving_units`, and `control_group`.
-- `SimNavPathfinderFacade` exposes `compute_path_immediate()`. For `POINT`
-  goals, when a recomputed `SimNavHierarchicalPathfinder` is present, the facade
-  may canonicalize the supplied goal object in place to the nearest reachable
-  navcell before delegating to `SimNavLongPathfinder`.
+- `SimNavPathfinderFacade` exposes `recompute_dirty()`, `query_reachability()`,
+  and `compute_path_immediate()`. `recompute_dirty()` is the stable batch edit
+  lifecycle entry: it rasterizes dirty static obstructions, recomputes dirty
+  hierarchical chunks, invalidates the long-path jump-point cache, and clears
+  dirty navcells by default. `query_reachability()` returns
+  `SimNavReachabilityResult` for `POINT`, `CIRCLE`, `SQUARE`, and inverted goals.
+  `compute_path_immediate()` uses the same reachability query before long-path
+  search and may canonicalize the supplied goal object in place when a fallback
+  point goal is required.
 - `SimNavPathRequestQueue` exposes `enqueue_long_path()`, `enqueue_short_path()`,
   `cancel()`, `process_budget()`, `start_worker()`, `is_worker_running()`,
   `collect_worker_results()`, `has_result()`, `take_result()`,

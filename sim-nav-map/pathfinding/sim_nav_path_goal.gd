@@ -100,6 +100,28 @@ func nearest_point_on_goal(point: Vector2) -> Vector2:
 	return point
 
 
+func clone() -> SimNavPathGoal:
+	var cloned_goal := SimNavPathGoal.new(type, center)
+	cloned_goal.hw = hw
+	cloned_goal.hh = hh
+	cloned_goal.u = u
+	cloned_goal.v = v
+	cloned_goal.maxdist = maxdist
+	return cloned_goal
+
+
+func copy_from(other: SimNavPathGoal) -> void:
+	if other == null:
+		return
+	type = other.type
+	center = other.center
+	hw = other.hw
+	hh = other.hh
+	u = other.u
+	v = other.v
+	maxdist = other.maxdist
+
+
 static func point(p_center: Vector2) -> SimNavPathGoal:
 	return SimNavPathGoal.new(Type.POINT, p_center)
 

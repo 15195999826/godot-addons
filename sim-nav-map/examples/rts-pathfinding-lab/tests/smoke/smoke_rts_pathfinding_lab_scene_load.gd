@@ -55,6 +55,7 @@ func _run_frontend_interaction_smoke() -> void:
 	_place_obstacle(world)
 	_place_and_erase_blocker(world)
 	_toggle_runtime_options(world)
+	_export_debug_log(world)
 	_reset_and_run_until_arrival(world, hud)
 
 
@@ -125,6 +126,44 @@ func _toggle_runtime_options(world: RtsPathfindingLabWorld) -> void:
 		_failures.append("G key should toggle group filter")
 	if world.avoid_moving_units_enabled == dynamic_before:
 		_failures.append("D key should toggle dynamic avoidance")
+
+
+func _export_debug_log(world: RtsPathfindingLabWorld) -> void:
+	var export_button := _scene.get("_export_button") as Button
+	if export_button == null:
+		_failures.append("export log button should be initialized")
+		return
+	if export_button.text != "Export log":
+		_failures.append("export log button should have stable text, got %s" % export_button.text)
+	var export_path := "user://rts_pathfinding_lab_scene_load_smoke.json"
+	var global_path: String = _scene.call("export_debug_log", export_path) as String
+	if global_path == "":
+		_failures.append("export_debug_log should return a global path")
+		return
+	var file := FileAccess.open(export_path, FileAccess.READ)
+	if file == null:
+		_failures.append("exported log should be readable at %s" % export_path)
+		return
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		_failures.append("exported log should be JSON object")
+		return
+	var data: Dictionary = parsed
+	if str(data.get("schema", "")) != "rts_pathfinding_lab_debug_log_v1":
+		_failures.append("exported log schema mismatch: %s" % str(data.get("schema", "")))
+	var units: Array = data.get("units", []) as Array
+	if units.size() != world.units.size():
+		_failures.append("exported log should include all units")
+	var world_data: Dictionary = data.get("world", {}) as Dictionary
+	var metrics: Dictionary = world_data.get("metrics", {}) as Dictionary
+	if int(metrics.get("mobile_count", 0)) != world.get_mobile_units().size():
+		_failures.append("exported log metrics should include mobile_count")
+	var recent_events: Array = data.get("recent_events", []) as Array
+	if recent_events.is_empty():
+		_failures.append("exported log should include recent events")
+	var user_dir := DirAccess.open("user://")
+	if user_dir != null:
+		user_dir.remove("rts_pathfinding_lab_scene_load_smoke.json")
 
 
 func _reset_and_run_until_arrival(world: RtsPathfindingLabWorld, hud: Label) -> void:

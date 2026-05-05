@@ -331,9 +331,9 @@ Feature 2 的当前完成契约：
   config.clearance)`，同一 obstruction 可以得到 small / large 不同 mask。
 - lab adapter contract 在
   `smoke_rts_pathfinding_lab_clearance_adapter.tscn` 中覆盖。
-- 未实现 Feature 3+ 的 dirty cache lifecycle、reachability result DTO、long path
+- Feature 2 本身不包含 dirty cache lifecycle、reachability result DTO、long path
   result contract、short path filter、line validation、request queue expansion 或
-  scale diagnostics；也未实现 ship gameplay、formation、push/yield、HUD policy 或
+  scale diagnostics；也不包含 ship gameplay、formation、push/yield、HUD policy 或
   game-specific movement policy。
 
 ### Feature 3 入口条件
@@ -410,6 +410,25 @@ navigation core primitive，不是 movement policy。
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
 
+### 完成记录
+
+Feature 3 的当前完成契约：
+
+- core dirty lifecycle 入口是 `SimNavPathfinderFacade.recompute_dirty(passability_masks)`。
+- `recompute_dirty()` 的顺序是：dirty static obstruction rasterize ->
+  hierarchical dirty recompute -> long-path jump-point cache invalidation ->
+  默认清理 dirty navcells。
+- terrain edit 使用 `SimNavMap.set_terrain_tile_data()` mark dirty；static
+  obstruction add / move / remove 使用现有 tag API mark obstruction dirty。
+- `smoke_sim_nav_dirty_lifecycle.tscn` 覆盖 terrain wall edit、static wall
+  add/remove、region split/reconnect、long-path cache invalidation 和 dirty cleanup。
+- 本轮没有实现 long path result contract、path post-processing、excluded
+  regions、short path filter、line validation、request queue expansion、scale
+  diagnostics、ship gameplay、formation、push/yield、HUD policy 或
+  game-specific movement policy。
+- dynamic unit obstruction replacement 仍是 short/local query input；不把
+  `rts-pathfinding-lab` 的 movement / selection / command / formation policy 上提到 core。
+
 ## Feature 4: Reachability And Goal Canonicalization
 
 ### 增加什么插件能力
@@ -464,6 +483,39 @@ navigation core primitive，不是 movement policy。
 ```powershell
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
+
+### 完成记录
+
+Feature 4 的当前完成契约：
+
+- 新增 `SimNavReachabilityResult`，返回 `is_reachable`、`canonicalized`、
+  `failure_reason`、`pass_mask`、`passability_class_name`、start/canonical
+  navcell 和 global region metadata。
+- `SimNavHierarchicalPathfinder.query_goal_reachability()` 支持 `POINT`、
+  `CIRCLE`、`SQUARE` 和 inverted goal 的 nearest reachable canonicalization。
+- `SimNavPathfinderFacade.query_reachability()` 是 world-space integration
+  入口；`compute_path_immediate()` 复用同一 query，在 expensive long path 前
+  canonicalize fallback point goal。
+- `rts-pathfinding-lab` 只消费 canonical goal / reachability metadata，不决定 core
+  movement failure policy，也不把 selection、command、formation、HUD、arrival
+  policy 上提到 core。
+- `smoke_sim_nav_reachability_query.tscn` 覆盖 goal types、passability
+  class/mask echo、dirty 后 canonical target 改变。
+- 本轮没有实现 Feature 5+：long path result status、raw/refined path
+  contract、path post-processing、excluded regions、short path filter、line
+  validation、request queue expansion 或 scale diagnostics。
+
+### Feature 5 入口条件
+
+进入 Feature 5 前必须先确认：
+
+- `./tools/run_tests.ps1 simnav/smoke rtslab/smoke` 通过。
+- `git -C addons diff --check` 通过。
+- `git -C addons status --short -- sim-nav-map/docs/references/0ad-source` 无输出。
+- Feature 5 只处理 long-path query/result contract：status、metadata、raw/refined
+  waypoint boundary、可选 excluded regions input 和 path post-processing primitive。
+- 不把 short path filter、line validation、request queue expansion、scale
+  diagnostics、lab movement policy、formation、push/yield 或 HUD policy 混入 Feature 5。
 
 ## Feature 5: Long-Path Query/Result Contract
 

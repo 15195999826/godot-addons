@@ -88,6 +88,45 @@ start from dirty edit/cache lifecycle only; it should not introduce reachability
 result DTOs, long path result contracts, short filters, line validation, queue
 expansion, scale diagnostics, or lab gameplay policy in the same step.
 
+## Feature 3 Dirty Lifecycle Contract
+
+Feature 3 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_dirty_lifecycle.tscn` in
+  `simnav/smoke`: verifies direct dirty marking, static obstruction dirty
+  rasterization, terrain edit dirty lifecycle, hierarchical dirty recompute,
+  long-path jump-point cache invalidation, and default dirty cleanup through
+  `SimNavPathfinderFacade.recompute_dirty()`.
+- Existing hierarchical/cache smoke in `simnav/smoke`: verifies dirty chunk
+  replacement and jump-point cache invalidation behavior remain stable.
+
+Feature 4 may start when Feature 3 smoke is green. Feature 3 does not add long
+path result status, path post-processing, excluded regions, short path filters,
+line validation, queue expansion, scale diagnostics, ship gameplay, formation,
+HUD policy, or game-specific movement policy.
+
+## Feature 4 Reachability Contract
+
+Feature 4 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_reachability_query.tscn` in
+  `simnav/smoke`: verifies explicit reachability result metadata, `POINT`,
+  `CIRCLE`, `SQUARE`, inverted goal canonicalization, passability class/mask
+  echo, and dirty recompute changing the canonical target.
+- `addons/sim-nav-map/tests/smoke_sim_nav_long_pathfinder.tscn` in
+  `simnav/smoke`: verifies the facade still canonicalizes unreachable long-path
+  point goals before search.
+- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab.tscn`
+  and adapter smoke in `rtslab/smoke`: verify the lab consumes canonical goals
+  and reachability metadata without promoting movement, selection, command,
+  formation, HUD, or arrival policy into core.
+
+Feature 5 may start when Feature 4 smoke and docs are green. Its entry point is
+only the long-path query/result contract: query status, path metadata, raw vs
+refined waypoints, optional excluded regions, and post-processing primitives.
+Do not fold short filters, line validation, queue expansion, scale diagnostics,
+or game-specific movement policy into Feature 5.
+
 ## Discovery Contract
 
 `tools/run_tests.ps1` discovers sim-nav-map manifests from:
@@ -116,6 +155,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 - map tracing
 - obstruction manager behavior
 - hierarchical reachability and dirty recompute
+- explicit reachability/canonical goal result metadata
 - jump-point cache invalidation
 - long pathfinder
 - vertex pathfinder
@@ -125,6 +165,8 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 `rtslab/smoke` covers:
 
 - the headless lab movement/pathfinding contract
+- repeated static obstacle add/remove stress while six units move between
+  building sides
 - the lab terrain preset adapter contract
 - the lab small/large clearance adapter contract
 - the real lab scene loading path

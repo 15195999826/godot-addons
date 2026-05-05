@@ -46,6 +46,10 @@ func build_terrain_nav_context(
 	for tile_key in terrain_tiles.keys():
 		var tile: Vector2i = tile_key
 		nav_map.set_terrain_tile_data(tile, int(terrain_tiles[tile_key]))
+	for config in passability_configs:
+		var boundary_mask := int(pass_masks.get(config.class_name_id, 0))
+		if boundary_mask != 0:
+			_mark_out_of_playable_navcells(nav_map, boundary_mask, config.clearance)
 	var hierarchical := SimNavHierarchicalPathfinder.new()
 	hierarchical.recompute(nav_map, recompute_masks)
 	return {
@@ -69,10 +73,16 @@ func plan_path_with_terrain_context(
 		return []
 	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
 	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
-	var path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, SimNavPathGoal.point(goal), pass_mask))
+	var reachability := facade.query_reachability(start, SimNavPathGoal.point(goal), pass_mask, passability_class_name)
+	var path_goal := reachability.canonical_goal if reachability.has_canonical_goal() else SimNavPathGoal.point(goal)
+	var path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, path_goal, pass_mask))
 	last_report = {
 		"used_terrain_context": true,
 		"passability_class_name": passability_class_name,
+		"reachability_failure_reason": reachability.failure_reason,
+		"reachability_pass_mask": reachability.pass_mask,
+		"reachability_canonicalized": reachability.canonicalized,
+		"reachable_goal": path_goal.center,
 		"path_size": path.size(),
 	}
 	return path
@@ -101,9 +111,11 @@ func plan_path(
 
 	var reachable_goal := goal
 	var used_make_goal_reachable := false
-	if not is_point_passable(goal, active_obstacles, unit_radius):
-		reachable_goal = _make_goal_reachable_with_nav(nav_map, hierarchical, start, goal, pass_mask)
-		used_make_goal_reachable = true
+	var goal_passable := is_point_passable(goal, active_obstacles, unit_radius)
+	var reachability := _query_reachability_with_nav(nav_map, hierarchical, start, SimNavPathGoal.point(goal), pass_mask, "ground")
+	if reachability.has_canonical_goal() and (reachability.canonicalized or not goal_passable):
+		reachable_goal = reachability.canonical_goal.center
+		used_make_goal_reachable = reachability.canonicalized or not goal_passable
 
 	var short_request := SimNavShortPathRequest.new()
 	short_request.start = start
@@ -116,7 +128,7 @@ func plan_path(
 	var vertex_pathfinder := SimNavVertexPathfinder.new(nav_map)
 	var sim_vertex_path := vertex_pathfinder.compute_short_path_immediate(short_request)
 	var vertex_path := _waypoint_path_to_forward_array(sim_vertex_path)
-	if not vertex_path.is_empty():
+	if not vertex_path.is_empty() and _path_respects_lab_bounds(start, vertex_path, active_obstacles, unit_radius):
 		last_report = {
 			"used_vertex": true,
 			"used_grid_fallback": false,
@@ -124,6 +136,9 @@ func plan_path(
 			"reachable_goal": reachable_goal,
 			"path_size": vertex_path.size(),
 			"static_context_cache_hit": _last_context_cache_hit,
+			"reachability_failure_reason": reachability.failure_reason,
+			"reachability_pass_mask": reachability.pass_mask,
+			"reachability_canonicalized": reachability.canonicalized,
 		}
 		return vertex_path
 
@@ -131,6 +146,8 @@ func plan_path(
 	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
 	var long_path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, SimNavPathGoal.point(reachable_goal), pass_mask))
 	var smoothed := _string_pull(start, long_path, active_obstacles, unit_radius)
+	if not _path_respects_lab_bounds(start, smoothed, active_obstacles, unit_radius):
+		smoothed = []
 	last_report = {
 		"used_vertex": false,
 		"used_grid_fallback": true,
@@ -138,6 +155,9 @@ func plan_path(
 		"reachable_goal": reachable_goal,
 		"path_size": smoothed.size(),
 		"static_context_cache_hit": _last_context_cache_hit,
+		"reachability_failure_reason": reachability.failure_reason,
+		"reachability_pass_mask": reachability.pass_mask,
+		"reachability_canonicalized": reachability.canonicalized,
 	}
 	return smoothed
 
@@ -152,11 +172,9 @@ func is_point_passable(point: Vector2, obstacles: Array[RtsPathfindingLabObstacl
 
 
 func segment_clear(a: Vector2, b: Vector2, obstacles: Array[RtsPathfindingLabObstacle], clearance: float) -> bool:
-	if a.x < -1.0 or b.x < -1.0 or a.y < -1.0 or b.y < -1.0:
+	if not _point_inside_playable_bounds(a, clearance):
 		return false
-	if a.x > map_size.x + 1.0 or b.x > map_size.x + 1.0:
-		return false
-	if a.y > map_size.y + 1.0 or b.y > map_size.y + 1.0:
+	if not _point_inside_playable_bounds(b, clearance):
 		return false
 	return SimNavLineOfSight.segment_clear(a, b, _obstacles_to_static_shapes(obstacles), clearance)
 
@@ -280,6 +298,7 @@ func _build_nav_context(obstacles: Array[RtsPathfindingLabObstacle]) -> Dictiona
 	ground.clearance = unit_radius
 	ground.affects_pathfinding = true
 	var pass_mask := nav_map.register_passability_class(ground)
+	_mark_out_of_playable_navcells(nav_map, pass_mask, unit_radius)
 	for shape in _obstacles_to_static_shapes(obstacles):
 		nav_map.add_static_obstruction(shape)
 	nav_map.rebuild_dirty()
@@ -306,17 +325,27 @@ func _lab_obstacle_to_static_shape(obstacle: RtsPathfindingLabObstacle) -> SimNa
 	return shape
 
 
-func _make_goal_reachable_with_nav(
+func _mark_out_of_playable_navcells(nav_map: SimNavMap, pass_mask: int, clearance: float) -> void:
+	var safe_clearance := maxf(clearance, 0.0)
+	for y in range(nav_map.height):
+		for x in range(nav_map.width):
+			var coord := Vector2i(x, y)
+			var center := nav_map.navcell_center_world(coord)
+			if _point_inside_playable_bounds(center, safe_clearance):
+				continue
+			nav_map.or_navcell_data(coord, pass_mask)
+
+
+func _query_reachability_with_nav(
 	nav_map: SimNavMap,
 	hierarchical: SimNavHierarchicalPathfinder,
 	start: Vector2,
-	goal: Vector2,
-	pass_mask: int
-) -> Vector2:
-	var start_cell := nav_map.world_to_navcell(start)
-	var goal_cell := nav_map.world_to_navcell(goal)
-	var reachable_cell := hierarchical.make_goal_reachable_navcell(start_cell, goal_cell, pass_mask)
-	return nav_map.navcell_center_world(reachable_cell)
+	goal: SimNavPathGoal,
+	pass_mask: int,
+	passability_class_name: String
+) -> SimNavReachabilityResult:
+	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, null)
+	return facade.query_reachability(start, goal, pass_mask, passability_class_name)
 
 
 func _waypoint_path_to_forward_array(path: SimNavWaypointPath) -> Array[Vector2]:
@@ -349,3 +378,29 @@ func _string_pull(
 		anchor = raw_path[chosen]
 		idx = chosen + 1
 	return result
+
+
+func _path_respects_lab_bounds(
+	start: Vector2,
+	path: Array[Vector2],
+	obstacles: Array[RtsPathfindingLabObstacle],
+	clearance: float
+) -> bool:
+	if path.is_empty():
+		return true
+	var prev := start
+	for point in path:
+		if not segment_clear(prev, point, obstacles, clearance):
+			return false
+		prev = point
+	return true
+
+
+func _point_inside_playable_bounds(point: Vector2, clearance: float) -> bool:
+	var safe_clearance := maxf(clearance, 0.0)
+	return (
+		point.x >= safe_clearance
+		and point.y >= safe_clearance
+		and point.x <= map_size.x - safe_clearance
+		and point.y <= map_size.y - safe_clearance
+	)
