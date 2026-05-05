@@ -20,6 +20,8 @@ func _run() -> void:
 	_test_direct_navcell_writes_mark_dirty_only_on_change()
 	_test_full_rasterize_marks_changed_old_and_new_cells()
 	_test_dirty_rasterize_preserves_base_navcell_data()
+	_test_facade_dirty_lifecycle_updates_terrain_regions_and_long_cache()
+	_test_facade_dirty_lifecycle_updates_static_obstruction_regions_and_long_cache()
 
 
 func _test_direct_navcell_writes_mark_dirty_only_on_change() -> void:
@@ -103,6 +105,86 @@ func _test_dirty_rasterize_preserves_base_navcell_data() -> void:
 	_assert_true(nav_map.is_passable_navcell(Vector2i(3, 3), ground_mask), "old static cell should clear after dirty rasterize")
 	_assert_false(nav_map.is_passable_navcell(Vector2i(4, 3), ground_mask), "new static cell should be blocked")
 	_assert_false(nav_map.is_passable_navcell(Vector2i(9, 9), ground_mask), "base terrain should not be cleared by dirty rasterize")
+
+
+func _test_facade_dirty_lifecycle_updates_terrain_regions_and_long_cache() -> void:
+	var nav_map := SimNavMap.new(120, 8, 8.0, Vector2.ZERO, 1)
+	var ground_mask := _register_terrain_ground(nav_map)
+	var hierarchical := SimNavHierarchicalPathfinder.new()
+	hierarchical.recompute(nav_map, [ground_mask])
+	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
+	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
+	var start := nav_map.navcell_center_world(Vector2i(10, 4))
+	var goal := SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(110, 4)))
+	_assert_false(long_pathfinder.compute_path_immediate(start, goal.clone(), ground_mask).is_empty(), "open terrain path should populate long-path cache")
+
+	for y in range(nav_map.height):
+		nav_map.set_terrain_tile_data(Vector2i(60, y), 0x1)
+	var dirty_report: Dictionary = facade.recompute_dirty([ground_mask])
+	_assert_true(bool(dirty_report.get("invalidated_long_path_cache", false)), "terrain dirty lifecycle should invalidate long-path cache")
+	_assert_true(int(dirty_report.get("rebuilt_chunks", 0)) > 0, "terrain dirty lifecycle should rebuild affected hierarchical chunks")
+	_assert_false(nav_map.has_dirty_navcells(), "facade dirty lifecycle should clear terrain dirty navcells by default")
+	_assert_false(hierarchical.is_navcell_reachable(Vector2i(10, 4), Vector2i(110, 4), ground_mask), "terrain wall should split regions after dirty recompute")
+	_assert_true(long_pathfinder.compute_path_immediate(start, goal.clone(), ground_mask).is_empty(), "long path should observe terrain wall after cache invalidation")
+
+	for y in range(nav_map.height):
+		nav_map.set_terrain_tile_data(Vector2i(60, y), 0)
+	dirty_report = facade.recompute_dirty([ground_mask])
+	_assert_true(bool(dirty_report.get("invalidated_long_path_cache", false)), "clearing terrain wall should invalidate long-path cache")
+	_assert_true(hierarchical.is_navcell_reachable(Vector2i(10, 4), Vector2i(110, 4), ground_mask), "cleared terrain wall should reconnect regions")
+	_assert_false(long_pathfinder.compute_path_immediate(start, goal.clone(), ground_mask).is_empty(), "long path should reopen after terrain dirty lifecycle")
+
+
+func _test_facade_dirty_lifecycle_updates_static_obstruction_regions_and_long_cache() -> void:
+	var nav_map := SimNavMap.new(120, 8, 8.0, Vector2.ZERO, 1)
+	var ground_mask := _register_ground(nav_map)
+	var hierarchical := SimNavHierarchicalPathfinder.new()
+	hierarchical.recompute(nav_map, [ground_mask])
+	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
+	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
+	var manager := SimNavObstructionManager.new(nav_map)
+	var start := nav_map.navcell_center_world(Vector2i(10, 4))
+	var goal := SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(110, 4)))
+	_assert_false(long_pathfinder.compute_path_immediate(start, goal.clone(), ground_mask).is_empty(), "open static-obstruction path should populate long-path cache")
+
+	var wall_center := Vector2(nav_map.navcell_center_world(Vector2i(60, 0)).x, nav_map.origin.y + float(nav_map.height) * nav_map.navcell_size * 0.5)
+	var tag := manager.add_static_shape(
+		"static_wall",
+		wall_center,
+		0.0,
+		nav_map.navcell_size,
+		float(nav_map.height) * nav_map.navcell_size + nav_map.navcell_size,
+		SimNavObstructionFlags.BLOCK_PATHFINDING
+	)
+	var dirty_report: Dictionary = facade.recompute_dirty([ground_mask])
+	_assert_true(int(dirty_report.get("changed_obstruction_navcells", 0)) > 0, "static obstruction dirty lifecycle should rasterize dirty cells")
+	_assert_true(bool(dirty_report.get("invalidated_long_path_cache", false)), "static obstruction dirty lifecycle should invalidate long-path cache")
+	_assert_false(nav_map.has_dirty_navcells(), "facade dirty lifecycle should clear static obstruction dirty navcells by default")
+	_assert_false(hierarchical.is_navcell_reachable(Vector2i(10, 4), Vector2i(110, 4), ground_mask), "static wall should split regions after dirty recompute")
+	_assert_true(long_pathfinder.compute_path_immediate(start, goal.clone(), ground_mask).is_empty(), "long path should observe static wall after cache invalidation")
+
+	_assert_true(manager.remove_shape(tag), "static wall should be removable by tag")
+	dirty_report = facade.recompute_dirty([ground_mask])
+	_assert_true(int(dirty_report.get("changed_obstruction_navcells", 0)) > 0, "static obstruction removal should rerasterize dirty cells")
+	_assert_true(hierarchical.is_navcell_reachable(Vector2i(10, 4), Vector2i(110, 4), ground_mask), "removed static wall should reconnect regions")
+	_assert_false(long_pathfinder.compute_path_immediate(start, goal.clone(), ground_mask).is_empty(), "long path should reopen after static obstruction dirty lifecycle")
+
+
+func _register_ground(nav_map: SimNavMap) -> int:
+	var ground := SimNavPassabilityClassConfig.new()
+	ground.class_name_id = "ground"
+	ground.clearance = 0.0
+	ground.affects_pathfinding = true
+	return nav_map.register_passability_class(ground)
+
+
+func _register_terrain_ground(nav_map: SimNavMap) -> int:
+	var ground := SimNavPassabilityClassConfig.new()
+	ground.class_name_id = "ground"
+	ground.clearance = 0.0
+	ground.affects_pathfinding = true
+	ground.terrain_mask = 0x1
+	return nav_map.register_passability_class(ground)
 
 
 func _assert_true(value: bool, message: String) -> void:

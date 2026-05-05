@@ -83,7 +83,7 @@ func set_units_target(unit_ids: Array[String], target: Vector2) -> void:
 	var offsets := _formation_offsets(target_units.size())
 	for i in range(target_units.size()):
 		var unit := target_units[i]
-		unit.target = _clamp_to_map(target + offsets[i])
+		unit.target = _clamp_unit_point(target + offsets[i], unit.radius)
 		unit.arrived = false
 		unit.has_move_order = true
 		unit.replan_timer = REPLAN_INTERVAL
@@ -107,9 +107,8 @@ func step(delta: float) -> void:
 		_move_unit(unit, delta)
 		if not unit.arrived and (unit.replan_timer >= REPLAN_INTERVAL or unit.path_index >= unit.path.size()):
 			_enqueue_replan(unit.id)
-	_resolve_overlaps()
+	_resolve_separation(mobile_units)
 	for unit in mobile_units:
-		_push_out_static_obstacles(unit)
 		if not unit.has_move_order:
 			_settle_idle_unit(unit)
 		elif unit.position.distance_to(unit.target) > ARRIVE_EPSILON:
@@ -327,6 +326,7 @@ func _move_unit(unit: RtsPathfindingLabUnit, delta: float) -> void:
 		unit.path_index += 1
 	else:
 		unit.position += to_waypoint.normalized() * max_step
+	unit.position = _clamp_unit_point(unit.position, unit.radius)
 
 	if unit.path_index >= unit.path.size() and unit.position.distance_to(unit.target) <= ARRIVE_EPSILON:
 		unit.position = unit.target
@@ -355,32 +355,202 @@ func _resolve_overlaps() -> void:
 					a.position -= dir * push
 				elif b.mobile:
 					b.position += dir * push
-				a.position = _clamp_to_map(a.position)
-				b.position = _clamp_to_map(b.position)
+				a.position = _clamp_unit_point(a.position, a.radius) if a.mobile else _clamp_to_map(a.position)
+				b.position = _clamp_unit_point(b.position, b.radius) if b.mobile else _clamp_to_map(b.position)
 				changed = true
 		if not changed:
 			return
 
 
+func _resolve_separation(mobile_units: Array[RtsPathfindingLabUnit]) -> void:
+	for _iteration in range(6):
+		_resolve_overlaps()
+		for unit in mobile_units:
+			_push_out_static_obstacles(unit)
+
+
 func _push_out_static_obstacles(unit: RtsPathfindingLabUnit) -> void:
+	for _iteration in range(OVERLAP_RESOLVE_ITERATIONS):
+		var push_rects := _static_push_component_for_point(unit.position, unit.radius)
+		if push_rects.is_empty():
+			return
+		_push_unit_out_of_static_component(unit, push_rects)
+
+
+func _static_push_component_for_point(point: Vector2, radius: float) -> Array[Rect2]:
+	var component_indices: Array[int] = []
+	for i in range(obstacles.size()):
+		var rect := obstacles[i].get_inflated_rect(radius)
+		if rect.has_point(point):
+			component_indices.append(i)
+			break
+	if component_indices.is_empty():
+		return []
+
+	var changed := true
+	while changed:
+		changed = false
+		for i in range(obstacles.size()):
+			if component_indices.has(i):
+				continue
+			var obstacle_rect := obstacles[i].get_inflated_rect(radius)
+			if _component_intersects_rect(component_indices, obstacle_rect, radius):
+				component_indices.append(i)
+				changed = true
+
+	var result: Array[Rect2] = []
+	for index in component_indices:
+		result.append(obstacles[index].get_inflated_rect(radius))
+	return result
+
+
+func _component_intersects_rect(component_indices: Array[int], rect: Rect2, radius: float) -> bool:
+	for index in component_indices:
+		if obstacles[index].get_inflated_rect(radius).intersects(rect, true):
+			return true
+	return false
+
+
+func _push_unit_out_of_static_component(unit: RtsPathfindingLabUnit, rects: Array[Rect2]) -> void:
+	var best_point := unit.position
+	var best_dist_sq := INF
+	var best_side_point := unit.position
+	var best_side_dist_sq := INF
+	var reference_point := _static_push_reference_point(unit)
+	var containing_rects := _rects_containing_point(unit.position, rects)
+	for rect in rects:
+		var candidates := _static_exit_candidates(unit.position, rect)
+		for candidate in candidates:
+			var clamped_candidate := _clamp_unit_point(candidate, unit.radius)
+			if _point_inside_any_rect(clamped_candidate, rects):
+				continue
+			if _point_inside_static_obstacles(clamped_candidate, unit.radius):
+				continue
+			var current_dist_sq := unit.position.distance_squared_to(clamped_candidate)
+			if current_dist_sq < best_dist_sq:
+				best_dist_sq = current_dist_sq
+				best_point = clamped_candidate
+			if _candidate_preserves_reference_side(clamped_candidate, reference_point, containing_rects):
+				if current_dist_sq < best_side_dist_sq:
+					best_side_dist_sq = current_dist_sq
+					best_side_point = clamped_candidate
+	if best_side_dist_sq < INF:
+		unit.position = best_side_point
+		return
+	if best_dist_sq < INF:
+		unit.position = best_point
+		return
+	_push_unit_out_of_rect(unit, _component_bounds(rects))
+
+
+func _rects_containing_point(point: Vector2, rects: Array[Rect2]) -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	for rect in rects:
+		if rect.has_point(point):
+			result.append(rect)
+	return result
+
+
+func _candidate_preserves_reference_side(candidate: Vector2, reference_point: Vector2, containing_rects: Array[Rect2]) -> bool:
+	if containing_rects.is_empty():
+		return false
+	for rect in containing_rects:
+		var left := rect.position.x
+		var right := rect.position.x + rect.size.x
+		var top := rect.position.y
+		var bottom := rect.position.y + rect.size.y
+		if reference_point.x < left and candidate.x <= left:
+			return true
+		if reference_point.x > right and candidate.x >= right:
+			return true
+		if reference_point.y < top and candidate.y <= top:
+			return true
+		if reference_point.y > bottom and candidate.y >= bottom:
+			return true
+	return false
+
+
+func _static_push_reference_point(unit: RtsPathfindingLabUnit) -> Vector2:
+	for i in range(unit.trace.size() - 1, -1, -1):
+		var point := unit.trace[i]
+		if point.distance_to(unit.position) > 160.0:
+			break
+		if not _point_inside_static_obstacles(point, unit.radius):
+			return point
+	return unit.position
+
+
+func _static_exit_candidates(point: Vector2, rect: Rect2) -> Array[Vector2]:
+	var result: Array[Vector2] = [
+		Vector2(rect.position.x - 0.5, point.y),
+		Vector2(rect.position.x + rect.size.x + 0.5, point.y),
+		Vector2(point.x, rect.position.y - 0.5),
+		Vector2(point.x, rect.position.y + rect.size.y + 0.5),
+		Vector2(rect.position.x - 0.5, rect.position.y - 0.5),
+		Vector2(rect.position.x + rect.size.x + 0.5, rect.position.y - 0.5),
+		Vector2(rect.position.x - 0.5, rect.position.y + rect.size.y + 0.5),
+		Vector2(rect.position.x + rect.size.x + 0.5, rect.position.y + rect.size.y + 0.5),
+	]
+	var sample_step := 8.0
+	var left := rect.position.x - 0.5
+	var right := rect.position.x + rect.size.x + 0.5
+	var top := rect.position.y - 0.5
+	var bottom := rect.position.y + rect.size.y + 0.5
+	var y := top
+	while y <= bottom:
+		result.append(Vector2(left, y))
+		result.append(Vector2(right, y))
+		y += sample_step
+	result.append(Vector2(left, bottom))
+	result.append(Vector2(right, bottom))
+	var x := left
+	while x <= right:
+		result.append(Vector2(x, top))
+		result.append(Vector2(x, bottom))
+		x += sample_step
+	result.append(Vector2(right, top))
+	result.append(Vector2(right, bottom))
+	return result
+
+
+func _point_inside_any_rect(point: Vector2, rects: Array[Rect2]) -> bool:
+	for rect in rects:
+		if rect.has_point(point):
+			return true
+	return false
+
+
+func _point_inside_static_obstacles(point: Vector2, radius: float) -> bool:
 	for obstacle in obstacles:
-		var rect := obstacle.get_inflated_rect(unit.radius)
-		if not rect.has_point(unit.position):
-			continue
-		var left := absf(unit.position.x - rect.position.x)
-		var right := absf(rect.position.x + rect.size.x - unit.position.x)
-		var top := absf(unit.position.y - rect.position.y)
-		var bottom := absf(rect.position.y + rect.size.y - unit.position.y)
-		var min_side := minf(minf(left, right), minf(top, bottom))
-		if is_equal_approx(min_side, left):
-			unit.position.x = rect.position.x - 0.5
-		elif is_equal_approx(min_side, right):
-			unit.position.x = rect.position.x + rect.size.x + 0.5
-		elif is_equal_approx(min_side, top):
-			unit.position.y = rect.position.y - 0.5
-		else:
-			unit.position.y = rect.position.y + rect.size.y + 0.5
-		unit.position = _clamp_to_map(unit.position)
+		if obstacle.get_inflated_rect(radius).has_point(point):
+			return true
+	return false
+
+
+func _component_bounds(rects: Array[Rect2]) -> Rect2:
+	if rects.is_empty():
+		return Rect2()
+	var result := rects[0]
+	for i in range(1, rects.size()):
+		result = result.merge(rects[i])
+	return result
+
+
+func _push_unit_out_of_rect(unit: RtsPathfindingLabUnit, rect: Rect2) -> void:
+	var left := absf(unit.position.x - rect.position.x)
+	var right := absf(rect.position.x + rect.size.x - unit.position.x)
+	var top := absf(unit.position.y - rect.position.y)
+	var bottom := absf(rect.position.y + rect.size.y - unit.position.y)
+	var min_side := minf(minf(left, right), minf(top, bottom))
+	if is_equal_approx(min_side, left):
+		unit.position.x = rect.position.x - 0.5
+	elif is_equal_approx(min_side, right):
+		unit.position.x = rect.position.x + rect.size.x + 0.5
+	elif is_equal_approx(min_side, top):
+		unit.position.y = rect.position.y - 0.5
+	else:
+		unit.position.y = rect.position.y + rect.size.y + 0.5
+	unit.position = _clamp_unit_point(unit.position, unit.radius)
 
 
 func _settle_idle_unit(unit: RtsPathfindingLabUnit) -> void:
@@ -401,6 +571,9 @@ func _active_move_order_count() -> int:
 
 func _formation_offsets(count: int) -> Array[Vector2]:
 	var result: Array[Vector2] = []
+	if count == 1:
+		result.append(Vector2.ZERO)
+		return result
 	var spacing := 30.0
 	var columns := 3
 	for i in range(count):
@@ -413,3 +586,11 @@ func _formation_offsets(count: int) -> Array[Vector2]:
 
 func _clamp_to_map(point: Vector2) -> Vector2:
 	return Vector2(clampf(point.x, 0.0, map_size.x), clampf(point.y, 0.0, map_size.y))
+
+
+func _clamp_unit_point(point: Vector2, radius: float) -> Vector2:
+	var safe_radius := maxf(radius, 0.0)
+	return Vector2(
+		clampf(point.x, safe_radius, maxf(safe_radius, map_size.x - safe_radius)),
+		clampf(point.y, safe_radius, maxf(safe_radius, map_size.y - safe_radius))
+	)

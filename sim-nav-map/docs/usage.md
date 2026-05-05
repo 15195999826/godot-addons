@@ -66,7 +66,6 @@ shape.width = building.size.x
 shape.height = building.size.y
 shape.flags = SimNavObstructionFlags.BLOCK_PATHFINDING
 var tag := nav_map.add_static_obstruction(shape)
-nav_map.rebuild_dirty()
 ```
 
 Static obstructions rasterize per registered passability class. A class with
@@ -96,6 +95,7 @@ hierarchical.recompute(nav_map, [ground_mask])
 
 var long_pathfinder := SimNavLongPathfinder.new(nav_map)
 var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
+facade.recompute_dirty([ground_mask])
 var path := facade.compute_path_immediate(
 	unit.position,
 	SimNavPathGoal.point(target_position),
@@ -103,11 +103,37 @@ var path := facade.compute_path_immediate(
 )
 ```
 
+Call `facade.recompute_dirty([ground_mask])` after terrain or static obstruction
+edits before querying. It applies dirty static obstruction rasterization,
+hierarchical dirty recompute, long-path cache invalidation, and dirty cleanup in
+one order.
+
+You can also ask for reachability/canonicalization explicitly:
+
+```gdscript
+var command_goal := SimNavPathGoal.point(target_position)
+var reachability := facade.query_reachability(
+	unit.position,
+	command_goal,
+	ground_mask,
+	"ground"
+)
+if reachability.has_canonical_goal():
+	var path := facade.compute_path_immediate(
+		unit.position,
+		reachability.canonical_goal,
+		ground_mask
+	)
+```
+
 `SimNavPathfinderFacade` canonicalizes unreachable goals to a reachable navcell
-before long-path search. For `POINT` goals, it may rewrite the supplied
-`SimNavPathGoal` object to that reachable navcell. Clone the goal first, or use
-`SimNavPathRequestQueue`, if the original command target must remain unchanged.
-If your game wants different fallback behavior, keep that policy in the adapter.
+before long-path search. `query_reachability()` returns whether the original goal
+is reachable, whether a canonical fallback rewrote it, the failure reason, and
+the passability class/mask metadata. `compute_path_immediate()` uses the same
+query path and may rewrite the supplied `SimNavPathGoal` object when it needs a
+fallback point goal. Clone the goal first, or use `SimNavPathRequestQueue`, if
+the original command target must remain unchanged. If your game wants different
+fallback behavior, keep that policy in the adapter.
 
 ## 6. Query A Short Path
 

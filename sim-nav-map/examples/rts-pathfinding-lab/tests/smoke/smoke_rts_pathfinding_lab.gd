@@ -15,11 +15,17 @@ func _ready() -> void:
 	_test_static_vertex_path_avoids_obstacle()
 	_test_make_goal_reachable()
 	_test_dynamic_unit_avoidance_and_group_filter()
+	_test_bottom_boundary_block_does_not_route_outside_map()
+	_test_bottom_boundary_world_units_stay_inside_map()
+	_test_single_unit_target_uses_command_center()
+	_test_connected_static_push_out_uses_nearest_exit()
+	_test_static_push_out_preserves_previous_side()
 	_test_world_edit_operations()
 	_test_group_move_replans_are_budgeted()
 	_test_passive_push_chain_settles_idle_units()
 	_test_unreachable_group_target_settles_at_reachable_edge()
 	_test_default_world_arrives_with_clean_metrics()
+	_test_dynamic_obstacle_edit_stress()
 	_test_step_perf_metrics()
 
 	if _failures.is_empty():
@@ -59,7 +65,12 @@ func _test_make_goal_reachable() -> void:
 		LabObstacle.new("target_block", Vector2(500.0, 180.0), Vector2(100.0, 100.0)),
 	]
 	var units: Array[RtsPathfindingLabUnit] = []
+	var start_usec := Time.get_ticks_usec()
 	var path: Array[Vector2] = pf.plan_path(Vector2(100.0, 180.0), Vector2(500.0, 180.0), obstacles, units, "blue", true, true)
+	var plan_usec := Time.get_ticks_usec() - start_usec
+	if plan_usec > 100000:
+		_failures.append("reachable: blocked target canonicalization too slow, plan_usec=%d" % plan_usec)
+		return
 	if path.is_empty():
 		_failures.append("reachable: expected fallback path to nearest passable point")
 		return
@@ -91,6 +102,128 @@ func _test_dynamic_unit_avoidance_and_group_filter() -> void:
 	var filtered_path: Array[Vector2] = pf.plan_path(start, goal, obstacles, friends, "blue", true, true)
 	if filtered_path.size() != 1:
 		_failures.append("dynamic: group filter should allow direct path through same group, got %d waypoints" % filtered_path.size())
+
+
+func _test_bottom_boundary_block_does_not_route_outside_map() -> void:
+	var map_size := Vector2(640.0, 420.0)
+	var clearance := 12.0
+	var pf := LabPathfinder.new(map_size, 16.0, clearance)
+	var obstacles: Array[RtsPathfindingLabObstacle] = [
+		LabObstacle.new("bottom_block", Vector2(320.0, 205.0), Vector2(220.0, 410.0)),
+	]
+	var units: Array[RtsPathfindingLabUnit] = []
+	var start := Vector2(100.0, 210.0)
+	var goal := Vector2(540.0, 210.0)
+	var path: Array[Vector2] = pf.plan_path(start, goal, obstacles, units, "blue", true, true)
+	if path.is_empty():
+		_failures.append("bottom-boundary: expected path around obstacle without leaving map")
+		return
+	if not _path_points_inside_map(start, path, map_size, clearance):
+		_failures.append("bottom-boundary: path contains waypoint outside map bounds, path=%s" % str(path))
+		return
+	if not _path_segments_clear(pf, start, path, obstacles, clearance):
+		_failures.append("bottom-boundary: path segment exits map or intersects obstacle, path=%s" % str(path))
+
+
+func _test_bottom_boundary_world_units_stay_inside_map() -> void:
+	var world := LabWorld.new()
+	world.setup_default()
+	world.obstacles = [
+		LabObstacle.new("lower_wall", Vector2(340.0, 382.0), Vector2(200.0, 76.0)),
+	]
+	world.pathfinder.prewarm_static_context(world.obstacles)
+	var unit := world.get_mobile_units()[0]
+	unit.position = Vector2(340.0, 405.0)
+	unit.target = unit.position
+	unit.path.clear()
+	unit.path_index = 0
+	unit.arrived = true
+	unit.has_move_order = false
+	world.step(0.05)
+	if not _point_inside_map(unit.position, world.map_size, unit.radius):
+		_failures.append("bottom-boundary-world: push-out moved unit outside map bounds, point=%s radius=%.1f" % [
+			str(unit.position),
+			unit.radius,
+		])
+		return
+
+
+func _test_single_unit_target_uses_command_center() -> void:
+	var world := LabWorld.new()
+	world.setup_default()
+	var mobile_ids := world.get_mobile_unit_ids()
+	if mobile_ids.is_empty():
+		_failures.append("single-target: expected at least one mobile unit")
+		return
+	var command_target := Vector2(180.0, 80.0)
+	world.set_units_target([mobile_ids[0]], command_target)
+	var selected_unit := world.get_unit_by_id(mobile_ids[0])
+	if selected_unit == null:
+		_failures.append("single-target: failed to read selected unit")
+		return
+	if selected_unit.target.distance_to(command_target) > 0.01:
+		_failures.append("single-target: expected exact command target, got %s expected %s" % [
+			str(selected_unit.target),
+			str(command_target),
+		])
+
+
+func _test_connected_static_push_out_uses_nearest_exit() -> void:
+	var world := LabWorld.new()
+	world.setup_default()
+	world.obstacles = [
+		LabObstacle.new("north_wall", Vector2(340.0, 75.0), Vector2(120.0, 80.0)),
+		LabObstacle.new("stone_block", Vector2(340.0, 210.0), Vector2(110.0, 110.0)),
+		LabObstacle.new("bridge_obstacle", Vector2(412.0, 123.0), Vector2(74.0, 74.0)),
+	]
+	world.pathfinder.prewarm_static_context(world.obstacles)
+	var unit := world.get_mobile_units()[0]
+	unit.position = Vector2(365.0, 136.0)
+	unit.target = unit.position
+	unit.path.clear()
+	unit.path_index = 0
+	unit.arrived = true
+	unit.has_move_order = false
+	world.step(0.05)
+	if _active_obstacle_violation_detail(world).get("count", 0) != 0:
+		_failures.append("connected-static-push: unit remained inside active obstacle at %s" % str(unit.position))
+		return
+	var displacement := unit.position.distance_to(Vector2(365.0, 136.0))
+	if displacement > 20.0:
+		_failures.append("connected-static-push: expected nearest exit, got displacement %.2f position=%s" % [
+			displacement,
+			str(unit.position),
+		])
+
+
+func _test_static_push_out_preserves_previous_side() -> void:
+	var world := LabWorld.new()
+	world.setup_default()
+	world.obstacles = [
+		LabObstacle.new("stone_block", Vector2(340.0, 210.0), Vector2(110.0, 110.0)),
+		LabObstacle.new("north_wall", Vector2(340.0, 75.0), Vector2(120.0, 80.0)),
+		LabObstacle.new("right_upper", Vector2(450.0, 47.0), Vector2(74.0, 74.0)),
+		LabObstacle.new("right_mid", Vector2(447.0, 165.0), Vector2(74.0, 74.0)),
+	]
+	world.pathfinder.prewarm_static_context(world.obstacles)
+	var unit := world.get_mobile_units()[0]
+	unit.position = Vector2(480.0, 144.25)
+	unit.target = unit.position
+	unit.trace = [
+		Vector2(391.635772705078, 135.998733520508),
+		Vector2(395.797943115234, 136.007034301758),
+		Vector2(398.755004882813, 143.028457641602),
+	]
+	unit.path.clear()
+	unit.path_index = 0
+	unit.arrived = true
+	unit.has_move_order = false
+	world.step(0.05)
+	if _active_obstacle_violation_detail(world).get("count", 0) != 0:
+		_failures.append("static-push-side: unit remained inside active obstacle at %s" % str(unit.position))
+		return
+	if unit.position.x > 430.0:
+		_failures.append("static-push-side: expected unit to stay on previous side, got %s" % str(unit.position))
 
 
 func _test_world_edit_operations() -> void:
@@ -209,12 +342,19 @@ func _test_unreachable_group_target_settles_at_reachable_edge() -> void:
 	var obstacle_center := Vector2(340.0, 210.0)
 	world.set_group_target(obstacle_center)
 	var canonicalized_count := 0
+	var max_step_usec := 0
 	for _i in range(260):
+		var step_start_usec := Time.get_ticks_usec()
 		world.step(0.05)
+		max_step_usec = maxi(max_step_usec, Time.get_ticks_usec() - step_start_usec)
 		if world.all_mobile_arrived() and int(world.analyze_movement().get("pending_replans", 1)) == 0:
 			break
 
 	var metrics := world.analyze_movement()
+	metrics["max_step_usec"] = max_step_usec
+	if max_step_usec > 100000:
+		_failures.append("unreachable-target: max step too high for blocked target canonicalization, metrics=%s" % str(metrics))
+		return
 	if int(metrics.get("arrived_count", 0)) != int(metrics.get("mobile_count", -1)):
 		_failures.append("unreachable-target: expected all units to settle at reachable edge, metrics=%s" % str(metrics))
 		return
@@ -284,10 +424,113 @@ func _test_default_world_arrives_with_clean_metrics() -> void:
 		_failures.append("world: expected per-plan static context cache hits, metrics=%s" % str(metrics))
 
 
+func _test_dynamic_obstacle_edit_stress() -> void:
+	var metrics := _measure_dynamic_obstacle_edit_stress(10)
+	_perf_metrics["dynamic_edit_stress"] = metrics
+	if int(metrics.get("failed_edits", 0)) != 0:
+		_failures.append("dynamic-edit-stress: expected all scripted edits to apply, metrics=%s" % str(metrics))
+		return
+	if int(metrics.get("max_step_usec", 0)) > 100000:
+		_failures.append("dynamic-edit-stress: max world.step too high, metrics=%s" % str(metrics))
+		return
+	if int(metrics.get("max_edit_usec", 0)) > 100000:
+		_failures.append("dynamic-edit-stress: max edit operation too high, metrics=%s" % str(metrics))
+		return
+	if int(metrics.get("max_active_obstacle_violations", 0)) != 0:
+		_failures.append("dynamic-edit-stress: unit inside active obstacle, metrics=%s" % str(metrics))
+		return
+	if float(metrics.get("max_overlap", 99.0)) > 1.0:
+		_failures.append("dynamic-edit-stress: overlap too high, metrics=%s" % str(metrics))
+		return
+	if int(metrics.get("max_replans_per_tick", 99)) > LabWorld.REPLAN_BUDGET_PER_TICK:
+		_failures.append("dynamic-edit-stress: replan budget exceeded, metrics=%s" % str(metrics))
+
+
 func _test_step_perf_metrics() -> void:
 	_perf_metrics = {
 		"single_unit_retarget": _measure_retarget_perf(1),
 		"six_unit_retarget": _measure_retarget_perf(6),
+		"dynamic_edit_stress": _perf_metrics.get("dynamic_edit_stress", {}),
+	}
+
+
+func _measure_dynamic_obstacle_edit_stress(rounds: int) -> Dictionary:
+	var world := LabWorld.new()
+	world.setup_default()
+	world.clear_traces()
+	var mobile_ids := world.get_mobile_unit_ids()
+	var targets: Array[Vector2] = [
+		Vector2(610.0, 210.0),
+		Vector2(95.0, 210.0),
+	]
+	var top_gate := Vector2(340.0, 135.0)
+	var bottom_gate := Vector2(340.0, 285.0)
+	var stress_obstacle_size := Vector2(74.0, 74.0)
+	var max_step_usec := 0
+	var total_step_usec := 0
+	var step_count := 0
+	var max_edit_usec := 0
+	var failed_edits := 0
+	var max_active_obstacle_violations := 0
+	var first_active_violation := {}
+	var max_overlap := 0.0
+	var max_replans_this_run := 0
+
+	for round_index in range(rounds):
+		world.set_units_target(mobile_ids, targets[round_index % targets.size()])
+		for step_index in range(64):
+			match step_index:
+				8:
+					var add_top_start_usec := Time.get_ticks_usec()
+					world.add_static_obstacle(top_gate, stress_obstacle_size)
+					max_edit_usec = maxi(max_edit_usec, Time.get_ticks_usec() - add_top_start_usec)
+				16:
+					var add_bottom_start_usec := Time.get_ticks_usec()
+					world.add_static_obstacle(bottom_gate, stress_obstacle_size)
+					max_edit_usec = maxi(max_edit_usec, Time.get_ticks_usec() - add_bottom_start_usec)
+				32:
+					var remove_top_start_usec := Time.get_ticks_usec()
+					if world.remove_nearest_editable(top_gate, 24.0) == "":
+						failed_edits += 1
+					max_edit_usec = maxi(max_edit_usec, Time.get_ticks_usec() - remove_top_start_usec)
+				48:
+					var remove_bottom_start_usec := Time.get_ticks_usec()
+					if world.remove_nearest_editable(bottom_gate, 24.0) == "":
+						failed_edits += 1
+					max_edit_usec = maxi(max_edit_usec, Time.get_ticks_usec() - remove_bottom_start_usec)
+
+			var step_start_usec := Time.get_ticks_usec()
+			world.step(0.05)
+			var step_usec := Time.get_ticks_usec() - step_start_usec
+			max_step_usec = maxi(max_step_usec, step_usec)
+			total_step_usec += step_usec
+			step_count += 1
+			max_replans_this_run = maxi(max_replans_this_run, world.last_replans_this_tick)
+			var active_violation := _active_obstacle_violation_detail(world)
+			var active_violation_count := int(active_violation.get("count", 0))
+			max_active_obstacle_violations = maxi(max_active_obstacle_violations, active_violation_count)
+			if first_active_violation.is_empty() and active_violation_count > 0:
+				active_violation["round"] = round_index
+				active_violation["step"] = step_index
+				first_active_violation = active_violation
+			max_overlap = maxf(max_overlap, float(world.analyze_movement().get("max_overlap", 0.0)))
+
+	var final_metrics := world.analyze_movement()
+	return {
+		"rounds": rounds,
+		"steps": step_count,
+		"max_step_usec": max_step_usec,
+		"avg_step_usec": float(total_step_usec) / float(maxi(step_count, 1)),
+		"max_edit_usec": max_edit_usec,
+		"failed_edits": failed_edits,
+		"max_active_obstacle_violations": max_active_obstacle_violations,
+		"first_active_violation": first_active_violation,
+		"max_overlap": max_overlap,
+		"max_replans_per_tick": max_replans_this_run,
+		"pending_replans": int(final_metrics.get("pending_replans", 0)),
+		"total_replans": int(final_metrics.get("total_replans", 0)),
+		"static_context_cache_hits": int(final_metrics.get("static_context_cache_hits", 0)),
+		"static_context_cache_misses": int(final_metrics.get("static_context_cache_misses", 0)),
 	}
 
 
@@ -352,3 +595,38 @@ func _path_segments_clear(
 			return false
 		prev = point
 	return true
+
+
+func _path_points_inside_map(start: Vector2, path: Array[Vector2], map_size: Vector2, clearance: float) -> bool:
+	if not _point_inside_map(start, map_size, clearance):
+		return false
+	for point in path:
+		if not _point_inside_map(point, map_size, clearance):
+			return false
+	return true
+
+
+func _point_inside_map(point: Vector2, map_size: Vector2, clearance: float) -> bool:
+	return (
+		point.x >= clearance
+		and point.y >= clearance
+		and point.x <= map_size.x - clearance
+		and point.y <= map_size.y - clearance
+	)
+
+
+func _active_obstacle_violation_detail(world: RtsPathfindingLabWorld) -> Dictionary:
+	var result := {
+		"count": 0,
+	}
+	for unit in world.get_mobile_units():
+		for obstacle in world.obstacles:
+			if obstacle.get_inflated_rect(unit.radius).has_point(unit.position):
+				result["count"] = int(result["count"]) + 1
+				if not result.has("unit_id"):
+					result["unit_id"] = unit.id
+					result["unit_position"] = unit.position
+					result["unit_target"] = unit.target
+					result["obstacle_id"] = obstacle.id
+					result["obstacle_center"] = obstacle.center
+	return result

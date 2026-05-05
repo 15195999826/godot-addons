@@ -80,6 +80,13 @@ Controls:
 - `Space`: pause/resume.
 - `G`: toggle group filter.
 - `D`: toggle dynamic unit avoidance.
+- `Export log` button: writes a structured JSON debug snapshot to
+  `user://rts_pathfinding_lab_logs/` and prints the global file path to the
+  Godot output. Use this after a slow frame or suspicious pathing result.
+
+The exported log includes current metrics, perf counters, selected unit ids,
+obstacles, unit positions/targets/paths/recent traces, the latest pathfinder
+report, and recent lab actions/slow-frame events.
 
 ## Smoke
 

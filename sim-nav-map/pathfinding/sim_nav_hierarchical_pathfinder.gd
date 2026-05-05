@@ -106,23 +106,64 @@ func is_navcell_reachable(start: Vector2i, goal: Vector2i, pass_mask: int) -> bo
 	return get_global_region(goal, pass_mask) == start_global
 
 
+func query_goal_reachability(
+	start: Vector2i,
+	goal: SimNavPathGoal,
+	pass_mask: int,
+	passability_class_name: String = ""
+) -> SimNavReachabilityResult:
+	var result := SimNavReachabilityResult.new()
+	result.configure_query(start, goal, pass_mask, passability_class_name)
+	if _nav_map == null or not is_recomputed() or not _chunks.has(pass_mask):
+		result.set_failure(SimNavReachabilityResult.FAILURE_NOT_RECOMPUTED)
+		return result
+	if goal == null or pass_mask == 0:
+		result.set_failure(SimNavReachabilityResult.FAILURE_INVALID_QUERY)
+		return result
+
+	var effective_start := start
+	var start_global := get_global_region(effective_start, pass_mask)
+	if start_global == 0:
+		effective_start = find_nearest_passable_navcell(start, pass_mask)
+		if effective_start == Vector2i(-1, -1):
+			result.set_failure(SimNavReachabilityResult.FAILURE_NO_START_REGION)
+			return result
+		start_global = get_global_region(effective_start, pass_mask)
+		if start_global == 0:
+			result.set_failure(SimNavReachabilityResult.FAILURE_NO_START_REGION)
+			return result
+	result.effective_start_navcell = effective_start
+	result.start_global_region = start_global
+
+	var anchor := _goal_anchor_navcell(goal)
+	var reachable_goal := _find_nearest_goal_navcell(anchor, goal, start_global, pass_mask)
+	if reachable_goal != Vector2i(-1, -1):
+		result.set_reachable(goal, reachable_goal, start_global, get_global_region(reachable_goal, pass_mask))
+		return result
+
+	var fallback := _find_nearest_in_global_region(anchor, start_global, pass_mask)
+	if fallback == Vector2i(-1, -1):
+		result.set_failure(SimNavReachabilityResult.FAILURE_NO_REACHABLE_GOAL)
+		result.start_global_region = start_global
+		result.effective_start_navcell = effective_start
+		return result
+
+	result.set_canonicalized(
+		SimNavPathGoal.point(_nav_map.navcell_center_world(fallback)),
+		fallback,
+		start_global,
+		get_global_region(fallback, pass_mask)
+	)
+	return result
+
+
 func make_goal_reachable_navcell(start: Vector2i, goal: Vector2i, pass_mask: int) -> Vector2i:
 	if _nav_map == null:
 		return goal
-	var start_global := get_global_region(start, pass_mask)
-	if start_global == 0:
-		var fallback_start := find_nearest_passable_navcell(start, pass_mask)
-		if fallback_start == Vector2i(-1, -1):
-			return goal
-		start_global = get_global_region(fallback_start, pass_mask)
-		if start_global == 0:
-			return goal
-	if get_global_region(goal, pass_mask) == start_global:
-		return goal
-	var nearest := _find_nearest_in_global_region(goal, start_global, pass_mask)
-	if nearest == Vector2i(-1, -1):
-		return start
-	return nearest
+	var result := query_goal_reachability(start, SimNavPathGoal.point(_nav_map.navcell_center_world(goal)), pass_mask)
+	if result.has_canonical_goal():
+		return result.canonical_navcell
+	return goal
 
 
 func find_nearest_passable_navcell(start: Vector2i, pass_mask: int) -> Vector2i:
@@ -335,6 +376,28 @@ func _find_nearest_in_global_region(start: Vector2i, target_global: int, pass_ma
 	return Vector2i(-1, -1)
 
 
+func _find_nearest_goal_navcell(
+	start: Vector2i,
+	goal: SimNavPathGoal,
+	target_global: int,
+	pass_mask: int
+) -> Vector2i:
+	if target_global == 0 or goal == null:
+		return Vector2i(-1, -1)
+	if goal.type == SimNavPathGoal.Type.POINT:
+		if get_global_region(start, pass_mask) == target_global:
+			return start
+		return Vector2i(-1, -1)
+	if goal.navcell_contains_goal(_nav_map, start) and get_global_region(start, pass_mask) == target_global:
+		return start
+	var max_radius := _goal_navcell_search_radius(goal)
+	for radius in range(1, max_radius + 1):
+		var found := _scan_ring_for_goal_global(start, radius, pass_mask, target_global, goal)
+		if found != Vector2i(-1, -1):
+			return found
+	return Vector2i(-1, -1)
+
+
 func _scan_ring_for_passable(center: Vector2i, radius: int, pass_mask: int) -> Vector2i:
 	for dx in range(-radius, radius + 1):
 		for dy in range(-radius, radius + 1):
@@ -355,3 +418,43 @@ func _scan_ring_for_global(center: Vector2i, radius: int, pass_mask: int, target
 			if get_global_region(coord, pass_mask) == target_global:
 				return coord
 	return Vector2i(-1, -1)
+
+
+func _scan_ring_for_goal_global(
+	center: Vector2i,
+	radius: int,
+	pass_mask: int,
+	target_global: int,
+	goal: SimNavPathGoal
+) -> Vector2i:
+	for dx in range(-radius, radius + 1):
+		for dy in range(-radius, radius + 1):
+			if maxi(absi(dx), absi(dy)) != radius:
+				continue
+			var coord := Vector2i(center.x + dx, center.y + dy)
+			if not goal.navcell_contains_goal(_nav_map, coord):
+				continue
+			if get_global_region(coord, pass_mask) == target_global:
+				return coord
+	return Vector2i(-1, -1)
+
+
+func _goal_navcell_search_radius(goal: SimNavPathGoal) -> int:
+	if _nav_map == null or goal == null:
+		return 0
+	var extent := 0.0
+	match goal.type:
+		SimNavPathGoal.Type.CIRCLE, SimNavPathGoal.Type.INVERTED_CIRCLE:
+			extent = goal.hw
+		SimNavPathGoal.Type.SQUARE, SimNavPathGoal.Type.INVERTED_SQUARE:
+			extent = goal.hw + goal.hh
+		_:
+			return 0
+	var cell_size := maxf(_nav_map.navcell_size, 0.001)
+	return mini(_MAX_NEAREST_RADIUS, int(ceil(extent / cell_size)) + 2)
+
+
+func _goal_anchor_navcell(goal: SimNavPathGoal) -> Vector2i:
+	if goal == null or _nav_map == null:
+		return Vector2i(-1, -1)
+	return _nav_map.world_to_navcell(goal.center)
