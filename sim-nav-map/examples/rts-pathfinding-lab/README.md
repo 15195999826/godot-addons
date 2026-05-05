@@ -86,7 +86,10 @@ Controls:
 
 The exported log includes current metrics, perf counters, selected unit ids,
 obstacles, unit positions/targets/paths/recent traces, the latest pathfinder
-report, and recent lab actions/slow-frame events.
+report, world step phase timings, movement debug counters, recent per-unit plan
+reports, and recent lab actions/slow-frame/position-jump events. Slow-frame
+events are recorded from 20ms so exported logs capture moderate spikes, not only
+catastrophic frames.
 
 ## Smoke
 
@@ -103,9 +106,10 @@ archived compatibility coverage, not the lab baseline.
 
 - Add a real formation system if gameplay needs deterministic final layouts,
   priority slots, or no-clump destination assignment.
-- Decide game-specific crowd rules for pushing, yielding, narrow-passage
-  deadlocks, stuck detection, and unit priority. These are gameplay policy, not
-  core pathfinding primitives.
+- Decide broader game-specific crowd rules for pushing, yielding,
+  narrow-passage deadlocks, and unit priority. The lab has only a local
+  near-target stuck settle guard; these policies remain outside core
+  pathfinding primitives.
 - Tune replan cadence and budget for larger unit counts after adding larger lab
   scenarios.
 - Add optional debug views for selected unit path, reachable-goal adjustment,

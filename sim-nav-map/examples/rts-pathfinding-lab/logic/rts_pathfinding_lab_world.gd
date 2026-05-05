@@ -11,6 +11,18 @@ const REPLAN_INTERVAL: float = 0.45
 const REPLAN_BUDGET_PER_TICK: int = 1
 const ARRIVE_EPSILON: float = 8.0
 const OVERLAP_RESOLVE_ITERATIONS: int = 4
+const SEPARATION_STABILIZE_ITERATIONS: int = 6
+const RECENT_PLAN_REPORT_LIMIT: int = 80
+const STUCK_SETTLE_TICKS: int = 30
+const STUCK_ACTIVE_ORDER_TICKS: int = 180
+const STUCK_SETTLE_RADIUS: float = 56.0
+const STUCK_STATIC_DIRECT_SETTLE_RADIUS: float = 96.0
+const STUCK_BLOCKED_PATH_SETTLE_RADIUS: float = 160.0
+const STUCK_PROGRESS_EPSILON: float = 0.25
+const STUCK_STATIC_MARGIN: float = 16.0
+const ARRIVE_MAX_OVERLAP: float = 1.0
+const STATIC_PUSH_LOCAL_EXIT_DISTANCE: float = 24.0
+const STATIC_PUSH_REASONABLE_EXIT_DISTANCE: float = 64.0
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var obstacles: Array[RtsPathfindingLabObstacle] = []
@@ -23,9 +35,17 @@ var tick_count: int = 0
 var last_replans_this_tick: int = 0
 var max_replans_per_tick: int = 0
 var total_replans: int = 0
+var last_step_profile: Dictionary = {}
+var recent_plan_reports: Array[Dictionary] = []
 var _obstacle_seq: int = 0
 var _blocker_seq: int = 0
 var _replan_queue: Array[String] = []
+var _last_step_plans: Array[Dictionary] = []
+var _last_step_stuck_settles: Array[Dictionary] = []
+var _last_target_error_by_unit: Dictionary = {}
+var _stalled_ticks_by_unit: Dictionary = {}
+var _active_order_ticks_by_unit: Dictionary = {}
+var _canonical_target_by_unit: Dictionary = {}
 
 
 func _init() -> void:
@@ -58,6 +78,14 @@ func setup_default() -> void:
 	last_replans_this_tick = 0
 	max_replans_per_tick = 0
 	total_replans = 0
+	last_step_profile = {}
+	recent_plan_reports.clear()
+	_last_step_plans.clear()
+	_last_step_stuck_settles.clear()
+	_last_target_error_by_unit.clear()
+	_stalled_ticks_by_unit.clear()
+	_active_order_ticks_by_unit.clear()
+	_canonical_target_by_unit.clear()
 	_replan_queue.clear()
 	pathfinder.prewarm_static_context(obstacles)
 	set_group_target(current_target)
@@ -89,17 +117,25 @@ func set_units_target(unit_ids: Array[String], target: Vector2) -> void:
 		unit.replan_timer = REPLAN_INTERVAL
 		unit.path.clear()
 		unit.path_index = 0
+		_canonical_target_by_unit[unit.id] = false
+		_reset_stuck_progress(unit)
 		_enqueue_replan(unit.id)
 
 
 func step(delta: float) -> void:
+	var step_start_usec := Time.get_ticks_usec()
 	tick_count += 1
 	last_replans_this_tick = 0
+	_last_step_plans.clear()
+	_last_step_stuck_settles.clear()
+	var replan_start_usec := Time.get_ticks_usec()
 	_process_replan_budget()
+	var replan_usec := Time.get_ticks_usec() - replan_start_usec
 	var mobile_units := get_mobile_units()
 	mobile_units.sort_custom(func(a: RtsPathfindingLabUnit, b: RtsPathfindingLabUnit) -> bool:
 		return a.id < b.id
 	)
+	var move_start_usec := Time.get_ticks_usec()
 	for unit in mobile_units:
 		if unit.arrived:
 			continue
@@ -107,13 +143,35 @@ func step(delta: float) -> void:
 		_move_unit(unit, delta)
 		if not unit.arrived and (unit.replan_timer >= REPLAN_INTERVAL or unit.path_index >= unit.path.size()):
 			_enqueue_replan(unit.id)
+	var move_usec := Time.get_ticks_usec() - move_start_usec
+	var pre_settle_start_usec := Time.get_ticks_usec()
+	_pre_settle_expired_active_orders(mobile_units)
+	var pre_settle_usec := Time.get_ticks_usec() - pre_settle_start_usec
+	var separation_start_usec := Time.get_ticks_usec()
 	_resolve_separation(mobile_units)
+	var separation_usec := Time.get_ticks_usec() - separation_start_usec
+	var settle_start_usec := Time.get_ticks_usec()
 	for unit in mobile_units:
 		if not unit.has_move_order:
 			_settle_idle_unit(unit)
-		elif unit.position.distance_to(unit.target) > ARRIVE_EPSILON:
-			unit.arrived = false
+		else:
+			_update_active_move_settle(unit)
 		unit.append_trace_point()
+	var settle_trace_usec := Time.get_ticks_usec() - settle_start_usec
+	last_step_profile = {
+		"tick": tick_count,
+		"delta": delta,
+		"total_usec": Time.get_ticks_usec() - step_start_usec,
+		"replan_usec": replan_usec,
+		"move_usec": move_usec,
+		"pre_settle_usec": pre_settle_usec,
+		"separation_usec": separation_usec,
+		"settle_trace_usec": settle_trace_usec,
+		"planned_count": last_replans_this_tick,
+		"pending_replans": _replan_queue.size(),
+		"plans": _last_step_plans.duplicate(true),
+		"stuck_settles": _last_step_stuck_settles.duplicate(true),
+	}
 
 
 func get_mobile_units() -> Array[RtsPathfindingLabUnit]:
@@ -270,6 +328,9 @@ func _plan_unit(unit: RtsPathfindingLabUnit) -> void:
 	for candidate in units:
 		if candidate.id != unit.id:
 			others.append(candidate)
+	var start_position := unit.position
+	var target_before := unit.target
+	var plan_start_usec := Time.get_ticks_usec()
 	var planned_path := pathfinder.plan_path(
 		unit.position,
 		unit.target,
@@ -277,12 +338,58 @@ func _plan_unit(unit: RtsPathfindingLabUnit) -> void:
 		others,
 		unit.group_id,
 		avoid_moving_units_enabled,
-		group_filter_enabled
+		group_filter_enabled,
+		bool(_canonical_target_by_unit.get(unit.id, false))
 	)
+	var plan_usec := Time.get_ticks_usec() - plan_start_usec
 	if bool(pathfinder.last_report.get("used_make_goal_reachable", false)):
-		unit.target = pathfinder.last_report.get("reachable_goal", unit.target) as Vector2
+		var reachable_goal: Vector2 = pathfinder.last_report.get("reachable_goal", unit.target) as Vector2
+		if reachable_goal.distance_to(unit.target) > 0.01:
+			unit.target = reachable_goal
+			_canonical_target_by_unit[unit.id] = true
+			_reset_stuck_progress(unit)
 	unit.set_path(planned_path)
 	unit.replan_timer = 0.0
+	_record_plan_report({
+		"tick": tick_count,
+		"unit_id": unit.id,
+		"start": start_position,
+		"target_before": target_before,
+		"target_after": unit.target,
+		"plan_usec": plan_usec,
+		"path_size": planned_path.size(),
+		"other_units": others.size(),
+		"static_obstacles": obstacles.size(),
+		"pathfinder_report": pathfinder.last_report.duplicate(true),
+	})
+
+
+func _record_plan_report(report: Dictionary) -> void:
+	recent_plan_reports.append(report)
+	_last_step_plans.append(report)
+	while recent_plan_reports.size() > RECENT_PLAN_REPORT_LIMIT:
+		recent_plan_reports.pop_front()
+
+
+func movement_debug_snapshot() -> Dictionary:
+	var unit_debug: Array[Dictionary] = []
+	for unit in get_mobile_units():
+		unit_debug.append({
+			"id": unit.id,
+			"target_error": unit.position.distance_to(unit.target),
+			"stalled_ticks": int(_stalled_ticks_by_unit.get(unit.id, 0)),
+			"last_target_error": float(_last_target_error_by_unit.get(unit.id, -1.0)),
+			"active_order_ticks": int(_active_order_ticks_by_unit.get(unit.id, 0)),
+			"canonical_target": bool(_canonical_target_by_unit.get(unit.id, false)),
+			"path_is_direct_to_target": _path_is_direct_to_target(unit),
+			"static_constrained": _move_order_is_static_constrained(unit),
+			"has_move_order": unit.has_move_order,
+			"arrived": unit.arrived,
+		})
+	return {
+		"units": unit_debug,
+		"stuck_settles_this_step": _last_step_stuck_settles.duplicate(true),
+	}
 
 
 func _replan_all_mobile() -> void:
@@ -329,18 +436,184 @@ func _move_unit(unit: RtsPathfindingLabUnit, delta: float) -> void:
 	unit.position = _clamp_unit_point(unit.position, unit.radius)
 
 	if unit.path_index >= unit.path.size() and unit.position.distance_to(unit.target) <= ARRIVE_EPSILON:
-		unit.position = unit.target
-		unit.arrived = true
-		unit.has_move_order = false
+		_finish_move_order(unit)
 
 
-func _resolve_overlaps() -> void:
+func _pre_settle_expired_active_orders(mobile_units: Array[RtsPathfindingLabUnit]) -> void:
+	for unit in mobile_units:
+		if not unit.has_move_order:
+			continue
+		var next_active_ticks := int(_active_order_ticks_by_unit.get(unit.id, 0)) + 1
+		if next_active_ticks < STUCK_ACTIVE_ORDER_TICKS:
+			continue
+		var target_error := unit.position.distance_to(unit.target)
+		if target_error <= ARRIVE_EPSILON:
+			continue
+		var path_is_direct := _path_is_direct_to_target(unit)
+		var static_constrained := _move_order_is_static_constrained(unit)
+		var near_static_boundary := _unit_near_static_boundary(unit)
+		var max_stuck_error := STUCK_SETTLE_RADIUS
+		if path_is_direct and static_constrained:
+			max_stuck_error = STUCK_STATIC_DIRECT_SETTLE_RADIUS
+		elif not path_is_direct:
+			max_stuck_error = STUCK_BLOCKED_PATH_SETTLE_RADIUS
+		if (
+			target_error > max_stuck_error
+			or not static_constrained
+			or (not path_is_direct and not near_static_boundary)
+		):
+			continue
+		_last_step_stuck_settles.append({
+			"unit_id": unit.id,
+			"position_before": unit.position,
+			"target_before": unit.target,
+			"target_error": target_error,
+			"progress_error": target_error if path_is_direct else unit.position.distance_to(unit.current_waypoint()),
+			"active_order_ticks": next_active_ticks,
+			"path_size": unit.path.size(),
+			"path_index": unit.path_index,
+			"reason": "active_order_age",
+			"phase": "pre_separation",
+		})
+		_settle_idle_unit(unit)
+
+
+func _update_active_move_settle(unit: RtsPathfindingLabUnit) -> void:
+	_active_order_ticks_by_unit[unit.id] = int(_active_order_ticks_by_unit.get(unit.id, 0)) + 1
+	var target_error := unit.position.distance_to(unit.target)
+	if target_error <= ARRIVE_EPSILON:
+		if _unit_max_overlap(unit) <= ARRIVE_MAX_OVERLAP:
+			_settle_idle_unit(unit)
+		else:
+			unit.arrived = false
+			_last_target_error_by_unit[unit.id] = target_error
+			_stalled_ticks_by_unit[unit.id] = 0
+		return
+	unit.arrived = false
+	var path_is_direct := _path_is_direct_to_target(unit)
+	var static_constrained := _move_order_is_static_constrained(unit)
+	var near_static_boundary := _unit_near_static_boundary(unit)
+	var max_stuck_error := STUCK_SETTLE_RADIUS
+	if path_is_direct and static_constrained:
+		max_stuck_error = STUCK_STATIC_DIRECT_SETTLE_RADIUS
+	elif not path_is_direct:
+		max_stuck_error = STUCK_BLOCKED_PATH_SETTLE_RADIUS
+	var active_age_eligible := (
+		static_constrained
+		and target_error <= STUCK_BLOCKED_PATH_SETTLE_RADIUS
+		and (path_is_direct or near_static_boundary)
+	)
+	if (
+		target_error > max_stuck_error
+		or not static_constrained
+		or (not path_is_direct and not near_static_boundary)
+	):
+		_last_target_error_by_unit[unit.id] = target_error
+		_stalled_ticks_by_unit[unit.id] = 0
+		if not active_age_eligible:
+			_active_order_ticks_by_unit[unit.id] = 0
+		return
+
+	var progress_error := target_error if path_is_direct else unit.position.distance_to(unit.current_waypoint())
+	var last_error := float(_last_target_error_by_unit.get(unit.id, INF))
+	if progress_error >= last_error - STUCK_PROGRESS_EPSILON:
+		_stalled_ticks_by_unit[unit.id] = int(_stalled_ticks_by_unit.get(unit.id, 0)) + 1
+	else:
+		_stalled_ticks_by_unit[unit.id] = 0
+	_last_target_error_by_unit[unit.id] = progress_error
+
+	if int(_stalled_ticks_by_unit.get(unit.id, 0)) >= STUCK_SETTLE_TICKS:
+		_last_step_stuck_settles.append({
+			"unit_id": unit.id,
+			"position_before": unit.position,
+			"target_before": unit.target,
+			"target_error": target_error,
+			"progress_error": progress_error,
+			"stalled_ticks": int(_stalled_ticks_by_unit.get(unit.id, 0)),
+			"path_size": unit.path.size(),
+			"path_index": unit.path_index,
+		})
+		_settle_idle_unit(unit)
+		return
+	if int(_active_order_ticks_by_unit.get(unit.id, 0)) >= STUCK_ACTIVE_ORDER_TICKS:
+		_last_step_stuck_settles.append({
+			"unit_id": unit.id,
+			"position_before": unit.position,
+			"target_before": unit.target,
+			"target_error": target_error,
+			"progress_error": progress_error,
+			"active_order_ticks": int(_active_order_ticks_by_unit.get(unit.id, 0)),
+			"path_size": unit.path.size(),
+			"path_index": unit.path_index,
+			"reason": "active_order_age",
+		})
+		_settle_idle_unit(unit)
+
+
+func _path_is_direct_to_target(unit: RtsPathfindingLabUnit) -> bool:
+	if unit.path.is_empty():
+		return true
+	if unit.path_index >= unit.path.size():
+		return true
+	if unit.path.size() - unit.path_index > 1:
+		return false
+	return unit.path.back().distance_to(unit.target) <= ARRIVE_EPSILON
+
+
+func _move_order_is_static_constrained(unit: RtsPathfindingLabUnit) -> bool:
+	for obstacle in obstacles:
+		var rect := obstacle.get_inflated_rect(unit.radius).grow(STUCK_STATIC_MARGIN)
+		if rect.has_point(unit.target):
+			return true
+	return false
+
+
+func _unit_max_overlap(unit: RtsPathfindingLabUnit) -> float:
+	var result := 0.0
+	for other in units:
+		if other.id == unit.id:
+			continue
+		var dist := unit.position.distance_to(other.position)
+		result = maxf(result, unit.radius + other.radius - dist)
+	return maxf(result, 0.0)
+
+
+func _unit_near_static_boundary(unit: RtsPathfindingLabUnit) -> bool:
+	for obstacle in obstacles:
+		var rect := obstacle.get_inflated_rect(unit.radius).grow(STUCK_STATIC_MARGIN)
+		if rect.has_point(unit.position):
+			return true
+	return false
+
+
+func _finish_move_order(unit: RtsPathfindingLabUnit) -> void:
+	unit.position = unit.target
+	unit.path.clear()
+	unit.path_index = 0
+	unit.arrived = true
+	unit.has_move_order = false
+	unit.replan_timer = 0.0
+	_clear_stuck_progress(unit)
+	_canonical_target_by_unit.erase(unit.id)
+	_remove_queued_replan(unit.id)
+
+
+func _resolve_overlaps() -> bool:
+	var any_changed := false
 	for _iteration in range(OVERLAP_RESOLVE_ITERATIONS):
 		var changed := false
 		for i in range(units.size()):
 			for j in range(i + 1, units.size()):
 				var a := units[i]
 				var b := units[j]
+				if (
+					a.mobile
+					and b.mobile
+					and not a.has_move_order
+					and not b.has_move_order
+					and (_unit_near_static_boundary(a) or _unit_near_static_boundary(b))
+				):
+					continue
 				var min_dist := a.radius + b.radius
 				var delta := b.position - a.position
 				var dist := delta.length()
@@ -358,80 +631,172 @@ func _resolve_overlaps() -> void:
 				a.position = _clamp_unit_point(a.position, a.radius) if a.mobile else _clamp_to_map(a.position)
 				b.position = _clamp_unit_point(b.position, b.radius) if b.mobile else _clamp_to_map(b.position)
 				changed = true
+				any_changed = true
+		if not changed:
+			return any_changed
+	return any_changed
+
+
+func _resolve_separation(mobile_units: Array[RtsPathfindingLabUnit]) -> void:
+	var inflated_rect_cache: Dictionary = {}
+	var component_cache_by_radius: Dictionary = {}
+	for _iteration in range(SEPARATION_STABILIZE_ITERATIONS):
+		var changed := _push_out_static_obstacles_for_units(
+			mobile_units,
+			inflated_rect_cache,
+			component_cache_by_radius
+		)
+		changed = _resolve_overlaps() or changed
+		changed = _push_out_static_obstacles_for_units(
+			mobile_units,
+			inflated_rect_cache,
+			component_cache_by_radius
+		) or changed
 		if not changed:
 			return
 
 
-func _resolve_separation(mobile_units: Array[RtsPathfindingLabUnit]) -> void:
-	for _iteration in range(6):
-		_resolve_overlaps()
-		for unit in mobile_units:
-			_push_out_static_obstacles(unit)
+func _push_out_static_obstacles_for_units(
+	mobile_units: Array[RtsPathfindingLabUnit],
+	inflated_rect_cache: Dictionary,
+	component_cache_by_radius: Dictionary
+) -> bool:
+	var changed := false
+	for unit in mobile_units:
+		var radius_key := _radius_cache_key(unit.radius)
+		if not inflated_rect_cache.has(radius_key):
+			inflated_rect_cache[radius_key] = _build_static_inflated_rects(unit.radius)
+			component_cache_by_radius[radius_key] = {}
+		var inflated_rects: Array[Rect2] = inflated_rect_cache[radius_key]
+		var component_cache: Dictionary = component_cache_by_radius[radius_key]
+		changed = _push_out_static_obstacles(unit, inflated_rects, component_cache, mobile_units) or changed
+	return changed
 
 
-func _push_out_static_obstacles(unit: RtsPathfindingLabUnit) -> void:
+func _push_out_static_obstacles(
+	unit: RtsPathfindingLabUnit,
+	inflated_rects: Array[Rect2],
+	component_cache: Dictionary,
+	mobile_units: Array[RtsPathfindingLabUnit]
+) -> bool:
+	var moved := false
 	for _iteration in range(OVERLAP_RESOLVE_ITERATIONS):
-		var push_rects := _static_push_component_for_point(unit.position, unit.radius)
+		var push_rects := _static_push_component_for_point(unit.position, inflated_rects, component_cache)
 		if push_rects.is_empty():
-			return
-		_push_unit_out_of_static_component(unit, push_rects)
+			return moved
+		var before := unit.position
+		_push_unit_out_of_static_component(unit, push_rects, inflated_rects, mobile_units)
+		if unit.position.distance_squared_to(before) <= 0.0001:
+			return moved
+		moved = true
+	return moved
 
 
-func _static_push_component_for_point(point: Vector2, radius: float) -> Array[Rect2]:
+func _radius_cache_key(radius: float) -> String:
+	return "%.3f" % radius
+
+
+func _build_static_inflated_rects(radius: float) -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	for obstacle in obstacles:
+		result.append(obstacle.get_inflated_rect(radius))
+	return result
+
+
+func _static_push_component_for_point(point: Vector2, inflated_rects: Array[Rect2], component_cache: Dictionary) -> Array[Rect2]:
 	var component_indices: Array[int] = []
-	for i in range(obstacles.size()):
-		var rect := obstacles[i].get_inflated_rect(radius)
+	for i in range(inflated_rects.size()):
+		var rect := inflated_rects[i]
 		if rect.has_point(point):
 			component_indices.append(i)
 			break
 	if component_indices.is_empty():
 		return []
+	var start_index := component_indices[0]
+	if component_cache.has(start_index):
+		return component_cache[start_index]
 
 	var changed := true
 	while changed:
 		changed = false
-		for i in range(obstacles.size()):
+		for i in range(inflated_rects.size()):
 			if component_indices.has(i):
 				continue
-			var obstacle_rect := obstacles[i].get_inflated_rect(radius)
-			if _component_intersects_rect(component_indices, obstacle_rect, radius):
+			var obstacle_rect := inflated_rects[i]
+			if _component_intersects_rect(component_indices, obstacle_rect, inflated_rects):
 				component_indices.append(i)
 				changed = true
 
 	var result: Array[Rect2] = []
 	for index in component_indices:
-		result.append(obstacles[index].get_inflated_rect(radius))
+		result.append(inflated_rects[index])
+	for index in component_indices:
+		component_cache[index] = result
 	return result
 
 
-func _component_intersects_rect(component_indices: Array[int], rect: Rect2, radius: float) -> bool:
+func _component_intersects_rect(component_indices: Array[int], rect: Rect2, inflated_rects: Array[Rect2]) -> bool:
 	for index in component_indices:
-		if obstacles[index].get_inflated_rect(radius).intersects(rect, true):
+		if inflated_rects[index].intersects(rect, true):
 			return true
 	return false
 
 
-func _push_unit_out_of_static_component(unit: RtsPathfindingLabUnit, rects: Array[Rect2]) -> void:
+func _push_unit_out_of_static_component(
+	unit: RtsPathfindingLabUnit,
+	rects: Array[Rect2],
+	inflated_rects: Array[Rect2],
+	mobile_units: Array[RtsPathfindingLabUnit]
+) -> void:
 	var best_point := unit.position
 	var best_dist_sq := INF
+	var best_overlap := INF
 	var best_side_point := unit.position
 	var best_side_dist_sq := INF
-	var reference_point := _static_push_reference_point(unit)
+	var best_side_overlap := INF
+	var reference_point := _static_push_reference_point(unit, inflated_rects)
 	var containing_rects := _rects_containing_point(unit.position, rects)
+	var prefer_local_exit := not unit.has_move_order
+	var reference_candidate := _clamp_unit_point(reference_point, unit.radius)
+	if prefer_local_exit and not _point_inside_static_obstacles(reference_candidate, inflated_rects):
+		var reference_dist_sq := unit.position.distance_squared_to(reference_candidate)
+		var reference_overlap := _point_max_overlap_with_units(reference_candidate, unit, mobile_units)
+		if _is_better_static_exit(reference_overlap, reference_dist_sq, best_overlap, best_dist_sq, prefer_local_exit):
+			best_overlap = reference_overlap
+			best_dist_sq = reference_dist_sq
+			best_point = reference_candidate
+		if _candidate_preserves_reference_side(reference_candidate, reference_point, containing_rects):
+			if _is_better_static_exit(
+				reference_overlap,
+				reference_dist_sq,
+				best_side_overlap,
+				best_side_dist_sq,
+				prefer_local_exit
+			):
+				best_side_overlap = reference_overlap
+				best_side_dist_sq = reference_dist_sq
+				best_side_point = reference_candidate
 	for rect in rects:
 		var candidates := _static_exit_candidates(unit.position, rect)
 		for candidate in candidates:
 			var clamped_candidate := _clamp_unit_point(candidate, unit.radius)
-			if _point_inside_any_rect(clamped_candidate, rects):
-				continue
-			if _point_inside_static_obstacles(clamped_candidate, unit.radius):
+			if _point_inside_static_obstacles(clamped_candidate, inflated_rects):
 				continue
 			var current_dist_sq := unit.position.distance_squared_to(clamped_candidate)
-			if current_dist_sq < best_dist_sq:
+			var candidate_overlap := _point_max_overlap_with_units(clamped_candidate, unit, mobile_units)
+			if _is_better_static_exit(candidate_overlap, current_dist_sq, best_overlap, best_dist_sq, prefer_local_exit):
+				best_overlap = candidate_overlap
 				best_dist_sq = current_dist_sq
 				best_point = clamped_candidate
 			if _candidate_preserves_reference_side(clamped_candidate, reference_point, containing_rects):
-				if current_dist_sq < best_side_dist_sq:
+				if _is_better_static_exit(
+					candidate_overlap,
+					current_dist_sq,
+					best_side_overlap,
+					best_side_dist_sq,
+					prefer_local_exit
+				):
+					best_side_overlap = candidate_overlap
 					best_side_dist_sq = current_dist_sq
 					best_side_point = clamped_candidate
 	if best_side_dist_sq < INF:
@@ -441,6 +806,53 @@ func _push_unit_out_of_static_component(unit: RtsPathfindingLabUnit, rects: Arra
 		unit.position = best_point
 		return
 	_push_unit_out_of_rect(unit, _component_bounds(rects))
+
+
+func _is_better_static_exit(
+	candidate_overlap: float,
+	candidate_dist_sq: float,
+	best_overlap: float,
+	best_dist_sq: float,
+	prefer_local_exit: bool
+) -> bool:
+	var candidate_is_reasonable := candidate_dist_sq <= STATIC_PUSH_REASONABLE_EXIT_DISTANCE * STATIC_PUSH_REASONABLE_EXIT_DISTANCE
+	var best_is_reasonable := best_dist_sq <= STATIC_PUSH_REASONABLE_EXIT_DISTANCE * STATIC_PUSH_REASONABLE_EXIT_DISTANCE
+	if candidate_is_reasonable and not best_is_reasonable:
+		return true
+	if not candidate_is_reasonable and best_is_reasonable:
+		return false
+	if prefer_local_exit:
+		var candidate_is_local := candidate_dist_sq <= STATIC_PUSH_LOCAL_EXIT_DISTANCE * STATIC_PUSH_LOCAL_EXIT_DISTANCE
+		var best_is_local := best_dist_sq <= STATIC_PUSH_LOCAL_EXIT_DISTANCE * STATIC_PUSH_LOCAL_EXIT_DISTANCE
+		if candidate_is_local and not best_is_local:
+			return true
+		if not candidate_is_local and best_is_local:
+			return false
+	var candidate_is_clear := candidate_overlap <= ARRIVE_MAX_OVERLAP
+	var best_is_clear := best_overlap <= ARRIVE_MAX_OVERLAP
+	if candidate_is_clear and not best_is_clear:
+		return true
+	if not candidate_is_clear and not best_is_clear:
+		if candidate_overlap < best_overlap - 0.01:
+			return true
+		if absf(candidate_overlap - best_overlap) <= 0.01:
+			return candidate_dist_sq < best_dist_sq
+		return false
+	return candidate_dist_sq < best_dist_sq
+
+
+func _point_max_overlap_with_units(
+	point: Vector2,
+	unit: RtsPathfindingLabUnit,
+	mobile_units: Array[RtsPathfindingLabUnit]
+) -> float:
+	var result := 0.0
+	for other in mobile_units:
+		if other.id == unit.id:
+			continue
+		var overlap := unit.radius + other.radius - point.distance_to(other.position)
+		result = maxf(result, overlap)
+	return maxf(result, 0.0)
 
 
 func _rects_containing_point(point: Vector2, rects: Array[Rect2]) -> Array[Rect2]:
@@ -470,12 +882,12 @@ func _candidate_preserves_reference_side(candidate: Vector2, reference_point: Ve
 	return false
 
 
-func _static_push_reference_point(unit: RtsPathfindingLabUnit) -> Vector2:
+func _static_push_reference_point(unit: RtsPathfindingLabUnit, inflated_rects: Array[Rect2]) -> Vector2:
 	for i in range(unit.trace.size() - 1, -1, -1):
 		var point := unit.trace[i]
 		if point.distance_to(unit.position) > 160.0:
 			break
-		if not _point_inside_static_obstacles(point, unit.radius):
+		if not _point_inside_static_obstacles(point, inflated_rects):
 			return point
 	return unit.position
 
@@ -513,16 +925,9 @@ func _static_exit_candidates(point: Vector2, rect: Rect2) -> Array[Vector2]:
 	return result
 
 
-func _point_inside_any_rect(point: Vector2, rects: Array[Rect2]) -> bool:
-	for rect in rects:
+func _point_inside_static_obstacles(point: Vector2, inflated_rects: Array[Rect2]) -> bool:
+	for rect in inflated_rects:
 		if rect.has_point(point):
-			return true
-	return false
-
-
-func _point_inside_static_obstacles(point: Vector2, radius: float) -> bool:
-	for obstacle in obstacles:
-		if obstacle.get_inflated_rect(radius).has_point(point):
 			return true
 	return false
 
@@ -558,7 +963,29 @@ func _settle_idle_unit(unit: RtsPathfindingLabUnit) -> void:
 	unit.path.clear()
 	unit.path_index = 0
 	unit.arrived = true
+	unit.has_move_order = false
 	unit.replan_timer = 0.0
+	_clear_stuck_progress(unit)
+	_canonical_target_by_unit.erase(unit.id)
+	_remove_queued_replan(unit.id)
+
+
+func _reset_stuck_progress(unit: RtsPathfindingLabUnit) -> void:
+	_last_target_error_by_unit[unit.id] = INF
+	_stalled_ticks_by_unit[unit.id] = 0
+	_active_order_ticks_by_unit[unit.id] = 0
+
+
+func _clear_stuck_progress(unit: RtsPathfindingLabUnit) -> void:
+	_last_target_error_by_unit.erase(unit.id)
+	_stalled_ticks_by_unit.erase(unit.id)
+	_active_order_ticks_by_unit.erase(unit.id)
+
+
+func _remove_queued_replan(unit_id: String) -> void:
+	var index := _replan_queue.find(unit_id)
+	if index >= 0:
+		_replan_queue.remove_at(index)
 
 
 func _active_move_order_count() -> int:

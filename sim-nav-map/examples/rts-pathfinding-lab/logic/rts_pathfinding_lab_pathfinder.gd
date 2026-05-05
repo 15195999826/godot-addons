@@ -5,6 +5,13 @@ extends RefCounted
 const LabObstacle := preload("res://addons/sim-nav-map/examples/rts-pathfinding-lab/logic/rts_pathfinding_lab_obstacle.gd")
 const LabUnit := preload("res://addons/sim-nav-map/examples/rts-pathfinding-lab/logic/rts_pathfinding_lab_unit.gd")
 
+const LONG_VERTEX_DISTANCE_LIMIT: float = 224.0
+const LONG_VERTEX_DYNAMIC_LIMIT: int = 3
+const LONG_VERTEX_STATIC_LIMIT: int = 4
+const LONG_VERTEX_EDGE_STATIC_LIMIT: int = 3
+const LONG_VERTEX_EDGE_MARGIN: float = 64.0
+const EDGE_VERTEX_DISTANCE_LIMIT: float = 64.0
+
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var cell_size: float = 16.0
 var unit_radius: float = 11.0
@@ -95,7 +102,8 @@ func plan_path(
 	units: Array[RtsPathfindingLabUnit],
 	moving_group_id: String,
 	avoid_moving_units: bool,
-	group_filter_enabled: bool
+	group_filter_enabled: bool,
+	prefer_grid_for_canonical_target: bool = false
 ) -> Array[Vector2]:
 	var active_obstacles := _build_active_obstacles(static_obstacles, units, moving_group_id, avoid_moving_units, group_filter_enabled)
 	var nav_context := _get_static_nav_context(static_obstacles)
@@ -112,7 +120,9 @@ func plan_path(
 	var reachable_goal := goal
 	var used_make_goal_reachable := false
 	var goal_passable := is_point_passable(goal, active_obstacles, unit_radius)
+	var reachability_start_usec := Time.get_ticks_usec()
 	var reachability := _query_reachability_with_nav(nav_map, hierarchical, start, SimNavPathGoal.point(goal), pass_mask, "ground")
+	var reachability_usec := Time.get_ticks_usec() - reachability_start_usec
 	if reachability.has_canonical_goal() and (reachability.canonicalized or not goal_passable):
 		reachable_goal = reachability.canonical_goal.center
 		used_make_goal_reachable = reachability.canonicalized or not goal_passable
@@ -125,10 +135,41 @@ func plan_path(
 	short_request.pass_mask = pass_mask
 	short_request.avoid_moving_units = avoid_moving_units
 	short_request.control_group = moving_group_id if group_filter_enabled else ""
-	var vertex_pathfinder := SimNavVertexPathfinder.new(nav_map)
-	var sim_vertex_path := vertex_pathfinder.compute_short_path_immediate(short_request)
-	var vertex_path := _waypoint_path_to_forward_array(sim_vertex_path)
-	if not vertex_path.is_empty() and _path_respects_lab_bounds(start, vertex_path, active_obstacles, unit_radius):
+	var distance_to_reachable_goal := start.distance_to(reachable_goal)
+	var dynamic_obstacle_count := maxi(active_obstacles.size() - static_obstacles.size(), 0)
+	var skipped_vertex_reason := ""
+	var try_vertex := true
+	if prefer_grid_for_canonical_target and distance_to_reachable_goal > LONG_VERTEX_DISTANCE_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "canonical_target_grid_preferred"
+	elif reachability.canonicalized and dynamic_obstacle_count >= LONG_VERTEX_DYNAMIC_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "canonical_goal_crowded_query"
+	elif reachability.canonicalized and distance_to_reachable_goal > LONG_VERTEX_DISTANCE_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "canonical_goal_outside_vertex_range"
+	elif _is_edge_goal(reachable_goal) and static_obstacles.size() >= LONG_VERTEX_EDGE_STATIC_LIMIT and distance_to_reachable_goal > EDGE_VERTEX_DISTANCE_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "edge_static_long_query"
+	elif static_obstacles.size() >= LONG_VERTEX_STATIC_LIMIT and distance_to_reachable_goal > LONG_VERTEX_DISTANCE_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "edited_static_long_query"
+	elif _is_edge_goal(reachable_goal) and dynamic_obstacle_count >= LONG_VERTEX_DYNAMIC_LIMIT and distance_to_reachable_goal > EDGE_VERTEX_DISTANCE_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "crowded_edge_query"
+	elif dynamic_obstacle_count >= LONG_VERTEX_DYNAMIC_LIMIT and distance_to_reachable_goal > LONG_VERTEX_DISTANCE_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "crowded_long_query"
+
+	var vertex_usec := 0
+	var vertex_path: Array[Vector2] = []
+	if try_vertex:
+		var vertex_start_usec := Time.get_ticks_usec()
+		var vertex_pathfinder := SimNavVertexPathfinder.new(nav_map)
+		var sim_vertex_path := vertex_pathfinder.compute_short_path_immediate(short_request)
+		vertex_usec = Time.get_ticks_usec() - vertex_start_usec
+		vertex_path = _waypoint_path_to_forward_array(sim_vertex_path)
+	if try_vertex and not vertex_path.is_empty() and _path_respects_lab_bounds(start, vertex_path, active_obstacles, unit_radius):
 		last_report = {
 			"used_vertex": true,
 			"used_grid_fallback": false,
@@ -139,15 +180,24 @@ func plan_path(
 			"reachability_failure_reason": reachability.failure_reason,
 			"reachability_pass_mask": reachability.pass_mask,
 			"reachability_canonicalized": reachability.canonicalized,
+			"reachability_usec": reachability_usec,
+			"vertex_usec": vertex_usec,
+			"grid_usec": 0,
+			"skipped_vertex_reason": skipped_vertex_reason,
+			"distance_to_reachable_goal": distance_to_reachable_goal,
+			"active_obstacle_count": active_obstacles.size(),
+			"dynamic_obstacle_count": dynamic_obstacle_count,
 		}
 		return vertex_path
 
+	var grid_start_usec := Time.get_ticks_usec()
 	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
 	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
 	var long_path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, SimNavPathGoal.point(reachable_goal), pass_mask))
-	var smoothed := _string_pull(start, long_path, active_obstacles, unit_radius)
-	if not _path_respects_lab_bounds(start, smoothed, active_obstacles, unit_radius):
+	var smoothed := _string_pull(start, long_path, static_obstacles, unit_radius)
+	if not _path_respects_lab_bounds(start, smoothed, static_obstacles, unit_radius):
 		smoothed = []
+	var grid_usec := Time.get_ticks_usec() - grid_start_usec
 	last_report = {
 		"used_vertex": false,
 		"used_grid_fallback": true,
@@ -158,6 +208,13 @@ func plan_path(
 		"reachability_failure_reason": reachability.failure_reason,
 		"reachability_pass_mask": reachability.pass_mask,
 		"reachability_canonicalized": reachability.canonicalized,
+		"reachability_usec": reachability_usec,
+		"vertex_usec": vertex_usec,
+		"grid_usec": grid_usec,
+		"skipped_vertex_reason": skipped_vertex_reason,
+		"distance_to_reachable_goal": distance_to_reachable_goal,
+		"active_obstacle_count": active_obstacles.size(),
+		"dynamic_obstacle_count": dynamic_obstacle_count,
 	}
 	return smoothed
 
@@ -177,6 +234,15 @@ func segment_clear(a: Vector2, b: Vector2, obstacles: Array[RtsPathfindingLabObs
 	if not _point_inside_playable_bounds(b, clearance):
 		return false
 	return SimNavLineOfSight.segment_clear(a, b, _obstacles_to_static_shapes(obstacles), clearance)
+
+
+func _is_edge_goal(goal: Vector2) -> bool:
+	return (
+		goal.x <= LONG_VERTEX_EDGE_MARGIN
+		or goal.y <= LONG_VERTEX_EDGE_MARGIN
+		or goal.x >= map_size.x - LONG_VERTEX_EDGE_MARGIN
+		or goal.y >= map_size.y - LONG_VERTEX_EDGE_MARGIN
+	)
 
 
 func build_obstacles_for_analysis(
