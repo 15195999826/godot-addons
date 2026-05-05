@@ -13,7 +13,8 @@
 ##
 ## **P7 sim-nav-map migration**: public API remains RTS-shaped for production call sites,
 ## but implementation delegates to `addons/sim-nav-map` core. Old RTS pathfinder classes are
-## still accepted by the constructor for compatibility and low-level fixture smokes.
+## archived fixture implementations and stay accepted by the constructor only for
+## compatibility / low-level fixture smokes.
 ##
 ## **决策来源**:
 ##   - milestones/M5-long-pathfinder.md §M5.3 facade 雏形

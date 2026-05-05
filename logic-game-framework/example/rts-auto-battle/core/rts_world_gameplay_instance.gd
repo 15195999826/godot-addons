@@ -42,7 +42,7 @@ var obstruction_manager: RtsObstructionManager = null
 
 ## Legacy RTS-private hierarchical pathfinder.
 ## P8: production uses `RtsPathfinderFacade` backed by `addons/sim-nav-map`; this field stays
-## only for older fixture smoke / compatibility until the old pathfinding test stack is retired.
+## only for archived fixture smoke / compatibility.
 var hierarchical_pathfinder: RtsHierarchicalPathfinder = null
 
 ## Legacy RTS-private long pathfinder. Not constructed by production after P8.

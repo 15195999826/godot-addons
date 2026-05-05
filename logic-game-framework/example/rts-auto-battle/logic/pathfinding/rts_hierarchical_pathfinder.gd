@@ -1,6 +1,7 @@
 ## RtsHierarchicalPathfinder - 0 A.D. 风格 chunk + region 可达性查询 (M4 引入)
-## Deprecated fixture-only implementation. Production pathfinding goes through
-## `RtsPathfinderFacade` and delegates to `addons/sim-nav-map`.
+## Archived fixture-only implementation. Production pathfinding goes through
+## `RtsPathfinderFacade` and delegates to `addons/sim-nav-map`; new navigation
+## work belongs in `sim-nav-map` or an adapter.
 ##
 ## 0 A.D. `helpers/HierarchicalPathfinder.h/cpp` 的 GDScript 复刻。把 NavcellGrid 切成
 ## CHUNK_SIZE × CHUNK_SIZE 的 chunks,每 chunk 内 BFS 划分 region;跨 chunk 接壤可达的

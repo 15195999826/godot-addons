@@ -18,6 +18,9 @@
 
 这两个类只是导航层的投影数据：它们描述“这个 entity 在寻路意义上如何阻挡路径”。
 
+完整 public API 边界见 [`public-api.md`](public-api.md)，最小接入流程见
+[`usage.md`](usage.md)。本文件只解释接入心智模型。
+
 ## 和 Ultra Grid Map 的区别
 
 `ultra-grid-map` 的心智模型是 grid world model：
@@ -55,6 +58,18 @@ SimNavMap
 - long-path 和 short-path pathfinder
 
 它返回 `SimNavWaypointPath`。它不负责让单位沿路径移动。
+
+当前推荐稳定入口是：
+
+- `SimNavMap`
+- `SimNavPassabilityClassConfig` / `SimNavPassabilityClassRegistry`
+- `SimNavObstructionShapeStatic` / `SimNavObstructionShapeUnit`
+- `SimNavPathGoal` / `SimNavWaypointPath`
+- `SimNavHierarchicalPathfinder`
+- `SimNavLongPathfinder`
+- `SimNavVertexPathfinder`
+- `SimNavPathfinderFacade`
+- `SimNavPathRequestQueue`
 
 ## 项目层负责什么
 
@@ -135,6 +150,7 @@ adapter 也是放项目侧 query policy 的地方：
 - 用哪个 unit radius / clearance
 - 是否先尝试 short path，再 fallback 到 long path
 - 目标不可达时，是否 canonicalize 到最近可达 navcell
+- path 失败时是否 retry、fallback、停止、或进入 stuck handling
 
 `rts-pathfinding-lab` 里的 `RtsPathfindingLabPathfinder` 就是这个模型。
 

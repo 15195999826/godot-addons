@@ -5,6 +5,9 @@ This is an isolated playable lab for RTS pathfinding behavior. It consumes
 obstacle editing, push behavior, selection, drawing, and HUD code stay in this
 example.
 
+The lab is not `sim-nav-map` public API. It is the plugin-local application that
+proves how an adapter can consume the addon without moving game policy into core.
+
 ## Current Architecture
 
 The lab is intentionally split from the reusable addon:
@@ -83,6 +86,11 @@ Controls:
 ```powershell
 ./tools/run_tests.ps1 rtslab/smoke
 ```
+
+This group is the stable regression entry for the lab adapter and playable scene
+load. Core addon behavior belongs to `simnav/smoke`; legacy RTS private
+pathfinder fixtures under `logic-game-framework/example/rts-auto-battle` are
+archived compatibility coverage, not the lab baseline.
 
 ## Future Directions
 

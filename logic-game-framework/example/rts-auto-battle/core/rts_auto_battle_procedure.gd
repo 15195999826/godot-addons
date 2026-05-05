@@ -193,8 +193,8 @@ func _init(
 		#   之前调 grid.mark_obstacle_cell, 那时 manager 还未出生) 补登记成 1×1 cell OBB shape 进
 		#   manager。让 rasterize_if_dirty 增量重写时这些 cells 不被清掉。
 		_register_decorative_obstacles_to_manager(world)
-		# P8: production no longer constructs the old RTS private hierarchical / long / vertex
-		# pathfinders. RtsPathfinderFacade remains the RTS-shaped adapter and delegates to
+		# P8: production no longer constructs the archived RTS private hierarchical / long /
+		# vertex pathfinders. RtsPathfinderFacade remains the RTS-shaped adapter and delegates to
 		# addons/sim-nav-map internally.
 		world.hierarchical_pathfinder = null
 		world.long_pathfinder = null

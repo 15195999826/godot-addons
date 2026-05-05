@@ -1,7 +1,16 @@
 # RTS pathfinding baselines
 
-git-tracked baseline trace + replay snapshot,服务 M3 0 A.D. 寻路迁移 epic (M0..M8) 的
-bit-identical 验证。
+Archived baseline trace + replay snapshot for the old RTS private pathfinder
+fixture. Production pathfinding now goes through `RtsPathfinderFacade`, which
+delegates to `addons/sim-nav-map`.
+
+This directory remains compatibility evidence for historical RTS behavior. It is
+not the active stabilization gate for new `sim-nav-map` work. Use these groups
+instead:
+
+```powershell
+./tools/run_tests.ps1 simnav/smoke rtslab/smoke
+```
 
 ## 文件清单
 
