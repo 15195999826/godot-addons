@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://rts_pathfinding_lab_smoke"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab.gd" id="1_lab_smoke"]
+
+[node name="RtsPathfindingLabSmoke" type="Node"]
+script = ExtResource("1_lab_smoke")
+
