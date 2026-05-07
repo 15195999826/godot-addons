@@ -27,6 +27,19 @@ const STUCK_STATIC_DIRECT_SETTLE_RADIUS: float = 96.0
 const STUCK_BLOCKED_PATH_SETTLE_RADIUS: float = 160.0
 const STUCK_PROGRESS_EPSILON: float = 0.25
 const STUCK_STATIC_MARGIN: float = 16.0
+# LAB-004 overlap matrix (lock-in policy):
+#   - active-vs-active: bounded by OVERLAP_PUSH_MAX_PER_FRAME_CELLS · cell_size
+#     per unit per frame via _resolve_overlaps. May briefly exceed
+#     ARRIVE_MAX_OVERLAP while two moving units negotiate.
+#   - active-vs-idle: idle units may be pushed by active units within the
+#     overlap budget, then re-settled by static-escape and _settle_idle_unit.
+#   - idle-vs-idle: must stay ≤ ARRIVE_MAX_OVERLAP. Enforced by
+#     _unit_max_overlap gating in _update_active_move_settle (line ~509)
+#     and by _is_better_static_exit's `candidate_is_clear` check.
+# repro_lab_004_overlap_policy locks the default arrival case
+# (max idle-idle overlap < 1.0 px). repro_lab_004b_overlap_adversarial
+# locks a stress case (edge-adjacent target + obstacle edits during
+# arrival).
 const ARRIVE_MAX_OVERLAP: float = 1.0
 const STATIC_PUSH_LOCAL_EXIT_DISTANCE: float = 24.0
 const STATIC_PUSH_REASONABLE_EXIT_DISTANCE: float = 64.0

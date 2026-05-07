@@ -1,10 +1,23 @@
 # LAB-004: Overlap / arrival policy is fragile
 
-- Status: open
+- Status: resolved
 - Severity: P2
 - Layer: lab
 - Source: codex-discussion
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `9c7810f`
+- smoke: `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/repro/repro_lab_004_overlap_policy.tscn` (default arrival lock-in) + new `repro/repro_lab_004b_overlap_adversarial.tscn` (edge-adjacent target + obstacle edits during arrival), both registered under `rtslab/smoke`.
+- 0 A.D. files checked: n/a (lab policy)
+- Fix:
+  1. Documented the overlap matrix as a comment block above `ARRIVE_MAX_OVERLAP` in `rts_pathfinding_lab_world.gd`: active-vs-active bounded by `OVERLAP_PUSH_MAX_PER_FRAME_CELLS · cell_size` per unit per frame; active-vs-idle resolves through static-escape and `_settle_idle_unit`; idle-vs-idle ≤ `ARRIVE_MAX_OVERLAP` (1.0 px) — enforced by `_unit_max_overlap` gating in `_update_active_move_settle` (~line 509) and by `_is_better_static_exit`'s `candidate_is_clear` check.
+  2. Wrote the adversarial smoke `repro_lab_004b_overlap_adversarial.gd`: scripts the codex Issue 4 stress case (edge-adjacent target near (640, 36), obstacles dropped at step 40 / step 80 to crowd the approach), runs 460 ticks total, and asserts (a) `max_active_pair_overlap ≤ 6.0 px` mid-flight and (b) `max_idle_pair_overlap ≤ ARRIVE_MAX_OVERLAP` for any unit that reached idle. The smoke deliberately does NOT assert arrival — edge-adjacent + obstacle-edited targets are intentionally hostile to arrival (LAB-001 / LAB-003 territory). What this smoke locks in is the overlap matrix, regardless of whether the units finish arriving.
+  3. Registered the existing default-arrival lock-in (`repro_lab_004`) plus the new adversarial (`repro_lab_004b`) under `rtslab/smoke` so any future regression on either case flips the matrix red.
+- baseline impact: none (LAB-004 was already lock-in correct at HEAD; this issue documents the matrix and locks it in via two regression smokes).
+- public-api.md: no change.
 
 ## Symptoms
 

@@ -29,7 +29,7 @@ Repro column legend:
 | [LAB-001](lab-001-default-avg-step.md) | lab | P1 | Default avg step ~0.45ms vs ~0.1ms target | open | smoke (FAIL) |
 | [LAB-002](lab-002-stress-long-frames.md) | lab | P1 | Stress long frames still 10-15ms | open | smoke (FAIL) |
 | [LAB-003](lab-003-active-jump-55px.md) | lab | P1 | Active position jump can hit ~55px (static-escape teleport) | open | smoke (FAIL) |
-| [LAB-004](lab-004-overlap-arrival-policy.md) | lab | P2 | Overlap / arrival policy is fragile | open | smoke (PASS lock-in) |
+| [LAB-004](lab-004-overlap-arrival-policy.md) | lab | P2 | Overlap / arrival policy is fragile | resolved | smoke (PASS lock-in) |
 | [LAB-005](lab-005-command-vs-path-target.md) | lab | P2 | Command target vs path target separation | resolved | smoke (PASS lock-in) |
 | [LAB-006](lab-006-empty-path-after-long-path-success.md) | lab | P1 | Lab adapter drops waypoints — unit stuck despite long-path success | resolved | smoke (PASS) |
 | [PROCESS-001](process-001-core-lab-proof-protocol.md) | process | P1 | Core-vs-lab proof protocol | open | text (process) |
