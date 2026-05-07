@@ -1,10 +1,21 @@
 # CORE-003: Hierarchical fallback uses fixed 256-cell radius
 
-- Status: open
+- Status: resolved
 - Severity: P0
 - Layer: core
 - Source: claude-audit-2026-05-07
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `f8de75a`
+- smoke: `addons/sim-nav-map/tests/repro/repro_core_003_hierarchical_far_goal.tscn` (registered under `simnav/smoke` group)
+- 0 A.D. files checked: `source/simulation2/helpers/HierarchicalPathfinder.cpp` MakeGoalReachable / FindNearestPassableNavcell (region-graph traversal, not fixed-radius ring scan)
+- Fix: `find_nearest_passable_navcell` and `_find_nearest_in_global_region` now do a small ring scan (`_FAST_NEAREST_RADIUS = 8`) for the common close-neighbor canonicalization, then fall through to a region-graph walk: enumerate every chunk → enumerate cells with non-zero local region → match global region (or any, for the passable variant) → keep nearest by Euclidean distance to the anchor. Bounded by total navcells of the registered passability class instead of by Manhattan radius. The prior `_MAX_NEAREST_RADIUS = 256` cap remains only as the upper bound on `_goal_navcell_search_radius`.
+- baseline impact:
+  - `BASELINE.md` "Known correctness limits": removed CORE-003 row.
+  - No public-API change.
 
 ## Symptoms
 

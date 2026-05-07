@@ -24,7 +24,8 @@
         "smoke_sim_nav_diagnostics_exports.tscn",
         "repro/repro_core_001_vertex_obb_outset.tscn",
         "repro/repro_core_006_flag_setter_propagation.tscn",
-        "repro/repro_core_007_static_rasterize_aabb.tscn"
+        "repro/repro_core_007_static_rasterize_aabb.tscn",
+        "repro/repro_core_003_hierarchical_far_goal.tscn"
       ]
     }
   }
