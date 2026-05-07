@@ -817,13 +817,22 @@ correctness gate：
 单帧 30-80 px 的视觉跳变，是 lab 简化模型的物理上限，**不是 sim-nav-map
 plugin contract 的问题**。
 
-要彻底消除需要先等 Feature 6（filtered short query + line validation）提供
-`CheckMovement` primitive，再让 lab `_move_unit` 引入 velocity 控制 +
-collision-cancel 风格 separation，并删除 `_push_unit_out_of_static_component`。
-**不要在 Feature 6 之前重复尝试调 `_resolve_separation` 参数**——这会优化
-hack 而非 root cause。
+要彻底消除需要按 roadmap 严格顺序完成：
 
-设计反思和路径选项（Path A / B / C）见
+1. **Feature 5**（long-path query/result contract）—— 给 long path 提供
+   path status / metadata / raw vs refined waypoint 边界，是 Feature 6 的前置。
+2. **Feature 6**（filtered short query + line validation）—— 在 plugin 层
+   提供 `CheckMovement` / movement-line validation primitive，这是 lab 真正
+   需要的。
+3. **lab `_move_unit` / `_resolve_separation` 重构**（Feature 6 完成后）——
+   引入 velocity 控制 + collision-cancel 风格 separation，并删除
+   `_push_unit_out_of_static_component`。
+
+**不要在 Feature 5 / 6 之前重复尝试调 `_resolve_separation` 参数**——这会优化
+hack 而非 root cause。即使把 jump 再往下压几 px，也不会改变 "post-hoc
+teleport" 这个错误的设计形态，反而会让未来重构更难。
+
+设计反思、路径选项（Path A / B / C）和决策记录见
 [`lab-separation-design-discussion.md`](lab-separation-design-discussion.md)。
 
 ## Recommended `/goals` Split
