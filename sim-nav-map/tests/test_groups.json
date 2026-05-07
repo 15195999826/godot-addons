@@ -26,7 +26,8 @@
         "repro/repro_core_006_flag_setter_propagation.tscn",
         "repro/repro_core_007_static_rasterize_aabb.tscn",
         "repro/repro_core_003_hierarchical_far_goal.tscn",
-        "repro/repro_core_004_set_bounds.tscn"
+        "repro/repro_core_004_set_bounds.tscn",
+        "repro/repro_core_002_long_path_los_sampling.tscn"
       ]
     }
   }

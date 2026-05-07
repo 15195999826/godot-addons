@@ -60,7 +60,6 @@ Baseline ships with these incorrect behaviors. Each is tracked as a P0/P1
 issue. A fix must include a smoke that proves the new correct behavior — do
 not just patch silently.
 
-- [CORE-002](core-002-long-path-los-sampling.md) — long-path LOS refinement may keep a corner-crossing segment
 - [CORE-005](core-005-clearance-extension-radius.md) — long-path is not +1 navcell more conservative than short-path
 
 ## Regression protocol
