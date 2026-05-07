@@ -10,7 +10,8 @@
         "smoke/smoke_rts_pathfinding_lab_long_path_result_adapter.tscn",
         "smoke/smoke_rts_pathfinding_lab_core_primitive_adapter.tscn",
         "smoke/smoke_rts_pathfinding_lab_scene_load.tscn",
-        "repro/repro_lab_006_grid_fallback_empty_path.tscn"
+        "repro/repro_lab_006_grid_fallback_empty_path.tscn",
+        "repro/repro_lab_005_target_vs_path_target.tscn"
       ]
     }
   }

@@ -5,7 +5,18 @@ extends RefCounted
 var id: String = ""
 var group_id: String = ""
 var position: Vector2 = Vector2.ZERO
+# `target` is the user command point — the click + formation slot offset that
+# the player issued. Frontend command markers and group-level intent UI read
+# this. Arrival, stuck detection, replan triggers, and final-error metrics
+# read `path_target`, not `target`. These two MUST NOT be merged: when a click
+# lands inside or behind a static obstacle, the lab canonicalizes the path's
+# stop point but keeps `target` pointing at the player's intent. See LAB-005
+# (docs/issues/lab-005-command-vs-path-target.md) for the lock-in smoke.
 var target: Vector2 = Vector2.ZERO
+# `path_target` is the canonical reachable stop point the current `path` is
+# actually trying to reach — equal to `target` when the click is reachable,
+# otherwise the make-goal-reachable canonicalization output. Movement
+# completion and arrival evaluate against this field. See LAB-005.
 var path_target: Vector2 = Vector2.ZERO
 var radius: float = 11.0
 var speed: float = 95.0
