@@ -67,6 +67,22 @@ func _test_constructor_defaults() -> void:
 	_assert_equal_vec2(Vector2(3.0, 4.0), path.pop_back(), "waypoint path pop_back should remove last point")
 	_assert_true(path.is_empty(), "waypoint path should be empty after pop")
 
+	var long_query := SimNavLongPathQuery.from_values(Vector2(1.0, 2.0), SimNavPathGoal.point(Vector2(16.0, 16.0)), 1, "ground")
+	long_query.add_excluded_circle(Vector2(8.0, 8.0), 4.0)
+	long_query.post_process = SimNavLongPathQuery.POST_PROCESS_MAX_SPACING
+	long_query.waypoint_spacing = 12.0
+	var cloned_query := long_query.clone()
+	long_query.goal.center = Vector2(80.0, 80.0)
+	_assert_equal_vec2(Vector2(16.0, 16.0), cloned_query.goal.center, "long path query clone should own goal data")
+	_assert_equal_int(1, cloned_query.excluded_regions.size(), "long path query should clone excluded regions")
+	_assert_float(12.0, cloned_query.waypoint_spacing, "long path query should expose waypoint spacing preference")
+
+	var long_result := SimNavLongPathResult.new()
+	long_result.configure_query(cloned_query)
+	_assert_equal_str(SimNavLongPathResult.STATUS_INVALID_QUERY, long_result.status, "long path result default status should be invalid_query")
+	_assert_equal_str("ground", long_result.passability_class_name, "long path result should echo query class name")
+	_assert_equal_int(1, long_result.excluded_regions.size(), "long path result should snapshot excluded region metadata")
+
 
 func _test_map_projection_entry_points() -> void:
 	var nav_map := SimNavMap.new(8, 6, 8.0, Vector2.ZERO, 2)

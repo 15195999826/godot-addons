@@ -41,6 +41,43 @@ Feature 2 已补齐：
 - `rts-pathfinding-lab` 只新增 small / large clearance adapter smoke，不把 unit
   type、movement、selection、command、formation policy 上提到 core。
 
+Feature 3 已补齐：
+
+- `SimNavPathfinderFacade.recompute_dirty(passability_masks)` 统一 terrain/static
+  obstruction edit 后的 rasterize、hierarchical dirty recompute 和 long-path cache
+  invalidation。
+- terrain edit 和 static obstruction add / move / remove 都会 mark dirty，并由
+  `smoke_sim_nav_dirty_lifecycle.tscn` 覆盖 split/reconnect 和 cache invalidation。
+- dynamic unit obstruction replacement 仍作为 short/local query input，不把 lab
+  movement、command、formation policy 上提到 core。
+
+Feature 4 已补齐：
+
+- `SimNavReachabilityResult` 明确返回 reachable/canonicalized/failure metadata。
+- `SimNavHierarchicalPathfinder.query_goal_reachability()` 支持 `POINT`、`CIRCLE`、
+  `SQUARE` 和 inverted goal 的 nearest reachable canonicalization。
+- `SimNavPathfinderFacade.compute_path_immediate()` 在 expensive long path 前复用
+  reachability query，把不可达 point goal 改写到最近可达 goal。
+
+Feature 5 已补齐：
+
+- `SimNavLongPathQuery` 明确 long-path request-scoped input：start、goal、
+  passability mask/class name、excluded regions、waypoint spacing 和
+  post-processing preference。
+- `SimNavLongPathResult` 明确 status、failure/canonicalization metadata、start
+  recovery、path cost/length、raw navcell path 和 refined waypoint path 边界。
+- facade / queue 都保留旧 path-only 兼容入口，同时提供 result-returning 触点；
+  `rts-pathfinding-lab` 只作为 adapter consumer 暴露 metadata，不承载 core
+  movement policy。
+
+当前开发节点：
+
+- **已完成到 Feature 5**。下一段默认从 Feature 6 的 filtered short query /
+  line validation 开始，且只能做 pure query primitive。
+- Feature 6 的 pure filter / unit-line validation 子集也可以并行设计，但任何
+  long-path segment consumption、queue 集成或 lab motion-controller 重构，都要等
+  Feature 5 的 result boundary 稳定后再接。
+
 V1 不承诺：
 
 - 完整 RTS movement system。
@@ -114,14 +151,16 @@ addons/sim-nav-map/docs/roadmap-refs/0ad-navigation-source-map.md
 | 2 | Class-aware clearance rasterization | 按 passability class / clearance rasterize terrain + static obstruction。 | passability mask + clearance baked into grid。 | 建议紧跟 Feature 1。 |
 | 3 | Dirty edit and cache lifecycle | 统一 terrain / obstruction edit 的 dirty recompute 和 cache invalidation。 | dirtinessGrid + incremental raster / hierarchical update。 | 依赖 Feature 1-2，必须连续完成。 |
 | 4 | Reachability and goal canonicalization | 显式 `IsReachable` / nearest reachable goal query。 | Hierarchical `IsReachable` / `MakeGoalReachable`。 | 依赖 Feature 3。 |
-| 5 | Long-path query/result contract | 更清晰的 query input、path status、cost、raw/refined waypoint contract。 | Long-range path 是粗路线，给 short-range 和 motion 消费。 | 依赖 Feature 4。 |
-| 6 | Filtered short query and line validation | obstruction filter、movement-line validation、dynamic obstruction / LOS 边界更稳定。 | Vertex pathfinder + filter-aware `CheckMovement`。 | 依赖 Feature 2-3。 |
+| 5 | Long-path query/result contract | 更清晰的 query input、path status、cost、raw/refined waypoint contract。 | Long-range path 是粗路线，给 short-range 和 motion 消费。 | 依赖 Feature 4；当前默认 next checkpoint。 |
+| 6 | Filtered short query and line validation | obstruction filter、movement-line validation、unit-only line validation、dynamic obstruction / LOS 边界更稳定。 | Vertex pathfinder + filter-aware `CheckMovement` / `TestUnitLine`。 | 依赖 Feature 2-4；pure filter / line validation 可与 Feature 5 并行，queue/lab 集成等 Feature 5。 |
 | 7 | Request queue budget / worker contract | 长短路径统一排队、取消、收集、预算和诊断。 | ticket queue + per-turn path budget。 | 依赖 Feature 4-6。 |
 | 8 | Scale diagnostics and perf scenarios | core navigation 性能边界和诊断数据。 | 大地图 / 多单位下用分层和队列控成本。 | 依赖 Feature 3 和 7。 |
 
-Feature 1-4 是地图 / passability / reachability 基础链，建议连续推进。Feature 5-7
-是 path query 质量和调度链，可以分开做，但不要在没有前置 smoke 的情况下进入 scale
-tuning。Feature 8 只在核心行为稳定后做，否则 benchmark 没有可比较意义。
+Feature 1-4 是地图 / passability / reachability 基础链，当前已经完成。Feature 5-7
+是 path query 质量和调度链：Feature 5 是默认下一步；Feature 6 可拆出纯 filter /
+line-validation 子任务并行推进，但 `long path -> short path` 消费、queue 集成和 lab
+movement refactor 需要等 Feature 5 result contract 稳定。Feature 8 只在核心行为稳定后
+做，否则 benchmark 没有可比较意义。
 
 ## Feature 0: Baseline Guard
 
@@ -560,6 +599,9 @@ short path。
 - 如果引入 result DTO，必须一起更新 facade、queue、public API、usage example、smoke。
 - path post-processing 必须证明不穿过 static obstruction，不改变 reachability 语义。
 - excluded regions 是 path query input，不带 game meaning；adapter 决定为何避开某区域。
+- 不要求阻塞 Feature 6 的 pure filter / unit-line validation 原型；但 Feature 6 若要消费
+  long path segment、接入 queue 或驱动 lab motion refactor，必须回到本 feature 的
+  result/status/waypoint boundary。
 
 ### Example 需要配合什么应用层验证
 
@@ -585,6 +627,38 @@ short path。
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
 
+### 完成记录
+
+Feature 5 的当前完成契约：
+
+- core long-path result contract 在 `smoke_sim_nav_long_pathfinder.tscn` 中覆盖：
+  explicit status、canonicalization metadata、start recovery、raw navcell path、
+  refined waypoint path、path cost/length、max spacing 和 excluded-region query
+  isolation。
+- public/queue touchpoints 在 `smoke_sim_nav_public_api_contract.tscn` 和
+  `smoke_sim_nav_path_request_queue.tscn` 中覆盖：`SimNavLongPathQuery` clone、
+  `SimNavLongPathResult` metadata snapshot、`enqueue_long_path_query()` 和
+  `take_long_path_result()`。
+- lab adapter contract 在
+  `smoke_rts_pathfinding_lab_long_path_result_adapter.tscn` 中覆盖。lab 只把
+  result metadata 放进 `last_report` / export surface；不修改 `_move_unit()`、
+  `_resolve_separation()`、formation、push/yield、stuck/deadlock 或 retry cadence。
+- 与 0 A.D. 的 intentional differences 已写进 `public-api.md`：显式 status、
+  metadata 暴露方式、raw navcell path 的 start-to-goal diagnostic order、以及
+  UnitMotion gameplay policy 不进入 core。
+
+### Feature 6 入口条件
+
+进入 Feature 6 前必须先确认：
+
+- `./tools/run_tests.ps1 simnav/smoke rtslab/smoke` 通过。
+- `git -C addons diff --check` 通过。
+- `git -C addons status --short -- sim-nav-map/docs/references/0ad-source` 无输出。
+- Feature 6 只处理 filtered short query、movement-line validation、unit-line
+  validation 和 obstruction filter protocol；不要把 request queue budget/worker
+  expansion、scale diagnostics、lab movement controller refactor、formation、
+  push/yield、stuck/deadlock 或 retry cadence 混入。
+
 ## Feature 6: Filtered Short Query And Line Validation
 
 ### 增加什么插件能力
@@ -599,6 +673,8 @@ local precision query primitives：
 - `get_obstruction_shapes_in_range()`、short path query、line validation 都能使用同一套 filter。
 - 增加 movement-line validation primitive：检查一段 movement line / swept radius 是否
   穿过 impassable navcell 或 filtered obstruction shape。
+- 增加 unit-only line validation primitive：只检查动态 unit obstruction，用于 adapter 在
+  跟随 long path 时预判“下一段会不会撞到单位”，而不把 static terrain/OBB 重复算进来。
 - static OBB、unit circle、blocked navcell、line-of-sight edge case 统一覆盖。
 - range-limited query 失败时返回明确 status，而不是让 adapter 猜。
 - long path segment -> short path target 的消费方式写清楚。
@@ -613,17 +689,24 @@ local precision query primitives：
 同控制组单位。它不是独立 steering force，也不是 formation controller。
 0 A.D. 还把 `CheckLineMovement()` / `CheckMovement()` 作为 UnitMotion step 前的
 navigation query，并用 `IObstructionTestFilter` 统一表达哪些 shape 参与查询。
+新版 Gitea `main` 还新增了 `ICmpObstructionManager::TestUnitLine()`，`UnitMotion`
+会在沿 long path 行走时先检测下一段是否会撞到 unit；如果会，就主动 request short path。
+这说明 dynamic unit line validation 是 navigation primitive，但“何时重算 short path”
+仍是 consumer / motion policy。
 
 主要参考源码：`source/simulation2/helpers/VertexPathfinder.h`、
 `source/simulation2/helpers/VertexPathfinder.cpp` 和
 `source/simulation2/components/ICmpObstructionManager.h`。
 movement-line validation 另见 `source/simulation2/helpers/Pathfinding.cpp` 和
-`source/simulation2/components/ICmpPathfinder.h`。
+`source/simulation2/components/ICmpPathfinder.h`；unit-only line validation 另见
+`source/simulation2/components/CCmpObstructionManager.cpp` 和
+`source/simulation2/components/CCmpUnitMotion.h`。
 
 ### 完成后获得什么能力
 
 - core 可以回答“在当前局部动态障碍快照下，是否存在一条短路径”。
 - core 可以回答“这段 movement line 在当前 map/filter 下是否合法”。
+- core 可以回答“这段 path segment 是否会撞到动态 unit obstruction”。
 - adapter 可以复用同一套 filter contract，而不是每个 query 增加新的 bool 字段。
 - adapter 可以用同一套 short-path primitive 实现动态避让、贴边绕角、接近目标。
 - lab 的 `D` / `G` toggle 可以验证 query filter，而不是隐藏在 movement policy 里。
@@ -632,7 +715,10 @@ movement-line validation 另见 `source/simulation2/helpers/Pathfinding.cpp` 和
 
 - 依赖 Feature 2 的 clearance / obstruction raster 语义。
 - 依赖 Feature 3 的 obstruction lifecycle。
-- 可以与 Feature 5 并行，但 queue 集成应等 Feature 5 result contract 稳定后再做。
+- 依赖 Feature 4 的 reachability/canonical goal baseline，避免 short query failure 继续
+  回退到 `path.is_empty()` 猜测。
+- pure filter / movement-line / unit-line validation 可以与 Feature 5 并行，但 queue 集成
+  和 long-path segment consumption 应等 Feature 5 result contract 稳定后再做。
 - filter contract 和 line validation 应连续完成；否则 short path、shape query 和 step
   validation 会继续各自发明过滤语义。
 
@@ -644,6 +730,8 @@ movement-line validation 另见 `source/simulation2/helpers/Pathfinding.cpp` 和
 - lab 可以实现 formation slot / group command，但 core 只接收 filter input。
 - lab 的 overlap resolution / push behavior 不进入 core。
 - lab 可以在 step 前调用 line validation；如果失败，lab 自己决定 retry、stop、push 或 stuck。
+- lab 可以在跟随 long path 时调用 unit-line validation 预判动态 unit blockage；如果决定
+  request short path，那仍是 lab / movement policy，不是 core 自动调度。
 
 ### 用户可以在 lab 手动验证什么
 
@@ -652,6 +740,8 @@ movement-line validation 另见 `source/simulation2/helpers/Pathfinding.cpp` 和
 - 同一组 shape query、short path query、line validation 使用相同 filter 时结果一致。
 - 靠近 static obstacle corner 移动时，short path 能给出真实角度 waypoint。
 - 手动拖出一段穿墙 movement line 时，line validation 返回 blocked；沿空旷区域移动时返回 pass。
+- 单位沿 long path 前进时，unit-line validation 能只因为动态单位阻挡而返回 blocked；
+  同一条线没有动态单位时不应被 static-only 逻辑误判。
 - 两个单位窄路相向时，如果仍然 deadlock，HUD 应暴露这是 lab movement policy 问题，不是 core query 结果缺失。
 
 ### 自动验证命令
@@ -817,18 +907,20 @@ correctness gate：
 单帧 30-80 px 的视觉跳变，是 lab 简化模型的物理上限，**不是 sim-nav-map
 plugin contract 的问题**。
 
-要彻底消除需要按 roadmap 严格顺序完成：
+要彻底消除需要按 roadmap 分层完成：
 
 1. **Feature 5**（long-path query/result contract）—— 给 long path 提供
-   path status / metadata / raw vs refined waypoint 边界，是 Feature 6 的前置。
+   path status / metadata / raw vs refined waypoint 边界，是后续消费 long path
+   segment 的前置。
 2. **Feature 6**（filtered short query + line validation）—— 在 plugin 层
-   提供 `CheckMovement` / movement-line validation primitive，这是 lab 真正
-   需要的。
+   提供 `CheckMovement` / movement-line validation / unit-line validation primitive，
+   这是 lab 真正需要的。pure filter / line-validation 子集可以与 Feature 5 并行，
+   但 long-path segment consumption 和 queue 集成要等 Feature 5。
 3. **lab `_move_unit` / `_resolve_separation` 重构**（Feature 6 完成后）——
    引入 velocity 控制 + collision-cancel 风格 separation，并删除
    `_push_unit_out_of_static_component`。
 
-**不要在 Feature 5 / 6 之前重复尝试调 `_resolve_separation` 参数**——这会优化
+**不要在 Feature 5 / 6 核心 primitive 之前重复尝试调 `_resolve_separation` 参数**——这会优化
 hack 而非 root cause。即使把 jump 再往下压几 px，也不会改变 "post-hoc
 teleport" 这个错误的设计形态，反而会让未来重构更难。
 

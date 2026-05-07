@@ -23,16 +23,18 @@ func _init(facade: SimNavPathfinderFacade = null, vertex_pathfinder: SimNavVerte
 
 
 func enqueue_long_path(start_world: Vector2, goal: SimNavPathGoal, pass_mask: int) -> int:
-	if goal == null:
-		push_error("[SimNavPathRequestQueue] enqueue_long_path: goal is null")
+	return enqueue_long_path_query(SimNavLongPathQuery.from_values(start_world, goal, pass_mask))
+
+
+func enqueue_long_path_query(query: SimNavLongPathQuery) -> int:
+	if query == null or query.goal == null:
+		push_error("[SimNavPathRequestQueue] enqueue_long_path_query: query or goal is null")
 		return 0
 	var ticket := _allocate_ticket()
 	_pending.append({
 		"ticket": ticket,
 		"kind": RequestKind.LONG,
-		"start_world": start_world,
-		"goal": _clone_goal(goal),
-		"pass_mask": pass_mask,
+		"query": query.clone(),
 	})
 	return ticket
 
@@ -77,10 +79,10 @@ func process_budget(max_requests: int) -> int:
 		var ticket_id := int(request["ticket"])
 		if _cancelled.has(ticket_id):
 			continue
-		var path := _compute_request(request)
+		var result = _compute_request(request)
 		if _cancelled.has(ticket_id):
 			continue
-		_results[ticket_id] = path
+		_results[ticket_id] = result
 		processed += 1
 	return processed
 
@@ -120,7 +122,7 @@ func collect_worker_results(block: bool = false) -> int:
 		_in_worker.erase(ticket_id)
 		if _cancelled.has(ticket_id):
 			continue
-		_results[ticket_id] = result_dict["path"] as SimNavWaypointPath
+		_results[ticket_id] = result_dict["result"]
 		collected += 1
 	return collected
 
@@ -132,9 +134,21 @@ func has_result(ticket_id: int) -> bool:
 func take_result(ticket_id: int) -> SimNavWaypointPath:
 	if not _results.has(ticket_id):
 		return null
-	var path: SimNavWaypointPath = _results[ticket_id]
+	var stored_result = _results[ticket_id]
 	_results.erase(ticket_id)
-	return path
+	if stored_result is SimNavLongPathResult:
+		return (stored_result as SimNavLongPathResult).path
+	return stored_result as SimNavWaypointPath
+
+
+func take_long_path_result(ticket_id: int) -> SimNavLongPathResult:
+	if not _results.has(ticket_id):
+		return null
+	var stored_result = _results[ticket_id]
+	_results.erase(ticket_id)
+	if stored_result is SimNavLongPathResult:
+		return stored_result as SimNavLongPathResult
+	return null
 
 
 func pending_count() -> int:
@@ -159,16 +173,16 @@ func _allocate_ticket() -> int:
 	return ticket
 
 
-func _compute_request(request: Dictionary) -> SimNavWaypointPath:
+func _compute_request(request: Dictionary):
 	var kind := int(request["kind"])
 	if kind == RequestKind.LONG:
 		if _facade == null:
 			push_error("[SimNavPathRequestQueue] long request requires SimNavPathfinderFacade")
-			return SimNavWaypointPath.new()
-		var start_world: Vector2 = request["start_world"]
-		var goal: SimNavPathGoal = request["goal"]
-		var pass_mask := int(request["pass_mask"])
-		return _facade.compute_path_immediate(start_world, goal, pass_mask)
+			var missing_result := SimNavLongPathResult.new()
+			missing_result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_NAV_MAP_MISSING)
+			return missing_result
+		var query: SimNavLongPathQuery = request["query"]
+		return _facade.compute_path_result(query)
 
 	if kind == RequestKind.SHORT:
 		if _vertex_pathfinder == null:
@@ -202,7 +216,7 @@ func _compute_worker_batch(batch: Array[Dictionary]) -> Array[Dictionary]:
 	for request in batch:
 		worker_results.append({
 			"ticket": int(request["ticket"]),
-			"path": _compute_request(request),
+			"result": _compute_request(request),
 		})
 	return worker_results
 

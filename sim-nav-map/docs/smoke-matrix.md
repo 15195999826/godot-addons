@@ -121,11 +121,37 @@ Feature 4 is covered by:
   and reachability metadata without promoting movement, selection, command,
   formation, HUD, or arrival policy into core.
 
-Feature 5 may start when Feature 4 smoke and docs are green. Its entry point is
-only the long-path query/result contract: query status, path metadata, raw vs
-refined waypoints, optional excluded regions, and post-processing primitives.
-Do not fold short filters, line validation, queue expansion, scale diagnostics,
-or game-specific movement policy into Feature 5.
+Feature 5's scope is only the long-path query/result contract: query status,
+path metadata, raw vs refined waypoints, optional excluded regions, and
+post-processing primitives. Do not fold short filters, line validation, queue
+expansion, scale diagnostics, or game-specific movement policy into Feature 5.
+
+## Feature 5 Long-Path Query/Result Contract
+
+Feature 5 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_long_pathfinder.tscn` in
+  `simnav/smoke`: verifies explicit long-path result statuses, canonicalization
+  metadata, start recovery, raw navcell path vs refined waypoint path boundaries,
+  max waypoint spacing, path cost/length, and request-scoped excluded-region
+  isolation.
+- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
+  `simnav/smoke`: verifies `SimNavLongPathQuery` clone/default behavior and
+  `SimNavLongPathResult` query metadata snapshots.
+- `addons/sim-nav-map/tests/smoke_sim_nav_path_request_queue.tscn` in
+  `simnav/smoke`: verifies queue cloning for long-path query preferences and
+  `take_long_path_result()` metadata retrieval while preserving path-only
+  compatibility.
+- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_long_path_result_adapter.tscn`
+  in `rtslab/smoke`: verifies the lab adapter consumes and exposes long-path
+  result metadata through `last_report` without moving core policy into lab
+  movement code.
+
+Feature 5 does not add short-path filters, movement-line validation,
+unit-line validation, request queue budget expansion, worker scaling,
+diagnostics, formation, push/yield, stuck/deadlock, retry cadence, or gameplay
+movement policy. `rts-pathfinding-lab` remains an adapter consumer and playable
+regression surface.
 
 ## Discovery Contract
 
@@ -156,6 +182,9 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 - obstruction manager behavior
 - hierarchical reachability and dirty recompute
 - explicit reachability/canonical goal result metadata
+- explicit long-path query/result contract: status, canonicalization metadata,
+  raw/refined path boundary, max spacing, excluded-region isolation, and
+  path cost/length
 - jump-point cache invalidation
 - long pathfinder
 - vertex pathfinder
@@ -169,6 +198,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
   building sides
 - the lab terrain preset adapter contract
 - the lab small/large clearance adapter contract
+- the lab long-path result metadata adapter contract
 - the real lab scene loading path
 
 ## Legacy RTS Fixture Boundary
