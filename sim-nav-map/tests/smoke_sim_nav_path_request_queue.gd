@@ -23,6 +23,7 @@ func _run() -> void:
 	_test_cancel_result_removes_stale_result()
 	_test_short_request_result()
 	_test_deterministic_repeated_queue()
+	_test_long_query_result_metadata()
 	_test_worker_batch_collects_results_and_filters_cancelled_ticket()
 
 
@@ -116,6 +117,34 @@ func _test_deterministic_repeated_queue() -> void:
 	var signature_a := _run_deterministic_queue_once()
 	var signature_b := _run_deterministic_queue_once()
 	_assert_equal_str(signature_a, signature_b, "same queued request should produce deterministic result")
+
+
+func _test_long_query_result_metadata() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var query := SimNavLongPathQuery.from_values(
+		nav_map.navcell_center_world(Vector2i(1, 1)),
+		SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(6, 1))),
+		pass_mask,
+		"ground"
+	)
+	query.post_process = SimNavLongPathQuery.POST_PROCESS_MAX_SPACING
+	query.waypoint_spacing = 8.0
+	var ticket := queue.enqueue_long_path_query(query)
+	query.goal.center = nav_map.navcell_center_world(Vector2i(2, 1))
+	query.waypoint_spacing = 64.0
+
+	_assert_equal(1, queue.process_budget(1), "long query result request should process by budget")
+	var result := queue.take_long_path_result(ticket)
+	_assert_true(result != null, "long query result should be takeable as metadata result")
+	_assert_equal_str(SimNavLongPathResult.STATUS_SUCCESS, result.status, "queued long query should expose status")
+	_assert_equal_str("ground", result.passability_class_name, "queued long query should clone class name")
+	_assert_equal(8, int(result.waypoint_spacing), "queued long query should clone spacing preference")
+	_assert_equal_vec(nav_map.navcell_center_world(Vector2i(6, 1)), result.path.waypoints[0], "queued long query should clone goal at enqueue time")
+	_assert_true(result.refined_waypoint_count > 1, "queued max-spacing result should expose refined waypoint count")
+	_assert_true(result.path_length > 0.0, "queued result should expose path length")
 
 
 func _test_worker_batch_collects_results_and_filters_cancelled_ticket() -> void:

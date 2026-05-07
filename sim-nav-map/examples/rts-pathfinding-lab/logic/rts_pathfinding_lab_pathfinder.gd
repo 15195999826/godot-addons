@@ -80,17 +80,19 @@ func plan_path_with_terrain_context(
 		return []
 	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
 	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
-	var reachability := facade.query_reachability(start, SimNavPathGoal.point(goal), pass_mask, passability_class_name)
-	var path_goal := reachability.canonical_goal if reachability.has_canonical_goal() else SimNavPathGoal.point(goal)
-	var path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, path_goal, pass_mask))
+	var query := SimNavLongPathQuery.from_values(start, SimNavPathGoal.point(goal), pass_mask, passability_class_name)
+	var path_result := facade.compute_path_result(query)
+	var path := _waypoint_path_to_forward_array(path_result.path)
+	var reachable_goal := path_result.canonical_goal.center if path_result.canonical_goal != null else goal
 	last_report = {
 		"used_terrain_context": true,
 		"passability_class_name": passability_class_name,
-		"reachability_failure_reason": reachability.failure_reason,
-		"reachability_pass_mask": reachability.pass_mask,
-		"reachability_canonicalized": reachability.canonicalized,
-		"reachable_goal": path_goal.center,
+		"reachability_failure_reason": path_result.canonicalization_reason,
+		"reachability_pass_mask": path_result.pass_mask,
+		"reachability_canonicalized": path_result.canonicalized,
+		"reachable_goal": reachable_goal,
 		"path_size": path.size(),
+		"long_path_result": _long_path_result_to_report(path_result),
 	}
 	return path
 
@@ -193,7 +195,10 @@ func plan_path(
 	var grid_start_usec := Time.get_ticks_usec()
 	var long_pathfinder := SimNavLongPathfinder.new(nav_map)
 	var facade := SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
-	var long_path := _waypoint_path_to_forward_array(facade.compute_path_immediate(start, SimNavPathGoal.point(reachable_goal), pass_mask))
+	var long_query := SimNavLongPathQuery.from_values(start, SimNavPathGoal.point(reachable_goal), pass_mask, "ground")
+	long_query.post_process = SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT
+	var long_result := facade.compute_path_result(long_query)
+	var long_path := _waypoint_path_to_forward_array(long_result.path)
 	var smoothed := _string_pull(start, long_path, static_obstacles, unit_radius)
 	if not _path_respects_lab_bounds(start, smoothed, static_obstacles, unit_radius):
 		smoothed = []
@@ -215,6 +220,9 @@ func plan_path(
 		"distance_to_reachable_goal": distance_to_reachable_goal,
 		"active_obstacle_count": active_obstacles.size(),
 		"dynamic_obstacle_count": dynamic_obstacle_count,
+		"long_path_result": _long_path_result_to_report(long_result),
+		"core_refined_path_size": long_path.size(),
+		"lab_smoothed_path_size": smoothed.size(),
 	}
 	return smoothed
 
@@ -421,6 +429,34 @@ func _waypoint_path_to_forward_array(path: SimNavWaypointPath) -> Array[Vector2]
 	for i in range(path.waypoints.size() - 1, -1, -1):
 		result.append(path.waypoints[i])
 	return result
+
+
+func _long_path_result_to_report(result: SimNavLongPathResult) -> Dictionary:
+	if result == null:
+		return {}
+	return {
+		"status": result.status,
+		"failure_reason": result.failure_reason,
+		"canonicalization_reason": result.canonicalization_reason,
+		"canonicalized": result.canonicalized,
+		"start_recovered": result.start_recovered,
+		"pass_mask": result.pass_mask,
+		"passability_class_name": result.passability_class_name,
+		"start_navcell": result.start_navcell,
+		"effective_start_navcell": result.effective_start_navcell,
+		"canonical_navcell": result.canonical_navcell,
+		"canonical_goal": result.canonical_goal.center if result.canonical_goal != null else Vector2.ZERO,
+		"path_cost": result.path_cost,
+		"path_length": result.path_length,
+		"raw_navcell_count": result.raw_navcell_count,
+		"raw_waypoint_count": result.raw_waypoint_count,
+		"refined_waypoint_count": result.refined_waypoint_count,
+		"waypoint_order": result.waypoint_order,
+		"raw_navcell_order": result.raw_navcell_order,
+		"post_process": result.post_process,
+		"waypoint_spacing": result.waypoint_spacing,
+		"excluded_region_count": result.excluded_regions.size(),
+	}
 
 
 func _string_pull(

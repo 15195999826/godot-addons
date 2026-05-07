@@ -21,7 +21,10 @@ request cloning. Feature-specific coverage includes
 `smoke_sim_nav_clearance_rasterization.tscn` for class-aware terrain/static
 clearance rasterization, `smoke_sim_nav_dirty_lifecycle.tscn` for dirty
 edit/cache lifecycle, and `smoke_sim_nav_reachability_query.tscn` for explicit
-reachability and canonical goal metadata.
+reachability and canonical goal metadata. Feature 5 long-path result coverage is
+in `smoke_sim_nav_long_pathfinder.tscn`,
+`smoke_sim_nav_path_request_queue.tscn`, and
+`examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_long_path_result_adapter.tscn`.
 
 ## Stable Entry Points
 
@@ -40,6 +43,8 @@ These classes are the supported integration surface for game/example adapters:
 | `SimNavPathGoal` | Path target geometry: point, circle, square, and inverted variants. |
 | `SimNavReachabilityResult` | Result DTO for explicit reachability/canonical goal queries. |
 | `SimNavWaypointPath` | Returned path container. Callers own movement along these waypoints. |
+| `SimNavLongPathQuery` | Request DTO for long-path queries: start, goal, passability mask/class name, request-scoped excluded regions, and post-processing preferences. |
+| `SimNavLongPathResult` | Result DTO for long-path status, failure/canonicalization metadata, raw navcell path, refined waypoint path, cost, and length. |
 | `SimNavHierarchicalPathfinder` | Reachability and nearest reachable navcell canonicalization. |
 | `SimNavLongPathfinder` | Long navcell path search. |
 | `SimNavVertexPathfinder` | Local short path search around nearby obstructions. |
@@ -150,8 +155,36 @@ Projection DTOs:
   `canonicalized == true`; adapter policy decides whether to move there, notify,
   retry, or cancel.
 - `SimNavWaypointPath` exposes `waypoints`, `size()`, `is_empty()`, `back()`,
-   `pop_back()`, `push_back()`, and `clear()`. Stored waypoints are consumed by
-   callers; movement execution is outside the addon.
+   `pop_back()`, `push_back()`, and `clear()`. Stored waypoints are in
+   reverse-consumption order: `waypoints[0]` is the final goal-side point and
+   `back()` is the next point a consumer would pop. This preserves the existing
+   `SimNavWaypointPath` contract and matches 0 A.D.'s consumption shape.
+- `SimNavLongPathQuery` exposes:
+  - `start_world`, `goal`, `pass_mask`, and `passability_class_name`;
+  - request-scoped `excluded_regions`, populated with `add_excluded_circle()`.
+    These regions are treated as blocked only for that query and do not mutate
+    `SimNavMap`;
+  - post-processing constants `raw`, `line_of_sight`, and `max_spacing`;
+  - `waypoint_spacing`, used directly when positive. If it is zero and
+    `goal.maxdist > 0`, the goal's max distance acts as the spacing preference;
+  - `from_values()` and `clone()` helpers. Queue enqueue clones the query.
+- `SimNavLongPathResult` exposes:
+  - statuses `success`, `canonicalized`, `start_recovered`, `direct_goal`,
+    `unreachable`, `no_path`, `invalid_start`, and `invalid_query`;
+  - failure reasons `none`, `nav_map_missing`, `goal_missing`,
+    `pass_mask_missing`, `map_too_large`, `start_out_of_bounds`,
+    `start_blocked`, `goal_out_of_bounds`, `goal_blocked`, and `no_route`;
+  - canonicalization metadata `canonicalized`, `canonicalization_reason`,
+    `reachability_result`, `query_goal`, `canonical_goal`, `start_navcell`,
+    `effective_start_navcell`, and `canonical_navcell`;
+  - request metadata `pass_mask`, `passability_class_name`, `excluded_regions`,
+    `post_process`, and `waypoint_spacing`;
+  - path metadata `raw_navcell_path`, `raw_waypoint_path`,
+    `refined_waypoint_path`, `path`, `path_cost`, `path_length`,
+    `raw_navcell_count`, `raw_waypoint_count`, and `refined_waypoint_count`.
+    `raw_navcell_path` is stored from start to goal for diagnostics; waypoint
+    paths remain reverse-consumption order.
+  - helpers `is_success()` and `has_path()`.
 - `SimNavHierarchicalPathfinder` exposes `recompute()`, `recompute_dirty()`,
    `is_recomputed()`, `get_region()`, `get_global_region()`,
    `is_navcell_reachable()`, `query_goal_reachability()`,
@@ -160,26 +193,50 @@ Projection DTOs:
    `get_global_regions()`, and `next_global_region()` are diagnostics/test
    support and should not become game logic dependencies.
 - `SimNavLongPathfinder` exposes `compute_path_immediate()` and
-  `invalidate_jump_point_cache()`. Dirty navcells invalidate the jump-point cache
-  before subsequent queries.
+  `compute_path_result()`, plus `invalidate_jump_point_cache()`. Dirty navcells
+  invalidate the jump-point cache before subsequent queries.
+  `compute_path_immediate()` is the compatibility path-only API.
+  `compute_path_result()` is the Feature 5 contract API and returns
+  `SimNavLongPathResult`.
 - `SimNavVertexPathfinder` exposes `compute_short_path_immediate()`.
 - `SimNavShortPathRequest` is a field DTO: `start`, `goal`, `clearance`,
   `range_px`, `pass_mask`, `avoid_moving_units`, and `control_group`.
 - `SimNavPathfinderFacade` exposes `recompute_dirty()`, `query_reachability()`,
-  and `compute_path_immediate()`. `recompute_dirty()` is the stable batch edit
+  `compute_path_result()`, and `compute_path_immediate()`. `recompute_dirty()` is the stable batch edit
   lifecycle entry: it rasterizes dirty static obstructions, recomputes dirty
   hierarchical chunks, invalidates the long-path jump-point cache, and clears
   dirty navcells by default. `query_reachability()` returns
   `SimNavReachabilityResult` for `POINT`, `CIRCLE`, `SQUARE`, and inverted goals.
-  `compute_path_immediate()` uses the same reachability query before long-path
-  search and may canonicalize the supplied goal object in place when a fallback
-  point goal is required.
+  `compute_path_result()` uses the same reachability query before long-path
+  search and snapshots canonicalization/start-recovery metadata into
+  `SimNavLongPathResult`. `compute_path_immediate()` remains a compatibility
+  path-only API and may canonicalize the supplied goal object in place when a
+  fallback point goal is required.
 - `SimNavPathRequestQueue` exposes `enqueue_long_path()`, `enqueue_short_path()`,
-  `cancel()`, `process_budget()`, `start_worker()`, `is_worker_running()`,
-  `collect_worker_results()`, `has_result()`, `take_result()`,
-  `pending_count()`, `result_count()`, and `clear()`. Queue enqueue clones the
-  supplied goal/request data, so later caller-side mutation does not alter the
-  queued request.
+  `enqueue_long_path_query()`, `cancel()`, `process_budget()`, `start_worker()`,
+  `is_worker_running()`, `collect_worker_results()`, `has_result()`,
+  `take_result()`, `take_long_path_result()`, `pending_count()`,
+  `result_count()`, and `clear()`. Queue enqueue clones the supplied
+  goal/request/query data, so later caller-side mutation does not alter the
+  queued request. `take_result()` preserves the path-only compatibility contract;
+  `take_long_path_result()` returns long-path metadata for Feature 5 consumers.
+  This does not add Feature 7 budget/worker policy.
+
+### 0 A.D. Intentional Differences
+
+Feature 5 uses 0 A.D. as a source-design reference but does not copy its public
+API:
+
+- 0 A.D. exposes long-path results mostly as ticket + `WaypointPath`; `sim-nav-map`
+  exposes explicit status, failure reason, canonicalization metadata, path cost,
+  path length, raw/refined counts, and request echo metadata.
+- 0 A.D. internal canonicalization and start recovery are mostly hidden from
+  consumers; `sim-nav-map` surfaces them in `SimNavLongPathResult`.
+- `SimNavWaypointPath` keeps reverse-consumption order for compatibility, while
+  `SimNavLongPathResult.raw_navcell_path` is start-to-goal for diagnostics.
+- 0 A.D. UnitMotion layers short-path fallback, retry cadence, push/yield, and
+  movement policy on top of sparse results. Those policies remain outside
+  `sim-nav-map` core.
 
 ## Adapter Boundary
 

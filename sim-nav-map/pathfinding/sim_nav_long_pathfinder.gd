@@ -26,6 +26,75 @@ func _init(nav_map: SimNavMap = null) -> void:
 	_nav_map = nav_map
 
 
+func compute_path_result(query: SimNavLongPathQuery) -> SimNavLongPathResult:
+	var result := SimNavLongPathResult.new()
+	if query == null:
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_GOAL_MISSING)
+		return result
+	result.configure_query(query, _nav_map)
+	result.post_process = _normalized_post_process(query.post_process)
+	result.waypoint_spacing = _effective_waypoint_spacing(query)
+
+	if _nav_map == null:
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_NAV_MAP_MISSING)
+		return result
+	if query.goal == null:
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_GOAL_MISSING)
+		return result
+	if query.pass_mask == 0:
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_PASS_MASK_MISSING)
+		return result
+	if _nav_map.width >= _PACK_LIMIT or _nav_map.height >= _PACK_LIMIT:
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_MAP_TOO_LARGE)
+		return result
+
+	var start_cell := _nav_map.world_to_navcell(query.start_world)
+	result.start_navcell = start_cell
+	result.effective_start_navcell = start_cell
+	result.effective_start_world = query.start_world
+	if not _nav_map.is_valid_navcell(start_cell):
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_START_OUT_OF_BOUNDS)
+		return result
+	if not _is_passable_with_exclusions(start_cell, query.pass_mask, query.excluded_regions):
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_START, SimNavLongPathResult.FAILURE_START_BLOCKED)
+		return result
+
+	if query.goal.type == SimNavPathGoal.Type.POINT:
+		var goal_cell := _nav_map.world_to_navcell(query.goal.center)
+		result.canonical_navcell = goal_cell
+		if not _nav_map.is_valid_navcell(goal_cell):
+			result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_GOAL_OUT_OF_BOUNDS)
+			return result
+		if not _is_passable_with_exclusions(goal_cell, query.pass_mask, query.excluded_regions):
+			result.set_failure(SimNavLongPathResult.STATUS_UNREACHABLE, SimNavLongPathResult.FAILURE_GOAL_BLOCKED)
+			return result
+
+	if query.goal.navcell_contains_goal(_nav_map, start_cell):
+		var direct_path := SimNavWaypointPath.new()
+		direct_path.push_back(query.goal.nearest_point_on_goal(query.start_world))
+		var direct_cells: Array[Vector2i] = [start_cell]
+		var refined_direct := _refine_waypoint_path(direct_path, query, result.post_process, result.waypoint_spacing)
+		result.set_paths(SimNavLongPathResult.STATUS_DIRECT_GOAL, direct_cells, direct_path, refined_direct, 0)
+		return result
+
+	var raw_cells := _astar_cells(start_cell, query.goal, query.pass_mask, query.excluded_regions)
+	if raw_cells.is_empty():
+		result.set_failure(SimNavLongPathResult.STATUS_NO_PATH, SimNavLongPathResult.FAILURE_NO_ROUTE)
+		return result
+
+	var raw_path := _waypoint_path_from_cells(raw_cells, query.goal)
+	var refined_path := _refine_waypoint_path(raw_path, query, result.post_process, result.waypoint_spacing)
+	result.canonical_navcell = raw_cells[raw_cells.size() - 1]
+	result.set_paths(
+		SimNavLongPathResult.STATUS_SUCCESS,
+		raw_cells,
+		raw_path,
+		refined_path,
+		_path_cost_for_cells(raw_cells)
+	)
+	return result
+
+
 func compute_path_immediate(start_world: Vector2, goal: SimNavPathGoal, pass_mask: int) -> SimNavWaypointPath:
 	if _nav_map == null:
 		push_error("[SimNavLongPathfinder] compute_path_immediate: nav_map is null")
@@ -58,6 +127,241 @@ func compute_path_immediate(start_world: Vector2, goal: SimNavPathGoal, pass_mas
 
 func invalidate_jump_point_cache() -> void:
 	_jump_point_caches.clear()
+
+
+func _astar_cells(
+	start: Vector2i,
+	goal: SimNavPathGoal,
+	pass_mask: int,
+	excluded_regions: Array[Dictionary]
+) -> Array[Vector2i]:
+	var open_keys: Array = []
+	var came_from: Dictionary = {}
+	var g_score: Dictionary = {}
+	var closed: Dictionary = {}
+	var insertion_seq := 0
+
+	var start_pack := _pack_cell(start)
+	g_score[start_pack] = 0
+	var h0 := _heuristic(start, goal)
+	open_keys.append([h0, h0, start.x, start.y, insertion_seq])
+	insertion_seq += 1
+
+	while not open_keys.is_empty():
+		var key: Array = open_keys[0]
+		open_keys.remove_at(0)
+		var current := Vector2i(int(key[2]), int(key[3]))
+		var current_pack := _pack_cell(current)
+		if closed.has(current_pack):
+			continue
+		closed[current_pack] = true
+		if goal.navcell_contains_goal(_nav_map, current):
+			return _reconstruct_cells(came_from, start_pack, current_pack)
+
+		var current_g: int = int(g_score[current_pack])
+		for direction in _DIRECTIONS:
+			var next_cell := current + direction
+			if not _can_step_with_exclusions(current, next_cell, direction, pass_mask, excluded_regions):
+				continue
+			var next_pack := _pack_cell(next_cell)
+			if closed.has(next_pack):
+				continue
+			var next_g := current_g + _movement_cost(current, next_cell)
+			if g_score.has(next_pack) and next_g >= int(g_score[next_pack]):
+				continue
+			g_score[next_pack] = next_g
+			came_from[next_pack] = current_pack
+			var next_h := _heuristic(next_cell, goal)
+			var f := next_g + next_h
+			SimNavPathfinderHeap.insert(open_keys, [f, next_h, next_cell.x, next_cell.y, insertion_seq])
+			insertion_seq += 1
+	return []
+
+
+func _reconstruct_cells(came_from: Dictionary, start_pack: int, goal_pack: int) -> Array[Vector2i]:
+	var reverse_cells: Array[int] = [goal_pack]
+	var current := goal_pack
+	while current != start_pack:
+		if not came_from.has(current):
+			return []
+		current = int(came_from[current])
+		reverse_cells.append(current)
+	var cells: Array[Vector2i] = []
+	for i in range(reverse_cells.size() - 1, -1, -1):
+		cells.append(_cell_from_pack(reverse_cells[i]))
+	return cells
+
+
+func _waypoint_path_from_cells(cells: Array[Vector2i], goal: SimNavPathGoal) -> SimNavWaypointPath:
+	var path := SimNavWaypointPath.new()
+	for i in range(cells.size() - 1, 0, -1):
+		var point := _nav_map.navcell_center_world(cells[i])
+		if i == cells.size() - 1:
+			point = goal.nearest_point_on_goal(point)
+		path.push_back(point)
+	return path
+
+
+func _refine_waypoint_path(
+	raw_path: SimNavWaypointPath,
+	query: SimNavLongPathQuery,
+	post_process: String,
+	spacing: float
+) -> SimNavWaypointPath:
+	if raw_path == null or raw_path.is_empty():
+		return SimNavWaypointPath.new()
+	if post_process == SimNavLongPathQuery.POST_PROCESS_RAW:
+		return _clone_waypoint_path(raw_path)
+
+	var execution_points := _path_to_execution_points(raw_path)
+	execution_points = _compress_execution_points(query.start_world, execution_points, query.pass_mask, query.excluded_regions)
+	if spacing > 0.0:
+		execution_points = _apply_waypoint_spacing(query.start_world, execution_points, spacing)
+	return _execution_points_to_path(execution_points)
+
+
+func _path_to_execution_points(path: SimNavWaypointPath) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	for i in range(path.waypoints.size() - 1, -1, -1):
+		result.append(path.waypoints[i])
+	return result
+
+
+func _execution_points_to_path(points: Array[Vector2]) -> SimNavWaypointPath:
+	var path := SimNavWaypointPath.new()
+	for i in range(points.size() - 1, -1, -1):
+		path.push_back(points[i])
+	return path
+
+
+func _compress_execution_points(
+	start_world: Vector2,
+	points: Array[Vector2],
+	pass_mask: int,
+	excluded_regions: Array[Dictionary]
+) -> Array[Vector2]:
+	if points.is_empty():
+		return []
+	var result: Array[Vector2] = []
+	var anchor := start_world
+	var idx := 0
+	while idx < points.size():
+		var chosen := idx
+		for j in range(points.size() - 1, idx - 1, -1):
+			if _segment_passable_clear(anchor, points[j], pass_mask, excluded_regions):
+				chosen = j
+				break
+		result.append(points[chosen])
+		anchor = points[chosen]
+		idx = chosen + 1
+	return result
+
+
+func _apply_waypoint_spacing(start_world: Vector2, points: Array[Vector2], spacing: float) -> Array[Vector2]:
+	if spacing <= 0.0 or points.is_empty():
+		return points.duplicate()
+	var result: Array[Vector2] = []
+	var anchor := start_world
+	for point in points:
+		var distance := anchor.distance_to(point)
+		var steps := maxi(1, int(ceil(distance / spacing)))
+		for step in range(1, steps + 1):
+			result.append(anchor.lerp(point, float(step) / float(steps)))
+		anchor = point
+	return result
+
+
+func _segment_passable_clear(
+	a: Vector2,
+	b: Vector2,
+	pass_mask: int,
+	excluded_regions: Array[Dictionary]
+) -> bool:
+	var distance := a.distance_to(b)
+	var step_size := maxf(_nav_map.navcell_size * 0.5, 0.001)
+	var steps := maxi(1, int(ceil(distance / step_size)))
+	for i in range(steps + 1):
+		var point := a.lerp(b, float(i) / float(steps))
+		var coord := _nav_map.world_to_navcell(point)
+		if not _is_passable_with_exclusions(coord, pass_mask, excluded_regions):
+			return false
+	return true
+
+
+func _clone_waypoint_path(path: SimNavWaypointPath) -> SimNavWaypointPath:
+	var cloned_path := SimNavWaypointPath.new()
+	if path == null:
+		return cloned_path
+	for point in path.waypoints:
+		cloned_path.push_back(point)
+	return cloned_path
+
+
+func _path_cost_for_cells(cells: Array[Vector2i]) -> int:
+	var total := 0
+	for i in range(1, cells.size()):
+		total += _movement_cost(cells[i - 1], cells[i])
+	return total
+
+
+func _normalized_post_process(post_process: String) -> String:
+	if post_process in [
+		SimNavLongPathQuery.POST_PROCESS_RAW,
+		SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT,
+		SimNavLongPathQuery.POST_PROCESS_MAX_SPACING,
+	]:
+		return post_process
+	return SimNavLongPathQuery.POST_PROCESS_RAW
+
+
+func _effective_waypoint_spacing(query: SimNavLongPathQuery) -> float:
+	if query == null or query.post_process == SimNavLongPathQuery.POST_PROCESS_RAW:
+		return 0.0
+	if query.waypoint_spacing > 0.0:
+		return query.waypoint_spacing
+	if query.goal != null and query.goal.maxdist > 0.0:
+		return query.goal.maxdist
+	return 0.0
+
+
+func _can_step_with_exclusions(
+	from_cell: Vector2i,
+	to_cell: Vector2i,
+	direction: Vector2i,
+	pass_mask: int,
+	excluded_regions: Array[Dictionary]
+) -> bool:
+	if not _is_passable_with_exclusions(to_cell, pass_mask, excluded_regions):
+		return false
+	if direction.x != 0 and direction.y != 0:
+		if not _is_passable_with_exclusions(Vector2i(from_cell.x + direction.x, from_cell.y), pass_mask, excluded_regions):
+			return false
+		if not _is_passable_with_exclusions(Vector2i(from_cell.x, from_cell.y + direction.y), pass_mask, excluded_regions):
+			return false
+	return true
+
+
+func _is_passable_with_exclusions(cell: Vector2i, pass_mask: int, excluded_regions: Array[Dictionary]) -> bool:
+	if not _nav_map.is_passable_navcell(cell, pass_mask):
+		return false
+	if _is_cell_excluded(cell, excluded_regions):
+		return false
+	return true
+
+
+func _is_cell_excluded(cell: Vector2i, excluded_regions: Array[Dictionary]) -> bool:
+	if excluded_regions.is_empty() or not _nav_map.is_valid_navcell(cell):
+		return false
+	var center := _nav_map.navcell_center_world(cell)
+	for region in excluded_regions:
+		var region_dict := region as Dictionary
+		var radius := maxf(0.0, float(region_dict.get("radius", 0.0)))
+		if radius <= 0.0:
+			continue
+		var region_center: Vector2 = region_dict.get("center", Vector2.ZERO)
+		if center.distance_to(region_center) <= radius:
+			return true
+	return false
 
 
 func _jps(start: Vector2i, goal: SimNavPathGoal, pass_mask: int) -> SimNavWaypointPath:
