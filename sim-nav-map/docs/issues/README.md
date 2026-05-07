@@ -22,7 +22,7 @@ Repro column legend:
 | [CORE-003](core-003-hierarchical-fallback-radius.md) | core | P0 | Hierarchical fallback uses fixed 256-cell radius | open | smoke (FAIL) |
 | [CORE-004](core-004-set-bounds-missing.md) | core | P1 | `SetBounds()` missing — out-of-bounds undefined | open | smoke (FAIL) |
 | [CORE-005](core-005-clearance-extension-radius.md) | core | P1 | `CLEARANCE_EXTENSION_RADIUS` not implemented | open | smoke (FAIL) |
-| [CORE-006](core-006-flag-setter-api.md) | core | P2 | Per-tag flag mutation API incomplete (dirty propagation missing) | open | smoke (FAIL) |
+| [CORE-006](core-006-flag-setter-api.md) | core | P2 | Per-tag flag mutation API incomplete (dirty propagation missing) | resolved | smoke (PASS) |
 | [CORE-007](core-007-static-rasterize-aabb.md) | core | P3 | Static obstruction rasterization scans full grid | open | smoke (FAIL) |
 | [CORE-008](core-008-vertex-quadrant-prune.md) | core | P3 | VertexPathfinder lacks quadrant pruning | open | text (instrumentation pending) |
 | [CORE-009](core-009-heap-improve.md) | core | P3 | Pathfinder heap is O(n) sorted-array insert | open | text (instrumentation pending) |

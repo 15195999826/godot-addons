@@ -1,10 +1,23 @@
 # CORE-006: Per-tag flag mutation API incomplete
 
-- Status: open
+- Status: resolved
 - Severity: P2
 - Layer: core
 - Source: claude-audit-2026-05-07
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `ae492d7`
+- smoke: `addons/sim-nav-map/tests/repro/repro_core_006_flag_setter_propagation.tscn` (registered under `simnav/smoke` group)
+- 0 A.D. files checked: `source/simulation2/components/ICmpObstructionManager.h` (per-flag dedicated setters)
+- Fix:
+  1. Added `SimNavObstructionManager.set_static_flags(tag, flags)` and `set_unit_flags(tag, flags)` (manager already exposed `set_unit_moving_flag` / `set_control_group`).
+  2. Promoted `SimNavObstructionShape.flags` to a property with a setter that, when the shape is a registered static, calls back into its owning nav_map to mark the body region's navcells dirty. Direct `shape.flags = X` writes therefore propagate dirty bits to incremental consumers (hierarchical recompute, jump-point cache, AI dirty export).
+  3. `SimNavMap` keeps a weak back-reference (`_owning_nav_map_ref`) on each registered shape and exposes `mark_obstruction_shape_dirty(shape)` so callers/tools/setters can explicitly trigger re-rasterization of a static's body region. Back-ref is set in `add_static_obstruction` / `add_dynamic_obstruction` and cleared in `remove_obstruction` / `clear_dynamic_obstructions`.
+- baseline impact: none (CORE-006 was not in `BASELINE.md` "Known correctness limits"; lab/simnav metrics unchanged).
+- public-api.md updated with the new manager setters and the `mark_obstruction_shape_dirty` lifecycle entry.
 
 ## Symptoms
 
