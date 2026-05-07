@@ -1,0 +1,12 @@
+{
+  "namespace": "zeroadlab",
+  "default_timeout_ms": 30000,
+  "groups": {
+    "smoke": {
+      "scenes": [
+        "smoke/smoke_zero_ad_rts_lab_motion.tscn",
+        "smoke/smoke_zero_ad_rts_lab_scene_load.tscn"
+      ]
+    }
+  }
+}
