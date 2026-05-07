@@ -52,11 +52,11 @@ func _test_unit_line_blockage_requests_short_path() -> void:
 	)
 	if not pre_line.is_success() and pre_line.failure_reason != SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED:
 		_failures.append("unit-line: unexpected line failure %s" % pre_line.failure_reason)
-	for _i in range(40):
-		world.step(0.1)
-		if world.motion.short_path_requests > 0:
-			break
 	var unit := world.get_unit("blue_0")
+	for _i in range(80):
+		world.step(0.1)
+		if unit != null and unit.short_path != null and not unit.short_path.is_empty():
+			break
 	if unit == null:
 		_failures.append("unit-line: missing blue_0")
 		return
@@ -68,7 +68,12 @@ func _test_unit_line_blockage_requests_short_path() -> void:
 			str(world.pathfinder.last_report),
 		])
 	if unit.short_path == null or unit.short_path.is_empty():
-		_failures.append("unit-line: expected active short path")
+		_failures.append("unit-line: expected active short path, pending=%d applied=%d failures=%d queue=%s" % [
+			unit.pending_short_ticket,
+			world.motion.path_results_applied,
+			world.motion.path_result_failures,
+			str(world.pathfinder.path_queue_diagnostics()),
+		])
 
 
 func _test_push_adjust_does_not_cross_static_wall() -> void:

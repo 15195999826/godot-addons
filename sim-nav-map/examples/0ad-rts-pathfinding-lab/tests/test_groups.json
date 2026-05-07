@@ -5,7 +5,9 @@
     "smoke": {
       "scenes": [
         "smoke/smoke_zero_ad_rts_lab_motion.tscn",
-        "smoke/smoke_zero_ad_rts_lab_scene_load.tscn"
+        "smoke/smoke_zero_ad_rts_lab_scene_load.tscn",
+        "smoke/smoke_zero_ad_rts_lab_ui_ops.tscn",
+        "smoke/smoke_zero_ad_rts_lab_0ad_budget.tscn"
       ]
     }
   }

@@ -18,6 +18,9 @@ var failed_movements: int = 0
 var long_path: SimNavWaypointPath = SimNavWaypointPath.new()
 var short_path: SimNavWaypointPath = SimNavWaypointPath.new()
 var trace: PackedVector2Array = PackedVector2Array()
+var pending_long_ticket: int = 0
+var pending_short_ticket: int = 0
+var short_repath_cooldown: float = 0.0
 
 
 func _init(
@@ -47,6 +50,9 @@ func begin_move_order(goal: Vector2) -> void:
 	failed_movements = 0
 	long_path = SimNavWaypointPath.new()
 	short_path = SimNavWaypointPath.new()
+	pending_long_ticket = 0
+	pending_short_ticket = 0
+	short_repath_cooldown = 0.0
 
 
 func finish_move_order() -> void:
@@ -57,6 +63,9 @@ func finish_move_order() -> void:
 	long_path = SimNavWaypointPath.new()
 	short_path = SimNavWaypointPath.new()
 	path_target = position
+	pending_long_ticket = 0
+	pending_short_ticket = 0
+	short_repath_cooldown = 0.0
 
 
 func active_path() -> SimNavWaypointPath:
@@ -88,4 +97,3 @@ func remember_position() -> void:
 	trace.append(position)
 	if trace.size() > 80:
 		trace.remove_at(0)
-
