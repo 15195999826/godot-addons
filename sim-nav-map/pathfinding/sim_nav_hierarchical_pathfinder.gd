@@ -5,6 +5,7 @@ extends RefCounted
 const _NEIGHBOR_DI: Array[int] = [1, -1, 0, 0]
 const _NEIGHBOR_DJ: Array[int] = [0, 0, 1, -1]
 const _MAX_NEAREST_RADIUS: int = 256
+const _FAST_NEAREST_RADIUS: int = 8
 
 var _chunks_w: int = 0
 var _chunks_h: int = 0
@@ -171,11 +172,18 @@ func find_nearest_passable_navcell(start: Vector2i, pass_mask: int) -> Vector2i:
 		return Vector2i(-1, -1)
 	if _nav_map.is_passable_navcell(start, pass_mask):
 		return start
-	for radius in range(1, _MAX_NEAREST_RADIUS + 1):
+	# Fast path: small ring scan covers the common "blocked by a single cell"
+	# fallback without walking the region graph.
+	for radius in range(1, _FAST_NEAREST_RADIUS + 1):
 		var found := _scan_ring_for_passable(start, radius, pass_mask)
 		if found != Vector2i(-1, -1):
 			return found
-	return Vector2i(-1, -1)
+	# Fallback: traverse every region of pass_mask via the chunk grid. Bounded
+	# by total navcells of the registered passability class instead of by
+	# Manhattan radius (the prior fixed _MAX_NEAREST_RADIUS = 256 made cells
+	# more than 256 navcells away unreachable even when a valid component
+	# existed via the region graph).
+	return _find_nearest_in_any_region(start, pass_mask)
 
 
 func get_chunk(ci: int, cj: int, pass_mask: int) -> SimNavHierarchicalChunk:
@@ -414,11 +422,14 @@ func _find_nearest_in_global_region(start: Vector2i, target_global: int, pass_ma
 		return Vector2i(-1, -1)
 	if get_global_region(start, pass_mask) == target_global:
 		return start
-	for radius in range(1, _MAX_NEAREST_RADIUS + 1):
+	# Fast path: try a small ring scan for the common "right next to the
+	# target region" canonicalization. Anything farther falls through to the
+	# region-graph walk so we never bail out at a fixed Manhattan radius.
+	for radius in range(1, _FAST_NEAREST_RADIUS + 1):
 		var found := _scan_ring_for_global(start, radius, pass_mask, target_global)
 		if found != Vector2i(-1, -1):
 			return found
-	return Vector2i(-1, -1)
+	return _find_nearest_in_global_region_via_graph(start, target_global, pass_mask)
 
 
 func _find_nearest_goal_navcell(
@@ -463,6 +474,75 @@ func _scan_ring_for_global(center: Vector2i, radius: int, pass_mask: int, target
 			if get_global_region(coord, pass_mask) == target_global:
 				return coord
 	return Vector2i(-1, -1)
+
+
+func _find_nearest_in_global_region_via_graph(anchor: Vector2i, target_global: int, pass_mask: int) -> Vector2i:
+	var chunks: Array = _chunks.get(pass_mask, [])
+	if chunks.is_empty() or target_global == 0:
+		return Vector2i(-1, -1)
+	var globals_map: Dictionary = _global_regions.get(pass_mask, {})
+	if globals_map.is_empty():
+		return Vector2i(-1, -1)
+	var chunk_size := SimNavHierarchicalChunk.CHUNK_SIZE
+	var best_cell := Vector2i(-1, -1)
+	var best_dist_sq := INF
+	for cj in range(_chunks_h):
+		for ci in range(_chunks_w):
+			var chunk := chunks[cj * _chunks_w + ci] as SimNavHierarchicalChunk
+			if chunk == null:
+				continue
+			for lj in range(chunk_size):
+				var base_y := cj * chunk_size + lj
+				if base_y >= _nav_map.height:
+					break
+				for li in range(chunk_size):
+					var base_x := ci * chunk_size + li
+					if base_x >= _nav_map.width:
+						break
+					var local_r := chunk.get_region(li, lj)
+					if local_r == 0:
+						continue
+					var rid := SimNavRegionIdHelper.pack(ci, cj, local_r)
+					if int(globals_map.get(rid, 0)) != target_global:
+						continue
+					var dx := float(base_x - anchor.x)
+					var dy := float(base_y - anchor.y)
+					var d := dx * dx + dy * dy
+					if d < best_dist_sq:
+						best_dist_sq = d
+						best_cell = Vector2i(base_x, base_y)
+	return best_cell
+
+
+func _find_nearest_in_any_region(anchor: Vector2i, pass_mask: int) -> Vector2i:
+	var chunks: Array = _chunks.get(pass_mask, [])
+	if chunks.is_empty():
+		return Vector2i(-1, -1)
+	var chunk_size := SimNavHierarchicalChunk.CHUNK_SIZE
+	var best_cell := Vector2i(-1, -1)
+	var best_dist_sq := INF
+	for cj in range(_chunks_h):
+		for ci in range(_chunks_w):
+			var chunk := chunks[cj * _chunks_w + ci] as SimNavHierarchicalChunk
+			if chunk == null:
+				continue
+			for lj in range(chunk_size):
+				var base_y := cj * chunk_size + lj
+				if base_y >= _nav_map.height:
+					break
+				for li in range(chunk_size):
+					var base_x := ci * chunk_size + li
+					if base_x >= _nav_map.width:
+						break
+					if chunk.get_region(li, lj) == 0:
+						continue
+					var dx := float(base_x - anchor.x)
+					var dy := float(base_y - anchor.y)
+					var d := dx * dx + dy * dy
+					if d < best_dist_sq:
+						best_dist_sq = d
+						best_cell = Vector2i(base_x, base_y)
+	return best_cell
 
 
 func _scan_ring_for_goal_global(

@@ -61,7 +61,6 @@ issue. A fix must include a smoke that proves the new correct behavior — do
 not just patch silently.
 
 - [CORE-002](core-002-long-path-los-sampling.md) — long-path LOS refinement may keep a corner-crossing segment
-- [CORE-003](core-003-hierarchical-fallback-radius.md) — `make_goal_reachable` for far unreachable goals scoped to 256 cells
 - [CORE-004](core-004-set-bounds-missing.md) — out-of-bounds query/rasterize behavior undefined
 - [CORE-005](core-005-clearance-extension-radius.md) — long-path is not +1 navcell more conservative than short-path
 
