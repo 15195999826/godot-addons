@@ -17,8 +17,11 @@ extends Node
 #     incremental consumer can re-evaluate it.
 #
 # At HEAD: no dirty bits set after direct mutation. FAIL.
-# After fix (set_static_flags / set_unit_flags API or property setter that
-# marks affected navcells dirty): the body region is dirty. PASS.
+# After fix:
+#   - set_static_flags / set_unit_flags marks affected navcells dirty.
+#   - direct flag mutation no longer remains silently invisible while the
+#     public flags field exists (property setter / debug guard / callsite guard).
+# The body region is dirty. PASS.
 #
 # Run: godot --headless --path . addons/sim-nav-map/tests/repro_core_006_flag_setter_propagation.tscn
 
@@ -64,20 +67,24 @@ func _run() -> void:
 		return
 
 	var manager := SimNavObstructionManager.new(nav_map)
-	var used_api := false
 	if manager.has_method("set_static_flags"):
 		manager.call("set_static_flags", tag, 0)
-		used_api = true
+		_assert_has_dirty(nav_map, "set_static_flags(0)")
+		nav_map.rebuild_dirty()
+		nav_map.clear_dirty_navcells()
+		nav_map.clear_dirty_obstruction_navcells()
+		blocker.flags = SimNavObstructionFlags.BLOCK_PATHFINDING
+		_assert_has_dirty(nav_map, "direct mutation (shape.flags = BLOCK_PATHFINDING)")
 	else:
 		# Bug-exposure path: direct mutation of shape.flags. Should but does
 		# not mark affected navcells dirty.
 		blocker.flags = 0
+		_assert_has_dirty(nav_map, "direct mutation (shape.flags = 0)")
 
-	# Expectation: dirty system observed the flag change in the OBB region.
+func _assert_has_dirty(nav_map: SimNavMap, path_label: String) -> void:
 	var has_dirty := nav_map.has_dirty_navcells() or nav_map.has_dirty_obstruction_navcells()
 	if not has_dirty:
-		var path := "set_static_flags(0)" if used_api else "direct mutation (shape.flags = 0)"
 		_failures.append(
 			"after %s, no navcells were marked dirty — incremental consumers (hierarchical / jump cache / AI export) cannot detect the flag change"
-			% path
+			% path_label
 		)

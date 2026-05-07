@@ -9,11 +9,11 @@
 ## Symptoms
 
 `SimNavMap` has no public `set_bounds()` analogue to 0 A.D.'s
-`ICmpObstructionManager::SetBounds(x0, z0, x1, z1)`. Out-of-bounds queries
-silently return "no obstruction" because `is_valid_navcell()` clips and
-`world_to_navcell()` does not flag out-of-range. Path queries near the
-map edge can plan into space that is conceptually outside the play area
-without any failure signal.
+`ICmpObstructionManager::SetBounds(x0, z0, x1, z1)`. Grid out-of-range
+start / goal checks already exist, but callers cannot express a playable
+rectangle that is smaller than, or independent from, the underlying navcell
+grid. Obstruction rasterization and path queries therefore have no shared
+"outside playable bounds" contract.
 
 ## Root cause
 
@@ -53,37 +53,34 @@ intentionally deferred ([roadmap](../roadmap-refs/0ad-navigation-source-map.md))
 - [ ] Decide on partial-overlap rasterization policy before writing the code (probably clip-to-bounds; document the choice)
 - [ ] Audit existing smoke for any test that depends on out-of-bounds being silently passable
 
-## Repro at HEAD (no smoke possible — API does not exist)
-
-The repro is by absence. Verify the API is missing:
+## Repro at HEAD
 
 ```powershell
-# From repo root
-Select-String -Path 'addons/sim-nav-map/**/*.gd' -Pattern 'set_bounds' -SimpleMatch
+godot --headless --path . addons/sim-nav-map/tests/repro_core_004_set_bounds.tscn
 ```
 
-At HEAD (commit 6335f32) this returns zero hits. There is no `set_bounds`
-or analogous method on `SimNavMap` or `SimNavObstructionManager`.
+Smoke: [`tests/repro_core_004_set_bounds.gd`](../../tests/repro_core_004_set_bounds.gd).
 
-Out-of-bounds queries are silently clipped without flagging:
+At HEAD (commit 6335f32) the smoke FAILs:
 
-- `SimNavMap.is_valid_navcell(coord)` returns false for out-of-range
-  coords (sim_nav_map.gd:400-401), but no caller-facing `STATUS_*` /
-  failure reason exists.
-- `add_static_obstruction(shape)` accepts a shape with a center far
-  outside the navcell grid; rasterization is a no-op (no cells overlap),
-  and queries against that shape return "no obstruction nearby" without
-  signalling that the shape was outside the playable area.
+```text
+SMOKE_TEST_RESULT: FAIL - CORE-004 reproduces:
+  SimNavMap missing set_bounds(x0, z0, x1, z1); cannot express playable bounds tighter than the navcell grid
+```
 
-**Smoke deliverable** (when API is added): a
-`addons/sim-nav-map/tests/repro_core_004_set_bounds.gd` that
-1. asserts `SimNavMap` exposes `set_bounds(x0, z0, x1, z1)`,
-2. with bounds set tighter than the underlying navcell grid, verifies
-   in-bounds query succeeds and out-of-bounds query returns
-   `STATUS_INVALID_QUERY` with `FAILURE_GOAL_OUT_OF_BOUNDS` /
-   `FAILURE_START_OUT_OF_BOUNDS` as appropriate,
-3. verifies a static OBB straddling the bounds rectangle rasterizes
-   only the in-bounds portion.
+After `set_bounds()` exists, the same smoke verifies the intended contract:
+
+1. configure bounds tighter than the underlying navcell grid,
+2. assert a goal outside those playable bounds returns
+   `STATUS_INVALID_QUERY` / `FAILURE_GOAL_OUT_OF_BOUNDS`,
+3. assert a static OBB straddling the bounds rectangle rasterizes only the
+   in-bounds portion.
+
+## Regression after fix
+
+The smoke flips to `PASS` after the rectangular bounds API and enforcement
+land. Add it to `tests/test_groups.json` under `simnav/smoke` once green,
+and update `public-api.md` in the same change.
 
 ## Cross-refs
 

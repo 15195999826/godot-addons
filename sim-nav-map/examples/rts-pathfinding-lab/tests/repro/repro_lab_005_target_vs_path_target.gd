@@ -17,6 +17,7 @@ extends Node
 #   - unit.target stays near the original click + formation offset.
 #   - unit.path_target sits OUTSIDE the obstacle (canonicalized).
 #   - target ≠ path_target for at least one unit.
+#   - arrival/completion is judged against path_target, not the command target.
 #
 # At HEAD: PASS. The smoke locks in this property.
 # Regression: if a future change merges target/path_target back into one,
@@ -51,6 +52,7 @@ func _run() -> void:
 	# rectangle is x ∈ [285, 395], y ∈ [155, 265]. Pick a point strictly
 	# inside as the unreachable command target.
 	var unreachable_click := Vector2(340.0, 210.0)
+	var stone_block_rect := Rect2(Vector2(285.0, 155.0), Vector2(110.0, 110.0))
 	world.set_group_target(unreachable_click)
 
 	# Step several ticks so the per-unit replan budget can canonicalize.
@@ -66,6 +68,11 @@ func _run() -> void:
 		var pt: Vector2 = unit.path_target
 		if t.distance_to(pt) > 0.5:
 			separated_count += 1
+		if stone_block_rect.has_point(pt):
+			_failures.append(
+				"unit %s: path_target %s stayed inside stone_block — should canonicalize outside the obstacle"
+				% [unit.id, str(pt)]
+			)
 		# unit.target should still be near the original click + formation offset,
 		# not snapped onto the canonical reachable point.
 		if t.distance_to(unreachable_click) > 60.0:
@@ -82,3 +89,47 @@ func _run() -> void:
 		_failures.append(
 			"no unit has target ≠ path_target after commanding inside an obstacle — separation property is broken"
 		)
+
+	var arrived_at := -1
+	for i in range(600):
+		world.step(dt)
+		if world.all_mobile_arrived():
+			arrived_at = i
+			break
+	if arrived_at < 0:
+		_failures.append("units did not arrive at canonical path targets within 600 ticks")
+		return
+
+	var arrival_tolerance := 8.0
+	var arrived_by_path_target_count := 0
+	var still_far_from_command_count := 0
+	for unit in world.get_mobile_units():
+		var path_target_error := unit.position.distance_to(unit.path_target)
+		var command_target_error := unit.position.distance_to(unit.target)
+		if path_target_error <= arrival_tolerance:
+			arrived_by_path_target_count += 1
+		if command_target_error > arrival_tolerance:
+			still_far_from_command_count += 1
+		if unit.arrived and path_target_error > arrival_tolerance:
+			_failures.append(
+				"unit %s arrived=true but is %.2f px from path_target %s"
+				% [unit.id, path_target_error, str(unit.path_target)]
+			)
+	print(
+		"LAB-005 arrival: arrived_at_step=%d, %d/%d arrived within %.1f px of path_target, %d/%d still far from command target"
+		% [
+			arrived_at,
+			arrived_by_path_target_count,
+			checked_count,
+			arrival_tolerance,
+			still_far_from_command_count,
+			checked_count,
+		]
+	)
+	if arrived_by_path_target_count != checked_count:
+		_failures.append(
+			"only %d/%d units arrived within %.1f px of path_target"
+			% [arrived_by_path_target_count, checked_count, arrival_tolerance]
+		)
+	if still_far_from_command_count == 0:
+		_failures.append("arrival did not prove path_target semantics because every unit ended near the command target")

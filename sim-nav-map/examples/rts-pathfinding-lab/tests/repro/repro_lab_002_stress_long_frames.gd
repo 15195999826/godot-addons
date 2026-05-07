@@ -8,13 +8,14 @@ extends Node
 #   - Stress = many synchronous expensive operations land in one tick,
 #     typically rapid obstacle edits while units are mid-move.
 #
-# Repro: setup_default, then drive step() for 240 ticks while injecting
-# rapid obstacle edits (drop a blocker every 12 ticks, remove the nearest
-# every 18 ticks). Track max single-step wall time.
+# Repro: setup_default, then drive step() for 360 ticks while injecting
+# rapid obstacle edits (drop a blocker every 6 ticks, remove the nearest
+# every 9 ticks, re-issue the group target every 30 ticks). Track max
+# single-step wall time.
 #
-# Threshold: ≤ 5 000 µs (5 ms). Generous compared to BASELINE 10-15 ms.
+# Threshold: ≤ 4 000 µs (4 ms). Generous compared to BASELINE 10-15 ms.
 #
-# At HEAD (commit 6335f32): peak step exceeds 5 ms. FAIL.
+# At HEAD (commit 6335f32): peak step exceeds 4 ms. FAIL.
 # After LAB-002 fix (per-call request budget / cached canonical targets /
 # obstacle-revision keys): peak step stays under threshold. PASS.
 #
