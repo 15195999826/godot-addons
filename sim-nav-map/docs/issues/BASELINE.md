@@ -60,7 +60,6 @@ Baseline ships with these incorrect behaviors. Each is tracked as a P0/P1
 issue. A fix must include a smoke that proves the new correct behavior — do
 not just patch silently.
 
-- [CORE-001](core-001-vertex-obb-outset.md) — vertex graph for non-square static OBB has wrong-positioned corners
 - [CORE-002](core-002-long-path-los-sampling.md) — long-path LOS refinement may keep a corner-crossing segment
 - [CORE-003](core-003-hierarchical-fallback-radius.md) — `make_goal_reachable` for far unreachable goals scoped to 256 cells
 - [CORE-004](core-004-set-bounds-missing.md) — out-of-bounds query/rasterize behavior undefined

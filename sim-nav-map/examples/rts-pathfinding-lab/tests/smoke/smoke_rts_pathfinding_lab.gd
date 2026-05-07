@@ -663,8 +663,10 @@ func _test_comprehensive_scripted_lab_stress() -> void:
 		_failures.append("scripted-stress: overlap too high, metrics=%s" % str(metrics))
 		return
 	# Active unit 上限:无 per-frame static push budget,worst case OVERLAP_RESOLVE_ITERATIONS × static push max_per_call ≈ 96,
-	# 实测在 6 unit + 8 obstacle stress 场景下 ~74。这是 lab 简化 motion model 的已知限制(没有 acceleration / no-replan-on-overlap)。
-	if float(metrics.get("max_any_jump", 0.0)) > 80.0:
+	# 实测在 6 unit + 8 obstacle stress 场景下 ~83。这是 lab 简化 motion model 的已知限制(没有 acceleration / no-replan-on-overlap)。
+	# 历史值 ~74:之前 vertex pathfinder 的 corner outset bug(radial × 2.0)给路径加了 ~clearance*0.4 px 隐式安全 buffer,
+	# 修正后(沿 OBB 轴扩展 + EDGE_EXPAND_DELTA=0.5px)路径更贴边,static push 单帧累积更高,但仍在 motion model 的 worst case 内。
+	if float(metrics.get("max_any_jump", 0.0)) > 90.0:
 		_failures.append("scripted-stress: large unit jump, metrics=%s" % str(metrics))
 		return
 	# Idle unit 在 _resolve_overlaps 推它后被 _push_out_static 修正回来,累积单帧 ~28。

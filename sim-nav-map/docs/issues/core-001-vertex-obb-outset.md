@@ -1,10 +1,21 @@
 # CORE-001: VertexPathfinder OBB vertex outset wrong direction
 
-- Status: open
+- Status: resolved
 - Severity: P0
 - Layer: core
 - Source: claude-audit-2026-05-07
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `ae91185`
+- smoke: `addons/sim-nav-map/tests/repro/repro_core_001_vertex_obb_outset.tscn` (registered under `simnav/smoke` group)
+- 0 A.D. files checked: `source/simulation2/helpers/VertexPathfinder.cpp` (lines 105-107 EDGE_EXPAND_DELTA, 634-637 axis expansion)
+- Fix: replaced corner-to-center radial outset (× 2.0 over half-diagonal) with axis-based expansion `center ± (hw + clearance + EDGE_EXPAND_DELTA) · u ± (hh + clearance + EDGE_EXPAND_DELTA) · v` in `pathfinding/sim_nav_vertex_pathfinder.gd`. Dropped `CORNER_OUTSET_FACTOR`. Introduced `EDGE_EXPAND_DELTA = 0.5 px` (float-math equivalent of 0 A.D.'s `1/16` fixed-point delta) to keep tangent LOS segments out of FP edge-crossing trouble.
+- baseline impact:
+  - `BASELINE.md` "Known correctness limits": removed CORE-001 row.
+  - Lab `scripted-stress` `max_any_jump` baseline shifted from ~74 → ~83 px because the buggy 2.0-factor radial outset added an implicit ~`clearance·0.4` px safety buffer that the correct axis expansion does not. Threshold raised in `examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab.gd` from 80 → 90 with a comment cross-referencing this fix. Still well within lab's `OVERLAP_RESOLVE_ITERATIONS × max_per_call ≈ 96` worst case.
 
 ## Symptoms
 

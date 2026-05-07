@@ -17,7 +17,7 @@ Repro column legend:
 
 | ID | Layer | Severity | Title | Status | Repro |
 |---|---|---|---|---|---|
-| [CORE-001](core-001-vertex-obb-outset.md) | core | P0 | VertexPathfinder OBB vertex outset wrong direction | open | smoke (FAIL) |
+| [CORE-001](core-001-vertex-obb-outset.md) | core | P0 | VertexPathfinder OBB vertex outset wrong direction | resolved | smoke (PASS) |
 | [CORE-002](core-002-long-path-los-sampling.md) | core | P0 | LongPathfinder LOS refinement sampling can miss narrow gaps | open | text (adversarial scenario pending) |
 | [CORE-003](core-003-hierarchical-fallback-radius.md) | core | P0 | Hierarchical fallback uses fixed 256-cell radius | open | smoke (FAIL) |
 | [CORE-004](core-004-set-bounds-missing.md) | core | P1 | `SetBounds()` missing — out-of-bounds undefined | open | smoke (FAIL) |
