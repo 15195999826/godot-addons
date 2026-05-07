@@ -25,7 +25,7 @@ func _init(
 	default_clearance = p_default_clearance
 
 
-func rebuild_context(static_obstacles: Array) -> void:
+func rebuild_context(static_obstacles: Array[ZeroAdRtsLabObstacle]) -> void:
 	var width := int(ceil(map_size.x / cell_size))
 	var height := int(ceil(map_size.y / cell_size))
 	nav_map = SimNavMap.new(width, height, cell_size, Vector2.ZERO, 1)
@@ -44,7 +44,7 @@ func rebuild_context(static_obstacles: Array) -> void:
 	facade = SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
 
 
-func compute_long_path(unit: Variant, goal: Vector2) -> SimNavLongPathResult:
+func compute_long_path(unit: ZeroAdRtsLabUnit, goal: Vector2) -> SimNavLongPathResult:
 	if facade == null:
 		return SimNavLongPathResult.new()
 	var query := SimNavLongPathQuery.from_values(unit.position, SimNavPathGoal.point(goal), pass_mask, PASSABILITY_CLASS_NAME)
@@ -56,9 +56,9 @@ func compute_long_path(unit: Variant, goal: Vector2) -> SimNavLongPathResult:
 
 
 func compute_short_path(
-	unit: Variant,
+	unit: ZeroAdRtsLabUnit,
 	goal: SimNavPathGoal,
-	units: Array,
+	units: Array[ZeroAdRtsLabUnit],
 	search_range: float
 ) -> SimNavShortPathResult:
 	_refresh_dynamic_units(units)
@@ -77,10 +77,10 @@ func compute_short_path(
 
 
 func validate_movement_line(
-	unit: Variant,
+	unit: ZeroAdRtsLabUnit,
 	start: Vector2,
 	target: Vector2,
-	units: Array
+	units: Array[ZeroAdRtsLabUnit]
 ) -> SimNavMovementLineResult:
 	_refresh_dynamic_units(units)
 	var result := facade.validate_movement_line(start, target, unit.radius, pass_mask, movement_filter_for_unit(unit))
@@ -89,10 +89,10 @@ func validate_movement_line(
 
 
 func validate_unit_line(
-	unit: Variant,
+	unit: ZeroAdRtsLabUnit,
 	start: Vector2,
 	target: Vector2,
-	units: Array
+	units: Array[ZeroAdRtsLabUnit]
 ) -> SimNavMovementLineResult:
 	_refresh_dynamic_units(units)
 	var result := facade.validate_unit_line(start, target, unit.radius, movement_filter_for_unit(unit))
@@ -100,7 +100,7 @@ func validate_unit_line(
 	return result
 
 
-func movement_filter_for_unit(unit: Variant) -> SimNavObstructionFilter:
+func movement_filter_for_unit(unit: ZeroAdRtsLabUnit) -> SimNavObstructionFilter:
 	var filter := SimNavObstructionFilter.for_short_path(true, unit.group_id)
 	filter.ignored_entity_id = unit.id
 	return filter
@@ -115,7 +115,7 @@ func point_inside_static(point: Vector2, clearance: float) -> bool:
 	return false
 
 
-func _refresh_dynamic_units(units: Array) -> void:
+func _refresh_dynamic_units(units: Array[ZeroAdRtsLabUnit]) -> void:
 	if nav_map == null:
 		return
 	var shapes: Array[SimNavObstructionShapeUnit] = []
@@ -135,7 +135,7 @@ func _refresh_dynamic_units(units: Array) -> void:
 	nav_map.replace_dynamic_obstructions(shapes)
 
 
-func _static_shape_for_obstacle(obstacle: Variant) -> SimNavObstructionShapeStatic:
+func _static_shape_for_obstacle(obstacle: ZeroAdRtsLabObstacle) -> SimNavObstructionShapeStatic:
 	var shape := SimNavObstructionShapeStatic.new()
 	shape.entity_id = obstacle.id
 	shape.center = obstacle.center
