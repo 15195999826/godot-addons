@@ -18,12 +18,17 @@ of a lab symptom.
 1. Reproduce the issue in `rtslab/smoke` or a small lab scene.
 2. Extract the exact map, obstacle layout, unit radius, start, goal,
    and query options.
-3. Write a minimal core-only smoke / query using `SimNavMap` and the
+3. For navigation / movement / obstruction behavior, read the relevant
+   0 A.D. source files directly under `docs/references/0ad-source/`
+   before choosing the fix shape. Do not rely on old AI summary notes.
+4. Write a minimal core-only smoke / query using `SimNavMap` and the
    relevant core API.
-4. If the core-only query returns a wrong path, wrong reachability, or
+5. If the core-only query returns a wrong path, wrong reachability, or
    invalid line result, fix core. Add a focused core regression smoke.
-5. If the core-only query is correct and the lab still fails, fix the
+6. If the core-only query is correct and the lab still fails, fix the
    lab. Keep the policy fix in `examples/rts-pathfinding-lab/`.
+7. Record which source files were checked and why the fix belongs to
+   core or lab in the issue's Resolution section.
 
 ## Status
 
@@ -53,7 +58,7 @@ first core-or-lab fix from the LAB-001/002/003 trio.)
 
 ## Cross-refs
 
-- Original discussion: `../rts-lab-open-issues.md` Issue 6
+- Source note: seeded from prior Codex discussion; active tracking is this issue.
 - Smoke matrix: `../smoke-matrix.md`
 - Public API boundary: `../public-api.md`
 - All LAB-* issues should reference this protocol from "Verify before fixing"

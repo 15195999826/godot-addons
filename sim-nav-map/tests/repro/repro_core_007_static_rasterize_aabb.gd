@@ -18,7 +18,7 @@ extends Node
 # Note: numeric thresholds are calibrated against the area ratio (16×), not
 # absolute milliseconds, so the test is portable across machines.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro_core_007_static_rasterize_aabb.tscn
+# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_007_static_rasterize_aabb.tscn
 
 
 var _failures: Array[String] = []

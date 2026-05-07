@@ -5,7 +5,7 @@
 
 ## 位置
 
-`addons/sim-nav-map/docs/references/0ad-source/`(跟 5 份 `0ad-*.md` 参考文档同目录)。
+`addons/sim-nav-map/docs/references/0ad-source/`。
 
 ## 拉取方法(Sparse + Partial Clone)
 
@@ -26,7 +26,7 @@ git checkout
 
 **结果**: ~9 MB 工作树 + ~1.3 MB .git。
 
-## 关键文件位置(给 M3 文档引用对照)
+## 关键文件位置
 
 | Epic 文档引用 | 实际路径 |
 |---|---|

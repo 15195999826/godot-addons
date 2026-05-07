@@ -16,7 +16,7 @@ Pre-gating, stress scenes spiked on vertex queries:
 Post-gating, vertex spikes are reduced, but max frames can still hit
 10–15 ms, now mostly grid / long-path work.
 
-## Current read (from rts-lab-open-issues.md Issue 2)
+## Current read
 
 This looks like a scheduling / budgeting problem more than a wrong core
 query. The lab can still ask for an expensive long path synchronously on
@@ -96,4 +96,4 @@ BASELINE with the new peak.
 - [LAB-001](lab-001-default-avg-step.md) — same instrumentation
 - [LAB-003](lab-003-active-jump-55px.md) — long synchronous frames can amplify visible jump
 - [PROCESS-001](process-001-core-lab-proof-protocol.md)
-- Original discussion: `../rts-lab-open-issues.md` Issue 2
+- Source note: seeded from prior Codex discussion; active tracking is this issue.

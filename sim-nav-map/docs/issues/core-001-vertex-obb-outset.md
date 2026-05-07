@@ -76,10 +76,10 @@ for sx in [-1.0, 1.0]:
 ## Repro at HEAD
 
 ```powershell
-godot --headless --path . addons/sim-nav-map/tests/repro_core_001_vertex_obb_outset.tscn
+godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_001_vertex_obb_outset.tscn
 ```
 
-Smoke: [`tests/repro_core_001_vertex_obb_outset.gd`](../../tests/repro_core_001_vertex_obb_outset.gd).
+Smoke: [`tests/repro/repro_core_001_vertex_obb_outset.gd`](../../tests/repro/repro_core_001_vertex_obb_outset.gd).
 
 Setup: 64×64 navcell map, one 80×16 static OBB at center (256, 256) with
 rotation in {0°, 30°, 45°, 90°}, unit clearance 8.0. Plans short path from
@@ -111,4 +111,4 @@ locked in.
 ## Cross-refs
 
 - [CORE-008](core-008-vertex-quadrant-prune.md) — also in vertex pathfinder
-- Architecture: `../references/0ad-pathfinding.md`
+- 0 A.D. source index: `../references/0ad-source-map.md`

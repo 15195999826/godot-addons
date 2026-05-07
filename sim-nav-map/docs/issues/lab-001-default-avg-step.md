@@ -12,7 +12,7 @@ Recent `rtslab/smoke` `default` scenario reports
 `avg_step_usec ~= 450-480`. The earlier remembered baseline was ~100,
 i.e. ~4–5× slower today. See BASELINE for the metric source.
 
-## Current read (from rts-lab-open-issues.md Issue 1)
+## Current read
 
 Not enough evidence to call this a core correctness bug. The lab now
 runs richer navigation behavior than the old baseline: reachable goal
@@ -87,4 +87,4 @@ the new number.
 - [LAB-002](lab-002-stress-long-frames.md) — same kind of work but stress scenario
 - [PROCESS-001](process-001-core-lab-proof-protocol.md) — apply before blaming core
 - [CORE-007](core-007-static-rasterize-aabb.md) / [CORE-008](core-008-vertex-quadrant-prune.md) / [CORE-009](core-009-heap-improve.md) — only after lab caching/budgeting fails to close the gap
-- Original discussion: `../rts-lab-open-issues.md` Issue 1
+- Source note: seeded from prior Codex discussion; active tracking is this issue.

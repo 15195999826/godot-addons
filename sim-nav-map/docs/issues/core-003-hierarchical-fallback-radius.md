@@ -71,10 +71,10 @@ plumbing, not new data structures.
 ## Repro at HEAD
 
 ```powershell
-godot --headless --path . addons/sim-nav-map/tests/repro_core_003_hierarchical_far_goal.tscn
+godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_003_hierarchical_far_goal.tscn
 ```
 
-Smoke: [`tests/repro_core_003_hierarchical_far_goal.gd`](../../tests/repro_core_003_hierarchical_far_goal.gd).
+Smoke: [`tests/repro/repro_core_003_hierarchical_far_goal.gd`](../../tests/repro/repro_core_003_hierarchical_far_goal.gd).
 
 Setup: 320×16 navcell grid. Vertical wall at column 30, full height (no
 gap). Start at navcell (5, 8); goal at navcell (319, 8). The goal is

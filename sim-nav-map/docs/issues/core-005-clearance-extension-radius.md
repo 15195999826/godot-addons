@@ -57,10 +57,10 @@ defines no such constant and does not extend during rasterization.
 ## Repro at HEAD
 
 ```powershell
-godot --headless --path . addons/sim-nav-map/tests/repro_core_005_clearance_extension.tscn
+godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_005_clearance_extension.tscn
 ```
 
-Smoke: [`tests/repro_core_005_clearance_extension.gd`](../../tests/repro_core_005_clearance_extension.gd).
+Smoke: [`tests/repro/repro_core_005_clearance_extension.gd`](../../tests/repro/repro_core_005_clearance_extension.gd).
 
 Setup: 16×16 navcell grid, navcell_size=8. Pass class clearance 0. One
 1-cell static OBB centered at navcell (7, 7). Per the missing

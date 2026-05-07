@@ -13,11 +13,20 @@ Earlier stress logs had ~2px overlap between arrived idle units (e.g.
 small arrived overlap is allowed only when within
 `ARRIVE_MAX_OVERLAP`, but broader arrival packing still needs review.
 
-## Current read (from rts-lab-open-issues.md Issue 4)
+## Current read
 
 Lab policy. Core can provide path / collision primitives, but the lab
 decides how many units may settle around the same command point and
 when overlap is acceptable.
+
+Treat overlap and active jump as coupled movement-policy problems. In
+crowded or narrow-space cases, aggressive overlap resolution can push a
+unit into an inflated static obstruction; the current static-escape
+fallback may then teleport it out. A fix that only tightens overlap
+thresholds can make jump behavior worse, and a fix that only caps jumps
+can leave units stuck inside static blockers. Resolve the policy as a
+matrix of allowed resting overlap, active separation, and static-block
+response.
 
 ## Investigation backlog
 
@@ -88,4 +97,4 @@ arrived overlap on the default scenario, this flips to FAIL.
 
 - [LAB-003](lab-003-active-jump-55px.md) — overlap resolution can cause jumps
 - [LAB-005](lab-005-command-vs-path-target.md) — the "command target" referred to here means the user click, not the canonical path target
-- Original discussion: `../rts-lab-open-issues.md` Issue 4
+- Source note: seeded from prior Codex discussion; active tracking is this issue.

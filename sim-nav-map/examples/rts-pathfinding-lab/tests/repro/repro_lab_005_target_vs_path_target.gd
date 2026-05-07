@@ -3,7 +3,7 @@ extends Node
 # LAB-005: Command target vs path target separation must hold
 #
 # This is a LOCK-IN smoke, not a bug-exposure. The current behavior is
-# correct per the codex discussion in rts-lab-open-issues.md Issue 5:
+# correct per LAB-005:
 #   - unit.target = the user click (or formation slot derived from it)
 #   - unit.path_target = the canonical reachable stop point
 # A future regression that merges these meanings should turn this smoke red.

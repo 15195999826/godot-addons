@@ -64,7 +64,7 @@ Manual recipe to characterize at HEAD:
    confirms the visibility-graph A* is doing more work per query.
 
 **Smoke deliverable** (after instrumentation lands): a
-`addons/sim-nav-map/tests/repro_core_008_vertex_quadrant.gd` that
+`addons/sim-nav-map/tests/repro/repro_core_008_vertex_quadrant.gd` that
 compares the expansion count before/after the quadrant prune on a fixed
 dense scene. Acceptance: ≥ 30% reduction with bit-identical (or
 float-tolerance-equal) path output.

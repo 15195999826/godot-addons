@@ -18,7 +18,7 @@ extends Node
 # At HEAD: only (7,7) is impassable; (8,7) etc. are passable. FAIL.
 # After fix: (8,7) and the other adjacent navcells become impassable. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro_core_005_clearance_extension.tscn
+# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_005_clearance_extension.tscn
 
 
 var _failures: Array[String] = []

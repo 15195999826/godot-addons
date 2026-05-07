@@ -23,7 +23,7 @@ extends Node
 #     public flags field exists (property setter / debug guard / callsite guard).
 # The body region is dirty. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro_core_006_flag_setter_propagation.tscn
+# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_006_flag_setter_propagation.tscn
 
 
 var _failures: Array[String] = []

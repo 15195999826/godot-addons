@@ -14,7 +14,7 @@ target marker, formation slot, and canonical reachable stop point. That
 made several subsequent decisions ambiguous (which "target" does
 arrival use? which does the marker render?).
 
-## Current state (from rts-lab-open-issues.md Issue 5)
+## Current state
 
 - `unit.target` should mean the user command / formation slot.
 - `unit.path_target` should mean the reachable / canonical stop point
@@ -94,4 +94,4 @@ FAIL.
 - [LAB-004](lab-004-overlap-arrival-policy.md) — arrival uses path_target
 - [LAB-003](lab-003-active-jump-55px.md) — fallback target changes are one
   attribution category for large jumps
-- Original discussion: `../rts-lab-open-issues.md` Issue 5
+- Source note: seeded from prior Codex discussion; active tracking is this issue.

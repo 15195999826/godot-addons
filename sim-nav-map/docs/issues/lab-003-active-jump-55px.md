@@ -12,12 +12,22 @@ Smoke / debug logs have shown `max_any_jump ~= 55px`. A previous attempt
 to cap static push per frame reduced jump symptoms but caused active
 obstacle violations, so a simple movement cap is not sufficient.
 
-## Current read (from rts-lab-open-issues.md Issue 3)
+## Current read
 
 Likely lab movement / separation policy unless a core query says a
 point is passable while it is actually inside an obstruction. The risky
 area is how movement, overlap resolution, static obstacle escape,
 arrival settling, and re-path decisions interact in one frame.
+
+The important design conclusion from the earlier separation discussion
+is preserved here: the visible jump is caused by the lab's simplified
+post-hoc fixup model, not by a proven `sim-nav-map` core contract bug.
+The lab currently combines direct position interpolation, overlap pushes,
+and `_push_unit_out_of_static_component()` nearest-exit escape. 0 A.D.'s
+UnitMotion-style reference validates movement/pushes and cancels invalid
+adjustments instead of teleporting a unit out of an obstacle. A real fix
+should move toward "validate, cancel/repath, then continue" rather than
+tuning the teleport distance.
 
 ## Investigation backlog
 
@@ -103,4 +113,4 @@ in an allowed category.
 - [CORE-005](core-005-clearance-extension-radius.md) — long-vs-short hand-off invariant
 - [CORE-002](core-002-long-path-los-sampling.md) — corner-crossing waypoint can cause an escape jump
 - [PROCESS-001](process-001-core-lab-proof-protocol.md)
-- Original discussion: `../rts-lab-open-issues.md` Issue 3
+- Source note: seeded from prior Codex discussion; active tracking is this issue.
