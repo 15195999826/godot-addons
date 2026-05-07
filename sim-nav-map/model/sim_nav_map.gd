@@ -15,6 +15,12 @@ var _terrain_navcell_data: PackedInt32Array = PackedInt32Array()
 var _obstruction_navcell_data: PackedInt32Array = PackedInt32Array()
 var _dirtiness: PackedByteArray = PackedByteArray()
 var _obstruction_dirtiness: PackedByteArray = PackedByteArray()
+# Parallel list of currently-dirty obstruction navcells. Lets collect/has/clear
+# operations run in O(dirty_count) instead of scanning the full grid byte
+# array. _obstruction_dirtiness remains the source of truth for membership;
+# this list is appended whenever a cell flips 0 → 1 and is drained by
+# clear_dirty_obstruction_navcells.
+var _obstruction_dirty_cell_list: Array[Vector2i] = []
 var _static_obstructions: Dictionary = {}
 var _dynamic_obstructions: Dictionary = {}
 var _static_obstruction_index: SimNavSpatialIndex = null
@@ -263,16 +269,38 @@ func get_diagnostics() -> Dictionary:
 
 
 func rebuild_dirty() -> void:
-	var old_data := _compose_navcell_data()
-	_clear_obstruction_navcell_data()
+	# Scan only the cells that could legitimately change — the union of every
+	# registered static shape's clearance-expanded AABB plus any cells already
+	# in the obstruction dirty list (which captures the old footprint of a
+	# removed/moved shape, since add/remove/move/flag-mutation all dirty their
+	# AABB before applying). Avoids the O(grid) sweep that the previous
+	# full-rebuild path used and that dominated rasterize_static cost.
+	var expansion := _passability_registry.max_clearance() + navcell_size
+	var scan_cells: Dictionary = {}
+	for coord in collect_dirty_obstruction_navcells():
+		scan_cells[coord] = true
 	for tag in _static_obstructions.keys():
 		var shape := _static_obstructions[tag] as SimNavObstructionShapeStatic
 		if shape == null:
 			continue
-		if (shape.flags & SimNavObstructionFlags.BLOCK_PATHFINDING) == 0:
+		var min_cell := world_to_navcell(_shape_bounds_min(shape) - Vector2(expansion, expansion))
+		var max_cell := world_to_navcell(_shape_bounds_max(shape) + Vector2(expansion, expansion))
+		var sx := maxi(0, mini(min_cell.x, max_cell.x))
+		var ex := mini(width - 1, maxi(min_cell.x, max_cell.x))
+		var sy := maxi(0, mini(min_cell.y, max_cell.y))
+		var ey := mini(height - 1, maxi(min_cell.y, max_cell.y))
+		for y in range(sy, ey + 1):
+			for x in range(sx, ex + 1):
+				scan_cells[Vector2i(x, y)] = true
+	for cell in scan_cells:
+		if not is_valid_navcell(cell):
 			continue
-		_rasterize_static_obstruction(shape, false)
-	_mark_rebuild_changes_dirty(old_data)
+		var idx := _index(cell)
+		var old_composed := int(_navcell_data[idx]) | int(_terrain_navcell_data[idx]) | int(_obstruction_navcell_data[idx])
+		_obstruction_navcell_data[idx] = _blocked_mask_for_static_obstructions_at(cell)
+		var new_composed := int(_navcell_data[idx]) | int(_terrain_navcell_data[idx]) | int(_obstruction_navcell_data[idx])
+		if old_composed != new_composed:
+			_dirtiness[idx] = 1
 	clear_dirty_obstruction_navcells()
 
 
@@ -376,13 +404,7 @@ func collect_dirty_navcells() -> Array[Vector2i]:
 
 
 func collect_dirty_obstruction_navcells() -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
-	for y in range(height):
-		var row_base := y * width
-		for x in range(width):
-			if _obstruction_dirtiness[row_base + x] != 0:
-				result.append(Vector2i(x, y))
-	return result
+	return _obstruction_dirty_cell_list.duplicate()
 
 
 func has_dirty_navcells() -> bool:
@@ -393,10 +415,7 @@ func has_dirty_navcells() -> bool:
 
 
 func has_dirty_obstruction_navcells() -> bool:
-	for value in _obstruction_dirtiness:
-		if value != 0:
-			return true
-	return false
+	return not _obstruction_dirty_cell_list.is_empty()
 
 
 func clear_dirty_navcells() -> void:
@@ -405,8 +424,9 @@ func clear_dirty_navcells() -> void:
 
 
 func clear_dirty_obstruction_navcells() -> void:
-	for i in range(_obstruction_dirtiness.size()):
-		_obstruction_dirtiness[i] = 0
+	for cell in _obstruction_dirty_cell_list:
+		_obstruction_dirtiness[_index(cell)] = 0
+	_obstruction_dirty_cell_list.clear()
 
 
 func is_valid_navcell(coord: Vector2i) -> bool:
@@ -414,8 +434,20 @@ func is_valid_navcell(coord: Vector2i) -> bool:
 
 
 func _rasterize_static_obstruction(shape: SimNavObstructionShapeStatic, mark_dirty: bool = true) -> void:
-	for y in range(height):
-		for x in range(width):
+	# Clip the per-cell containment scan to the shape's clearance-expanded AABB
+	# instead of walking the entire navcell grid. The expansion mirrors what
+	# _mark_obstruction_shape_dirty uses, so the raster iterates exactly the
+	# cells the dirty pass already considers (and leaves a navcell of slack for
+	# any future per-class clearance-extension radius).
+	var expansion := _passability_registry.max_clearance() + navcell_size
+	var min_cell := world_to_navcell(_shape_bounds_min(shape) - Vector2(expansion, expansion))
+	var max_cell := world_to_navcell(_shape_bounds_max(shape) + Vector2(expansion, expansion))
+	var start_x := maxi(0, mini(min_cell.x, max_cell.x))
+	var end_x := mini(width - 1, maxi(min_cell.x, max_cell.x))
+	var start_y := maxi(0, mini(min_cell.y, max_cell.y))
+	var end_y := mini(height - 1, maxi(min_cell.y, max_cell.y))
+	for y in range(start_y, end_y + 1):
+		for x in range(start_x, end_x + 1):
 			var coord := Vector2i(x, y)
 			var center_world := navcell_center_world(coord)
 			var blocked_mask := _blocked_mask_for_point(shape, center_world)
@@ -611,7 +643,11 @@ func _mark_obstruction_shape_dirty(shape: SimNavObstructionShapeStatic) -> void:
 	var end_y := mini(height - 1, maxi(min_cell.y, max_cell.y))
 	for y in range(start_y, end_y + 1):
 		for x in range(start_x, end_x + 1):
-			_obstruction_dirtiness[_index(Vector2i(x, y))] = 1
+			var coord := Vector2i(x, y)
+			var idx := _index(coord)
+			if _obstruction_dirtiness[idx] == 0:
+				_obstruction_dirtiness[idx] = 1
+				_obstruction_dirty_cell_list.append(coord)
 
 
 func _shape_query_radius(shape: SimNavObstructionShape) -> float:

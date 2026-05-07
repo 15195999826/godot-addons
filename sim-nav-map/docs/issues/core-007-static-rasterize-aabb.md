@@ -1,10 +1,23 @@
 # CORE-007: Static obstruction rasterization scans full grid
 
-- Status: open
+- Status: resolved
 - Severity: P3
 - Layer: core
 - Source: claude-audit-2026-05-07
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `f2bf447`
+- smoke: `addons/sim-nav-map/tests/repro/repro_core_007_static_rasterize_aabb.tscn` (registered under `simnav/smoke` group)
+- 0 A.D. files checked: `source/simulation2/components/CCmpObstructionManager.cpp` Rasterize() (AABB-clipped per-cell containment), `source/simulation2/helpers/Rasterize.cpp` (clearance-expanded AABB iteration)
+- Fix:
+  1. `_rasterize_static_obstruction` now iterates only the shape's clearance-expanded AABB instead of the full grid (mirrors `_mark_obstruction_shape_dirty`'s AABB).
+  2. `rebuild_dirty` now scans only the union of every static shape's clearance-expanded AABB plus pre-existing obstruction-dirty cells (which capture removed/moved-shape footprints), recomputing each cell's mask via the spatial-index-backed `_blocked_mask_for_static_obstructions_at`. Drops the prior O(grid) `_compose_navcell_data` snapshot, full `_clear_obstruction_navcell_data`, and full-grid diff.
+  3. Added a parallel `_obstruction_dirty_cell_list: Array[Vector2i]` so `collect_dirty_obstruction_navcells` / `has_dirty_obstruction_navcells` / `clear_dirty_obstruction_navcells` run in O(dirty_count) instead of O(grid). Membership stays sourced from the byte array (single source of truth).
+- AABB expansion uses `max_clearance + navcell_size`, leaving a navcell of slack so a future CLEARANCE_EXTENSION_RADIUS (CORE-005, currently aborted) can fold in without breaking the AABB bound.
+- baseline impact: smoke ratio collapses from 15-16× (area-bound) to ~1× (AABB-bound). No external API change. Dirty lifecycle, full-rebuild semantics, and rasterized data identical to prior implementation per the existing simnav/smoke + rtslab/smoke regression matrix.
 
 ## Symptoms
 
