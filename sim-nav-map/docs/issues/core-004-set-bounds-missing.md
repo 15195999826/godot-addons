@@ -1,10 +1,23 @@
 # CORE-004: `SetBounds()` missing — out-of-bounds undefined
 
-- Status: open
+- Status: resolved
 - Severity: P1
 - Layer: core
 - Source: claude-audit-2026-05-07
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `2155450`
+- smoke: `addons/sim-nav-map/tests/repro/repro_core_004_set_bounds.tscn` (registered under `simnav/smoke` group)
+- 0 A.D. files checked: `source/simulation2/components/ICmpObstructionManager.h::SetBounds` (rectangular bounds API; circular variant intentionally still deferred)
+- Fix:
+  1. Added `SimNavMap.set_bounds(x0, z0, x1, z1)` plus read-side helpers `is_inside_playable_bounds(world_pos)`, `get_playable_bounds_min()`, `get_playable_bounds_max()`. Default bounds = full backing-grid extent so existing callers see no behavior change.
+  2. `_blocked_mask_for_point` skips cells whose world center is outside the playable bounds — a static OBB straddling the rectangle therefore rasterizes only its in-bounds portion. Re-rasterizes all statics on `set_bounds` (via `_mark_all_static_obstructions_dirty`).
+  3. `SimNavLongPathfinder.compute_path_result` now also checks `is_inside_playable_bounds(query.start_world)` and (for `POINT` goals) `is_inside_playable_bounds(query.goal.center)` after the existing grid-extent check; out-of-bounds returns `STATUS_INVALID_QUERY` with `FAILURE_START_OUT_OF_BOUNDS` / `FAILURE_GOAL_OUT_OF_BOUNDS`.
+- public-api.md updated: new method on `SimNavMap`, behavior contract for the rectangular bounds.
+- baseline impact: `BASELINE.md` "Known correctness limits" — removed CORE-004 row. No metric in the lab table moves; default bounds preserve current behavior.
 
 ## Symptoms
 
