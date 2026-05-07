@@ -112,10 +112,16 @@ Claude 这一轮的修复方向(per-call clamp 24 px + overlap budget 16 px + ca
 - `_push_out_static_obstacles` 删掉,改成"unit 撞墙就 short-range replan"
 
 工作量估计 1-2 周。会破坏现有所有 smoke contract,需要 redesign smoke。
-配合 sim-nav-map Feature 6 (filtered short query + line validation) 一起做最自然。
+
+**严格 roadmap 顺序**:Path B 不能现在硬开,需要先把 sim-nav-map plugin 的
+**Feature 5**(long-path query/result contract)和 **Feature 6**(filtered
+short query + line validation)按顺序做完。Feature 6 才提供 lab refactor
+真正需要的 `CheckMovement` / movement-line validation primitive,没有它
+强行在 lab 里做 velocity controller 等于把 `CheckMovement` 自己再发明一遍,
+容易写出另一个补丁系统。
 
 **优点**:跟 0ad 设计对齐,根除闪现
-**缺点**:大重构,smoke 要重写,可能引入新 bug
+**缺点**:大重构,smoke 要重写,可能引入新 bug;且必须等 Feature 5+6 完成
 
 ### Path C:用户/codex 接管,Claude 退出当前修复
 
@@ -133,8 +139,9 @@ overlap budget + cache)可以保留作为 trade-off 起点,也可以全 revert�
    还是 design flaw?
 3. 如果重构走 Path B,你会先动 `_move_unit` 还是 `_resolve_separation`?
    smoke contract 要怎么 redesign?
-4. sim-nav-map Feature 6 (filtered short query + line validation) 跟 lab
-   motion controller 重构怎么协调顺序?
+4. sim-nav-map Feature 5 (long-path query/result contract) 和 Feature 6
+   (filtered short query + line validation) 跟 lab motion controller 重构
+   怎么协调顺序?(roadmap 严格顺序是 5 → 6 → lab refactor)
 
 ## 给 Claude 自己的提问(自省)
 
@@ -143,11 +150,41 @@ overlap budget + cache)可以保留作为 trade-off 起点,也可以全 revert�
 - 用户两次提示"跟参考项目 0ad 比较"才让我意识到方向问题。**下次接到
   "修 lab 闪现"任务,第一步该做的是 read 0ad 对应模块,而不是直接调 lab 参数**。
 
-## 当前 working tree 状态
+## 决策记录(2026-05-07)
 
+用户 + codex + Claude 三方讨论后达成共识,**走 Path A 接受现状 + Path C
+接管设计**:
+
+- **本阶段不做 Path B 重构**。Path B 的重构必须等 sim-nav-map plugin 的
+  **Feature 5 → Feature 6** 按顺序完成,才能拿到 `CheckMovement` primitive。
+  当前 Feature 5 都还没开始(用户语)。
+- **本轮的 lab `_resolve_separation` 改动作为 mitigation 保留 commit**,
+  commit message 严格 framing 成 "bound lab separation hack / document
+  limitation",而不是 "fix teleport root cause"。
+  - jump 60+ → 26-29 px(改善 50%,但仍 visible)
+  - 卡帧 22 ms → 16 ms(改善 27%)
+- **后续任何"修 lab 闪现"的需求,先看本 doc 和 [`feature-roadmap.md`](
+  feature-roadmap.md) 的 "Lab Separation 已知 Trade-off" 段落,被导向
+  Feature 5/6,不要再调 `_resolve_separation` 参数**。这是这一轮工作最有
+  价值的产出 —— 不是修了多少 bug,是把 "修 hack" 和 "修 root cause" 的边界
+  画清楚了。
+
+## 当前 commit 状态
+
+主仓 commit `dd79e6f chore: bump addons (...)` 指向 submodule:
+
+- `4bfc59a chore: refresh lgf rts-auto-battle baselines and sim-nav-map UID files`
+  —— 跟本次工作无关的 housekeeping(已 staged 的 lgf binary baseline + UID)
+- `59b3748 hack(rts-pathfinding-lab): bound separation push budget + document
+  limitation` —— 本次 mitigation + design doc + roadmap 段落
+
+变更内容:
 - `addons/sim-nav-map/examples/rts-pathfinding-lab/logic/rts_pathfinding_lab_world.gd`
-  改动 ~150 行(per-call clamp + overlap budget + cache + total budget)
+  改动 ~150 行(per-call clamp + overlap budget + cache + total budget,
+  全部按 cell_size / radius 缩放,不再硬编码绝对像素)
 - `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab.gd`
-  contract 收紧 + 加 `_test_obstacle_drop_during_walk_does_not_teleport`
+  contract 小幅放宽 + 加 `_test_obstacle_drop_during_walk_does_not_teleport`
+- `addons/sim-nav-map/docs/feature-roadmap.md` 加 "Lab Separation 已知
+  Trade-off" 段落
+- `addons/sim-nav-map/docs/lab-separation-design-discussion.md` 本文
 - 全部 4 个 lab smoke + 16 个 plugin smoke PASS
-- 未 commit,等用户决定走 Path A/B/C
