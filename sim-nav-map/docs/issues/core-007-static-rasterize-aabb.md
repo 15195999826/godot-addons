@@ -52,10 +52,10 @@ as the AABB expansion correctly accounts for clearance + extension.
 ## Repro at HEAD
 
 ```powershell
-godot --headless --path . addons/sim-nav-map/tests/repro_core_007_static_rasterize_aabb.tscn
+godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_007_static_rasterize_aabb.tscn
 ```
 
-Smoke: [`tests/repro_core_007_static_rasterize_aabb.gd`](../../tests/repro_core_007_static_rasterize_aabb.gd).
+Smoke: [`tests/repro/repro_core_007_static_rasterize_aabb.gd`](../../tests/repro/repro_core_007_static_rasterize_aabb.gd).
 
 Setup: rasterize the same 16×16 static OBB on a 256×256 navcell grid
 versus a 1024×1024 grid. Area ratio is 16×; with AABB-clipped raster the

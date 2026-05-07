@@ -1,8 +1,8 @@
-# 0 A.D. Navigation Source Map
+# 0 A.D. Source Map
 
-This file supports [`../feature-roadmap.md`](../feature-roadmap.md). It records
-which 0 A.D. source files informed the roadmap and which review gaps should be
-absorbed into future `sim-nav-map` work.
+This file records which 0 A.D. source files are relevant to `sim-nav-map`
+navigation work and which review gaps should be absorbed into issue-based
+development.
 
 The local 0 A.D. source checkout is a reference-only directory:
 
@@ -16,10 +16,10 @@ data flow, and tests to recreate in GDScript.
 
 ## Freshness Rule
 
-Treat this file and [`../feature-roadmap.md`](../feature-roadmap.md) as source
-indexes, not as permanent truth. Before implementing a roadmap feature, reopen
-the referenced 0 A.D. files and refresh the relevant audit notes here if the
-local source says something different from the current docs.
+Treat this file as a source index, not as permanent truth. Before implementing
+an issue fix that depends on 0 A.D. behavior, reopen the referenced files and
+refresh the relevant audit notes here if the local source says something
+different from the current docs.
 
 The implementation target remains `sim-nav-map`'s own GDScript contract. Source
 audit notes should explain which ideas are being recreated, which are being
@@ -28,7 +28,7 @@ the core addon.
 
 ## Source Index
 
-| Roadmap area | Main source files | Reference points |
+| Area | Main source files | Reference points |
 |---|---|---|
 | Terrain / passability | `source/simulation2/helpers/Pathfinding.h`, `source/simulation2/components/CCmpPathfinder.cpp` | `NAVCELLS_PER_TERRAIN_TILE`, `PASS_CLASS_BITS`, terrain -> navcell grid, `UpdateGrid()`. |
 | Clearance rasterization | `source/simulation2/helpers/Pathfinding.h`, `source/simulation2/components/ICmpObstructionManager.h` | `CLEARANCE_EXTENSION_RADIUS`, `PathfinderPassability`, `Rasterize()` writing per-pass-class clearance into grid. |
@@ -130,12 +130,10 @@ source/simulation2/components/CCmpUnitMotion.h
   imperfect-path countdown, target-motion retry cadence, and dynamic-unit
   line-check replanning remain Feature 6+ or lab-side movement behavior.
 
-### Feature 5 Documentation Updates Needed
+### Documentation Updates Needed
 
 - Update `public-api.md` when the new result DTO names, status values, waypoint
   order, and metadata fields are chosen.
-- Update `feature-roadmap.md` if implementation findings change the Feature 5
-  scope or expose a stale assumption from this audit.
 - Update `smoke-matrix.md` with core and lab smoke scenes for status,
   canonicalization metadata, raw/refined waypoint boundaries, max spacing, and
   excluded-region query isolation.
@@ -237,13 +235,11 @@ source/simulation2/components/CCmpUnitMotion.h
   without rewriting `_move_unit()` / `_resolve_separation()` or importing
   `CCmpUnitMotion` movement policy.
 
-### Feature 6 Documentation Updates Needed
+### Documentation Updates Needed
 
 - Update `public-api.md` with the chosen filter DTO/factory names, supported
   predicates, short query status/result metadata, and line-validation result
   contract.
-- Update `feature-roadmap.md` if implementation findings change the Feature 6
-  scope or reveal a stale assumption from this audit.
 - Update `smoke-matrix.md` with core and lab smoke scenes for filter parity,
   movement-line validation, unit-only line validation, range-limited short
   query status, and adapter-only consumption.
@@ -311,12 +307,10 @@ source/simulation2/components/CCmpUnitMotion.h
   processed, cancelled, stale, worker-running, and result counts. They should
   not expose movement strategy or unit command policy as core state.
 
-### Feature 7 Documentation Updates Needed
+### Documentation Updates Needed
 
 - Update `public-api.md` with queue request/result types, ticket lifecycle,
   cancellation behavior, budget semantics, worker semantics, and diagnostics.
-- Update `feature-roadmap.md` if implementation findings change Feature 7 scope
-  or split worker support from budgeted processing.
 - Update `smoke-matrix.md` with core queue smoke for cloning, cancellation,
   partial budget processing, stale result isolation, worker collection, and lab
   adapter consumption.
@@ -382,21 +376,19 @@ source/simulation2/components/CCmpPathfinder_Common.h
   layout, movement smoothness, formation behavior, and deadlock recovery remain
   lab/game policy observations.
 
-### Feature 8 Documentation Updates Needed
+### Documentation Updates Needed
 
 - Update `public-api.md` with diagnostic DTO names, snapshot fields,
   connectivity/dirtiness export semantics, and any flush behavior.
-- Update `feature-roadmap.md` if implementation findings change Feature 8 scope
-  or split benchmark-only work from correctness diagnostics.
 - Update `smoke-matrix.md` with core diagnostics smoke and any benchmark-only
   scene instructions, clearly separated from required correctness groups.
 
 ## Accepted Gap Review Items
 
-These gaps should be represented in the roadmap because they are navigation-core
-mechanisms, not RTS gameplay.
+These gaps were accepted because they are navigation-core mechanisms, not RTS
+gameplay.
 
-| Gap | Roadmap target | Why it belongs in core |
+| Gap | Implementation area | Why it belongs in core |
 |---|---|---|
 | Movement-line validation | Feature 6 | Pure query: whether a swept movement segment crosses impassable navcells or filtered obstruction shapes. It does not decide what movement does after failure. |
 | Unit-only line validation | Feature 6 | Pure query: whether a swept segment would hit dynamic unit obstructions under a filter. It lets adapters decide when to replan locally without making that replan cadence a core policy. |
@@ -409,7 +401,7 @@ mechanisms, not RTS gameplay.
 ## Deferred Items
 
 These are valid navigation-adjacent primitives, but they should not become
-roadmap commitments until a second example or lab scenario proves the need.
+core commitments until a second example or lab scenario proves the need.
 
 | Item | Source evidence | Current decision |
 |---|---|---|

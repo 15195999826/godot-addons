@@ -56,10 +56,10 @@ Each mutation is a dedicated API call; flags are not directly mutated.
 ## Repro at HEAD
 
 ```powershell
-godot --headless --path . addons/sim-nav-map/tests/repro_core_006_flag_setter_propagation.tscn
+godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_006_flag_setter_propagation.tscn
 ```
 
-Smoke: [`tests/repro_core_006_flag_setter_propagation.gd`](../../tests/repro_core_006_flag_setter_propagation.gd).
+Smoke: [`tests/repro/repro_core_006_flag_setter_propagation.gd`](../../tests/repro/repro_core_006_flag_setter_propagation.gd).
 
 **Note on what's actually broken.** `SimNavMap.rebuild_dirty()` does a full
 re-rasterization, so even after a direct `shape.flags = X` mutation the

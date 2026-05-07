@@ -29,7 +29,7 @@ a bounds clip but no obstruction-side bounds layer exists. There is no
   enforces bounds in `Rasterize()` and in shape range queries.
 
 `SetPassabilityCircular()` for circular maps is documented as
-intentionally deferred ([roadmap](../roadmap-refs/0ad-navigation-source-map.md))
+intentionally deferred ([source map](../references/0ad-source-map.md))
 — this issue is rectangular bounds only.
 
 ## Proposed fix
@@ -56,10 +56,10 @@ intentionally deferred ([roadmap](../roadmap-refs/0ad-navigation-source-map.md))
 ## Repro at HEAD
 
 ```powershell
-godot --headless --path . addons/sim-nav-map/tests/repro_core_004_set_bounds.tscn
+godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_004_set_bounds.tscn
 ```
 
-Smoke: [`tests/repro_core_004_set_bounds.gd`](../../tests/repro_core_004_set_bounds.gd).
+Smoke: [`tests/repro/repro_core_004_set_bounds.gd`](../../tests/repro/repro_core_004_set_bounds.gd).
 
 At HEAD (commit 6335f32) the smoke FAILs:
 
@@ -84,6 +84,6 @@ and update `public-api.md` in the same change.
 
 ## Cross-refs
 
-- Roadmap: `../roadmap-refs/0ad-navigation-source-map.md` (`SetBounds()` listed under deferred items but rectangular case promoted here)
+- Source map: `../references/0ad-source-map.md` (`SetBounds()` listed under deferred items but rectangular case promoted here)
 - [CORE-005](core-005-clearance-extension-radius.md) — bounds and clearance extension share rasterization touchpoints
 - [LAB-003](lab-003-active-jump-55px.md) — well-defined edge behavior reduces the risk of edge-induced large jumps

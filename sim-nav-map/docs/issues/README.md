@@ -4,9 +4,9 @@ Discrete tracker for known bugs, gaps, and improvement work in
 `addons/sim-nav-map`. Each `.md` is one issue. `BASELINE.md` defines the
 state below which no regression should land.
 
-The previous lab-side discussion log is preserved at
-[`../rts-lab-open-issues.md`](../rts-lab-open-issues.md). Issues seeded from
-that log are tagged `Source: codex-discussion`.
+The earlier lab-side open-issues summary has been absorbed into these issue
+files and removed as a separate entry point. Issues seeded from that discussion
+are tagged `Source: codex-discussion`.
 
 ## Index
 
@@ -38,12 +38,12 @@ Repro column legend:
 Core repro smokes (run with `godot --headless --path . <tscn>`):
 
 ```text
-addons/sim-nav-map/tests/repro_core_001_vertex_obb_outset.tscn
-addons/sim-nav-map/tests/repro_core_003_hierarchical_far_goal.tscn
-addons/sim-nav-map/tests/repro_core_004_set_bounds.tscn
-addons/sim-nav-map/tests/repro_core_005_clearance_extension.tscn
-addons/sim-nav-map/tests/repro_core_006_flag_setter_propagation.tscn
-addons/sim-nav-map/tests/repro_core_007_static_rasterize_aabb.tscn
+addons/sim-nav-map/tests/repro/repro_core_001_vertex_obb_outset.tscn
+addons/sim-nav-map/tests/repro/repro_core_003_hierarchical_far_goal.tscn
+addons/sim-nav-map/tests/repro/repro_core_004_set_bounds.tscn
+addons/sim-nav-map/tests/repro/repro_core_005_clearance_extension.tscn
+addons/sim-nav-map/tests/repro/repro_core_006_flag_setter_propagation.tscn
+addons/sim-nav-map/tests/repro/repro_core_007_static_rasterize_aabb.tscn
 ```
 
 Lab repro smokes:
@@ -77,18 +77,22 @@ register it in the appropriate group.
 ## Source legend
 
 - `claude-audit-2026-05-07` — 5-agent comparative audit vs 0 A.D. C++ reference
-- `codex-discussion` — surfaced in `../rts-lab-open-issues.md`
+- `codex-discussion` — surfaced in prior Codex discussion and now tracked here
 - `both` — confirmed from both threads
 
 ## Status workflow
 
 1. Pick an issue and flip `Status: open` → `Status: in-progress`. Claim owner.
-2. Write the failing smoke first (each issue lists a "Repro / regression test"
+2. For navigation / movement / obstruction issues, read the relevant 0 A.D.
+   source files directly under `../references/0ad-source/`. Do not rely on
+   removed AI summary notes.
+3. Write the failing smoke first (each issue lists a "Repro / regression test"
    sketch). Land it red.
-3. Fix. Smoke turns green.
-4. Flip to `Status: resolved` and add a short "Resolution" section with
-   commit hash, smoke name, and any baseline number it moves.
-5. Move resolved files to `_resolved/` after 1-2 cycles to keep this index lean.
+4. Fix. Smoke turns green.
+5. Flip to `Status: resolved` and add a short "Resolution" section with
+   commit hash, smoke name, checked 0 A.D. source files when relevant, and any
+   baseline number it moves.
+6. Move resolved files to `_resolved/` after 1-2 cycles to keep this index lean.
 
 Allowed status values: `open`, `in-progress`, `blocked`, `resolved`.
 
@@ -101,8 +105,7 @@ the same change.
 ## Cross-refs
 
 - Baseline snapshot: [`BASELINE.md`](BASELINE.md)
-- Lab-side discussion log: [`../rts-lab-open-issues.md`](../rts-lab-open-issues.md)
-- 0 A.D. reference index: [`../roadmap-refs/0ad-navigation-source-map.md`](../roadmap-refs/0ad-navigation-source-map.md)
-- Architecture overview: [`../references/0ad-pathfinding.md`](../references/0ad-pathfinding.md)
+- 0 A.D. source map: [`../references/0ad-source-map.md`](../references/0ad-source-map.md)
+- 0 A.D. source setup: [`../references/0ad-source-setup.md`](../references/0ad-source-setup.md)
 - Public API: [`../public-api.md`](../public-api.md)
 - Smoke matrix: [`../smoke-matrix.md`](../smoke-matrix.md)

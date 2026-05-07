@@ -8,7 +8,7 @@ justification.
 ## Repository state
 
 - Main branch: `master`
-- Pinned commit (main repo): `6335f32` — *Record sim nav core roadmap completion*
+- Pinned commit (main repo): `6335f32` — *Record sim nav core feature completion*
 - Addons submodule: same baseline as the pinned commit's `addons/` pointer
 
 ## Smoke matrix (must stay green)
@@ -31,8 +31,9 @@ notes in the issue's "Resolution" section.
 
 ## Lab metrics
 
-Source: latest `rtslab/smoke` representative results recorded in
-[`../rts-lab-open-issues.md`](../rts-lab-open-issues.md) (2026-05-07).
+Source: latest `rtslab/smoke` representative results recorded during the
+2026-05-07 core feature completion review. The active follow-up items are
+the linked issues below.
 
 | Metric | Baseline | Target / target issue |
 |---|---|---|

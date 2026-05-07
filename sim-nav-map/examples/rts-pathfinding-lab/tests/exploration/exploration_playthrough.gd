@@ -31,7 +31,7 @@ extends Node
 # Notes:
 #   - This script is NOT a smoke. It does not assert thresholds and does not
 #     belong in test_groups.json. Use the per-issue repro smokes
-#     (tests/repro_core_*, examples/.../repro_lab_*) for hard FAIL/PASS gates.
+#     (tests/repro/repro_core_*, examples/.../repro_lab_*) for hard FAIL/PASS gates.
 #   - Lab obstacles are AABB only; rotated-OBB scenarios (CORE-001) cannot
 #     be exercised through the lab adapter and must use a core-only repro.
 

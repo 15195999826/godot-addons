@@ -1,26 +1,20 @@
 # Sim Nav Map Smoke Matrix
 
-This matrix defines the stable regression entry points for `sim-nav-map`
-stabilization work.
+This file defines the stable regression gates for `sim-nav-map` issue work.
+It should stay small enough to answer "what must stay green now?"
 
-## Entry Points
+## Stable Gates
 
-| Group | Manifest | Responsibility |
-|---|---|---|
-| `simnav/smoke` | `addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, line validation, cache, request queue, and diagnostics exports. |
-| `rtslab/smoke` | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: lab path planning, metadata consumption, movement-loop integration, metrics contract, and scene load. |
-
-Run both with:
+Run both groups before merging any issue fix:
 
 ```powershell
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
 
-## V1 Baseline Guard Contract
-
-Feature 0 is the post-`sim-nav-map-v1.0.0` regression guard. It does not add a
-navigation capability; it keeps the public API docs, smoke groups, and example
-boundary aligned so later roadmap work can be compared against the V1 baseline.
+| Group | Manifest | Responsibility |
+|---|---|---|
+| `simnav/smoke` | `addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: public API defaults, map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, line validation, cache, request queue, and diagnostics exports. |
+| `rtslab/smoke` | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: lab path planning, metadata consumption, movement-loop integration, metrics contract, and scene load. |
 
 Baseline gate:
 
@@ -29,198 +23,17 @@ Baseline gate:
 git -C addons diff --check
 ```
 
-`simnav/smoke` is the core addon contract. It verifies reusable navigation
-primitives: map state, passability, terrain data access and derived terrain
-passability, obstruction projection, dirty lifecycle, reachability, long/short
-query behavior, cache invalidation, and request queue behavior.
+## Repro Tests
 
-`rtslab/smoke` is the adapter/playable regression contract. It verifies that
-`examples/rts-pathfinding-lab` can consume the core addon through its adapter and
-that the real lab scene still loads. Lab movement, HUD, formation offsets,
-toggle UX, push behavior, and replan cadence remain application policy and do
-not become `sim-nav-map` public API.
+Issue repro scenes are intentionally separate from the stable smoke manifests.
+They may fail at HEAD and should not be discovered by `./tools/run_tests.ps1`
+until the matching issue is fixed.
 
-Feature 1 may start only after both baseline groups pass, this document and
-`public-api.md` still describe the same boundary, and
-`docs/references/0ad-source/` remains untracked. Feature-specific smoke added by
-later roadmap items should be registered into `simnav/smoke` for core addon
-contracts or `rtslab/smoke` for lab adapter/playable contracts.
-
-## Feature 1 Terrain Passability Contract
-
-Feature 1 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_terrain_tile_map.tscn` in
-  `simnav/smoke`: verifies terrain tile projection, terrain mask -> navcell
-  passability derivation, dirty marking on terrain edit, class-specific terrain
-  masks, and rebuild stability.
-- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
-  `simnav/smoke`: verifies the public map-level terrain edit and rebuild entry
-  points.
-- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_terrain_adapter.tscn`
-  in `rtslab/smoke`: verifies the lab adapter can project a terrain preset into
-  `SimNavMap` and query two passability classes without adding ship gameplay or
-  lab movement policy to core.
-
-Feature 2 may start when these Feature 1 smoke contracts, the default lab
-playable regression, `git -C addons diff --check`, and the
-`docs/references/0ad-source/` untracked check are all green.
-
-## Feature 2 Clearance Rasterization Contract
-
-Feature 2 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_clearance_rasterization.tscn` in
-  `simnav/smoke`: verifies class-specific `clearance` expansion for terrain and
-  static obstruction rasterization, different masks for small/large classes on
-  the same terrain/obstruction, dirty marking when clearance-expanded terrain is
-  cleared, and long-path behavior through a one-navcell gap.
-- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_clearance_adapter.tscn`
-  in `rtslab/smoke`: verifies the lab adapter can build a terrain context with
-  small/large passability classes and consume the resulting reachability/path
-  difference without promoting unit type, movement, selection, command, or
-  formation policy into core.
-
-Feature 3 may start when these Feature 2 smoke contracts, the existing terrain
-and lab playable regressions, `git -C addons diff --check`, and the
-`docs/references/0ad-source/` untracked check are all green. Feature 3 should
-start from dirty edit/cache lifecycle only; it should not introduce reachability
-result DTOs, long path result contracts, short filters, line validation, queue
-expansion, scale diagnostics, or lab gameplay policy in the same step.
-
-## Feature 3 Dirty Lifecycle Contract
-
-Feature 3 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_dirty_lifecycle.tscn` in
-  `simnav/smoke`: verifies direct dirty marking, static obstruction dirty
-  rasterization, terrain edit dirty lifecycle, hierarchical dirty recompute,
-  long-path jump-point cache invalidation, and default dirty cleanup through
-  `SimNavPathfinderFacade.recompute_dirty()`.
-- Existing hierarchical/cache smoke in `simnav/smoke`: verifies dirty chunk
-  replacement and jump-point cache invalidation behavior remain stable.
-
-Feature 4 may start when Feature 3 smoke is green. Feature 3 does not add long
-path result status, path post-processing, excluded regions, short path filters,
-line validation, queue expansion, scale diagnostics, ship gameplay, formation,
-HUD policy, or game-specific movement policy.
-
-## Feature 4 Reachability Contract
-
-Feature 4 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_reachability_query.tscn` in
-  `simnav/smoke`: verifies explicit reachability result metadata, `POINT`,
-  `CIRCLE`, `SQUARE`, inverted goal canonicalization, passability class/mask
-  echo, and dirty recompute changing the canonical target.
-- `addons/sim-nav-map/tests/smoke_sim_nav_long_pathfinder.tscn` in
-  `simnav/smoke`: verifies the facade still canonicalizes unreachable long-path
-  point goals before search.
-- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab.tscn`
-  and adapter smoke in `rtslab/smoke`: verify the lab consumes canonical goals
-  and reachability metadata without promoting movement, selection, command,
-  formation, HUD, or arrival policy into core.
-
-Feature 5's scope is only the long-path query/result contract: query status,
-path metadata, raw vs refined waypoints, optional excluded regions, and
-post-processing primitives. Do not fold short filters, line validation, queue
-expansion, scale diagnostics, or game-specific movement policy into Feature 5.
-
-## Feature 5 Long-Path Query/Result Contract
-
-Feature 5 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_long_pathfinder.tscn` in
-  `simnav/smoke`: verifies explicit long-path result statuses, canonicalization
-  metadata, start recovery, raw navcell path vs refined waypoint path boundaries,
-  max waypoint spacing, path cost/length, and request-scoped excluded-region
-  isolation.
-- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
-  `simnav/smoke`: verifies `SimNavLongPathQuery` clone/default behavior and
-  `SimNavLongPathResult` query metadata snapshots.
-- `addons/sim-nav-map/tests/smoke_sim_nav_path_request_queue.tscn` in
-  `simnav/smoke`: verifies queue cloning for long-path query preferences and
-  `take_long_path_result()` metadata retrieval while preserving path-only
-  compatibility.
-- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_long_path_result_adapter.tscn`
-  in `rtslab/smoke`: verifies the lab adapter consumes and exposes long-path
-  result metadata through `last_report` without moving core policy into lab
-  movement code.
-
-Feature 5 does not add short-path filters, movement-line validation,
-unit-line validation, request queue budget expansion, worker scaling,
-diagnostics, formation, push/yield, stuck/deadlock, retry cadence, or gameplay
-movement policy. `rts-pathfinding-lab` remains an adapter consumer and playable
-regression surface.
-
-## Feature 6 Filtered Short Query / Line Validation Contract
-
-Feature 6 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_vertex_pathfinder.tscn` in
-  `simnav/smoke`: verifies custom obstruction filter snapshots, ignored-tag
-  filtering, range-limited short result status, and path-only compatibility.
-- `addons/sim-nav-map/tests/smoke_sim_nav_line_validation.tscn` in
-  `simnav/smoke`: verifies filtered range queries, movement-line passability
-  blocking, static obstruction blocking, ignored-tag filtering, unit-only line
-  validation, and control-group filtering.
-- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
-  `simnav/smoke`: verifies constructor/default contracts for filter, short
-  result, and line result DTOs.
-- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_core_primitive_adapter.tscn`
-  in `rtslab/smoke`: verifies the lab adapter consumes short-result,
-  movement-line, and unit-line metadata without running line validation from the
-  playable movement hot path or modifying lab movement policy.
-
-Feature 6 does not add retry cadence, push/yield, stuck/deadlock, formation,
-arrival, steering, or lab `_move_unit()` / `_resolve_separation()` changes.
-
-## Feature 7 Request Queue Contract
-
-Feature 7 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_path_request_queue.tscn` in
-  `simnav/smoke`: verifies monotonic tickets, FIFO budget processing,
-  cancellation, stale result removal, queued long and short metadata DTOs,
-  worker batch collection, in-flight cancellation, cloned filters, and queue
-  diagnostics.
-- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
-  `simnav/smoke`: verifies queue path-only compatibility and cloned public
-  request data.
-
-Feature 7 queue budget is an explicit per-call compute cap. It is not a lab
-replan cadence, movement controller, or unit command policy.
-
-## Feature 8 Diagnostics / Export Contract
-
-Feature 8 is covered by:
-
-- `addons/sim-nav-map/tests/smoke_sim_nav_diagnostics_exports.tscn` in
-  `simnav/smoke`: verifies map dirtiness diagnostics, obstruction counts,
-  passability-scoped connectivity export shape, facade diagnostic aggregation,
-  and a scale/perf scenario that records elapsed time without fragile timing
-  thresholds.
-- `addons/sim-nav-map/tests/smoke_sim_nav_path_request_queue.tscn` in
-  `simnav/smoke`: verifies queue diagnostic fields for pending/result/cancelled
-  stale/worker state.
-
-Feature 8 correctness smoke checks stable diagnostic shape and metadata. Any
-future benchmark-only scene must document how to run and interpret it separately
-from the required `simnav/smoke` gate.
-
-## Discovery Contract
-
-`tools/run_tests.ps1` discovers sim-nav-map manifests from:
-
-```text
-addons/sim-nav-map/tests/test_groups.json
-addons/sim-nav-map/examples/*/tests/test_groups.json
-```
-
-Paths inside each manifest are relative to that manifest directory. New core
-addon smoke scenes belong under `addons/sim-nav-map/tests/` and should be added
-to `simnav/smoke`. New lab behavior smoke scenes belong under
-`examples/rts-pathfinding-lab/tests/` and should be added to `rtslab/smoke`.
+| Kind | Location | Rule |
+|---|---|---|
+| Core repro | `addons/sim-nav-map/tests/repro/` | Add a focused scene for one core issue. Register it into `simnav/smoke` only after the fix turns it green. |
+| Lab repro | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/repro/` | Add a focused scene for one lab issue. Register it into `rtslab/smoke` only after the fix turns it green or when it is a PASS lock-in guard. |
+| Exploration | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/exploration/` | Observation-only scripts. They always exit 0 and must not be added to smoke manifests. |
 
 ## Current Coverage
 
@@ -236,29 +49,38 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 - map tracing
 - obstruction manager behavior
 - hierarchical reachability and dirty recompute
-- explicit reachability/canonical goal result metadata
-- explicit long-path query/result contract: status, canonicalization metadata,
-  raw/refined path boundary, max spacing, excluded-region isolation, and
-  path cost/length
+- reachability/canonical goal result metadata
+- long-path query/result status, canonicalization metadata, raw/refined path boundary, max spacing, excluded-region isolation, and path cost/length
 - jump-point cache invalidation
-- long pathfinder
 - vertex pathfinder
 - filtered obstruction queries and line validation
-- path request queue
-- queued request cloning
-- queue diagnostics
+- path request queue, queued request cloning, and queue diagnostics
 - map dirtiness diagnostics and connectivity exports
 
 `rtslab/smoke` covers:
 
 - the headless lab movement/pathfinding contract
-- repeated static obstacle add/remove stress while six units move between
-  building sides
-- the lab terrain preset adapter contract
-- the lab small/large clearance adapter contract
-- the lab long-path result metadata adapter contract
-- the lab core primitive metadata adapter contract
-- the real lab scene loading path
+- repeated static obstacle add/remove stress while six units move between building sides
+- terrain preset adapter behavior
+- small/large clearance adapter behavior
+- long-path result metadata adapter behavior
+- short-result, movement-line, and unit-line metadata adapter behavior
+- real lab scene loading
+
+## Discovery Contract
+
+`tools/run_tests.ps1` discovers sim-nav-map manifests from:
+
+```text
+addons/sim-nav-map/tests/test_groups.json
+addons/sim-nav-map/examples/*/tests/test_groups.json
+```
+
+Paths inside each manifest are relative to that manifest directory. New core
+addon smoke scenes belong under `addons/sim-nav-map/tests/` and should be added
+to `simnav/smoke` after they are expected to pass. New lab behavior smoke scenes
+belong under `examples/rts-pathfinding-lab/tests/` and should be added to
+`rtslab/smoke` after they are expected to pass.
 
 ## Legacy RTS Fixture Boundary
 
@@ -269,13 +91,12 @@ the RTS example, not as the active `sim-nav-map` stabilization gate.
 
 New `sim-nav-map` core coverage should not be added to `rts/pathfinding`.
 
-## Final Audit Checklist
+## Issue Fix Checklist
 
 - `README.md`, `docs/mental-model.md`, `docs/public-api.md`,
-  `docs/feature-roadmap.md`, and this file agree on the same boundary.
+  and this file still agree on the same boundary.
 - `simnav/smoke` and `rtslab/smoke` are discoverable by `./tools/run_tests.ps1 -List`.
-- `simnav/smoke` includes `smoke_sim_nav_public_api_contract.tscn` for the
-  current public entry-point boundary.
-- Old RTS private pathfinder wording points to archived compatibility, not a
-  future implementation path.
-- `addons/sim-nav-map/docs/references/0ad-source/` remains untracked.
+- Fixed issue repros are promoted into the correct smoke manifest.
+- Red repros stay in `tests/repro/` or lab `tests/repro/`, not in the stable manifest.
+- Old RTS private pathfinder wording points to archived compatibility, not a future implementation path.
+- `addons/sim-nav-map/docs/references/0ad-source/` remains ignored/untracked.

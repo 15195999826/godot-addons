@@ -82,7 +82,7 @@ Manual recipe to characterize:
 
 **Smoke deliverable** (when adversarial scenario is found): place
 that exact OBB+passability+goal in a new
-`addons/sim-nav-map/tests/repro_core_002_long_path_los_sampling.gd`
+`addons/sim-nav-map/tests/repro/repro_core_002_long_path_los_sampling.gd`
 that asserts the refined path has no segment crossing a blocked cell.
 That smoke replaces this section.
 

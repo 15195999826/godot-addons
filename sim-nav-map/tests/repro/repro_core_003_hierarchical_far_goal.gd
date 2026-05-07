@@ -23,7 +23,7 @@ extends Node
 #     navcell. FAIL (reproduction confirmed).
 # After fix: returns canonicalized=true, canonical_navcell.x ≈ 29. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro_core_003_hierarchical_far_goal.tscn
+# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_003_hierarchical_far_goal.tscn
 
 
 var _failures: Array[String] = []

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/sim-nav-map/tests/repro/repro_core_006_flag_setter_propagation.gd" id="1"]
+
+[node name="ReproCore006FlagSetterPropagation" type="Node"]
+script = ExtResource("1")

@@ -18,7 +18,7 @@ extends Node
 # At HEAD: at least one waypoint per rotation is several units off. FAIL.
 # After fix: all waypoints land on the expected axis-aligned ring. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro_core_001_vertex_obb_outset.tscn
+# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_001_vertex_obb_outset.tscn
 
 
 var _failures: Array[String] = []

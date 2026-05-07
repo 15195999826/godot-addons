@@ -67,7 +67,7 @@ Manual recipe to characterize at HEAD:
    list grows).
 
 **Smoke deliverable** (after instrumentation lands): a
-`addons/sim-nav-map/tests/repro_core_009_heap_improve.gd` that
+`addons/sim-nav-map/tests/repro/repro_core_009_heap_improve.gd` that
 1. records insert / pop timing on a fixed long-path query,
 2. asserts the existing path output is unchanged (bit-identical),
 3. records a "before" baseline today and an "after" target after the

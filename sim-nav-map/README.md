@@ -43,6 +43,24 @@ Pathfinding currently has three main pieces:
 `SimNavPathRequestQueue` provides frame-budgeted or worker-thread batch
 processing for callers that do not want to compute every request in one frame.
 
+## Current Capabilities
+
+The completed core surface includes:
+
+- terrain-derived navcell passability with per-class terrain masks
+- class-aware clearance rasterization for terrain and static obstructions
+- dirty recompute and cache invalidation for terrain/static edits
+- hierarchical reachability and nearest reachable goal canonicalization
+- long-path query/result DTOs with status, metadata, raw/refined path boundary,
+  excluded-region isolation, path cost, and waypoint spacing
+- filtered short-path queries plus movement-line and unit-line validation
+- budgeted / worker-style long and short path request queue
+- map, obstruction, queue, dirtiness, and connectivity diagnostics
+
+These are navigation primitives. Unit motion, steering, formation, push/yield,
+arrival packing, stuck recovery, combat, resource gathering, and UI behavior
+remain project or lab policy.
+
 ## Current Coverage
 
 Smoke tests live in `tests/` and are registered as the `simnav/smoke` group:
@@ -54,8 +72,9 @@ Smoke tests live in `tests/` and are registered as the `simnav/smoke` group:
 The current smoke group covers public API constructor/default contracts,
 passability registration, terrain tiles, dirty lifecycle, spatial index queries,
 path goals, map tracing, obstruction manager, hierarchical reachability and
-dirty recompute, jump-point cache, long paths, vertex paths, request queue
-behavior, and queued request cloning.
+dirty recompute, reachability metadata, jump-point cache, long paths, vertex
+paths, line validation, request queue behavior, queued request cloning, and
+diagnostics exports.
 
 ## Usage Mental Model
 
@@ -83,12 +102,13 @@ movement policy、selection、replan budget、push behavior、HUD 和 smoke regr
 ./tools/run_tests.ps1 rtslab/smoke
 ```
 
-## Roadmap And References
+## Docs And References
 
 - [`docs/public-api.md`](docs/public-api.md): 当前 public API / internal helper 边界。
-- [`docs/feature-roadmap.md`](docs/feature-roadmap.md): 未来开发路线和 core / example / reference 边界。
+- [`docs/issues/`](docs/issues/): 当前 bug、gap 和后续优化的 issue tracker。
 - [`docs/smoke-matrix.md`](docs/smoke-matrix.md): 稳定 smoke 入口和 legacy RTS fixture 边界。
-- [`docs/references/`](docs/references/): 0 A.D. 架构笔记和本地源码参考路径。
+- [`docs/references/`](docs/references/): 0 A.D. 本地源码副本路径和刷新说明；issue
+  需要 reference 时读源码，不读旧二手总结。
 
 ## Boundaries
 
@@ -104,6 +124,9 @@ source for examples, but not yet a polished large-scale production navigation
 stack.
 
 ## Future Directions
+
+新工作默认先落到 [`docs/issues/`](docs/issues/)：一个问题一个 issue，一个
+focused repro / lock-in smoke，修复后再把通过的场景加入稳定 manifest。
 
 - Keep the documented public API around `SimNavMap`, `SimNavPathGoal`,
   `SimNavPathfinderFacade`, and `SimNavPathRequestQueue` stable.

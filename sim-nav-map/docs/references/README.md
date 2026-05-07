@@ -1,18 +1,11 @@
 # References
 
-本目录保存 `sim-nav-map` 开发参考材料。
+本目录只保留 0 A.D. 一手源码副本的获取和使用说明。
 
-## 0 A.D. Notes
-
-这些 tracked 文档是对 0 A.D. simulation/pathfinding 架构的阅读笔记和对照分析：
-
-- [`0ad-architecture-overview.md`](0ad-architecture-overview.md)
-- [`0ad-data-flow.md`](0ad-data-flow.md)
-- [`0ad-learnings.md`](0ad-learnings.md)
-- [`0ad-pathfinding.md`](0ad-pathfinding.md)
-- [`0ad-vs-inkmon-rts.md`](0ad-vs-inkmon-rts.md)
-
-它们用于理解 0 A.D. 的 pathfinding / obstruction / unit motion 分层，不代表 `sim-nav-map` 要原样复刻 0 A.D.。
+早期由 AI 总结的 0 A.D. 架构 / pathfinding / 对比笔记已经删除：它们产生于本地
+源码副本下载之前，可能不准确或过时。解决 issue 时不要依赖这些二手总结，必须
+直接阅读 `0ad-source/` 里的源码，并把当前结论写回对应 issue 或
+[`0ad-source-map.md`](0ad-source-map.md)。
 
 ## Local 0 A.D. Source
 
@@ -22,7 +15,8 @@
 addons/sim-nav-map/docs/references/0ad-source/
 ```
 
-这个目录通过 `addons/sim-nav-map/.gitignore` 忽略，不进入仓库。它是 0 A.D. 源码的 sparse checkout，主要用于 AI / 开发者在本机对照阅读。
+这个目录通过 `addons/sim-nav-map/.gitignore` 忽略，不进入仓库。它是 0 A.D. 源码
+的 sparse checkout，主要用于 AI / 开发者在本机对照阅读。
 
 拉取方式见 [`0ad-source-setup.md`](0ad-source-setup.md)。
 
@@ -46,4 +40,6 @@ source/simulation2/components/CCmpUnitMotionManager.h
 
 ## Usage Rule
 
-可以学习 0 A.D. 的分层和数据流，但不要复制 GPL 源码实现。`sim-nav-map` 的目标是适配当前 Godot / GDScript / personal sample-driven toolchain，而不是移植 0 A.D.。
+可以学习 0 A.D. 的分层、contract 和数据流，但不要复制 GPL 源码实现。
+`sim-nav-map` 的目标是适配当前 Godot / GDScript / sample-driven toolchain，
+不是移植 0 A.D.。

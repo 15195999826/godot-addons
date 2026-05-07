@@ -12,7 +12,7 @@ extends Node
 # After fix: the smoke also verifies tighter-than-grid goal rejection and
 # static OBB raster clipping against the configured bounds.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro_core_004_set_bounds.tscn
+# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_004_set_bounds.tscn
 
 
 var _failures: Array[String] = []
