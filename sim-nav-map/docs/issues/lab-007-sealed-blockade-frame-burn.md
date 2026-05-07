@@ -1,6 +1,6 @@
 # LAB-007: Sealed-blockade separation budget burn
 
-- Status: open (partial fix landed 2026-05-07; smoke pulled from rtslab/smoke until full target hit)
+- Status: open (partial fix attempted 2026-05-07 then **rolled back** same day — see "Rollback note" below)
 - Severity: P1
 - Layer: lab
 - Source: user export-log report
@@ -86,28 +86,63 @@ the ceiling is hit even when no replan runs that tick.
   here (start is passable) but worth keeping in mind for true sealing
   cases.
 
+## Rollback note (2026-05-07)
+
+A partial fix bundle (items 1–5 below) was implemented and locked in
+the headless smoke at separation peak −52 % (13 883 → 6 605 µs). On
+in-editor playtest the user reported two regressions:
+
+- **Visible unit teleport** when blocking paths dynamically. Likely
+  cause: `SEPARATION_STABILIZE_ITERATIONS` 6 → 2 left some pushes
+  un-amortized over multiple frames, so when an obstacle edit
+  triggered a large per-call push (`_static_push_max_per_call ≈ 22 px`
+  for our radius), that single push showed as a visible jump instead
+  of being smoothed over multiple stabilization passes.
+- **Steady-state `avg_step_usec` regression 0.38 ms → 0.9+ ms** (vs
+  earlier 0.1–0.2 ms baseline mentioned by the user). Likely cause:
+  every `_resolve_separation` call now pays for per-iter
+  `iter_start_positions` Dictionary creation + `_any_unit_moved_beyond`
+  scans + budget-exhausted scans + `_resolve_overlaps` budget
+  pre-check, on every frame regardless of whether sealed-enclave
+  symptoms exist. Net is fine for the FAIL repro but a measurable
+  hit on the playable default path.
+
+Decision: revert the world.gd changes; keep the issue file, the repro
+smoke, and the smoke's removal from `rtslab/smoke`. Future attempts
+must (a) gate the new bookkeeping behind a "sealed-enclave detected"
+fast path so default-density frames pay nothing, or (b) move the
+heavy work out of the per-frame loop entirely.
+
+Reverted commits: submodule `1258dcd` (fix code) + main-repo
+`4e6f549` (pointer bump). Pre-fix sep peak / total max numbers in
+"Repro at HEAD" are restored as the active baseline.
+
 ## Proposed approach
 
-1. **[DONE]** Add a stuck early-exit to `_resolve_separation`: track
+1. **[reverted]** Add a stuck early-exit to `_resolve_separation`: track
    each outer iter's start positions; bail when (a) no unit's net
    displacement in the iter exceeds a jitter epsilon, (b) end-of-iter-K
    ≈ start-of-iter-K-1 (2-cycle), or (c) end-of-iter-K ≈
    start-of-iter-K-2 (3-cycle).
-2. **[DONE]** Skip the second `_push_out_static_obstacles_for_units`
+2. **[reverted]** Skip the second `_push_out_static_obstacles_for_units`
    call within an outer iter when `_resolve_overlaps` reported no
    change — units are still in the post-static-1 configuration so the
    second pass would just regenerate candidates for nothing.
-3. **[DONE]** All-exhausted short-circuit at the top of
+3. **[reverted]** All-exhausted short-circuit at the top of
    `_resolve_overlaps`: when every mobile unit has spent its per-frame
    overlap budget, no pair-check inner loop can move anyone — return
    immediately instead of running the O(N²·OVERLAP_RESOLVE_ITERATIONS)
    pass.
-4. **[DONE]** Reduce `SEPARATION_STABILIZE_ITERATIONS` from 6 → 2.
-   The early-exits (1) above already terminate normal-density scenes
-   in 1–2 outer iters; capping the loop bounds the worst case in the
-   sealed-enclave regime where the unit positions never quite converge
-   to a fixed point.
-5. **[DONE — lightweight]** Suppress the 0.45 s timer-triggered replan
+4. **[reverted — caused visual teleport]** Reduce
+   `SEPARATION_STABILIZE_ITERATIONS` from 6 → 2. The early-exits (1)
+   above already terminate normal-density scenes in 1–2 outer iters;
+   capping the loop bounds the worst case in the sealed-enclave
+   regime where the unit positions never quite converge to a fixed
+   point. **Regression cause**: a single large `_static_push_max_per_call`
+   push (~22 px for our 11 px radius) lost the multi-iter smoothing
+   that 6 outer iters provided, surfacing as a visible jump on
+   obstacle edits.
+5. **[reverted — lightweight variant]** Suppress the 0.45 s timer-triggered replan
    when the planner can only canonicalize the goal back to within
    `unit.radius` of `unit.position`. Don't force `arrived` /
    `has_move_order=false` — `_move_unit` reaches arrival naturally
@@ -172,26 +207,22 @@ The post-seal peak hits within 10 % of the user's reported
 of the spike — locking in the "separation budget burn" diagnosis
 without depending on a teleport shortcut.
 
-### Post-fix (Approach items 1–5 landed)
+### Post-fix snapshot (REVERTED — kept here as a record of attempted approach)
 
 ```text
 LAB-007 sealed-blockade max_step_usec = 8871 µs at tick 89
   (pre-seal max 8871 µs, post-seal max 7413 µs,
    separation peak 6605 µs at tick 493)
-SMOKE_TEST_RESULT: FAIL - LAB-007 reproduces: ... still > 4 000 µs target
 ```
 
-Separation peak dropped **13 883 → 6 605 µs (−52 %)** with the user's
-exact operation timeline replayed. The remaining `max_step_usec` peak
-is dominated by the obstacle-placement transient at tick 89 (replan
-cost ~8.3 ms once `prewarm_static_context` invalidates the nav-map
-cache) — see Approach item (7). Steady-state post-seal max settled at
-~7.4 ms, well under the 16.7 ms frame budget but still above the
-aspirational 4 ms.
+Separation peak dropped 13 883 → 6 605 µs (−52 %) on the headless
+repro. The implementation was reverted same-day after in-editor
+playtest revealed visible unit teleport + a 5× regression in
+default-scene `avg_step_usec` (0.38 ms → 0.9+ ms). See "Rollback
+note" above.
 
-The smoke is currently kept out of the `rtslab/smoke` group because
-its threshold is the eventual target; rerun it manually with the
-command above to track progress while items (6)–(7) are designed.
+The smoke is kept out of `rtslab/smoke` because the issue is open;
+rerun manually to track progress on future attempts.
 
 ## Cross-refs
 
