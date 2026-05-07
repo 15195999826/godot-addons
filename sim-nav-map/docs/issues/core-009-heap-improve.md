@@ -24,8 +24,10 @@ on pop if already closed). Correctness is fine; constant factor is not.
 
 `docs/references/0ad-source/source/simulation2/helpers/LongPathfinder.h:138`
 uses a templated `PriorityQueueHeap<TileID, PathCost, PathCost>` that is
-a binary heap with index map (decrease-key supported). Insert and
-decrease-key are `O(log n)`.
+a binary heap backed by `std::vector`. Insert / pop are heap operations;
+`promote()` still scans the heap linearly to find the tile before
+re-heapifying that prefix. So 0 A.D. avoids sorted-array insert shifts, but
+does not use an index map.
 
 ## Proposed fix
 
@@ -35,9 +37,9 @@ Two acceptable shapes:
    Replace the sorted array with a true binary heap stored in a
    `PackedFloat32Array` or similar. `O(log n)` insert and pop. No API
    change.
-2. **Binary heap + index map** (matches 0 A.D., supports decrease-key).
-   Higher complexity but eliminates lazy duplicates. Probably overkill
-   unless a profile shows lazy duplicates dominate.
+2. **Binary heap + index map** (stronger than 0 A.D., supports real
+   decrease-key). Higher complexity but eliminates lazy duplicates.
+   Probably overkill unless a profile shows duplicates dominate.
 
 Default to (1). Promote to (2) only if measurement shows duplicates
 matter.
