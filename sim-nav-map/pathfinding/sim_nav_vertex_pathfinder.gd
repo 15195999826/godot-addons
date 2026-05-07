@@ -3,7 +3,11 @@ extends RefCounted
 
 
 const COORD_INT_SCALE: int = 10
-const CORNER_OUTSET_FACTOR: float = 2.0
+# Small outward delta on visibility-graph corners so segments tangent to the
+# inflated obstacle aren't classified as crossing it under FP rounding. Mirrors
+# 0 A.D. VertexPathfinder.cpp EDGE_EXPAND_DELTA (1/16 in fixed-point); 0.5 px
+# is its float-math equivalent at the lab's clearance scale.
+const EDGE_EXPAND_DELTA: float = 0.5
 const _MAX_PATH_LENGTH: float = 1.0e20
 
 var _nav_map: SimNavMap = null
@@ -105,10 +109,16 @@ func _compute_to_virtual_goal(
 			units.append(shape as SimNavObstructionShapeUnit)
 
 	for static_shape in statics:
-		var outset := clearance * CORNER_OUTSET_FACTOR
-		for corner in static_shape.get_corners():
-			var direction := (corner - static_shape.center).normalized()
-			vertices.append(corner + direction * outset)
+		# Expand OBB corners along the obstacle's own axes (u, v), not corner-to-center
+		# radials, so clearance is uniform regardless of aspect ratio.
+		var axes := static_shape.get_axes()
+		var su := axes[0]
+		var sv := axes[1]
+		var ehw := static_shape.width * 0.5 + clearance + EDGE_EXPAND_DELTA
+		var ehh := static_shape.height * 0.5 + clearance + EDGE_EXPAND_DELTA
+		for sx in [-1.0, 1.0]:
+			for sy in [-1.0, 1.0]:
+				vertices.append(static_shape.center + sx * ehw * su + sy * ehh * sv)
 
 	for unit_shape in units:
 		var radius := unit_shape.clearance + clearance
