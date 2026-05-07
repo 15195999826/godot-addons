@@ -11,7 +11,7 @@ const REPLAN_INTERVAL: float = 0.45
 const REPLAN_BUDGET_PER_TICK: int = 1
 const ARRIVE_EPSILON: float = 8.0
 const OVERLAP_RESOLVE_ITERATIONS: int = 4
-const SEPARATION_STABILIZE_ITERATIONS: int = 6
+const SEPARATION_STABILIZE_ITERATIONS: int = 2
 # 单次 _push_unit_out_of_static_component 位移上限(cell_size 倍数);限制单帧"瞬移"。
 const STATIC_PUSH_MAX_PER_CALL_CELLS: float = 1.5
 # 沿 inflated rect 边采样 candidate 的步长(cell_size 倍数);决定 push out 候选点密度。
@@ -19,6 +19,16 @@ const STATIC_EXIT_SAMPLE_STEP_CELLS: float = 0.5
 # _resolve_overlaps 单帧每个 unit 总位移上限(cell_size 倍数);限制 overlap 推动累积造成的视觉跳变。
 const OVERLAP_PUSH_MAX_PER_FRAME_CELLS: float = 1.0
 const SEPARATION_TOTAL_BUDGET_USEC: int = 16000
+# _resolve_separation outer iteration jitter / 2-cycle 检测阈值 (px)。
+# 单 outer iter 完成后:
+#   1. 若所有 unit 净位移都 < 此值,视为完全 jitter,直接退出。
+#   2. 若有 unit 净位移过阈但本轮终止位置与上上轮起始位置都 < 此值(意即本
+#      轮+上轮组合后回到原点),视为 2-cycle limit cycle,退出。
+# (LAB-007: sealed enclave 中 unit 被 push 出 1-2px 又被邻居挤回,helpers
+#  仍报告 changed=true 但物理上零净进展,burning 16 ms budget。)
+# 选 0.5 px: < 单次 overlap push 振幅 (~0.4-0.9 px), 也 < 单次 static push
+# (≥1.5 px), 不误杀正常 convergence; > sub-pixel jitter floor (0.0001)。
+const SEPARATION_ITER_JITTER_EPSILON_PX: float = 0.5
 const RECENT_PLAN_REPORT_LIMIT: int = 80
 const STUCK_SETTLE_TICKS: int = 30
 const STUCK_ACTIVE_ORDER_TICKS: int = 180
@@ -56,6 +66,7 @@ var last_replans_this_tick: int = 0
 var max_replans_per_tick: int = 0
 var total_replans: int = 0
 var last_step_profile: Dictionary = {}
+var _stuck_unreachable_unit_ids: Dictionary = {}
 var recent_plan_reports: Array[Dictionary] = []
 var _obstacle_seq: int = 0
 var _blocker_seq: int = 0
@@ -106,6 +117,7 @@ func setup_default() -> void:
 	_stalled_ticks_by_unit.clear()
 	_active_order_ticks_by_unit.clear()
 	_canonical_target_by_unit.clear()
+	_stuck_unreachable_unit_ids.clear()
 	_replan_queue.clear()
 	pathfinder.prewarm_static_context(obstacles)
 	set_group_target(current_target)
@@ -139,6 +151,7 @@ func set_units_target(unit_ids: Array[String], target: Vector2) -> void:
 		unit.path.clear()
 		unit.path_index = 0
 		_canonical_target_by_unit[unit.id] = false
+		_stuck_unreachable_unit_ids.erase(unit.id)
 		_reset_stuck_progress(unit)
 		_enqueue_replan(unit.id)
 
@@ -381,7 +394,24 @@ func _plan_unit(unit: RtsPathfindingLabUnit) -> void:
 		unit.path_target = resolved_target
 		_reset_stuck_progress(unit)
 	unit.set_path(planned_path)
-	unit.replan_timer = 0.0
+	# LAB-007 Fix #3 (lightweight): when the planner could only canonicalize
+	# the goal back near the unit's current position, the original target is
+	# unreachable under the current obstacle topology. Suppress the 0.45 s
+	# timer-triggered replan (each replan costs ~1.4 ms in this scenario and
+	# recomputes the same useless canonical goal). Do NOT force arrived /
+	# clear has_move_order — _move_unit reaches arrival naturally once the
+	# (typically 0–1 step) micro path drains, and forcing it early leaves
+	# overlap unresolved which paradoxically grows separation cost. The unit
+	# is parked in `_stuck_unreachable_unit_ids`; obstacle edits or new move
+	# commands resurrect it via _replan_all_mobile / set_units_target.
+	if (
+		bool(pathfinder.last_report.get("used_make_goal_reachable", false))
+		and unit.position.distance_to(resolved_target) <= unit.radius
+	):
+		unit.replan_timer = -1e9
+		_stuck_unreachable_unit_ids[unit.id] = true
+	else:
+		unit.replan_timer = 0.0
 	_record_plan_report({
 		"tick": tick_count,
 		"unit_id": unit.id,
@@ -429,6 +459,22 @@ func movement_debug_snapshot() -> Dictionary:
 
 
 func _replan_all_mobile() -> void:
+	# LAB-007 Fix #3: resurrect units previously parked as stuck-unreachable
+	# so they re-attempt routing now that the obstacle topology has changed.
+	# Only resurrect units whose original command target is still meaningfully
+	# distant from their current position — otherwise they were genuinely at
+	# their target and should stay arrived.
+	for unit_id in _stuck_unreachable_unit_ids.keys():
+		var stuck_unit := get_unit_by_id(unit_id)
+		if stuck_unit == null or not stuck_unit.mobile:
+			continue
+		if stuck_unit.position.distance_to(stuck_unit.target) <= ARRIVE_EPSILON:
+			continue
+		stuck_unit.arrived = false
+		stuck_unit.has_move_order = true
+		stuck_unit.path_target = stuck_unit.target
+		_reset_stuck_progress(stuck_unit)
+	_stuck_unreachable_unit_ids.clear()
 	for unit in get_mobile_units():
 		if not unit.has_move_order:
 			continue
@@ -639,6 +685,23 @@ func _finish_move_order(unit: RtsPathfindingLabUnit) -> void:
 
 
 func _resolve_overlaps(overlap_push_budgets: Dictionary) -> bool:
+	# All-exhausted short-circuit: if every mobile unit has spent its
+	# per-frame overlap-push budget, no pair-check inside the inner loops can
+	# move anyone. Skip the O(N²·OVERLAP_RESOLVE_ITERATIONS) pass.
+	# (LAB-007: post-seal frames burned 2 ms per outer separation iter on
+	# this no-op pair scan; with the short-circuit the second & third iters
+	# return immediately once budgets are exhausted.)
+	var any_unit_has_budget := false
+	for unit in units:
+		if not unit.mobile:
+			continue
+		var max_per_frame := _overlap_push_max_per_frame(unit)
+		var used := float(overlap_push_budgets.get(unit.id, 0.0))
+		if max_per_frame - used > 0.0001:
+			any_unit_has_budget = true
+			break
+	if not any_unit_has_budget:
+		return false
 	var any_changed := false
 	for _iteration in range(OVERLAP_RESOLVE_ITERATIONS):
 		var changed := false
@@ -727,24 +790,69 @@ func _resolve_separation(mobile_units: Array[RtsPathfindingLabUnit]) -> void:
 	for unit in mobile_units:
 		overlap_push_budgets[unit.id] = 0.0
 	var separation_start_usec := Time.get_ticks_usec()
-	for _iteration in range(SEPARATION_STABILIZE_ITERATIONS):
+	var start_prev: Dictionary = {}
+	var start_prev2: Dictionary = {}
+	var jitter_threshold_sq := SEPARATION_ITER_JITTER_EPSILON_PX * SEPARATION_ITER_JITTER_EPSILON_PX
+	for iteration in range(SEPARATION_STABILIZE_ITERATIONS):
+		var iter_start_positions: Dictionary = {}
+		for unit in mobile_units:
+			iter_start_positions[unit.id] = unit.position
 		var changed := _push_out_static_obstacles_for_units(
 			mobile_units,
 			inflated_rect_cache,
 			component_cache_by_radius,
 			static_exit_cache
 		)
-		changed = _resolve_overlaps(overlap_push_budgets) or changed
-		changed = _push_out_static_obstacles_for_units(
-			mobile_units,
-			inflated_rect_cache,
-			component_cache_by_radius,
-			static_exit_cache
-		) or changed
+		# Only re-run static-push after _resolve_overlaps if overlap actually
+		# moved someone — otherwise units are still in the same configuration
+		# the prior static-push left them, and the (expensive) candidate
+		# regeneration for `_push_unit_out_of_static_component` is wasted work.
+		# (LAB-007: this second static pass dominated iter cost — 1500 µs vs
+		# the 18 µs first pass — because overlap nudges had pushed units back
+		# into inflated rects each iter.)
+		var ov_changed := _resolve_overlaps(overlap_push_budgets)
+		changed = ov_changed or changed
+		if ov_changed:
+			changed = _push_out_static_obstacles_for_units(
+				mobile_units,
+				inflated_rect_cache,
+				component_cache_by_radius,
+				static_exit_cache
+			) or changed
 		if not changed:
 			return
+		# (1) Pure-jitter exit: if no unit moved further than ε from this iter's
+		#     start, helpers' fine-grained changed=true is sub-pixel jitter.
+		if not _any_unit_moved_beyond(mobile_units, iter_start_positions, jitter_threshold_sq):
+			return
+		# (2) 2-cycle exit: end-of-iter-K ≈ start-of-iter-K-1 means iter K-1+K
+		#     combined produced no net motion.
+		if iteration >= 1 and not _any_unit_moved_beyond(mobile_units, start_prev, jitter_threshold_sq):
+			return
+		# (3) 3-cycle exit: end-of-iter-K ≈ start-of-iter-K-2.
+		if iteration >= 2 and not _any_unit_moved_beyond(mobile_units, start_prev2, jitter_threshold_sq):
+			return
+		start_prev2 = start_prev
+		start_prev = iter_start_positions
 		if Time.get_ticks_usec() - separation_start_usec > SEPARATION_TOTAL_BUDGET_USEC:
 			return
+
+
+func _any_unit_moved_beyond(
+	mobile_units: Array[RtsPathfindingLabUnit],
+	reference_positions: Dictionary,
+	threshold_sq: float
+) -> bool:
+	for unit in mobile_units:
+		if not reference_positions.has(unit.id):
+			# A unit without a reference (first iter, units added mid-frame) is
+			# treated as "moved beyond" so the limit-cycle exit cannot fire on
+			# missing data.
+			return true
+		var ref_pos: Vector2 = reference_positions[unit.id]
+		if unit.position.distance_squared_to(ref_pos) > threshold_sq:
+			return true
+	return false
 
 
 func _push_out_static_obstacles_for_units(
