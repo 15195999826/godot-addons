@@ -1,10 +1,6 @@
 extends Node
 
 
-const LabObstacleScript := preload("res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_obstacle.gd")
-const LabUnitScript := preload("res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_unit.gd")
-const LabWorldScript := preload("res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_world.gd")
-
 var _failures: Array[String] = []
 
 
@@ -24,12 +20,12 @@ func _ready() -> void:
 
 
 func _test_movement_line_blocks_static_crossing() -> void:
-	var world: Variant = LabWorldScript.new()
-	var unit: Variant = world.get_unit("blue_0")
+	var world := ZeroAdRtsLabWorld.new()
+	var unit := world.get_unit("blue_0")
 	if unit == null:
 		_failures.append("static-crossing: missing blue_0")
 		return
-	var line_result: SimNavMovementLineResult = world.pathfinder.validate_movement_line(
+	var line_result := world.pathfinder.validate_movement_line(
 		unit,
 		Vector2(300.0, 210.0),
 		Vector2(420.0, 210.0),
@@ -40,15 +36,15 @@ func _test_movement_line_blocks_static_crossing() -> void:
 
 
 func _test_unit_line_blockage_requests_short_path() -> void:
-	var world: Variant = LabWorldScript.new()
+	var world := ZeroAdRtsLabWorld.new()
 	world.obstacles = []
 	world.units = [
-		LabUnitScript.new("blue_0", "blue", Vector2(40.0, 80.0), 10.0, 80.0, true),
-		LabUnitScript.new("red_blocker", "red", Vector2(120.0, 80.0), 12.0, 0.0, false),
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(40.0, 80.0), 10.0, 80.0, true),
+		ZeroAdRtsLabUnit.new("red_blocker", "red", Vector2(120.0, 80.0), 12.0, 0.0, false),
 	]
 	world.pathfinder.rebuild_context(world.obstacles)
 	world.issue_move("blue_0", Vector2(200.0, 80.0))
-	var pre_line: SimNavMovementLineResult = world.pathfinder.validate_unit_line(
+	var pre_line := world.pathfinder.validate_unit_line(
 		world.get_unit("blue_0"),
 		Vector2(40.0, 80.0),
 		Vector2(200.0, 80.0),
@@ -60,7 +56,7 @@ func _test_unit_line_blockage_requests_short_path() -> void:
 		world.step(0.1)
 		if world.motion.short_path_requests > 0:
 			break
-	var unit: Variant = world.get_unit("blue_0")
+	var unit := world.get_unit("blue_0")
 	if unit == null:
 		_failures.append("unit-line: missing blue_0")
 		return
@@ -76,13 +72,13 @@ func _test_unit_line_blockage_requests_short_path() -> void:
 
 
 func _test_push_adjust_does_not_cross_static_wall() -> void:
-	var world: Variant = LabWorldScript.new()
+	var world := ZeroAdRtsLabWorld.new()
 	world.obstacles = [
-		LabObstacleScript.new("thin_wall", Vector2(96.0, 80.0), Vector2(12.0, 120.0)),
+		ZeroAdRtsLabObstacle.new("thin_wall", Vector2(96.0, 80.0), Vector2(12.0, 120.0)),
 	]
 	world.units = [
-		LabUnitScript.new("blue_0", "blue", Vector2(78.0, 80.0), 10.0, 0.0, true),
-		LabUnitScript.new("blue_1", "blue", Vector2(78.5, 80.0), 10.0, 0.0, true),
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(78.0, 80.0), 10.0, 0.0, true),
+		ZeroAdRtsLabUnit.new("blue_1", "blue", Vector2(78.5, 80.0), 10.0, 0.0, true),
 	]
 	world.pathfinder.rebuild_context(world.obstacles)
 	for unit in world.units:

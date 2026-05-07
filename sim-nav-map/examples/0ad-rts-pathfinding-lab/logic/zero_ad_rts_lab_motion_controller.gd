@@ -19,19 +19,19 @@ var applied_pushes: int = 0
 
 
 func issue_move_order(
-	unit: Variant,
+	unit: ZeroAdRtsLabUnit,
 	goal: Vector2,
-	pathfinder: Variant
+	pathfinder: ZeroAdRtsLabPathfinder
 ) -> void:
 	unit.begin_move_order(goal)
 	_request_long_path(unit, goal, pathfinder)
 
 
 func step_unit(
-	unit: Variant,
+	unit: ZeroAdRtsLabUnit,
 	delta: float,
-	pathfinder: Variant,
-	units: Array
+	pathfinder: ZeroAdRtsLabPathfinder,
+	units: Array[ZeroAdRtsLabUnit]
 ) -> void:
 	if not unit.mobile or not unit.has_move_order:
 		return
@@ -52,7 +52,7 @@ func step_unit(
 	var candidate: Vector2 = waypoint
 	if to_waypoint.length() > max_step:
 		candidate = unit.position + to_waypoint.normalized() * max_step
-	var line_result: SimNavMovementLineResult = pathfinder.validate_movement_line(unit, unit.position, candidate, units)
+	var line_result := pathfinder.validate_movement_line(unit, unit.position, candidate, units)
 	if line_result.is_success():
 		unit.position = candidate
 		unit.remember_position()
@@ -67,8 +67,8 @@ func step_unit(
 
 
 func apply_push_adjust(
-	units: Array,
-	pathfinder: Variant
+	units: Array[ZeroAdRtsLabUnit],
+	pathfinder: ZeroAdRtsLabPathfinder
 ) -> void:
 	var pushes: Dictionary = {}
 	for unit in units:
@@ -83,7 +83,7 @@ func apply_push_adjust(
 		if push_vec.length() > PUSH_MAX_PER_FRAME:
 			push_vec = push_vec.normalized() * PUSH_MAX_PER_FRAME
 		var candidate: Vector2 = unit.position + push_vec
-		var line_result: SimNavMovementLineResult = pathfinder.validate_movement_line(unit, unit.position, candidate, units)
+		var line_result := pathfinder.validate_movement_line(unit, unit.position, candidate, units)
 		if line_result.is_success():
 			unit.position = candidate
 			unit.remember_position()
@@ -94,12 +94,12 @@ func apply_push_adjust(
 
 
 func _request_long_path(
-	unit: Variant,
+	unit: ZeroAdRtsLabUnit,
 	goal: Vector2,
-	pathfinder: Variant
+	pathfinder: ZeroAdRtsLabPathfinder
 ) -> void:
 	long_path_requests += 1
-	var result: SimNavLongPathResult = pathfinder.compute_long_path(unit, goal)
+	var result := pathfinder.compute_long_path(unit, goal)
 	if result.is_success():
 		unit.long_path = result.path
 		unit.short_path = SimNavWaypointPath.new()
@@ -110,29 +110,29 @@ func _request_long_path(
 
 
 func _request_short_path(
-	unit: Variant,
+	unit: ZeroAdRtsLabUnit,
 	goal: SimNavPathGoal,
-	pathfinder: Variant,
-	units: Array,
+	pathfinder: ZeroAdRtsLabPathfinder,
+	units: Array[ZeroAdRtsLabUnit],
 	search_range: float = SHORT_PATH_RANGE
 ) -> void:
 	short_path_requests += 1
-	var result: SimNavShortPathResult = pathfinder.compute_short_path(unit, goal, units, search_range)
+	var result := pathfinder.compute_short_path(unit, goal, units, search_range)
 	if result.is_success():
 		unit.short_path = result.path
 
 
 func _maybe_request_short_path_for_long_segment(
-	unit: Variant,
-	pathfinder: Variant,
-	units: Array
+	unit: ZeroAdRtsLabUnit,
+	pathfinder: ZeroAdRtsLabPathfinder,
+	units: Array[ZeroAdRtsLabUnit]
 ) -> void:
 	if unit.short_path != null and not unit.short_path.is_empty():
 		return
 	if unit.long_path == null or unit.long_path.is_empty():
 		return
 	var next_long: Vector2 = unit.long_path.back()
-	var unit_line: SimNavMovementLineResult = pathfinder.validate_unit_line(unit, unit.position, next_long, units)
+	var unit_line := pathfinder.validate_unit_line(unit, unit.position, next_long, units)
 	if unit_line.is_success():
 		return
 	var goal := SimNavPathGoal.circle(next_long, LONG_SEGMENT_LOOKAHEAD_RADIUS)
@@ -140,9 +140,9 @@ func _maybe_request_short_path_for_long_segment(
 
 
 func _handle_blocked_move(
-	unit: Variant,
-	pathfinder: Variant,
-	units: Array
+	unit: ZeroAdRtsLabUnit,
+	pathfinder: ZeroAdRtsLabPathfinder,
+	units: Array[ZeroAdRtsLabUnit]
 ) -> void:
 	blocked_moves += 1
 	unit.was_obstructed = true
@@ -157,8 +157,8 @@ func _handle_blocked_move(
 
 
 func _accumulate_pair_push(
-	a: Variant,
-	b: Variant,
+	a: ZeroAdRtsLabUnit,
+	b: ZeroAdRtsLabUnit,
 	pushes: Dictionary
 ) -> void:
 	if not a.blocks_pathfinding or not b.blocks_pathfinding:
