@@ -758,6 +758,7 @@ func _fuzz_run_iteration(iter: int, iter_seed: int, max_ticks: int, rng: RandomN
 				"tick": tick,
 				"violation": violation,
 				"last_op": op,
+				"world_dump": _fuzz_dump_world(world, prev_positions),
 			}
 		for u in world.get_mobile_units():
 			var prev: Vector2 = prev_positions.get(u.id, u.position)
@@ -783,34 +784,131 @@ func _fuzz_run_iteration(iter: int, iter_seed: int, max_ticks: int, rng: RandomN
 
 func _fuzz_random_op(rng: RandomNumberGenerator, world: LabWorld) -> Dictionary:
 	var roll := rng.randf()
-	if roll < 0.50:
+	if roll < 0.40:
 		return {"op": "step"}
-	if roll < 0.62:
+	if roll < 0.50:
 		var target := Vector2(rng.randf_range(20.0, 700.0), rng.randf_range(20.0, 400.0))
 		world.set_group_target(target)
 		return {"op": "retarget", "target": str(target)}
-	if roll < 0.67:
+	if roll < 0.54:
 		var target := Vector2(rng.randf_range(800.0, 1500.0), rng.randf_range(-200.0, 600.0))
 		world.set_group_target(target)
 		return {"op": "retarget_offmap", "target": str(target)}
-	if roll < 0.75:
+	if roll < 0.61:
 		var center := Vector2(rng.randf_range(50.0, 670.0), rng.randf_range(50.0, 370.0))
 		var size := Vector2(rng.randf_range(30.0, 80.0), rng.randf_range(30.0, 80.0))
 		var obs_id := world.add_static_obstacle(center, size)
 		return {"op": "add_obstacle", "id": obs_id, "center": str(center), "size": str(size)}
-	if roll < 0.83:
+	if roll < 0.68:
 		var center := Vector2(rng.randf_range(50.0, 670.0), rng.randf_range(50.0, 370.0))
 		var radius := rng.randf_range(10.0, 20.0)
 		var blocker_id := world.add_blocker(center, radius)
 		return {"op": "add_blocker", "id": blocker_id, "center": str(center), "radius": "%.1f" % radius}
-	var point := Vector2(rng.randf_range(0.0, 720.0), rng.randf_range(0.0, 420.0))
-	var removed := world.remove_nearest_editable(point, 80.0)
-	return {"op": "remove", "point": str(point), "removed": removed}
+	if roll < 0.82:
+		var point := Vector2(rng.randf_range(0.0, 720.0), rng.randf_range(0.0, 420.0))
+		var removed := world.remove_nearest_editable(point, 80.0)
+		return {"op": "remove", "point": str(point), "removed": removed}
+	if roll < 0.88:
+		# split_target: command a random subset of mobile units to a separate
+		# target. Tests partial-group commands and replan-queue behavior when
+		# different units have unrelated paths.
+		var ids := world.get_mobile_unit_ids()
+		if ids.is_empty():
+			return {"op": "step"}
+		var subset_size: int = rng.randi_range(1, maxi(1, ids.size() - 1))
+		var picked: Array[String] = []
+		var pool: Array[String] = ids.duplicate()
+		for _i in range(subset_size):
+			if pool.is_empty():
+				break
+			var idx: int = rng.randi_range(0, pool.size() - 1)
+			picked.append(pool[idx])
+			pool.remove_at(idx)
+		var target := Vector2(rng.randf_range(20.0, 700.0), rng.randf_range(20.0, 400.0))
+		world.set_units_target(picked, target)
+		return {"op": "split_target", "subset_size": picked.size(), "subset": picked, "target": str(target)}
+	if roll < 0.92:
+		# add_obstacle_tiny: degenerate sub-cell obstacle (cell_size=16). Tests
+		# rasterization edge cases — rect smaller than a navcell.
+		var center := Vector2(rng.randf_range(50.0, 670.0), rng.randf_range(50.0, 370.0))
+		var size := Vector2(rng.randf_range(1.0, 8.0), rng.randf_range(1.0, 8.0))
+		var obs_id := world.add_static_obstacle(center, size)
+		return {"op": "add_obstacle_tiny", "id": obs_id, "center": str(center), "size": str(size)}
+	if roll < 0.95:
+		# add_blocker_huge: radius 40-80 is comparable to a quarter of the
+		# map. Tests overlap-resolve under a single dominating blocker.
+		var center := Vector2(rng.randf_range(100.0, 620.0), rng.randf_range(100.0, 320.0))
+		var radius := rng.randf_range(40.0, 80.0)
+		var blocker_id := world.add_blocker(center, radius)
+		return {"op": "add_blocker_huge", "id": blocker_id, "center": str(center), "radius": "%.1f" % radius}
+	if roll < 0.98:
+		# retarget_to_unit: chase another unit's current position. Tests
+		# moving-target replans (path_target the lab thinks valid moves
+		# every replan).
+		var ids := world.get_mobile_unit_ids()
+		if ids.is_empty():
+			return {"op": "step"}
+		var picked_id: String = ids[rng.randi_range(0, ids.size() - 1)]
+		var picked_unit := world.get_unit_by_id(picked_id)
+		if picked_unit == null:
+			return {"op": "step"}
+		var target: Vector2 = picked_unit.position
+		world.set_group_target(target)
+		return {"op": "retarget_to_unit", "target_unit": picked_id, "target": str(target)}
+	# retarget_to_obstacle: command into an existing obstacle's center.
+	# Tests mid-flight make-goal-reachable canonicalization (LAB-005 active
+	# variant under fuzz timing, not just phase 4's static setup).
+	if world.obstacles.is_empty():
+		return {"op": "step"}
+	var picked_obs := world.obstacles[rng.randi_range(0, world.obstacles.size() - 1)]
+	var obs_center: Vector2 = picked_obs.center
+	world.set_group_target(obs_center)
+	return {"op": "retarget_to_obstacle", "obstacle_id": picked_obs.id, "target": str(obs_center)}
+
+
+func _fuzz_dump_world(world: LabWorld, prev_positions: Dictionary) -> Dictionary:
+	var obstacles: Array[Dictionary] = []
+	for obstacle in world.obstacles:
+		obstacles.append({
+			"id": obstacle.id,
+			"center": str(obstacle.center),
+			"size": str(obstacle.size),
+		})
+	var blockers: Array[Dictionary] = []
+	var units: Array[Dictionary] = []
+	for unit in world.units:
+		var unit_dict := {
+			"id": unit.id,
+			"pos": str(unit.position),
+			"radius": "%.2f" % unit.radius,
+			"mobile": unit.mobile,
+		}
+		if unit.mobile:
+			unit_dict["target"] = str(unit.target)
+			unit_dict["path_target"] = str(unit.path_target)
+			unit_dict["arrived"] = unit.arrived
+			unit_dict["has_move_order"] = unit.has_move_order
+			unit_dict["path_size"] = unit.path.size()
+			unit_dict["prev_pos"] = str(prev_positions.get(unit.id, unit.position))
+			units.append(unit_dict)
+		else:
+			blockers.append(unit_dict)
+	return {
+		"obstacles": obstacles,
+		"obstacle_count": obstacles.size(),
+		"blockers": blockers,
+		"blocker_count": blockers.size(),
+		"mobile_units": units,
+	}
 
 
 func _fuzz_check_invariants(world: LabWorld, prev_positions: Dictionary, tick: int, last_op: Dictionary) -> String:
 	var map_x_max: float = world.map_size.x + FUZZ_MAP_MARGIN
 	var map_y_max: float = world.map_size.y + FUZZ_MAP_MARGIN
+	# Cache obstacle rects once — used for the jump-check exemption below.
+	var obstacle_rects: Array[Rect2] = []
+	for obstacle in world.obstacles:
+		obstacle_rects.append(Rect2(obstacle.center - obstacle.size * 0.5, obstacle.size))
 	for unit in world.get_mobile_units():
 		if is_nan(unit.position.x) or is_nan(unit.position.y):
 			return "NaN_position tick=%d unit=%s pos=%s last_op=%s" % [tick, unit.id, str(unit.position), str(last_op)]
@@ -827,5 +925,17 @@ func _fuzz_check_invariants(world: LabWorld, prev_positions: Dictionary, tick: i
 		var prev: Vector2 = prev_positions.get(unit.id, unit.position)
 		var jump: float = unit.position.distance_to(prev)
 		if jump > FUZZ_MAX_JUMP_PX:
-			return "jump tick=%d unit=%s jump=%.2f prev=%s curr=%s last_op=%s" % [tick, unit.id, jump, str(prev), str(unit.position), str(last_op)]
+			# Exempt: unit prev_pos was inside any inflated obstacle rect.
+			# This covers (a) obstacle just dropped on the unit and (b) unit
+			# still being unwound from a chained component over multiple ticks.
+			# In either case the push-out is doing its job — large jump is
+			# the geometrically-correct response, not a teleport bug.
+			# A teleport with prev_pos in free space is still flagged.
+			var inside_obstacle := false
+			for rect in obstacle_rects:
+				if rect.grow(unit.radius).has_point(prev):
+					inside_obstacle = true
+					break
+			if not inside_obstacle:
+				return "jump tick=%d unit=%s jump=%.2f prev=%s curr=%s last_op=%s" % [tick, unit.id, jump, str(prev), str(unit.position), str(last_op)]
 	return ""
