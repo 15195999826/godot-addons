@@ -1,10 +1,21 @@
 # CORE-002: LongPathfinder LOS refinement sampling can miss narrow gaps
 
-- Status: open
+- Status: resolved
 - Severity: P0
 - Layer: core
 - Source: claude-audit-2026-05-07
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `7111d3a`
+- smoke: `addons/sim-nav-map/tests/repro/repro_core_002_long_path_los_sampling.tscn` (registered under `simnav/smoke` group)
+- 0 A.D. files checked: `source/simulation2/helpers/Pathfinding.cpp::CheckLineMovement` (per-cell traversal model)
+- Fix: replaced uniform-step sampling at `navcell*0.5` in `_segment_passable_clear` with an Amanatides-Woo voxel traversal that visits every navcell the segment crosses. Cannot skip a cell regardless of the segment's geometry, so the bug class is geometrically eliminated rather than tuned away.
+- Adversarial smoke: the issue's text noted "Toy diagonal-wall scenarios... do not trigger the bug — sampling at navcell_size * 0.5 is robust enough that 2-3 sample points always land inside the blocked cell". An analytically-constructed segment `(32, 47) → (52, 49)` on a 16×16 grid with cell `(5, 5)` blocked DOES trigger it: `steps = ceil(20.10 / 4) = 6`, samples land at `t ∈ {0, 1/6, 2/6, 3/6, 4/6, 5/6, 1}` and the segment is inside cell `(5, 5)` only for `t ∈ [0.40, 0.50]` (arc ≈ 2 px) — squarely between two adjacent samples. The smoke calls `_segment_passable_clear` directly via `Object.call` and asserts the result is `false`. Pre-fix returns `true` (FAIL), post-fix returns `false` (PASS).
+- baseline impact: `BASELINE.md` "Known correctness limits": removed CORE-002 row. Refined waypoint paths now provably never cross blocked cells.
+- public-api.md: no change. `_segment_passable_clear` remains an internal helper.
 
 ## Symptoms
 

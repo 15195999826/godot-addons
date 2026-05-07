@@ -283,13 +283,61 @@ func _segment_passable_clear(
 	pass_mask: int,
 	excluded_regions: Array[Dictionary]
 ) -> bool:
-	var distance := a.distance_to(b)
-	var step_size := maxf(_nav_map.navcell_size * 0.5, 0.001)
-	var steps := maxi(1, int(ceil(distance / step_size)))
-	for i in range(steps + 1):
-		var point := a.lerp(b, float(i) / float(steps))
-		var coord := _nav_map.world_to_navcell(point)
-		if not _is_passable_with_exclusions(coord, pass_mask, excluded_regions):
+	# Visit every navcell the segment crosses with an Amanatides-Woo voxel
+	# traversal instead of the prior uniform sampling at navcell*0.5. Uniform
+	# sampling can skip a cell whose crossing arc is shorter than the sample
+	# step (mirrors 0 A.D. CheckLineMovement's per-cell walk in
+	# Pathfinding.cpp); this version cannot.
+	var origin := _nav_map.origin
+	var cell_size := _nav_map.navcell_size
+	var i0 := int(floor((a.x - origin.x) / cell_size))
+	var j0 := int(floor((a.y - origin.y) / cell_size))
+	var i1 := int(floor((b.x - origin.x) / cell_size))
+	var j1 := int(floor((b.y - origin.y) / cell_size))
+	if not _is_passable_with_exclusions(Vector2i(i0, j0), pass_mask, excluded_regions):
+		return false
+	if i0 == i1 and j0 == j1:
+		return true
+	var dx := b.x - a.x
+	var dy := b.y - a.y
+	var step_i := 0
+	var step_j := 0
+	var t_max_x := INF
+	var t_max_y := INF
+	var delta_t_x := INF
+	var delta_t_y := INF
+	if dx > 0.0:
+		step_i = 1
+		t_max_x = (origin.x + float(i0 + 1) * cell_size - a.x) / dx
+		delta_t_x = cell_size / dx
+	elif dx < 0.0:
+		step_i = -1
+		t_max_x = (origin.x + float(i0) * cell_size - a.x) / dx
+		delta_t_x = -cell_size / dx
+	if dy > 0.0:
+		step_j = 1
+		t_max_y = (origin.y + float(j0 + 1) * cell_size - a.y) / dy
+		delta_t_y = cell_size / dy
+	elif dy < 0.0:
+		step_j = -1
+		t_max_y = (origin.y + float(j0) * cell_size - a.y) / dy
+		delta_t_y = -cell_size / dy
+	var i := i0
+	var j := j0
+	# Each iteration advances one cell along the segment; the loop ends after
+	# at most |i1 - i0| + |j1 - j0| steps. Safety bound caps runaway loops in
+	# pathological FP cases (segment length effectively zero with non-equal
+	# endpoint cells).
+	var max_steps := absi(i1 - i0) + absi(j1 - j0) + 4
+	while (i != i1 or j != j1) and max_steps > 0:
+		max_steps -= 1
+		if t_max_x < t_max_y:
+			i += step_i
+			t_max_x += delta_t_x
+		else:
+			j += step_j
+			t_max_y += delta_t_y
+		if not _is_passable_with_exclusions(Vector2i(i, j), pass_mask, excluded_regions):
 			return false
 	return true
 
