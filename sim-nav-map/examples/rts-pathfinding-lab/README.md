@@ -38,8 +38,9 @@ move orders replan periodically; idle units can be pushed and then settle at
 their displaced position instead of trying to path back to a stale target.
 
 Unreachable point commands are canonicalized to the nearest reachable navcell
-reported by `sim-nav-map`, and the lab syncs the unit target to that reachable
-goal so units can stop cleanly at building edges.
+reported by `sim-nav-map`. The lab keeps the user command target intact and
+stores the canonicalized stop point as the unit's path target, so UI/debug logs
+can distinguish what the user clicked from where the unit can actually stop.
 
 ## Current Behavior
 
@@ -85,9 +86,9 @@ Controls:
   Godot output. Use this after a slow frame or suspicious pathing result.
 
 The exported log includes current metrics, perf counters, selected unit ids,
-obstacles, unit positions/targets/paths/recent traces, the latest pathfinder
-report, world step phase timings, movement debug counters, recent per-unit plan
-reports, and recent lab actions/slow-frame/position-jump events. Slow-frame
+obstacles, unit positions/command targets/path targets/paths/recent traces, the
+latest pathfinder report, world step phase timings, movement debug counters,
+recent per-unit plan reports, and recent lab actions/slow-frame/position-jump events. Slow-frame
 events are recorded from 20ms so exported logs capture moderate spikes, not only
 catastrophic frames.
 
