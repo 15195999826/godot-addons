@@ -24,6 +24,8 @@ func _run() -> void:
 	_test_circle_goal_uses_alternate_boundary_candidate()
 	_test_avoid_moving_units_false_allows_direct_path()
 	_test_group_filter_allows_direct_path()
+	_test_custom_filter_ignores_tag()
+	_test_short_result_out_of_range_metadata()
 
 
 func _test_static_obb_corner_path() -> void:
@@ -139,6 +141,35 @@ func _test_group_filter_allows_direct_path() -> void:
 	_assert_equal(1, path.size(), "same control group should be filtered from dynamic blockers")
 
 
+func _test_custom_filter_ignores_tag() -> void:
+	var nav_map := _base_map()
+	var blocker := SimNavObstructionShapeUnit.new()
+	blocker.entity_id = "ignored_blocker"
+	blocker.center = Vector2(50.0, 50.0)
+	blocker.clearance = 12.0
+	blocker.flags = SimNavObstructionFlags.BLOCK_MOVEMENT
+	var blocker_tag := nav_map.add_dynamic_obstruction(blocker)
+
+	var req := _request(Vector2(10.0, 50.0), Vector2(90.0, 50.0))
+	var filter := SimNavObstructionFilter.new()
+	filter.ignored_tag = blocker_tag
+	req.obstruction_filter = filter
+	var result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(req)
+	_assert_equal(1, result.path.size(), "custom ignored tag filter should allow direct short path")
+	_assert_true(result.is_success(), "custom ignored tag filter should produce successful short result")
+	_assert_equal(blocker_tag, result.obstruction_filter.ignored_tag, "short result should snapshot filter metadata")
+
+
+func _test_short_result_out_of_range_metadata() -> void:
+	var nav_map := _base_map()
+	var req := _request(Vector2(10.0, 50.0), Vector2(90.0, 50.0))
+	req.range_px = 10.0
+	var result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(req)
+	_assert_equal(0, result.path.size(), "out-of-range short result should not expose a path")
+	_assert_equal_str(SimNavShortPathResult.STATUS_OUT_OF_RANGE, result.status, "out-of-range short result should expose status")
+	_assert_equal_str(SimNavShortPathResult.FAILURE_RANGE_EXCEEDED, result.failure_reason, "out-of-range short result should expose reason")
+
+
 func _base_map() -> SimNavMap:
 	var nav_map := SimNavMap.new(16, 16, 8.0, Vector2.ZERO, 4)
 	var ground := SimNavPassabilityClassConfig.new()
@@ -194,6 +225,11 @@ func _assert_false(value: bool, message: String) -> void:
 func _assert_equal(expected: int, actual: int, message: String) -> void:
 	if expected != actual:
 		_failures.append("%s (expected=%d actual=%d)" % [message, expected, actual])
+
+
+func _assert_equal_str(expected: String, actual: String, message: String) -> void:
+	if expected != actual:
+		_failures.append("%s (expected=%s actual=%s)" % [message, expected, actual])
 
 
 func _assert_equal_vec(expected: Vector2, actual: Vector2, message: String) -> void:

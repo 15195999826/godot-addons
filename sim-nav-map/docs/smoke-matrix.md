@@ -7,8 +7,8 @@ stabilization work.
 
 | Group | Manifest | Responsibility |
 |---|---|---|
-| `simnav/smoke` | `addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, cache, and request queue. |
-| `rtslab/smoke` | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: lab path planning, movement-loop integration, metrics contract, and scene load. |
+| `simnav/smoke` | `addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, line validation, cache, request queue, and diagnostics exports. |
+| `rtslab/smoke` | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: lab path planning, metadata consumption, movement-loop integration, metrics contract, and scene load. |
 
 Run both with:
 
@@ -153,6 +153,61 @@ diagnostics, formation, push/yield, stuck/deadlock, retry cadence, or gameplay
 movement policy. `rts-pathfinding-lab` remains an adapter consumer and playable
 regression surface.
 
+## Feature 6 Filtered Short Query / Line Validation Contract
+
+Feature 6 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_vertex_pathfinder.tscn` in
+  `simnav/smoke`: verifies custom obstruction filter snapshots, ignored-tag
+  filtering, range-limited short result status, and path-only compatibility.
+- `addons/sim-nav-map/tests/smoke_sim_nav_line_validation.tscn` in
+  `simnav/smoke`: verifies filtered range queries, movement-line passability
+  blocking, static obstruction blocking, ignored-tag filtering, unit-only line
+  validation, and control-group filtering.
+- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
+  `simnav/smoke`: verifies constructor/default contracts for filter, short
+  result, and line result DTOs.
+- `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_core_primitive_adapter.tscn`
+  in `rtslab/smoke`: verifies the lab adapter consumes short-result,
+  movement-line, and unit-line metadata without running line validation from the
+  playable movement hot path or modifying lab movement policy.
+
+Feature 6 does not add retry cadence, push/yield, stuck/deadlock, formation,
+arrival, steering, or lab `_move_unit()` / `_resolve_separation()` changes.
+
+## Feature 7 Request Queue Contract
+
+Feature 7 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_path_request_queue.tscn` in
+  `simnav/smoke`: verifies monotonic tickets, FIFO budget processing,
+  cancellation, stale result removal, queued long and short metadata DTOs,
+  worker batch collection, in-flight cancellation, cloned filters, and queue
+  diagnostics.
+- `addons/sim-nav-map/tests/smoke_sim_nav_public_api_contract.tscn` in
+  `simnav/smoke`: verifies queue path-only compatibility and cloned public
+  request data.
+
+Feature 7 queue budget is an explicit per-call compute cap. It is not a lab
+replan cadence, movement controller, or unit command policy.
+
+## Feature 8 Diagnostics / Export Contract
+
+Feature 8 is covered by:
+
+- `addons/sim-nav-map/tests/smoke_sim_nav_diagnostics_exports.tscn` in
+  `simnav/smoke`: verifies map dirtiness diagnostics, obstruction counts,
+  passability-scoped connectivity export shape, facade diagnostic aggregation,
+  and a scale/perf scenario that records elapsed time without fragile timing
+  thresholds.
+- `addons/sim-nav-map/tests/smoke_sim_nav_path_request_queue.tscn` in
+  `simnav/smoke`: verifies queue diagnostic fields for pending/result/cancelled
+  stale/worker state.
+
+Feature 8 correctness smoke checks stable diagnostic shape and metadata. Any
+future benchmark-only scene must document how to run and interpret it separately
+from the required `simnav/smoke` gate.
+
 ## Discovery Contract
 
 `tools/run_tests.ps1` discovers sim-nav-map manifests from:
@@ -188,8 +243,11 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 - jump-point cache invalidation
 - long pathfinder
 - vertex pathfinder
+- filtered obstruction queries and line validation
 - path request queue
 - queued request cloning
+- queue diagnostics
+- map dirtiness diagnostics and connectivity exports
 
 `rtslab/smoke` covers:
 
@@ -199,6 +257,7 @@ to `simnav/smoke`. New lab behavior smoke scenes belong under
 - the lab terrain preset adapter contract
 - the lab small/large clearance adapter contract
 - the lab long-path result metadata adapter contract
+- the lab core primitive metadata adapter contract
 - the real lab scene loading path
 
 ## Legacy RTS Fixture Boundary

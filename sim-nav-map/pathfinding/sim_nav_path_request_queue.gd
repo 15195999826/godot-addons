@@ -15,6 +15,14 @@ var _results: Dictionary = {}
 var _cancelled: Dictionary = {}
 var _in_worker: Dictionary = {}
 var _worker_thread: Thread = null
+var _processed_count: int = 0
+var _cancelled_count: int = 0
+var _stale_result_count: int = 0
+var _worker_batch_count: int = 0
+var _worker_collected_count: int = 0
+var _last_batch_size: int = 0
+var _last_processed_tickets: Array[int] = []
+var _last_collected_tickets: Array[int] = []
 
 
 func _init(facade: SimNavPathfinderFacade = null, vertex_pathfinder: SimNavVertexPathfinder = null) -> void:
@@ -47,7 +55,7 @@ func enqueue_short_path(request: SimNavShortPathRequest) -> int:
 	_pending.append({
 		"ticket": ticket,
 		"kind": RequestKind.SHORT,
-		"request": _clone_short_request(request),
+		"request": request.clone(),
 	})
 	return ticket
 
@@ -64,8 +72,11 @@ func cancel(ticket_id: int) -> bool:
 			removed = true
 	if _results.erase(ticket_id):
 		removed = true
+		_stale_result_count += 1
 	if _in_worker.has(ticket_id):
 		removed = true
+	if removed:
+		_cancelled_count += 1
 	return removed
 
 
@@ -73,6 +84,7 @@ func process_budget(max_requests: int) -> int:
 	if max_requests <= 0:
 		return 0
 	var processed := 0
+	_last_processed_tickets.clear()
 	while processed < max_requests and not _pending.is_empty():
 		var request: Dictionary = _pending[0]
 		_pending.remove_at(0)
@@ -81,8 +93,11 @@ func process_budget(max_requests: int) -> int:
 			continue
 		var result = _compute_request(request)
 		if _cancelled.has(ticket_id):
+			_stale_result_count += 1
 			continue
 		_results[ticket_id] = result
+		_processed_count += 1
+		_last_processed_tickets.append(ticket_id)
 		processed += 1
 	return processed
 
@@ -101,6 +116,8 @@ func start_worker(max_requests: int = 0) -> int:
 			_pending.insert(0, batch[i])
 		push_error("[SimNavPathRequestQueue] failed to start worker thread: %d" % err)
 		return 0
+	_worker_batch_count += 1
+	_last_batch_size = batch.size()
 	return batch.size()
 
 
@@ -116,13 +133,17 @@ func collect_worker_results(block: bool = false) -> int:
 	var worker_results: Array = _worker_thread.wait_to_finish()
 	_worker_thread = null
 	var collected := 0
+	_last_collected_tickets.clear()
 	for result in worker_results:
 		var result_dict := result as Dictionary
 		var ticket_id := int(result_dict["ticket"])
 		_in_worker.erase(ticket_id)
 		if _cancelled.has(ticket_id):
+			_stale_result_count += 1
 			continue
 		_results[ticket_id] = result_dict["result"]
+		_worker_collected_count += 1
+		_last_collected_tickets.append(ticket_id)
 		collected += 1
 	return collected
 
@@ -138,6 +159,8 @@ func take_result(ticket_id: int) -> SimNavWaypointPath:
 	_results.erase(ticket_id)
 	if stored_result is SimNavLongPathResult:
 		return (stored_result as SimNavLongPathResult).path
+	if stored_result is SimNavShortPathResult:
+		return (stored_result as SimNavShortPathResult).path
 	return stored_result as SimNavWaypointPath
 
 
@@ -151,6 +174,16 @@ func take_long_path_result(ticket_id: int) -> SimNavLongPathResult:
 	return null
 
 
+func take_short_path_result(ticket_id: int) -> SimNavShortPathResult:
+	if not _results.has(ticket_id):
+		return null
+	var stored_result = _results[ticket_id]
+	_results.erase(ticket_id)
+	if stored_result is SimNavShortPathResult:
+		return stored_result as SimNavShortPathResult
+	return null
+
+
 func pending_count() -> int:
 	return _pending.size()
 
@@ -159,12 +192,52 @@ func result_count() -> int:
 	return _results.size()
 
 
+func pending_tickets() -> Array[int]:
+	var result: Array[int] = []
+	for request in _pending:
+		var request_dict := request as Dictionary
+		result.append(int(request_dict["ticket"]))
+	return result
+
+
+func result_tickets() -> Array[int]:
+	var result: Array[int] = []
+	for ticket in _results.keys():
+		result.append(int(ticket))
+	result.sort()
+	return result
+
+
+func get_diagnostics() -> Dictionary:
+	return {
+		"next_ticket": _next_ticket,
+		"pending_count": pending_count(),
+		"pending_tickets": pending_tickets(),
+		"result_count": result_count(),
+		"result_tickets": result_tickets(),
+		"cancelled_ticket_count": _cancelled.size(),
+		"in_worker_count": _in_worker.size(),
+		"worker_running": is_worker_running(),
+		"processed_count": _processed_count,
+		"cancelled_count": _cancelled_count,
+		"stale_result_count": _stale_result_count,
+		"worker_batch_count": _worker_batch_count,
+		"worker_collected_count": _worker_collected_count,
+		"last_batch_size": _last_batch_size,
+		"last_processed_tickets": _last_processed_tickets.duplicate(),
+		"last_collected_tickets": _last_collected_tickets.duplicate(),
+	}
+
+
 func clear() -> void:
 	collect_worker_results(true)
 	_pending.clear()
 	_results.clear()
 	_cancelled.clear()
 	_in_worker.clear()
+	_last_batch_size = 0
+	_last_processed_tickets.clear()
+	_last_collected_tickets.clear()
 
 
 func _allocate_ticket() -> int:
@@ -187,9 +260,11 @@ func _compute_request(request: Dictionary):
 	if kind == RequestKind.SHORT:
 		if _vertex_pathfinder == null:
 			push_error("[SimNavPathRequestQueue] short request requires SimNavVertexPathfinder")
-			return SimNavWaypointPath.new()
+			var missing_short_result := SimNavShortPathResult.new()
+			missing_short_result.set_failure(SimNavShortPathResult.STATUS_INVALID_QUERY, SimNavShortPathResult.FAILURE_NAV_MAP_MISSING)
+			return missing_short_result
 		var short_request: SimNavShortPathRequest = request["request"]
-		return _vertex_pathfinder.compute_short_path_immediate(short_request)
+		return _vertex_pathfinder.compute_short_path_result(short_request)
 
 	push_error("[SimNavPathRequestQueue] unknown request kind: %d" % kind)
 	return SimNavWaypointPath.new()
@@ -219,25 +294,3 @@ func _compute_worker_batch(batch: Array[Dictionary]) -> Array[Dictionary]:
 			"result": _compute_request(request),
 		})
 	return worker_results
-
-
-func _clone_goal(goal: SimNavPathGoal) -> SimNavPathGoal:
-	var cloned_goal := SimNavPathGoal.new(goal.type, goal.center)
-	cloned_goal.hw = goal.hw
-	cloned_goal.hh = goal.hh
-	cloned_goal.u = goal.u
-	cloned_goal.v = goal.v
-	cloned_goal.maxdist = goal.maxdist
-	return cloned_goal
-
-
-func _clone_short_request(request: SimNavShortPathRequest) -> SimNavShortPathRequest:
-	var cloned_request := SimNavShortPathRequest.new()
-	cloned_request.start = request.start
-	cloned_request.goal = _clone_goal(request.goal)
-	cloned_request.clearance = request.clearance
-	cloned_request.range_px = request.range_px
-	cloned_request.pass_mask = request.pass_mask
-	cloned_request.avoid_moving_units = request.avoid_moving_units
-	cloned_request.control_group = request.control_group
-	return cloned_request

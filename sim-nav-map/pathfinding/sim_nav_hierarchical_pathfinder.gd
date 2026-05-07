@@ -195,6 +195,51 @@ func next_global_region(pass_mask: int) -> int:
 	return int(_next_global_region.get(pass_mask, 1))
 
 
+func export_connectivity(pass_mask: int, passability_class_name: String = "") -> Dictionary:
+	var regions := PackedInt32Array()
+	if _nav_map == null or not is_recomputed() or not _chunks.has(pass_mask):
+		return {
+			"pass_mask": pass_mask,
+			"passability_class_name": passability_class_name,
+			"width": 0,
+			"height": 0,
+			"chunk_size": SimNavHierarchicalChunk.CHUNK_SIZE,
+			"chunks_w": _chunks_w,
+			"chunks_h": _chunks_h,
+			"global_region_count": 0,
+			"regions": regions,
+		}
+	regions.resize(_nav_map.width * _nav_map.height)
+	for y in range(_nav_map.height):
+		for x in range(_nav_map.width):
+			var coord := Vector2i(x, y)
+			regions[y * _nav_map.width + x] = get_global_region(coord, pass_mask)
+	return {
+		"pass_mask": pass_mask,
+		"passability_class_name": passability_class_name,
+		"width": _nav_map.width,
+		"height": _nav_map.height,
+		"chunk_size": SimNavHierarchicalChunk.CHUNK_SIZE,
+		"chunks_w": _chunks_w,
+		"chunks_h": _chunks_h,
+		"global_region_count": maxi(0, next_global_region(pass_mask) - 1),
+		"regions": regions,
+	}
+
+
+func get_diagnostics(passability_masks: Array[int] = []) -> Dictionary:
+	var connectivity: Array[Dictionary] = []
+	for pass_mask in passability_masks:
+		connectivity.append(export_connectivity(pass_mask))
+	return {
+		"is_recomputed": is_recomputed(),
+		"chunks_w": _chunks_w,
+		"chunks_h": _chunks_h,
+		"passability_mask_count": _chunks.size(),
+		"connectivity": connectivity,
+	}
+
+
 func _build_chunk(nav_map: SimNavMap, ci: int, cj: int, pass_mask: int) -> SimNavHierarchicalChunk:
 	var chunk := SimNavHierarchicalChunk.new(ci, cj)
 	var chunk_size := SimNavHierarchicalChunk.CHUNK_SIZE

@@ -110,6 +110,33 @@ func compute_path_immediate(start_world: Vector2, goal: SimNavPathGoal, pass_mas
 	return _long.compute_path_immediate(start_world, path_goal, pass_mask)
 
 
+func validate_movement_line(
+	start_world: Vector2,
+	target_world: Vector2,
+	clearance: float,
+	pass_mask: int,
+	obstruction_filter: SimNavObstructionFilter = null
+) -> SimNavMovementLineResult:
+	return _validate_line(start_world, target_world, clearance, pass_mask, obstruction_filter, false)
+
+
+func validate_unit_line(
+	start_world: Vector2,
+	target_world: Vector2,
+	clearance: float,
+	obstruction_filter: SimNavObstructionFilter = null
+) -> SimNavMovementLineResult:
+	return _validate_line(start_world, target_world, clearance, 0, obstruction_filter, true)
+
+
+func get_navigation_diagnostics(passability_masks: Array[int] = []) -> Dictionary:
+	return {
+		"map": _nav_map.get_diagnostics() if _nav_map != null else {},
+		"hierarchical": _hierarchical.get_diagnostics(passability_masks) if _hierarchical != null else {},
+		"has_long_pathfinder": _long != null,
+	}
+
+
 func _apply_reachability_metadata(
 	result: SimNavLongPathResult,
 	query: SimNavLongPathQuery,
@@ -156,3 +183,106 @@ func _failure_for_reachability_failure(reachability: SimNavReachabilityResult) -
 		SimNavReachabilityResult.FAILURE_INVALID_QUERY:
 			return SimNavLongPathResult.FAILURE_GOAL_MISSING
 	return SimNavLongPathResult.FAILURE_NAV_MAP_MISSING
+
+
+func _validate_line(
+	start_world: Vector2,
+	target_world: Vector2,
+	clearance: float,
+	pass_mask: int,
+	obstruction_filter: SimNavObstructionFilter,
+	unit_only: bool
+) -> SimNavMovementLineResult:
+	var filter := obstruction_filter.clone() if obstruction_filter != null else SimNavObstructionFilter.new()
+	if unit_only:
+		filter.include_static = false
+		filter.include_units = true
+	var result := SimNavMovementLineResult.new()
+	result.configure_query(start_world, target_world, clearance, pass_mask, filter, unit_only)
+	if _nav_map == null:
+		result.set_invalid(SimNavMovementLineResult.FAILURE_NAV_MAP_MISSING)
+		return result
+	if not unit_only and pass_mask != 0:
+		var blocked_navcell := _first_blocked_line_navcell(start_world, target_world, clearance, pass_mask, result)
+		if not blocked_navcell.is_empty():
+			result.set_passability_blocked(
+				str(blocked_navcell.get("reason", SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED)),
+				blocked_navcell.get("coord", Vector2i(-1, -1)) as Vector2i
+			)
+			return result
+	var shapes := _collect_line_obstructions(start_world, target_world, clearance, filter, unit_only)
+	result.checked_obstruction_count = shapes.size()
+	var blocking_shape := SimNavLineOfSight.first_blocking_shape(start_world, target_world, shapes, maxf(clearance, 0.000001))
+	if blocking_shape != null:
+		result.set_obstruction_blocked(blocking_shape)
+		return result
+	result.set_clear()
+	return result
+
+
+func _first_blocked_line_navcell(
+	start_world: Vector2,
+	target_world: Vector2,
+	clearance: float,
+	pass_mask: int,
+	result: SimNavMovementLineResult
+) -> Dictionary:
+	var distance := start_world.distance_to(target_world)
+	var step := maxf(_nav_map.navcell_size * 0.5, 1.0)
+	var sample_count := maxi(1, int(ceil(distance / step)))
+	for i in range(sample_count + 1):
+		var t := float(i) / float(sample_count)
+		var point := start_world.lerp(target_world, t)
+		var coord := _nav_map.world_to_navcell(point)
+		result.checked_navcell_count += 1
+		if not _nav_map.is_valid_navcell(coord):
+			var reason := SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED
+			if i == 0:
+				reason = SimNavMovementLineResult.FAILURE_START_OUT_OF_BOUNDS
+			elif i == sample_count:
+				reason = SimNavMovementLineResult.FAILURE_END_OUT_OF_BOUNDS
+			return {
+				"coord": coord,
+				"reason": reason,
+			}
+		if not _line_point_passable_with_clearance(point, pass_mask, clearance):
+			return {
+				"coord": coord,
+				"reason": SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED,
+			}
+	return {}
+
+
+func _line_point_passable_with_clearance(point: Vector2, pass_mask: int, clearance: float) -> bool:
+	var center_coord := _nav_map.world_to_navcell(point)
+	var padding := int(ceil(maxf(clearance, 0.0) / maxf(_nav_map.navcell_size, 0.001)))
+	for y in range(center_coord.y - padding, center_coord.y + padding + 1):
+		for x in range(center_coord.x - padding, center_coord.x + padding + 1):
+			var coord := Vector2i(x, y)
+			if not _nav_map.is_valid_navcell(coord):
+				return false
+			if not _nav_map.is_passable_navcell(coord, pass_mask):
+				return false
+	return true
+
+
+func _collect_line_obstructions(
+	start_world: Vector2,
+	target_world: Vector2,
+	clearance: float,
+	filter: SimNavObstructionFilter,
+	unit_only: bool
+) -> Array[SimNavObstructionShape]:
+	var center := (start_world + target_world) * 0.5
+	var query_range := start_world.distance_to(target_world) * 0.5 + clearance + _nav_map.navcell_size
+	var shapes := _nav_map.get_obstruction_shapes_in_range_filtered(center, query_range, filter)
+	var result: Array[SimNavObstructionShape] = []
+	for shape in shapes:
+		if unit_only and not (shape is SimNavObstructionShapeUnit):
+			continue
+		if shape is SimNavObstructionShapeStatic and (shape.flags & SimNavObstructionFlags.BLOCK_PATHFINDING) == 0:
+			continue
+		if shape is SimNavObstructionShapeUnit and (shape.flags & SimNavObstructionFlags.BLOCK_MOVEMENT) == 0:
+			continue
+		result.append(shape)
+	return result

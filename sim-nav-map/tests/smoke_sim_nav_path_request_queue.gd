@@ -25,6 +25,8 @@ func _run() -> void:
 	_test_deterministic_repeated_queue()
 	_test_long_query_result_metadata()
 	_test_worker_batch_collects_results_and_filters_cancelled_ticket()
+	_test_short_result_metadata_and_filter_clone()
+	_test_queue_diagnostics_contract()
 
 
 func _test_ticket_ids_are_nonzero_monotonic() -> void:
@@ -163,6 +165,55 @@ func _test_worker_batch_collects_results_and_filters_cancelled_ticket() -> void:
 	_assert_true(queue.has_result(ticket_b), "live in-flight ticket should produce result")
 	var path_b := queue.take_result(ticket_b)
 	_assert_equal_vec(nav_map.navcell_center_world(Vector2i(5, 1)), path_b.waypoints[0], "worker result should match second queued goal")
+
+
+func _test_short_result_metadata_and_filter_clone() -> void:
+	var fixture := _make_short_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var blocker := SimNavObstructionShapeUnit.new()
+	blocker.entity_id = "queued_blocker"
+	blocker.center = Vector2(50.0, 50.0)
+	blocker.clearance = 12.0
+	blocker.flags = SimNavObstructionFlags.BLOCK_MOVEMENT
+	var blocker_tag := nav_map.add_dynamic_obstruction(blocker)
+	var request := SimNavShortPathRequest.new()
+	request.start = Vector2(10.0, 50.0)
+	request.goal = SimNavPathGoal.point(Vector2(90.0, 50.0))
+	request.clearance = 6.0
+	request.range_px = 160.0
+	request.pass_mask = 1
+	var filter := SimNavObstructionFilter.new()
+	filter.ignored_tag = blocker_tag
+	request.obstruction_filter = filter
+	var ticket := queue.enqueue_short_path(request)
+	filter.ignored_tag = 0
+	_assert_equal(1, queue.process_budget(1), "queued short result should process by budget")
+	var result := queue.take_short_path_result(ticket)
+	_assert_true(result != null, "queued short result should be takeable as metadata result")
+	_assert_equal_str(SimNavShortPathResult.STATUS_DIRECT_GOAL, result.status, "queued short result should expose direct status")
+	_assert_equal(blocker_tag, result.obstruction_filter.ignored_tag, "queued short request should clone filter metadata")
+	_assert_equal_vec(request.goal.center, result.path.waypoints[0], "queued short metadata path should match goal")
+
+
+func _test_queue_diagnostics_contract() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var start := nav_map.navcell_center_world(Vector2i(1, 1))
+	var ticket_a := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(4, 1))), pass_mask)
+	var ticket_b := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(5, 1))), pass_mask)
+	_assert_true(queue.cancel(ticket_b), "diagnostics fixture should cancel pending ticket")
+	_assert_equal(1, queue.process_budget(1), "diagnostics fixture should process live ticket")
+	_assert_true(queue.has_result(ticket_a), "diagnostics fixture should store live result")
+	var diagnostics := queue.get_diagnostics()
+	_assert_equal(0, int(diagnostics.get("pending_count", -1)), "diagnostics should expose empty pending count")
+	_assert_equal(1, int(diagnostics.get("result_count", 0)), "diagnostics should expose one result")
+	_assert_equal(1, int(diagnostics.get("processed_count", 0)), "diagnostics should expose processed count")
+	_assert_equal(1, int(diagnostics.get("cancelled_count", 0)), "diagnostics should expose cancelled count")
+	var result_tickets: Array = diagnostics.get("result_tickets", [])
+	_assert_equal(ticket_a, int(result_tickets[0]), "diagnostics should expose result ticket identity")
 
 
 func _run_deterministic_queue_once() -> String:

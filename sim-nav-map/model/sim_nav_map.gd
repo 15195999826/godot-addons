@@ -192,6 +192,19 @@ func get_obstruction_shapes_in_range(center: Vector2, query_range: float) -> Arr
 	return result
 
 
+func get_obstruction_shapes_in_range_filtered(
+	center: Vector2,
+	query_range: float,
+	filter: SimNavObstructionFilter
+) -> Array[SimNavObstructionShape]:
+	var result: Array[SimNavObstructionShape] = []
+	var active_filter := filter if filter != null else SimNavObstructionFilter.new()
+	for shape in get_obstruction_shapes_in_range(center, query_range):
+		if active_filter.matches(shape):
+			result.append(shape)
+	return result
+
+
 func get_static_obstruction_shapes() -> Array[SimNavObstructionShapeStatic]:
 	var result: Array[SimNavObstructionShapeStatic] = []
 	var tags: Array = _static_obstructions.keys()
@@ -208,6 +221,33 @@ func get_dynamic_obstruction_shapes() -> Array[SimNavObstructionShapeUnit]:
 	for tag in tags:
 		result.append(_dynamic_obstructions[tag] as SimNavObstructionShapeUnit)
 	return result
+
+
+func get_dirtiness_snapshot() -> Dictionary:
+	var dirty_navcells := collect_dirty_navcells()
+	var dirty_obstruction_navcells := collect_dirty_obstruction_navcells()
+	return {
+		"dirty_navcells": dirty_navcells,
+		"dirty_navcell_count": dirty_navcells.size(),
+		"dirty_obstruction_navcells": dirty_obstruction_navcells,
+		"dirty_obstruction_navcell_count": dirty_obstruction_navcells.size(),
+		"has_dirty_navcells": not dirty_navcells.is_empty(),
+		"has_dirty_obstruction_navcells": not dirty_obstruction_navcells.is_empty(),
+	}
+
+
+func get_diagnostics() -> Dictionary:
+	return {
+		"width": width,
+		"height": height,
+		"navcell_size": navcell_size,
+		"origin": origin,
+		"navcells_per_tile": navcells_per_tile,
+		"passability_class_count": get_passability_classes().size(),
+		"static_obstruction_count": _static_obstructions.size(),
+		"dynamic_obstruction_count": _dynamic_obstructions.size(),
+		"dirtiness": get_dirtiness_snapshot(),
+	}
 
 
 func rebuild_dirty() -> void:
