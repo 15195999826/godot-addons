@@ -210,7 +210,21 @@ func plan_path(
 	var long_path := _waypoint_path_to_forward_array(long_result.path)
 	var smoothed := _string_pull(start, long_path, static_obstacles, unit_radius)
 	if not _path_respects_lab_bounds(start, smoothed, static_obstacles, unit_radius):
-		smoothed = []
+		# Smoothing produced a segment the lab bounds check refuses (e.g.
+		# _string_pull keeps chosen=idx without re-verifying segment_clear, or
+		# a smoothed shortcut grazes an inflated static under FP). Fall back
+		# to the unsmoothed core long path: compute_path_result has already
+		# validated it via navcell-center passability. The lab's continuous
+		# segment_clear can still flag the long path because it is strictly
+		# stricter than navcell-center passability, but returning the long
+		# path is much better than handing the unit an empty path — empty
+		# paths leave it frozen with has_move_order=true and no replan
+		# trigger (LAB-006). The runtime push-out / collision pass corrects
+		# any incidental clipping along the navcell-center route.
+		if not long_path.is_empty():
+			smoothed = long_path
+		else:
+			smoothed = []
 	var grid_usec := Time.get_ticks_usec() - grid_start_usec
 	last_report = {
 		"used_vertex": false,
