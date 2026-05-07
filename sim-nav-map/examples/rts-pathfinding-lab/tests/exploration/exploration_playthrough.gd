@@ -50,11 +50,26 @@ const LabWorld := preload("res://addons/sim-nav-map/examples/rts-pathfinding-lab
 
 const DT := 1.0 / 60.0
 
+# Fuzz-mode defaults. Override via CLI args after `--`:
+#   godot --headless --path . exploration_playthrough.tscn -- --fuzz --seed=42 --iterations=10 --ticks=200
+const FUZZ_DEFAULT_SEED := 42
+const FUZZ_DEFAULT_ITERATIONS := 10
+const FUZZ_DEFAULT_TICKS := 200
+# Single-step jump above this is treated as a teleport — prior observed jumps
+# include 41 (phase 7 obstacle on unit) and 62 (phase 14 dual-wall push). 80 px
+# is loose enough to ignore those known cases but tight enough that anything
+# further would be a real bug.
+const FUZZ_MAX_JUMP_PX := 80.0
+const FUZZ_MAP_MARGIN := 1.0
+
 
 var _phase_results: Array[Dictionary] = []
 
 
 func _ready() -> void:
+	if _cli_has("--fuzz"):
+		_fuzz_mode_main()
+		return
 	print("=== EXPLORATION PLAYTHROUGH BEGIN ===")
 	_phase_baseline_open_movement()
 	_phase_drop_static_in_path()
@@ -657,3 +672,160 @@ func _suspected_issue(r: Dictionary) -> String:
 	if hits.is_empty():
 		return "(no flagged anomalies)"
 	return ", ".join(hits)
+
+
+# ---------------------------------------------------------------------------
+# Fuzz mode (random exploration)
+#
+# Curated phases above cover scenarios the author thought of. Fuzz mode drives
+# the lab with random ops and checks invariants — catches the unexpected
+# combos the curated set misses. Each iteration starts from setup_default,
+# applies random ops over `--ticks` ticks, and aborts on any invariant
+# violation with a reproducible (iter, seed) pair.
+# ---------------------------------------------------------------------------
+
+func _cli_args() -> PackedStringArray:
+	var result := OS.get_cmdline_args()
+	result.append_array(OS.get_cmdline_user_args())
+	return result
+
+
+func _cli_has(flag: String) -> bool:
+	for arg in _cli_args():
+		if arg == flag or arg.begins_with(flag + "="):
+			return true
+	return false
+
+
+func _cli_int(flag: String, default_value: int) -> int:
+	var prefix := flag + "="
+	for arg in _cli_args():
+		if arg.begins_with(prefix):
+			return arg.substr(prefix.length()).to_int()
+	return default_value
+
+
+func _fuzz_mode_main() -> void:
+	var base_seed := _cli_int("--seed", FUZZ_DEFAULT_SEED)
+	var iterations := _cli_int("--iterations", FUZZ_DEFAULT_ITERATIONS)
+	var ticks_per_iter := _cli_int("--ticks", FUZZ_DEFAULT_TICKS)
+	print("=== FUZZ MODE BEGIN === seed=%d iterations=%d ticks=%d" % [base_seed, iterations, ticks_per_iter])
+	var passed := 0
+	for iter in range(iterations):
+		var iter_seed: int = base_seed + iter
+		var rng := RandomNumberGenerator.new()
+		rng.seed = iter_seed
+		var result := _fuzz_run_iteration(iter, iter_seed, ticks_per_iter, rng)
+		if not str(result.get("violation", "")).is_empty():
+			print("FUZZ_VIOLATION: %s" % str(result))
+			print("=== FUZZ MODE END === passed=%d violations=1 (early exit at iter %d)" % [passed, iter])
+			print("Reproduce: -- --fuzz --seed=%d --iterations=%d --ticks=%d" % [iter_seed, 1, ticks_per_iter])
+			get_tree().quit(1)
+			return
+		print("FUZZ_ITER: %s" % str(result))
+		passed += 1
+	print("=== FUZZ MODE END === passed=%d violations=0" % passed)
+	get_tree().quit(0)
+
+
+func _fuzz_run_iteration(iter: int, iter_seed: int, max_ticks: int, rng: RandomNumberGenerator) -> Dictionary:
+	var world := LabWorld.new()
+	world.setup_default()
+	var ops_count: Dictionary = {}
+	var prev_positions: Dictionary = {}
+	for u in world.get_mobile_units():
+		prev_positions[u.id] = u.position
+	var max_step_usec := 0
+	var max_step_at := -1
+	var max_jump_px := 0.0
+	var max_jump_unit := ""
+	var max_jump_at := -1
+	for tick in range(max_ticks):
+		var op := _fuzz_random_op(rng, world)
+		var op_name := str(op.get("op", "?"))
+		ops_count[op_name] = int(ops_count.get(op_name, 0)) + 1
+		var step_t0 := Time.get_ticks_usec()
+		world.step(DT)
+		var step_usec := Time.get_ticks_usec() - step_t0
+		if step_usec > max_step_usec:
+			max_step_usec = step_usec
+			max_step_at = tick
+		var violation := _fuzz_check_invariants(world, prev_positions, tick, op)
+		if not violation.is_empty():
+			return {
+				"iter": iter,
+				"seed": iter_seed,
+				"tick": tick,
+				"violation": violation,
+				"last_op": op,
+			}
+		for u in world.get_mobile_units():
+			var prev: Vector2 = prev_positions.get(u.id, u.position)
+			var jump: float = u.position.distance_to(prev)
+			if jump > max_jump_px:
+				max_jump_px = jump
+				max_jump_unit = u.id
+				max_jump_at = tick
+			prev_positions[u.id] = u.position
+	return {
+		"iter": iter,
+		"seed": iter_seed,
+		"ticks_run": max_ticks,
+		"ops": ops_count,
+		"max_step_usec": max_step_usec,
+		"max_step_at": max_step_at,
+		"max_jump_px": "%.2f" % max_jump_px,
+		"max_jump_unit": max_jump_unit,
+		"max_jump_at": max_jump_at,
+		"total_replans": world.total_replans,
+	}
+
+
+func _fuzz_random_op(rng: RandomNumberGenerator, world: LabWorld) -> Dictionary:
+	var roll := rng.randf()
+	if roll < 0.50:
+		return {"op": "step"}
+	if roll < 0.62:
+		var target := Vector2(rng.randf_range(20.0, 700.0), rng.randf_range(20.0, 400.0))
+		world.set_group_target(target)
+		return {"op": "retarget", "target": str(target)}
+	if roll < 0.67:
+		var target := Vector2(rng.randf_range(800.0, 1500.0), rng.randf_range(-200.0, 600.0))
+		world.set_group_target(target)
+		return {"op": "retarget_offmap", "target": str(target)}
+	if roll < 0.75:
+		var center := Vector2(rng.randf_range(50.0, 670.0), rng.randf_range(50.0, 370.0))
+		var size := Vector2(rng.randf_range(30.0, 80.0), rng.randf_range(30.0, 80.0))
+		var obs_id := world.add_static_obstacle(center, size)
+		return {"op": "add_obstacle", "id": obs_id, "center": str(center), "size": str(size)}
+	if roll < 0.83:
+		var center := Vector2(rng.randf_range(50.0, 670.0), rng.randf_range(50.0, 370.0))
+		var radius := rng.randf_range(10.0, 20.0)
+		var blocker_id := world.add_blocker(center, radius)
+		return {"op": "add_blocker", "id": blocker_id, "center": str(center), "radius": "%.1f" % radius}
+	var point := Vector2(rng.randf_range(0.0, 720.0), rng.randf_range(0.0, 420.0))
+	var removed := world.remove_nearest_editable(point, 80.0)
+	return {"op": "remove", "point": str(point), "removed": removed}
+
+
+func _fuzz_check_invariants(world: LabWorld, prev_positions: Dictionary, tick: int, last_op: Dictionary) -> String:
+	var map_x_max: float = world.map_size.x + FUZZ_MAP_MARGIN
+	var map_y_max: float = world.map_size.y + FUZZ_MAP_MARGIN
+	for unit in world.get_mobile_units():
+		if is_nan(unit.position.x) or is_nan(unit.position.y):
+			return "NaN_position tick=%d unit=%s pos=%s last_op=%s" % [tick, unit.id, str(unit.position), str(last_op)]
+		if is_inf(unit.position.x) or is_inf(unit.position.y):
+			return "inf_position tick=%d unit=%s pos=%s last_op=%s" % [tick, unit.id, str(unit.position), str(last_op)]
+		if unit.position.x < -FUZZ_MAP_MARGIN or unit.position.x > map_x_max:
+			return "out_of_map_x tick=%d unit=%s x=%.2f last_op=%s" % [tick, unit.id, unit.position.x, str(last_op)]
+		if unit.position.y < -FUZZ_MAP_MARGIN or unit.position.y > map_y_max:
+			return "out_of_map_y tick=%d unit=%s y=%.2f last_op=%s" % [tick, unit.id, unit.position.y, str(last_op)]
+		if is_nan(unit.target.x) or is_nan(unit.target.y):
+			return "NaN_target tick=%d unit=%s target=%s last_op=%s" % [tick, unit.id, str(unit.target), str(last_op)]
+		if is_nan(unit.path_target.x) or is_nan(unit.path_target.y):
+			return "NaN_path_target tick=%d unit=%s path_target=%s last_op=%s" % [tick, unit.id, str(unit.path_target), str(last_op)]
+		var prev: Vector2 = prev_positions.get(unit.id, unit.position)
+		var jump: float = unit.position.distance_to(prev)
+		if jump > FUZZ_MAX_JUMP_PX:
+			return "jump tick=%d unit=%s jump=%.2f prev=%s curr=%s last_op=%s" % [tick, unit.id, jump, str(prev), str(unit.position), str(last_op)]
+	return ""
