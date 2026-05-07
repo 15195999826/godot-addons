@@ -104,10 +104,10 @@ the ceiling is hit even when no replan runs that tick.
 
 ## Verify before fixing
 
-- [ ] Confirm `last_step_profile.separation_usec` accounts for ≥ 80 %
-      of the 13–15 ms peak in the repro
-- [ ] Decide threshold: `max_step_usec ≤ 4000 µs` (consistent with
-      LAB-002) before optimization, then tighten
+- [x] Confirm `last_step_profile.separation_usec` accounts for ≥ 80 %
+      of the 13–15 ms peak in the repro — measured 99.4 % at HEAD
+- [x] Decide threshold: `max_step_usec ≤ 4000 µs` (consistent with
+      LAB-002) — locked in for the smoke; revisit after fix lands
 
 ## Repro at HEAD
 
@@ -117,14 +117,37 @@ godot --headless --path . addons/sim-nav-map/examples/rts-pathfinding-lab/tests/
 
 Smoke: [`examples/rts-pathfinding-lab/tests/repro/repro_lab_007_sealed_blockade.gd`](../../examples/rts-pathfinding-lab/tests/repro/repro_lab_007_sealed_blockade.gd).
 
-Setup: `setup_default()` (target `(610, 210)`), then add the three
-custom obstacles at the centers from the export log
-(`(423, 155)`, `(421, 284)`, `(434, 395)`, default size `74×74`).
-Teleport the six blue units to the trapped positions reported in the
-export log so the smoke does not depend on motion-pathing timing.
-Re-issue the group target so replan timers fire under the sealed map.
-Warm up 5 ticks, then drive 200 `step(1/60)` ticks measuring max
-single-step wall time. Threshold: `≤ 4 000 µs` (BASELINE 13–15 ms).
+Setup faithfully replays the user's operation timeline (no teleport,
+no synthetic state injection):
+
+1. `setup_default()` — six blue mobiles at `x≈74-104`, group target
+   `(610, 210)`; blue starts moving on tick 1.
+2. At tick 41: `add_static_obstacle((423, 155))`.
+3. At tick 89: `add_static_obstacle((421, 284))`.
+4. At tick 140: `add_static_obstacle((434, 395))` — completes the seal.
+5. Continue stepping `1/60` until tick 716 (matches the user export's
+   `measured_step_count`).
+
+Track max single-step wall time across the entire 716-tick run, and
+also break it out into pre-seal (`tick < 140`) vs post-seal windows.
+Threshold `≤ 4 000 µs` (BASELINE 13–15 ms).
+
+At HEAD the smoke FAILs:
+
+```text
+LAB-007 sealed-blockade max_step_usec = 13965 µs at tick 628
+  (pre-seal max 8598 µs, post-seal max 13965 µs,
+   separation peak 13883 µs at tick 628)
+SMOKE_TEST_RESULT: FAIL - LAB-007 reproduces: ... separation peak 13883 µs (99.4 % of total)
+```
+
+The post-seal peak hits within 10 % of the user's reported
+`max_step_usec = 15358 µs`, and `separation_usec` accounts for ≥ 99 %
+of the spike — locking in the "separation budget burn" diagnosis
+without depending on a teleport shortcut. The pre-seal max of 8598 µs
+also matches the rising-edge behavior the user's `recent_events`
+captured (`max_step_usec` climbed 1501 → 5485 → 10087 → 15358 across
+the three `place_obstacle` events).
 
 ## Cross-refs
 

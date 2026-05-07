@@ -2,21 +2,27 @@ extends Node
 
 # LAB-007: Sealed-blockade separation budget burn
 #
-# Replays the user export
-#   ..._tick_716.json (custom_obstacle_3 just placed):
-#   - Default scene (stone_block + north_wall + south_wall) plus three
-#     custom obstacles at (423,155), (421,284), (434,395) with default
-#     74x74 size.
-#   - Six blue mobiles trapped between stone_block and the new east
-#     wall; group target (610, 210) is in a different global region.
-#   - last_step_usec = 13860, max_step_usec = 15358 (target ≤ 4 000).
+# Replays the user's operation sequence from export
+#   ..._tick_716.json (timeline: setup_default → progressive seal):
+#   - Default scene (stone_block + north_wall + south_wall, blue mobiles
+#     at x≈74-104, group target (610, 210)).
+#   - Tick 41: place custom_obstacle_1 at (423, 155), default 74x74.
+#   - Tick 89: place custom_obstacle_2 at (421, 284).
+#   - Tick 140: place custom_obstacle_3 at (434, 395) — this completes
+#     the seal: every passable route from blue's enclave to (610, 210)
+#     is now blocked.
+#   - Continue stepping to tick 716 (matches user's measured_step_count).
+#   - Observed at HEAD: last_step_usec = 13860, max_step_usec = 15358.
 #
 # Hypothesis (see docs/issues/lab-007-sealed-blockade-frame-burn.md):
-#   - dominant cost is _resolve_separation hitting the 16 ms budget
-#     ceiling because the inner `changed` flag flips on micro-jitter
-#     and never early-exits.
+#   - dominant cost post-seal is _resolve_separation hitting the 16 ms
+#     budget ceiling because the inner `changed` flag flips on
+#     micro-jitter and never early-exits.
 #
-# Threshold: ≤ 4 000 µs single-step wall time (consistent with LAB-002).
+# Threshold: ≤ 4 000 µs single-step wall time over the full 716-tick run
+# (consistent with LAB-002). The smoke does NOT teleport units — motion
+# is fully driven by setup_default's group target plus the auto replan
+# triggered by add_static_obstacle.
 #
 # Run: godot --headless --path . addons/sim-nav-map/examples/rts-pathfinding-lab/tests/repro/repro_lab_007_sealed_blockade.tscn
 
@@ -41,64 +47,69 @@ func _ready() -> void:
 func _run() -> void:
 	var world := LabWorld.new()
 	world.setup_default()
-
-	# Place the three custom obstacles from the user export, which seal
-	# every passable route from blue's enclave to the (610, 210) target.
-	world.add_static_obstacle(Vector2(423.0, 155.0))
-	world.add_static_obstacle(Vector2(421.0, 284.0))
-	world.add_static_obstacle(Vector2(434.0, 395.0))
-
-	# Teleport blue to the trapped positions captured in the export log
-	# so the smoke does not depend on motion-pathing timing landing the
-	# cluster in exactly the same enclave.
-	var trapped: Array[Vector2] = [
-		Vector2(374.93, 126.07),  # blue_0
-		Vector2(363.16, 143.70),  # blue_1
-		Vector2(350.01, 126.50),  # blue_2
-		Vector2(372.83, 293.99),  # blue_3
-		Vector2(360.89, 276.12),  # blue_4
-		Vector2(347.89, 293.80),  # blue_5
-	]
-	for i in range(trapped.size()):
-		var unit := world.get_unit_by_id("blue_%d" % i)
-		if unit == null:
-			_failures.append("expected blue_%d after setup_default" % i)
-			return
-		unit.position = trapped[i]
-
-	# Re-issue the group target so replan timers fire under the sealed
-	# map (setup_default already targeted (610, 210), but the trapped
-	# teleport invalidates any in-flight plan).
-	world.set_group_target(Vector2(610.0, 210.0))
+	# setup_default already issues the group target (610, 210); blue
+	# starts moving toward it on the next step().
 
 	var dt := 1.0 / 60.0
-	# Warm up so first-tick replan + initial separation do not dominate
-	# the measured peak.
-	for _i in range(5):
-		world.step(dt)
-
-	var num_steps := 200
+	var num_steps := 716   # matches user export's measured_step_count
 	var max_step_usec := 0
 	var max_step_at := -1
 	var max_separation_usec := 0
+	var max_separation_at := -1
+	var pre_seal_max_usec := 0   # before tick 140 — should stay cheap
+	var post_seal_max_usec := 0  # tick ≥ 140 — where the spike lives
+
 	for i in range(num_steps):
+		var upcoming_tick := i + 1
+		# Place obstacles right before the step that the user's log
+		# attributes the place_obstacle event to (world.tick_count is
+		# incremented at the top of step(), so an obstacle placed here
+		# becomes visible to that very step).
+		if upcoming_tick == 41:
+			world.add_static_obstacle(Vector2(423.0, 155.0))
+		elif upcoming_tick == 89:
+			world.add_static_obstacle(Vector2(421.0, 284.0))
+		elif upcoming_tick == 140:
+			world.add_static_obstacle(Vector2(434.0, 395.0))
+
 		var t0 := Time.get_ticks_usec()
 		world.step(dt)
 		var step_usec := Time.get_ticks_usec() - t0
 		var separation_usec := int(world.last_step_profile.get("separation_usec", 0))
+
 		if step_usec > max_step_usec:
 			max_step_usec = step_usec
-			max_step_at = i
+			max_step_at = upcoming_tick
 		if separation_usec > max_separation_usec:
 			max_separation_usec = separation_usec
+			max_separation_at = upcoming_tick
+		if upcoming_tick < 140:
+			pre_seal_max_usec = maxi(pre_seal_max_usec, step_usec)
+		else:
+			post_seal_max_usec = maxi(post_seal_max_usec, step_usec)
 
 	var target_usec := 4000
 	print(
-		"LAB-007 sealed-blockade max_step_usec = %d µs at step %d (separation peak %d µs, target ≤ %d µs, BASELINE ~13000-15000 µs)"
-		% [max_step_usec, max_step_at, max_separation_usec, target_usec]
+		"LAB-007 sealed-blockade max_step_usec = %d µs at tick %d (pre-seal max %d µs, post-seal max %d µs, separation peak %d µs at tick %d, target ≤ %d µs, BASELINE ~13000-15000 µs)"
+		% [
+			max_step_usec,
+			max_step_at,
+			pre_seal_max_usec,
+			post_seal_max_usec,
+			max_separation_usec,
+			max_separation_at,
+			target_usec,
+		]
 	)
 	if max_step_usec > target_usec:
 		_failures.append(
-			"max single-step wall time = %d µs at step %d, exceeds target ≤ %d µs (separation peak %d µs)"
-			% [max_step_usec, max_step_at, target_usec, max_separation_usec]
+			"max single-step wall time = %d µs at tick %d, exceeds target ≤ %d µs (post-seal max %d µs, separation peak %d µs at tick %d)"
+			% [
+				max_step_usec,
+				max_step_at,
+				target_usec,
+				post_seal_max_usec,
+				max_separation_usec,
+				max_separation_at,
+			]
 		)
