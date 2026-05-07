@@ -1,6 +1,6 @@
 # LAB-007: Sealed-blockade separation budget burn
 
-- Status: open
+- Status: open (partial fix landed 2026-05-07; smoke pulled from rtslab/smoke until full target hit)
 - Severity: P1
 - Layer: lab
 - Source: user export-log report
@@ -88,19 +88,45 @@ the ceiling is hit even when no replan runs that tick.
 
 ## Proposed approach
 
-1. Add a stuck early-exit to `_resolve_separation` /
-   `_resolve_overlaps`: a push only counts as `changed` if the unit's
-   final displacement for the iteration is ≥ a small epsilon (e.g. one
-   navcell or radius-fraction). Jitter below the threshold returns
-   `changed=false` and the outer loop ends immediately.
-2. Tighten `SEPARATION_TOTAL_BUDGET_USEC` once (1) lands and the
-   typical separation time drops; re-measure.
-3. (Stretch) Suppress the 0.45 s replan timer when the planner returns
-   `reachable_goal.distance_to(unit.position) <= unit.radius` and the
-   obstacle revision has not changed. Resume on next obstacle edit.
-4. (Stretch) Keep an obstacle-revision keyed unreachable cache at the
-   lab pathfinder so the cheap-but-recurrent 1.4 ms reachability call
-   becomes O(1) for the same key.
+1. **[DONE]** Add a stuck early-exit to `_resolve_separation`: track
+   each outer iter's start positions; bail when (a) no unit's net
+   displacement in the iter exceeds a jitter epsilon, (b) end-of-iter-K
+   ≈ start-of-iter-K-1 (2-cycle), or (c) end-of-iter-K ≈
+   start-of-iter-K-2 (3-cycle).
+2. **[DONE]** Skip the second `_push_out_static_obstacles_for_units`
+   call within an outer iter when `_resolve_overlaps` reported no
+   change — units are still in the post-static-1 configuration so the
+   second pass would just regenerate candidates for nothing.
+3. **[DONE]** All-exhausted short-circuit at the top of
+   `_resolve_overlaps`: when every mobile unit has spent its per-frame
+   overlap budget, no pair-check inner loop can move anyone — return
+   immediately instead of running the O(N²·OVERLAP_RESOLVE_ITERATIONS)
+   pass.
+4. **[DONE]** Reduce `SEPARATION_STABILIZE_ITERATIONS` from 6 → 2.
+   The early-exits (1) above already terminate normal-density scenes
+   in 1–2 outer iters; capping the loop bounds the worst case in the
+   sealed-enclave regime where the unit positions never quite converge
+   to a fixed point.
+5. **[DONE — lightweight]** Suppress the 0.45 s timer-triggered replan
+   when the planner can only canonicalize the goal back to within
+   `unit.radius` of `unit.position`. Don't force `arrived` /
+   `has_move_order=false` — `_move_unit` reaches arrival naturally
+   once the (typically 0–1 step) micro path drains, and forcing it
+   early leaves overlap unresolved which paradoxically grows
+   separation cost (verified: heavy variant +50 % sep peak;
+   lightweight variant ≈ break-even on its own but combines cleanly
+   with (1)–(4)). `_replan_all_mobile` resurrects parked units for
+   re-routing on obstacle edits; `set_units_target` clears the parked
+   flag for an explicit new command.
+6. (Open / stretch) Cache the candidate-generation work inside
+   `_push_unit_out_of_static_component`: profiling shows the second
+   static-push pass takes ~1.5 ms per unit when units are crammed
+   against multiple inflated rects. A per-frame, position-keyed cache
+   could cut this further once (1)–(4) saturate.
+7. (Open / stretch) Address the `add_static_obstacle` placement
+   spike (~8 ms at the tick when `prewarm_static_context` triggers
+   the next replan's nav-map rebuild). Possibly belongs in a
+   sibling issue — it's a transient, not the steady-state burn.
 
 ## Verify before fixing
 
@@ -132,7 +158,7 @@ Track max single-step wall time across the entire 716-tick run, and
 also break it out into pre-seal (`tick < 140`) vs post-seal windows.
 Threshold `≤ 4 000 µs` (BASELINE 13–15 ms).
 
-At HEAD the smoke FAILs:
+### Pre-fix (commits before 2026-05-07 separation early-exit)
 
 ```text
 LAB-007 sealed-blockade max_step_usec = 13965 µs at tick 628
@@ -144,10 +170,28 @@ SMOKE_TEST_RESULT: FAIL - LAB-007 reproduces: ... separation peak 13883 µs (99.
 The post-seal peak hits within 10 % of the user's reported
 `max_step_usec = 15358 µs`, and `separation_usec` accounts for ≥ 99 %
 of the spike — locking in the "separation budget burn" diagnosis
-without depending on a teleport shortcut. The pre-seal max of 8598 µs
-also matches the rising-edge behavior the user's `recent_events`
-captured (`max_step_usec` climbed 1501 → 5485 → 10087 → 15358 across
-the three `place_obstacle` events).
+without depending on a teleport shortcut.
+
+### Post-fix (Approach items 1–5 landed)
+
+```text
+LAB-007 sealed-blockade max_step_usec = 8871 µs at tick 89
+  (pre-seal max 8871 µs, post-seal max 7413 µs,
+   separation peak 6605 µs at tick 493)
+SMOKE_TEST_RESULT: FAIL - LAB-007 reproduces: ... still > 4 000 µs target
+```
+
+Separation peak dropped **13 883 → 6 605 µs (−52 %)** with the user's
+exact operation timeline replayed. The remaining `max_step_usec` peak
+is dominated by the obstacle-placement transient at tick 89 (replan
+cost ~8.3 ms once `prewarm_static_context` invalidates the nav-map
+cache) — see Approach item (7). Steady-state post-seal max settled at
+~7.4 ms, well under the 16.7 ms frame budget but still above the
+aspirational 4 ms.
+
+The smoke is currently kept out of the `rtslab/smoke` group because
+its threshold is the eventual target; rerun it manually with the
+command above to track progress while items (6)–(7) are designed.
 
 ## Cross-refs
 

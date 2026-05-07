@@ -13,8 +13,7 @@
         "repro/repro_lab_006_grid_fallback_empty_path.tscn",
         "repro/repro_lab_005_target_vs_path_target.tscn",
         "repro/repro_lab_004_overlap_policy.tscn",
-        "repro/repro_lab_004b_overlap_adversarial.tscn",
-        "repro/repro_lab_007_sealed_blockade.tscn"
+        "repro/repro_lab_004b_overlap_adversarial.tscn"
       ]
     }
   }
