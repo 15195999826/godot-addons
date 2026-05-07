@@ -2,3 +2,7 @@
 # 仅供开发者对照参考,不进仓 — 避免 GPL 代码混入 + 体积膨胀
 # 拉取方法见: docs/references/0ad-source-setup.md
 docs/references/0ad-source/
+
+# Ralph workflow 业务 state(本地断点续接用,不进 submodule 历史)
+# workflow 文档见: docs/_workflows/ralph-fix-issue-batch.md
+docs/_workflows/.ralph-state-*.md
