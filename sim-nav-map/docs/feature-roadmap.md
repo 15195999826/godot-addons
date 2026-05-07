@@ -802,6 +802,30 @@ correctness gate：
 - 手动验证应看“core navigation primitives 是否足够支撑应用层编队”，而不是把
   formation controller 做成 `sim-nav-map` API。
 
+### Lab Separation 已知 Trade-off（不是 core contract 问题）
+
+`rts-pathfinding-lab/logic/rts_pathfinding_lab_world.gd` 的 `_resolve_separation`
+是 demo-level workaround。lab 缺少 0ad UnitMotion 那套机制：
+
+- 没有 velocity / acceleration model（`_move_unit` 是直线插值）。
+- 没有 short-range replan-on-block（unit 撞墙不重新规划）。
+- 没有 path-following 阶段的 collision check（vs 0ad
+  `CCmpUnitMotion::Push() → PushAdjust → CheckMovement` 的 cancel-push 行为）。
+
+为了把 unit 从因 overlap push 误入 inflated obstacle 的状态拉回，lab 用
+*post-hoc push out + nearest-exit teleport* 兜底。这在 stress 场景下表现为
+单帧 30-80 px 的视觉跳变，是 lab 简化模型的物理上限，**不是 sim-nav-map
+plugin contract 的问题**。
+
+要彻底消除需要先等 Feature 6（filtered short query + line validation）提供
+`CheckMovement` primitive，再让 lab `_move_unit` 引入 velocity 控制 +
+collision-cancel 风格 separation，并删除 `_push_unit_out_of_static_component`。
+**不要在 Feature 6 之前重复尝试调 `_resolve_separation` 参数**——这会优化
+hack 而非 root cause。
+
+设计反思和路径选项（Path A / B / C）见
+[`lab-separation-design-discussion.md`](lab-separation-design-discussion.md)。
+
 ## Recommended `/goals` Split
 
 不要用一个 goal 做完整 roadmap。推荐拆分：
