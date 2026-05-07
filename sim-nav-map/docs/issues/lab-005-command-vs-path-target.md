@@ -1,10 +1,23 @@
 # LAB-005: Command target vs path target separation
 
-- Status: open
+- Status: resolved
 - Severity: P2
 - Layer: lab
 - Source: codex-discussion
 - Created: 2026-05-07
+- Resolved: 2026-05-07
+
+## Resolution
+
+- submodule commit: `fe722b4`
+- smoke: `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/repro/repro_lab_005_target_vs_path_target.tscn` (registered under `rtslab/smoke` group as a lock-in smoke)
+- 0 A.D. files checked: n/a (lab semantic naming, no 0 A.D. analogue)
+- Fix:
+  1. Added docstring on `RtsPathfindingLabUnit.target` (= user click + formation slot, read by frontend command markers / group intent UI) and `RtsPathfindingLabUnit.path_target` (= canonical reachable stop point the current path is actually trying to reach; arrival, stuck detection, replan triggers, and final-error metrics read this). Docstrings explicitly call out the "MUST NOT be merged" invariant and link this issue.
+  2. Audited `examples/rts-pathfinding-lab/frontend/`: the only target-side draw is `draw_circle(_world.current_target, ...)` in `rts_pathfinding_lab.gd` (group-level command marker, correctly reads command intent). No frontend renders `unit.path_target` as a marker. The diagnostics export at `frontend/rts_pathfinding_lab.gd:322-323` and `:374-375` exposes both fields with their distinct names — no merging.
+  3. Registered the existing lock-in smoke under `rtslab/smoke` so any future change that re-merges the two fields flips the matrix red.
+- baseline impact: none (LAB-005 was already correct at HEAD; this issue locked the invariant in via smoke + docstrings).
+- public-api.md: no change. The lab unit script is example-side and not part of `sim-nav-map`'s public API surface.
 
 ## Symptoms
 
