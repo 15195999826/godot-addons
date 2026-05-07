@@ -12,6 +12,13 @@ const REPLAN_BUDGET_PER_TICK: int = 1
 const ARRIVE_EPSILON: float = 8.0
 const OVERLAP_RESOLVE_ITERATIONS: int = 4
 const SEPARATION_STABILIZE_ITERATIONS: int = 6
+# 单次 _push_unit_out_of_static_component 位移上限(cell_size 倍数);限制单帧"瞬移"。
+const STATIC_PUSH_MAX_PER_CALL_CELLS: float = 1.5
+# 沿 inflated rect 边采样 candidate 的步长(cell_size 倍数);决定 push out 候选点密度。
+const STATIC_EXIT_SAMPLE_STEP_CELLS: float = 0.5
+# _resolve_overlaps 单帧每个 unit 总位移上限(cell_size 倍数);限制 overlap 推动累积造成的视觉跳变。
+const OVERLAP_PUSH_MAX_PER_FRAME_CELLS: float = 1.0
+const SEPARATION_TOTAL_BUDGET_USEC: int = 16000
 const RECENT_PLAN_REPORT_LIMIT: int = 80
 const STUCK_SETTLE_TICKS: int = 30
 const STUCK_ACTIVE_ORDER_TICKS: int = 180
@@ -598,7 +605,7 @@ func _finish_move_order(unit: RtsPathfindingLabUnit) -> void:
 	_remove_queued_replan(unit.id)
 
 
-func _resolve_overlaps() -> bool:
+func _resolve_overlaps(overlap_push_budgets: Dictionary) -> bool:
 	var any_changed := false
 	for _iteration in range(OVERLAP_RESOLVE_ITERATIONS):
 		var changed := false
@@ -621,45 +628,95 @@ func _resolve_overlaps() -> bool:
 					continue
 				var dir := delta / dist
 				var push := (min_dist - dist) + 0.1
+				var displacement_a := Vector2.ZERO
+				var displacement_b := Vector2.ZERO
 				if a.mobile and b.mobile:
-					a.position -= dir * push * 0.5
-					b.position += dir * push * 0.5
+					displacement_a = -dir * push * 0.5
+					displacement_b = dir * push * 0.5
 				elif a.mobile:
-					a.position -= dir * push
+					displacement_a = -dir * push
 				elif b.mobile:
-					b.position += dir * push
-				a.position = _clamp_unit_point(a.position, a.radius) if a.mobile else _clamp_to_map(a.position)
-				b.position = _clamp_unit_point(b.position, b.radius) if b.mobile else _clamp_to_map(b.position)
-				changed = true
-				any_changed = true
+					displacement_b = dir * push
+				var moved_a := false
+				var moved_b := false
+				if a.mobile and displacement_a.length() > 0.0001:
+					moved_a = _apply_overlap_push(a, displacement_a, overlap_push_budgets)
+				if b.mobile and displacement_b.length() > 0.0001:
+					moved_b = _apply_overlap_push(b, displacement_b, overlap_push_budgets)
+				if not a.mobile:
+					a.position = _clamp_to_map(a.position)
+				if not b.mobile:
+					b.position = _clamp_to_map(b.position)
+				if moved_a or moved_b:
+					changed = true
+					any_changed = true
 		if not changed:
 			return any_changed
 	return any_changed
 
 
+func _apply_overlap_push(
+	unit: RtsPathfindingLabUnit,
+	displacement: Vector2,
+	overlap_push_budgets: Dictionary
+) -> bool:
+	var distance := displacement.length()
+	if distance <= 0.0001:
+		return false
+	var max_per_frame := _overlap_push_max_per_frame(unit)
+	var used := float(overlap_push_budgets.get(unit.id, 0.0))
+	var remaining := max_per_frame - used
+	if remaining <= 0.0001:
+		return false
+	if distance > remaining:
+		displacement = displacement.normalized() * remaining
+		distance = remaining
+	unit.position += displacement
+	unit.position = _clamp_unit_point(unit.position, unit.radius)
+	overlap_push_budgets[unit.id] = used + distance
+	return true
+
+
+func _overlap_push_max_per_frame(unit: RtsPathfindingLabUnit) -> float:
+	# 与 cell_size / unit diameter 较大者关联,缩放 cell_size / radius 时自动适应。
+	var cell_step := pathfinder.cell_size * OVERLAP_PUSH_MAX_PER_FRAME_CELLS
+	var unit_step := unit.radius * 1.5
+	return maxf(cell_step, unit_step)
+
+
 func _resolve_separation(mobile_units: Array[RtsPathfindingLabUnit]) -> void:
 	var inflated_rect_cache: Dictionary = {}
 	var component_cache_by_radius: Dictionary = {}
+	var static_exit_cache: Dictionary = {}
+	var overlap_push_budgets: Dictionary = {}
+	for unit in mobile_units:
+		overlap_push_budgets[unit.id] = 0.0
+	var separation_start_usec := Time.get_ticks_usec()
 	for _iteration in range(SEPARATION_STABILIZE_ITERATIONS):
 		var changed := _push_out_static_obstacles_for_units(
 			mobile_units,
 			inflated_rect_cache,
-			component_cache_by_radius
+			component_cache_by_radius,
+			static_exit_cache
 		)
-		changed = _resolve_overlaps() or changed
+		changed = _resolve_overlaps(overlap_push_budgets) or changed
 		changed = _push_out_static_obstacles_for_units(
 			mobile_units,
 			inflated_rect_cache,
-			component_cache_by_radius
+			component_cache_by_radius,
+			static_exit_cache
 		) or changed
 		if not changed:
+			return
+		if Time.get_ticks_usec() - separation_start_usec > SEPARATION_TOTAL_BUDGET_USEC:
 			return
 
 
 func _push_out_static_obstacles_for_units(
 	mobile_units: Array[RtsPathfindingLabUnit],
 	inflated_rect_cache: Dictionary,
-	component_cache_by_radius: Dictionary
+	component_cache_by_radius: Dictionary,
+	static_exit_cache: Dictionary
 ) -> bool:
 	var changed := false
 	for unit in mobile_units:
@@ -669,7 +726,13 @@ func _push_out_static_obstacles_for_units(
 			component_cache_by_radius[radius_key] = {}
 		var inflated_rects: Array[Rect2] = inflated_rect_cache[radius_key]
 		var component_cache: Dictionary = component_cache_by_radius[radius_key]
-		changed = _push_out_static_obstacles(unit, inflated_rects, component_cache, mobile_units) or changed
+		changed = _push_out_static_obstacles(
+			unit,
+			inflated_rects,
+			component_cache,
+			static_exit_cache,
+			mobile_units
+		) or changed
 	return changed
 
 
@@ -677,6 +740,7 @@ func _push_out_static_obstacles(
 	unit: RtsPathfindingLabUnit,
 	inflated_rects: Array[Rect2],
 	component_cache: Dictionary,
+	static_exit_cache: Dictionary,
 	mobile_units: Array[RtsPathfindingLabUnit]
 ) -> bool:
 	var moved := false
@@ -685,7 +749,7 @@ func _push_out_static_obstacles(
 		if push_rects.is_empty():
 			return moved
 		var before := unit.position
-		_push_unit_out_of_static_component(unit, push_rects, inflated_rects, mobile_units)
+		_push_unit_out_of_static_component(unit, push_rects, inflated_rects, static_exit_cache, mobile_units)
 		if unit.position.distance_squared_to(before) <= 0.0001:
 			return moved
 		moved = true
@@ -746,6 +810,7 @@ func _push_unit_out_of_static_component(
 	unit: RtsPathfindingLabUnit,
 	rects: Array[Rect2],
 	inflated_rects: Array[Rect2],
+	static_exit_cache: Dictionary,
 	mobile_units: Array[RtsPathfindingLabUnit]
 ) -> void:
 	var best_point := unit.position
@@ -777,7 +842,7 @@ func _push_unit_out_of_static_component(
 				best_side_dist_sq = reference_dist_sq
 				best_side_point = reference_candidate
 	for rect in rects:
-		var candidates := _static_exit_candidates(unit.position, rect)
+		var candidates := _static_exit_candidates(unit.position, rect, static_exit_cache)
 		for candidate in candidates:
 			var clamped_candidate := _clamp_unit_point(candidate, unit.radius)
 			if _point_inside_static_obstacles(clamped_candidate, inflated_rects):
@@ -799,13 +864,35 @@ func _push_unit_out_of_static_component(
 					best_side_overlap = candidate_overlap
 					best_side_dist_sq = current_dist_sq
 					best_side_point = clamped_candidate
+	var chosen_point := unit.position
 	if best_side_dist_sq < INF:
-		unit.position = best_side_point
+		chosen_point = best_side_point
+	elif best_dist_sq < INF:
+		chosen_point = best_point
+	else:
+		_push_unit_out_of_rect(unit, _component_bounds(rects))
 		return
-	if best_dist_sq < INF:
-		unit.position = best_point
+	_apply_static_push_displacement(unit, chosen_point - unit.position)
+
+
+func _apply_static_push_displacement(unit: RtsPathfindingLabUnit, displacement: Vector2) -> void:
+	var distance := displacement.length()
+	if distance <= 0.0001:
 		return
-	_push_unit_out_of_rect(unit, _component_bounds(rects))
+	var max_per_call := _static_push_max_per_call(unit)
+	if distance > max_per_call:
+		displacement = displacement.normalized() * max_per_call
+	unit.position += displacement
+	unit.position = _clamp_unit_point(unit.position, unit.radius)
+
+
+func _static_push_max_per_call(unit: RtsPathfindingLabUnit) -> float:
+	# 取 cell_size 倍数与 unit diameter 中较大者:
+	# - cell_size 倍数保证 push 至少能跨过一个 navcell,与 grid 对齐;
+	# - unit diameter 兜底确保大单位也有合理位移,不会被卡住"micro-step"。
+	var cell_step := pathfinder.cell_size * STATIC_PUSH_MAX_PER_CALL_CELLS
+	var unit_step := unit.radius * 2.0
+	return maxf(cell_step, unit_step)
 
 
 func _is_better_static_exit(
@@ -892,36 +979,45 @@ func _static_push_reference_point(unit: RtsPathfindingLabUnit, inflated_rects: A
 	return unit.position
 
 
-func _static_exit_candidates(point: Vector2, rect: Rect2) -> Array[Vector2]:
+func _static_exit_candidates(point: Vector2, rect: Rect2, static_exit_cache: Dictionary) -> Array[Vector2]:
 	var result: Array[Vector2] = [
 		Vector2(rect.position.x - 0.5, point.y),
 		Vector2(rect.position.x + rect.size.x + 0.5, point.y),
 		Vector2(point.x, rect.position.y - 0.5),
 		Vector2(point.x, rect.position.y + rect.size.y + 0.5),
-		Vector2(rect.position.x - 0.5, rect.position.y - 0.5),
-		Vector2(rect.position.x + rect.size.x + 0.5, rect.position.y - 0.5),
-		Vector2(rect.position.x - 0.5, rect.position.y + rect.size.y + 0.5),
-		Vector2(rect.position.x + rect.size.x + 0.5, rect.position.y + rect.size.y + 0.5),
 	]
-	var sample_step := 8.0
+	var cached := _static_exit_static_candidates(rect, static_exit_cache)
+	for candidate in cached:
+		result.append(candidate)
+	return result
+
+
+func _static_exit_static_candidates(rect: Rect2, static_exit_cache: Dictionary) -> Array[Vector2]:
+	var key := "%.3f:%.3f:%.3f:%.3f" % [rect.position.x, rect.position.y, rect.size.x, rect.size.y]
+	if static_exit_cache.has(key):
+		return static_exit_cache[key]
 	var left := rect.position.x - 0.5
 	var right := rect.position.x + rect.size.x + 0.5
 	var top := rect.position.y - 0.5
 	var bottom := rect.position.y + rect.size.y + 0.5
-	var y := top
-	while y <= bottom:
+	var result: Array[Vector2] = [
+		Vector2(left, top),
+		Vector2(right, top),
+		Vector2(left, bottom),
+		Vector2(right, bottom),
+	]
+	var sample_step := pathfinder.cell_size * STATIC_EXIT_SAMPLE_STEP_CELLS
+	var y := top + sample_step
+	while y < bottom:
 		result.append(Vector2(left, y))
 		result.append(Vector2(right, y))
 		y += sample_step
-	result.append(Vector2(left, bottom))
-	result.append(Vector2(right, bottom))
-	var x := left
-	while x <= right:
+	var x := left + sample_step
+	while x < right:
 		result.append(Vector2(x, top))
 		result.append(Vector2(x, bottom))
 		x += sample_step
-	result.append(Vector2(right, top))
-	result.append(Vector2(right, bottom))
+	static_exit_cache[key] = result
 	return result
 
 
@@ -947,15 +1043,17 @@ func _push_unit_out_of_rect(unit: RtsPathfindingLabUnit, rect: Rect2) -> void:
 	var top := absf(unit.position.y - rect.position.y)
 	var bottom := absf(rect.position.y + rect.size.y - unit.position.y)
 	var min_side := minf(minf(left, right), minf(top, bottom))
+	var target := unit.position
 	if is_equal_approx(min_side, left):
-		unit.position.x = rect.position.x - 0.5
+		target.x = rect.position.x - 0.5
 	elif is_equal_approx(min_side, right):
-		unit.position.x = rect.position.x + rect.size.x + 0.5
+		target.x = rect.position.x + rect.size.x + 0.5
 	elif is_equal_approx(min_side, top):
-		unit.position.y = rect.position.y - 0.5
+		target.y = rect.position.y - 0.5
 	else:
-		unit.position.y = rect.position.y + rect.size.y + 0.5
-	unit.position = _clamp_unit_point(unit.position, unit.radius)
+		target.y = rect.position.y + rect.size.y + 0.5
+	target = _clamp_unit_point(target, unit.radius)
+	_apply_static_push_displacement(unit, target - unit.position)
 
 
 func _settle_idle_unit(unit: RtsPathfindingLabUnit) -> void:
