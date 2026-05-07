@@ -16,11 +16,15 @@ extends Node
 #   7. drop_obstacle_on_unit       — drop a static obstacle on top of blue_0
 #   8. command_outside_map         — issue a command target way outside the lab map
 #   9. rapid_obstacle_thrash       — add/remove blockers every few ticks during travel
+#  10. partial_wall_with_gap       — vertical wall with a 50 px gap, units must find it
+#  11. dynamic_blocker_swarm       — six circular blockers seeded across the corridor
+#  12. formation_packing           — open-area arrival, isolates formation slot logic
 #
 # Each phase prints one EXPLORE_OBSERVATION dict with: arrived units, total
 # replans, max single-step wall time, max single-step world-space delta and
-# its owning unit, plus phase-specific notes. The final block prints a
-# summary table mapping observed symptoms to suspected issue IDs.
+# its owning unit, plus stuck-unit count, path-failure-tick count, and
+# phase-specific notes. The final block prints a summary table mapping
+# observed symptoms to suspected issue IDs.
 #
 # Run: godot --headless --path . addons/sim-nav-map/examples/rts-pathfinding-lab/tests/exploration/exploration_playthrough.tscn
 #
@@ -51,6 +55,9 @@ func _ready() -> void:
 	_phase_drop_obstacle_on_unit()
 	_phase_command_outside_map()
 	_phase_rapid_obstacle_thrash()
+	_phase_partial_wall_with_gap()
+	_phase_dynamic_blocker_swarm()
+	_phase_formation_packing()
 	_print_summary_table()
 	print("=== EXPLORATION PLAYTHROUGH END ===")
 	get_tree().quit(0)
@@ -217,11 +224,76 @@ func _phase_rapid_obstacle_thrash() -> void:
 	_record(observer.finish())
 
 
+func _phase_partial_wall_with_gap() -> void:
+	var world := LabWorld.new()
+	world.setup_default()
+	# Vertical wall at x=400 with a 50 px gap centered at y=210. Units must
+	# discover the gap rather than detour around the whole map.
+	# Top segment covers y in [80, 185]; bottom segment covers y in [235, 340].
+	world.add_static_obstacle(Vector2(400.0, 132.0), Vector2(40.0, 105.0))
+	world.add_static_obstacle(Vector2(400.0, 287.0), Vector2(40.0, 105.0))
+	world.set_group_target(Vector2(560.0, 210.0))
+	var observer := PhaseObserver.new(world, "10_partial_wall_with_gap")
+	observer.run_steps(420, true)
+	observer.note("event", "wall at x=400 with 50 px gap centered y=210")
+	_record(observer.finish())
+
+
+func _phase_dynamic_blocker_swarm() -> void:
+	var world := LabWorld.new()
+	world.setup_default()
+	# Six dynamic blockers (circular obstacles, treated as moving units in the
+	# vertex pathfinder) sprinkled between the unit starts and the target.
+	# Forces frequent short-path replans to weave through.
+	var blocker_positions: Array = [
+		Vector2(280.0, 180.0),
+		Vector2(280.0, 240.0),
+		Vector2(380.0, 165.0),
+		Vector2(380.0, 255.0),
+		Vector2(480.0, 195.0),
+		Vector2(480.0, 225.0),
+	]
+	for pos in blocker_positions:
+		world.add_blocker(pos, 14.0)
+	world.set_group_target(Vector2(610.0, 210.0))
+	var observer := PhaseObserver.new(world, "11_dynamic_blocker_swarm")
+	observer.run_steps(420, true)
+	observer.note("event", "%d circular blockers seeded in the corridor" % blocker_positions.size())
+	_record(observer.finish())
+
+
+func _phase_formation_packing() -> void:
+	var world := LabWorld.new()
+	world.setup_default()
+	# Open upper-right area with no obstacles between starts and target. This
+	# isolates formation slot assignment from obstacle avoidance.
+	var target := Vector2(560.0, 75.0)
+	world.set_group_target(target)
+	var observer := PhaseObserver.new(world, "12_formation_packing")
+	observer.run_steps(360, true)
+	var mobile: Array = world.get_mobile_units()
+	var min_pair := INF
+	var max_pair := 0.0
+	for i in range(mobile.size()):
+		for j in range(i + 1, mobile.size()):
+			var d: float = mobile[i].position.distance_to(mobile[j].position)
+			if d < min_pair:
+				min_pair = d
+			if d > max_pair:
+				max_pair = d
+	observer.note("formation_min_pair_dist_px", "%.2f" % min_pair)
+	observer.note("formation_max_pair_dist_px", "%.2f" % max_pair)
+	_record(observer.finish())
+
+
 # ---------------------------------------------------------------------------
 # Observer + summary
 # ---------------------------------------------------------------------------
 
 class PhaseObserver:
+	const STUCK_TICK_THRESHOLD := 30
+	const STUCK_MOVEMENT_THRESHOLD_PX := 1.0
+
 	var world
 	var phase_name: String
 	var prev_positions: Dictionary = {}
@@ -235,11 +307,23 @@ class PhaseObserver:
 	var notes: Dictionary = {}
 	var _step_t0: int = 0
 
+	# Movement tracking — last step on which each unit moved more than
+	# STUCK_MOVEMENT_THRESHOLD_PX. A unit whose last_movement_step trails
+	# step_count by ≥ STUCK_TICK_THRESHOLD AND still has a move order is
+	# reported as stuck at finish().
+	var last_movement_step: Dictionary = {}
+
+	# Cumulative count of (unit, tick) pairs where the unit had an empty
+	# planned path while still wanting to move and not yet arrived.
+	# High values indicate persistent path-failure pressure during the phase.
+	var path_failure_tick_count: int = 0
+
 	func _init(p_world, p_phase_name: String) -> void:
 		world = p_world
 		phase_name = p_phase_name
 		for u in world.get_mobile_units():
 			prev_positions[u.id] = u.position
+			last_movement_step[u.id] = 0
 
 	func before_step() -> void:
 		_step_t0 = Time.get_ticks_usec()
@@ -256,7 +340,11 @@ class PhaseObserver:
 				max_jump_px = jump
 				max_jump_unit = u.id
 				max_jump_at = step_count
+			if jump > STUCK_MOVEMENT_THRESHOLD_PX:
+				last_movement_step[u.id] = step_count
 			prev_positions[u.id] = u.position
+			if u.has_move_order and not u.arrived and u.path.is_empty():
+				path_failure_tick_count += 1
 		step_count += 1
 		if arrived_at_step < 0 and world.all_mobile_arrived():
 			arrived_at_step = step_count
@@ -275,9 +363,16 @@ class PhaseObserver:
 	func finish() -> Dictionary:
 		var mobile: Array = world.get_mobile_units()
 		var arrived := 0
+		var stuck_ids: Array[String] = []
 		for u in mobile:
 			if u.arrived:
 				arrived += 1
+				continue
+			if not u.has_move_order:
+				continue
+			var last_moved: int = last_movement_step.get(u.id, 0)
+			if step_count - last_moved >= STUCK_TICK_THRESHOLD:
+				stuck_ids.append(u.id)
 		var result := {
 			"phase": phase_name,
 			"steps_run": step_count,
@@ -289,6 +384,9 @@ class PhaseObserver:
 			"max_jump_unit": max_jump_unit,
 			"max_jump_at": max_jump_at,
 			"total_replans": world.total_replans,
+			"stuck_count": stuck_ids.size(),
+			"stuck_ids": stuck_ids,
+			"path_failure_ticks": path_failure_tick_count,
 			"notes": notes,
 		}
 		print("EXPLORE_OBSERVATION: %s" % str(result))
@@ -302,31 +400,40 @@ func _record(result: Dictionary) -> void:
 func _print_summary_table() -> void:
 	print("")
 	print("=== EXPLORATION SUMMARY ===")
-	print("phase                          | arrived  | max_step_µs | max_jump_px | total_replans | suspected_issue")
-	print("-------------------------------|----------|-------------|-------------|---------------|------------------")
+	print("phase                          | arrived  | max_step_µs | max_jump_px | replans | stuck | pf_ticks | suspected_issue")
+	print("-------------------------------|----------|-------------|-------------|---------|-------|----------|------------------")
 	for r in _phase_results:
 		var phase: String = str(r.get("phase", ""))
 		var arrived: String = str(r.get("arrived", ""))
 		var step_us: int = int(r.get("max_step_usec", 0))
 		var jump_str: String = str(r.get("max_jump_px", ""))
 		var replans: int = int(r.get("total_replans", 0))
+		var stuck: int = int(r.get("stuck_count", 0))
+		var pf_ticks: int = int(r.get("path_failure_ticks", 0))
 		var suspect := _suspected_issue(r)
-		print("%-30s | %-8s | %-11d | %-11s | %-13d | %s" % [phase, arrived, step_us, jump_str, replans, suspect])
+		print("%-30s | %-8s | %-11d | %-11s | %-7d | %-5d | %-8d | %s" % [phase, arrived, step_us, jump_str, replans, stuck, pf_ticks, suspect])
 	print("")
 	print("Suspect-issue mapping is heuristic — see docs/issues/ for the canonical")
-	print("repro smokes per issue.")
+	print("repro smokes per issue. pf_ticks counts (unit, tick) pairs where the")
+	print("unit had an empty planned path while still under move orders.")
 
 
 func _suspected_issue(r: Dictionary) -> String:
 	var phase: String = str(r.get("phase", ""))
 	var jump: float = (str(r.get("max_jump_px", "0")).to_float())
 	var step_us: int = int(r.get("max_step_usec", 0))
+	var stuck: int = int(r.get("stuck_count", 0))
+	var pf_ticks: int = int(r.get("path_failure_ticks", 0))
 	var notes: Dictionary = r.get("notes", {})
 	var hits: Array[String] = []
 	if jump > 16.0:
 		hits.append("LAB-003 (jump > 16 px)")
 	if step_us > 4000:
 		hits.append("LAB-002 (step > 4 ms)")
+	if stuck > 0:
+		hits.append("stuck units=%d (needs core-only proof before blaming CORE-003 / escape logic)" % stuck)
+	if pf_ticks > 200:
+		hits.append("path_failure_ticks=%d (high replan failure pressure — investigate before blaming core)" % pf_ticks)
 	if phase.ends_with("unreachable_goal_inside"):
 		var sep: String = str(notes.get("target_path_target_separated", ""))
 		if sep.begins_with("0/"):
@@ -334,7 +441,7 @@ func _suspected_issue(r: Dictionary) -> String:
 	if phase.ends_with("fully_blocked_path"):
 		var arrived: String = str(r.get("arrived", "0/0"))
 		if arrived.begins_with("0/"):
-			hits.append("CORE-003 (no canonical fallback?)")
+			hits.append("blocked-path observation (needs core-only proof before CORE-003)")
 	if phase.ends_with("many_units_one_point"):
 		var ov: String = str(notes.get("max_pair_overlap_px", "0"))
 		if ov.to_float() > 1.0:
@@ -342,7 +449,12 @@ func _suspected_issue(r: Dictionary) -> String:
 	if phase.ends_with("command_outside_map"):
 		var clamped: String = str(notes.get("targets_clamped_or_canonicalized", ""))
 		if clamped.begins_with("0/"):
-			hits.append("CORE-004 (no out-of-bounds handling)")
+			hits.append("out-of-bounds observation (needs core-only proof before CORE-004)")
+	if phase.ends_with("formation_packing"):
+		var min_pair_str: String = str(notes.get("formation_min_pair_dist_px", "0"))
+		var min_pair_dist: float = min_pair_str.to_float()
+		if min_pair_dist > 0.0 and min_pair_dist < 1.0:
+			hits.append("formation slots collapsed: min pair < 1 px (needs LAB-004 follow-up)")
 	if hits.is_empty():
 		return "(no flagged anomalies)"
 	return ", ".join(hits)
