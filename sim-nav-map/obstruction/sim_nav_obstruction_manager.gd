@@ -88,6 +88,24 @@ func set_control_group(tag: int, control_group: String, control_group_2: String 
 	return true
 
 
+func set_static_flags(tag: int, flags: int) -> bool:
+	var shape := get_shape(tag)
+	if not (shape is SimNavObstructionShapeStatic):
+		return false
+	shape.flags = flags
+	return true
+
+
+func set_unit_flags(tag: int, flags: int) -> bool:
+	var shape := get_shape(tag)
+	if not (shape is SimNavObstructionShapeUnit):
+		return false
+	var unit_shape := shape as SimNavObstructionShapeUnit
+	unit_shape.flags = flags
+	unit_shape.moving = (flags & SimNavObstructionFlags.MOVING) != 0
+	return true
+
+
 func get_shape(tag: int) -> SimNavObstructionShape:
 	if _nav_map == null:
 		return null

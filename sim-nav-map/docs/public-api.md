@@ -79,10 +79,16 @@ methods remain implementation details.
   `get_navcell_terrain_data()`, `rebuild_terrain_passability()`.
 - Obstructions: `add_static_obstruction()`, `add_dynamic_obstruction()`,
   `remove_obstruction()`, `move_obstruction()`, `clear_dynamic_obstructions()`,
-  `replace_dynamic_obstructions()`, `get_obstruction_shape()`,
+  `replace_dynamic_obstructions()`, `mark_obstruction_shape_dirty()`,
+  `get_obstruction_shape()`,
   `get_obstruction_shapes_in_range()`, `get_obstruction_shapes_in_range_filtered()`,
   `get_static_obstruction_shapes()`,
   `get_dynamic_obstruction_shapes()`.
+  `mark_obstruction_shape_dirty(shape)` lets callers force re-rasterization of
+  a registered static shape's body region after a flag-only edit; it no-ops
+  for unit shapes (they are not baked into navcell data). The same dirtying
+  is wired through `SimNavObstructionShape.flags`'s setter, so direct
+  `shape.flags = ...` mutation on a registered shape also marks navcells dirty.
 - Dirty/raster lifecycle: `rebuild_dirty()`, `rasterize_dirty_obstructions()`,
   `mark_dirty_navcell()`, `is_dirty_navcell()`, `collect_dirty_navcells()`,
   `collect_dirty_obstruction_navcells()`, `has_dirty_navcells()`,
@@ -329,7 +335,7 @@ surface and may remain more implementation-shaped:
 
 | Class | Use |
 |---|---|
-| `SimNavObstructionManager` | Convenience wrapper around obstruction registration and rasterization for tests or tools. `SimNavMap` remains the primary map owner. |
+| `SimNavObstructionManager` | Convenience wrapper around obstruction registration and rasterization for tests or tools. `SimNavMap` remains the primary map owner. Setters: `set_unit_moving_flag()`, `set_control_group()`, `set_static_flags(tag, flags)`, `set_unit_flags(tag, flags)`. The flag setters propagate dirty navcells through `SimNavObstructionShape.flags`'s setter. |
 | `SimNavSpatialIndex` | Spatial query primitive for obstruction bounds. |
 | `SimNavLineOfSight` | Geometry helper used by short paths and diagnostics. |
 | `SimNavJumpPointCache` | Long-path cache helper. Call `SimNavLongPathfinder.invalidate_jump_point_cache()` instead for normal integration. |

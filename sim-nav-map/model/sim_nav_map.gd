@@ -107,6 +107,7 @@ func add_static_obstruction(shape: SimNavObstructionShapeStatic) -> int:
 	var tag := _next_obstruction_tag
 	_next_obstruction_tag += 1
 	shape.tag = tag
+	shape._owning_nav_map_ref = weakref(self)
 	_static_obstructions[tag] = shape
 	_static_obstruction_index.add(tag, _shape_bounds_min(shape), _shape_bounds_max(shape))
 	_mark_obstruction_shape_dirty(shape)
@@ -120,6 +121,7 @@ func add_dynamic_obstruction(shape: SimNavObstructionShapeUnit) -> int:
 	var tag := _next_obstruction_tag
 	_next_obstruction_tag += 1
 	shape.tag = tag
+	shape._owning_nav_map_ref = weakref(self)
 	_dynamic_obstructions[tag] = shape
 	_dynamic_obstruction_index.add(tag, _shape_bounds_min(shape), _shape_bounds_max(shape))
 	return tag
@@ -129,14 +131,22 @@ func remove_obstruction(tag: int) -> bool:
 	if _static_obstructions.has(tag):
 		var static_shape := _static_obstructions[tag] as SimNavObstructionShapeStatic
 		_mark_obstruction_shape_dirty(static_shape)
+		static_shape._owning_nav_map_ref = null
 		_static_obstruction_index.remove(tag)
 		_static_obstructions.erase(tag)
 		return true
 	if _dynamic_obstructions.has(tag):
+		var dyn_shape := _dynamic_obstructions[tag] as SimNavObstructionShapeUnit
+		dyn_shape._owning_nav_map_ref = null
 		_dynamic_obstruction_index.remove(tag)
 		_dynamic_obstructions.erase(tag)
 		return true
 	return false
+
+
+func mark_obstruction_shape_dirty(shape: SimNavObstructionShape) -> void:
+	if shape is SimNavObstructionShapeStatic:
+		_mark_obstruction_shape_dirty(shape as SimNavObstructionShapeStatic)
 
 
 func move_obstruction(tag: int, center: Vector2, rotation_rad: float = 0.0) -> bool:
@@ -156,6 +166,8 @@ func move_obstruction(tag: int, center: Vector2, rotation_rad: float = 0.0) -> b
 
 
 func clear_dynamic_obstructions() -> void:
+	for shape in _dynamic_obstructions.values():
+		(shape as SimNavObstructionShapeUnit)._owning_nav_map_ref = null
 	_dynamic_obstructions.clear()
 	_dynamic_obstruction_index.clear()
 
