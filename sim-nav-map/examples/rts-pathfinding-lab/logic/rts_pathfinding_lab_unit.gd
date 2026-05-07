@@ -6,6 +6,7 @@ var id: String = ""
 var group_id: String = ""
 var position: Vector2 = Vector2.ZERO
 var target: Vector2 = Vector2.ZERO
+var path_target: Vector2 = Vector2.ZERO
 var radius: float = 11.0
 var speed: float = 95.0
 var mobile: bool = true
@@ -30,6 +31,7 @@ func _init(
 	group_id = p_group_id
 	position = p_position
 	target = p_position
+	path_target = p_position
 	radius = p_radius
 	speed = p_speed
 	mobile = p_mobile
@@ -39,14 +41,14 @@ func _init(
 func set_path(points: Array[Vector2]) -> void:
 	path = points.duplicate()
 	path_index = 0
-	arrived = path.is_empty() and position.distance_to(target) <= radius
+	arrived = path.is_empty() and position.distance_to(path_target) <= radius
 	if arrived:
 		has_move_order = false
 
 
 func current_waypoint() -> Vector2:
 	if path_index >= path.size():
-		return target
+		return path_target
 	return path[path_index]
 
 

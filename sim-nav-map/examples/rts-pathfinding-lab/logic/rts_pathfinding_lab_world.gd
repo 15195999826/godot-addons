@@ -119,6 +119,7 @@ func set_units_target(unit_ids: Array[String], target: Vector2) -> void:
 	for i in range(target_units.size()):
 		var unit := target_units[i]
 		unit.target = _clamp_unit_point(target + offsets[i], unit.radius)
+		unit.path_target = unit.target
 		unit.arrived = false
 		unit.has_move_order = true
 		unit.replan_timer = REPLAN_INTERVAL
@@ -148,7 +149,7 @@ func step(delta: float) -> void:
 			continue
 		unit.replan_timer += delta
 		_move_unit(unit, delta)
-		if not unit.arrived and (unit.replan_timer >= REPLAN_INTERVAL or unit.path_index >= unit.path.size()):
+		if not unit.arrived and unit.replan_timer >= REPLAN_INTERVAL:
 			_enqueue_replan(unit.id)
 	var move_usec := Time.get_ticks_usec() - move_start_usec
 	var pre_settle_start_usec := Time.get_ticks_usec()
@@ -289,6 +290,7 @@ func analyze_movement() -> Dictionary:
 	var mobile_units := get_mobile_units()
 	var arrived_count := 0
 	var max_final_error := 0.0
+	var max_command_error := 0.0
 	var min_pair_distance := INF
 	var max_overlap := 0.0
 	var obstacle_violations := 0
@@ -296,7 +298,8 @@ func analyze_movement() -> Dictionary:
 	for unit in mobile_units:
 		if unit.arrived:
 			arrived_count += 1
-		max_final_error = maxf(max_final_error, unit.position.distance_to(unit.target))
+		max_final_error = maxf(max_final_error, unit.position.distance_to(unit.path_target))
+		max_command_error = maxf(max_command_error, unit.position.distance_to(unit.target))
 		trace_points += unit.trace.size()
 		for point in unit.trace:
 			for obstacle in obstacles:
@@ -315,6 +318,7 @@ func analyze_movement() -> Dictionary:
 		"mobile_count": mobile_units.size(),
 		"arrived_count": arrived_count,
 		"max_final_error": max_final_error,
+		"max_command_error": max_command_error,
 		"min_pair_distance": min_pair_distance,
 		"max_overlap": maxf(max_overlap, 0.0),
 		"obstacle_violations": obstacle_violations,
@@ -337,6 +341,7 @@ func _plan_unit(unit: RtsPathfindingLabUnit) -> void:
 			others.append(candidate)
 	var start_position := unit.position
 	var target_before := unit.target
+	var path_target_before := unit.path_target
 	var plan_start_usec := Time.get_ticks_usec()
 	var planned_path := pathfinder.plan_path(
 		unit.position,
@@ -349,12 +354,19 @@ func _plan_unit(unit: RtsPathfindingLabUnit) -> void:
 		bool(_canonical_target_by_unit.get(unit.id, false))
 	)
 	var plan_usec := Time.get_ticks_usec() - plan_start_usec
+	var resolved_target := unit.target
 	if bool(pathfinder.last_report.get("used_make_goal_reachable", false)):
 		var reachable_goal: Vector2 = pathfinder.last_report.get("reachable_goal", unit.target) as Vector2
 		if reachable_goal.distance_to(unit.target) > 0.01:
-			unit.target = reachable_goal
+			resolved_target = reachable_goal
 			_canonical_target_by_unit[unit.id] = true
-			_reset_stuck_progress(unit)
+		else:
+			_canonical_target_by_unit[unit.id] = false
+	else:
+		_canonical_target_by_unit[unit.id] = false
+	if unit.path_target.distance_to(resolved_target) > 0.01:
+		unit.path_target = resolved_target
+		_reset_stuck_progress(unit)
 	unit.set_path(planned_path)
 	unit.replan_timer = 0.0
 	_record_plan_report({
@@ -363,6 +375,8 @@ func _plan_unit(unit: RtsPathfindingLabUnit) -> void:
 		"start": start_position,
 		"target_before": target_before,
 		"target_after": unit.target,
+		"path_target_before": path_target_before,
+		"path_target_after": unit.path_target,
 		"plan_usec": plan_usec,
 		"path_size": planned_path.size(),
 		"other_units": others.size(),
@@ -383,7 +397,9 @@ func movement_debug_snapshot() -> Dictionary:
 	for unit in get_mobile_units():
 		unit_debug.append({
 			"id": unit.id,
-			"target_error": unit.position.distance_to(unit.target),
+			"target_error": unit.position.distance_to(unit.path_target),
+			"command_target_error": unit.position.distance_to(unit.target),
+			"path_target": unit.path_target,
 			"stalled_ticks": int(_stalled_ticks_by_unit.get(unit.id, 0)),
 			"last_target_error": float(_last_target_error_by_unit.get(unit.id, -1.0)),
 			"active_order_ticks": int(_active_order_ticks_by_unit.get(unit.id, 0)),
@@ -428,7 +444,7 @@ func _process_replan_budget() -> void:
 
 func _move_unit(unit: RtsPathfindingLabUnit, delta: float) -> void:
 	if unit.path.is_empty():
-		unit.arrived = unit.position.distance_to(unit.target) <= ARRIVE_EPSILON
+		unit.arrived = unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON
 		if unit.arrived:
 			unit.has_move_order = false
 		return
@@ -442,7 +458,7 @@ func _move_unit(unit: RtsPathfindingLabUnit, delta: float) -> void:
 		unit.position += to_waypoint.normalized() * max_step
 	unit.position = _clamp_unit_point(unit.position, unit.radius)
 
-	if unit.path_index >= unit.path.size() and unit.position.distance_to(unit.target) <= ARRIVE_EPSILON:
+	if unit.path_index >= unit.path.size() and unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON:
 		_finish_move_order(unit)
 
 
@@ -453,7 +469,7 @@ func _pre_settle_expired_active_orders(mobile_units: Array[RtsPathfindingLabUnit
 		var next_active_ticks := int(_active_order_ticks_by_unit.get(unit.id, 0)) + 1
 		if next_active_ticks < STUCK_ACTIVE_ORDER_TICKS:
 			continue
-		var target_error := unit.position.distance_to(unit.target)
+		var target_error := unit.position.distance_to(unit.path_target)
 		if target_error <= ARRIVE_EPSILON:
 			continue
 		var path_is_direct := _path_is_direct_to_target(unit)
@@ -474,6 +490,7 @@ func _pre_settle_expired_active_orders(mobile_units: Array[RtsPathfindingLabUnit
 			"unit_id": unit.id,
 			"position_before": unit.position,
 			"target_before": unit.target,
+			"path_target_before": unit.path_target,
 			"target_error": target_error,
 			"progress_error": target_error if path_is_direct else unit.position.distance_to(unit.current_waypoint()),
 			"active_order_ticks": next_active_ticks,
@@ -487,7 +504,7 @@ func _pre_settle_expired_active_orders(mobile_units: Array[RtsPathfindingLabUnit
 
 func _update_active_move_settle(unit: RtsPathfindingLabUnit) -> void:
 	_active_order_ticks_by_unit[unit.id] = int(_active_order_ticks_by_unit.get(unit.id, 0)) + 1
-	var target_error := unit.position.distance_to(unit.target)
+	var target_error := unit.position.distance_to(unit.path_target)
 	if target_error <= ARRIVE_EPSILON:
 		if _unit_max_overlap(unit) <= ARRIVE_MAX_OVERLAP:
 			_settle_idle_unit(unit)
@@ -534,6 +551,7 @@ func _update_active_move_settle(unit: RtsPathfindingLabUnit) -> void:
 			"unit_id": unit.id,
 			"position_before": unit.position,
 			"target_before": unit.target,
+			"path_target_before": unit.path_target,
 			"target_error": target_error,
 			"progress_error": progress_error,
 			"stalled_ticks": int(_stalled_ticks_by_unit.get(unit.id, 0)),
@@ -547,6 +565,7 @@ func _update_active_move_settle(unit: RtsPathfindingLabUnit) -> void:
 			"unit_id": unit.id,
 			"position_before": unit.position,
 			"target_before": unit.target,
+			"path_target_before": unit.path_target,
 			"target_error": target_error,
 			"progress_error": progress_error,
 			"active_order_ticks": int(_active_order_ticks_by_unit.get(unit.id, 0)),
@@ -564,7 +583,7 @@ func _path_is_direct_to_target(unit: RtsPathfindingLabUnit) -> bool:
 		return true
 	if unit.path.size() - unit.path_index > 1:
 		return false
-	return unit.path.back().distance_to(unit.target) <= ARRIVE_EPSILON
+	return unit.path.back().distance_to(unit.path_target) <= ARRIVE_EPSILON
 
 
 func _move_order_is_static_constrained(unit: RtsPathfindingLabUnit) -> bool:
@@ -594,7 +613,8 @@ func _unit_near_static_boundary(unit: RtsPathfindingLabUnit) -> bool:
 
 
 func _finish_move_order(unit: RtsPathfindingLabUnit) -> void:
-	unit.position = unit.target
+	unit.position = unit.path_target
+	unit.path_target = unit.position
 	unit.path.clear()
 	unit.path_index = 0
 	unit.arrived = true
@@ -613,21 +633,23 @@ func _resolve_overlaps(overlap_push_budgets: Dictionary) -> bool:
 			for j in range(i + 1, units.size()):
 				var a := units[i]
 				var b := units[j]
-				if (
-					a.mobile
-					and b.mobile
-					and not a.has_move_order
-					and not b.has_move_order
-					and (_unit_near_static_boundary(a) or _unit_near_static_boundary(b))
-				):
-					continue
 				var min_dist := a.radius + b.radius
 				var delta := b.position - a.position
 				var dist := delta.length()
 				if dist >= min_dist or dist <= 0.0001:
 					continue
+				var overlap := min_dist - dist
+				if (
+					a.mobile
+					and b.mobile
+					and not a.has_move_order
+					and not b.has_move_order
+					and overlap <= ARRIVE_MAX_OVERLAP
+					and (_unit_near_static_boundary(a) or _unit_near_static_boundary(b))
+				):
+					continue
 				var dir := delta / dist
-				var push := (min_dist - dist) + 0.1
+				var push := overlap + 0.1
 				var displacement_a := Vector2.ZERO
 				var displacement_b := Vector2.ZERO
 				if a.mobile and b.mobile:
@@ -1057,7 +1079,7 @@ func _push_unit_out_of_rect(unit: RtsPathfindingLabUnit, rect: Rect2) -> void:
 
 
 func _settle_idle_unit(unit: RtsPathfindingLabUnit) -> void:
-	unit.target = unit.position
+	unit.path_target = unit.position
 	unit.path.clear()
 	unit.path_index = 0
 	unit.arrived = true

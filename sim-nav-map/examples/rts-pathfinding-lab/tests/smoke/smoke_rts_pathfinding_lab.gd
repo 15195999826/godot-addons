@@ -140,6 +140,7 @@ func _test_bottom_boundary_world_units_stay_inside_map() -> void:
 	var unit := world.get_mobile_units()[0]
 	unit.position = Vector2(340.0, 405.0)
 	unit.target = unit.position
+	unit.path_target = unit.position
 	unit.path.clear()
 	unit.path_index = 0
 	unit.arrived = true
@@ -185,6 +186,7 @@ func _test_connected_static_push_out_uses_nearest_exit() -> void:
 	var unit := world.get_mobile_units()[0]
 	unit.position = Vector2(365.0, 136.0)
 	unit.target = unit.position
+	unit.path_target = unit.position
 	unit.path.clear()
 	unit.path_index = 0
 	unit.arrived = true
@@ -214,6 +216,7 @@ func _test_static_push_out_preserves_previous_side() -> void:
 	var unit := world.get_mobile_units()[0]
 	unit.position = Vector2(480.0, 144.25)
 	unit.target = unit.position
+	unit.path_target = unit.position
 	unit.trace = [
 		Vector2(391.635772705078, 135.998733520508),
 		Vector2(395.797943115234, 136.007034301758),
@@ -266,6 +269,7 @@ func _test_logged_idle_gap_push_does_not_cross_component() -> void:
 			return
 		unit.position = positions[unit_id]
 		unit.target = unit.position
+		unit.path_target = unit.position
 		unit.trace.assign(traces[unit_id])
 		unit.path.clear()
 		unit.path_index = 0
@@ -317,12 +321,14 @@ func _test_logged_cluster_separation_stays_budgeted() -> void:
 			return
 		unit.position = positions[unit_id]
 		unit.target = Vector2(376.0, 280.0)
+		unit.path_target = unit.target
 		unit.path = [unit.target]
 		unit.path_index = 0
 		unit.arrived = false
 		unit.has_move_order = true
 		unit.replan_timer = 0.0
 	world.get_unit_by_id("blue_5").target = Vector2(377.5, 276.5)
+	world.get_unit_by_id("blue_5").path_target = world.get_unit_by_id("blue_5").target
 	world.get_unit_by_id("blue_5").path.clear()
 	world.get_unit_by_id("blue_5").arrived = true
 	world.get_unit_by_id("blue_5").has_move_order = false
@@ -364,6 +370,7 @@ func _test_logged_stalled_cluster_settles_active_orders() -> void:
 			return
 		unit.position = active_positions[unit_id]
 		unit.target = Vector2(376.0, 280.0)
+		unit.path_target = unit.target
 		unit.path = [unit.target]
 		unit.path_index = 0
 		unit.arrived = false
@@ -375,6 +382,7 @@ func _test_logged_stalled_cluster_settles_active_orders() -> void:
 		return
 	settled_unit.position = Vector2(385.5, 276.5)
 	settled_unit.target = settled_unit.position
+	settled_unit.path_target = settled_unit.position
 	settled_unit.path.clear()
 	settled_unit.path_index = 0
 	settled_unit.arrived = true
@@ -482,6 +490,7 @@ func _test_passive_push_chain_settles_idle_units() -> void:
 			return
 		unit.position = positions[i]
 		unit.target = positions[i]
+		unit.path_target = positions[i]
 		unit.path.clear()
 		unit.path_index = 0
 		unit.arrived = true
@@ -504,8 +513,8 @@ func _test_passive_push_chain_settles_idle_units() -> void:
 				str(idle_unit.has_move_order),
 			])
 			return
-		if idle_unit.position.distance_to(idle_unit.target) > 0.01:
-			_failures.append("push-chain: idle target did not settle to pushed position, unit=%s" % idle_unit.id)
+		if idle_unit.position.distance_to(idle_unit.path_target) > 0.01:
+			_failures.append("push-chain: idle path target did not settle to pushed position, unit=%s" % idle_unit.id)
 			return
 		idle_positions_before[idle_unit.id] = idle_unit.position
 
@@ -551,13 +560,13 @@ func _test_unreachable_group_target_settles_at_reachable_edge() -> void:
 		_failures.append("unreachable-target: overlap too high after settling, metrics=%s" % str(metrics))
 		return
 	for unit in world.get_mobile_units():
-		if not world.pathfinder.is_point_passable(unit.target, world.obstacles, unit.radius):
-			_failures.append("unreachable-target: final target is still impassable for %s at %s" % [unit.id, str(unit.target)])
+		if not world.pathfinder.is_point_passable(unit.path_target, world.obstacles, unit.radius):
+			_failures.append("unreachable-target: path target is still impassable for %s at %s" % [unit.id, str(unit.path_target)])
 			return
-		if unit.target.distance_to(obstacle_center) > 2.0:
+		if unit.path_target.distance_to(unit.target) > 2.0:
 			canonicalized_count += 1
 	if canonicalized_count == 0:
-		_failures.append("unreachable-target: expected at least one unit target to be canonicalized")
+		_failures.append("unreachable-target: expected at least one path target to be canonicalized")
 		return
 
 	var positions_before: Dictionary = {}
@@ -1151,6 +1160,7 @@ func _active_obstacle_violation_detail(world: RtsPathfindingLabWorld) -> Diction
 					result["unit_id"] = unit.id
 					result["unit_position"] = unit.position
 					result["unit_target"] = unit.target
+					result["unit_path_target"] = unit.path_target
 					result["obstacle_id"] = obstacle.id
 					result["obstacle_center"] = obstacle.center
 	return result
@@ -1175,6 +1185,8 @@ func _unit_overlap_detail(world: RtsPathfindingLabWorld) -> Dictionary:
 					"b_position": b.position,
 					"a_target": a.target,
 					"b_target": b.target,
+					"a_path_target": a.path_target,
+					"b_path_target": b.path_target,
 					"a_arrived": a.arrived,
 					"b_arrived": b.arrived,
 					"a_has_move_order": a.has_move_order,

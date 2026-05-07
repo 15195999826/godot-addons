@@ -11,6 +11,8 @@ const LONG_VERTEX_STATIC_LIMIT: int = 4
 const LONG_VERTEX_EDGE_STATIC_LIMIT: int = 3
 const LONG_VERTEX_EDGE_MARGIN: float = 64.0
 const EDGE_VERTEX_DISTANCE_LIMIT: float = 64.0
+const CROWDED_VERTEX_ACTIVE_LIMIT: int = 5
+const DENSE_DYNAMIC_VERTEX_LIMIT: int = 6
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var cell_size: float = 16.0
@@ -131,18 +133,32 @@ func plan_path(
 
 	var short_request := _make_short_path_request(start, reachable_goal, pass_mask, moving_group_id, avoid_moving_units, group_filter_enabled)
 	var distance_to_reachable_goal := start.distance_to(reachable_goal)
-	var dynamic_obstacle_count := maxi(active_obstacles.size() - static_obstacles.size(), 0)
+	var active_obstacle_count := active_obstacles.size()
+	var dynamic_obstacle_count := maxi(active_obstacle_count - static_obstacles.size(), 0)
 	var skipped_vertex_reason := ""
 	var try_vertex := true
 	if prefer_grid_for_canonical_target and distance_to_reachable_goal > LONG_VERTEX_DISTANCE_LIMIT:
 		try_vertex = false
 		skipped_vertex_reason = "canonical_target_grid_preferred"
+	elif (
+		active_obstacle_count >= CROWDED_VERTEX_ACTIVE_LIMIT
+		and distance_to_reachable_goal > LONG_VERTEX_DISTANCE_LIMIT
+		and (_is_edge_goal(start) or _is_edge_goal(reachable_goal))
+	):
+		try_vertex = false
+		skipped_vertex_reason = "crowded_edge_long_query"
 	elif reachability.canonicalized and dynamic_obstacle_count >= LONG_VERTEX_DYNAMIC_LIMIT:
 		try_vertex = false
 		skipped_vertex_reason = "canonical_goal_crowded_query"
 	elif reachability.canonicalized and distance_to_reachable_goal > LONG_VERTEX_DISTANCE_LIMIT:
 		try_vertex = false
 		skipped_vertex_reason = "canonical_goal_outside_vertex_range"
+	elif _is_edge_goal(reachable_goal) and dynamic_obstacle_count >= LONG_VERTEX_DYNAMIC_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "crowded_dynamic_edge_query"
+	elif dynamic_obstacle_count >= DENSE_DYNAMIC_VERTEX_LIMIT:
+		try_vertex = false
+		skipped_vertex_reason = "dense_dynamic_query"
 	elif _is_edge_goal(reachable_goal) and static_obstacles.size() >= LONG_VERTEX_EDGE_STATIC_LIMIT and distance_to_reachable_goal > EDGE_VERTEX_DISTANCE_LIMIT:
 		try_vertex = false
 		skipped_vertex_reason = "edge_static_long_query"
@@ -180,7 +196,7 @@ func plan_path(
 			"grid_usec": 0,
 			"skipped_vertex_reason": skipped_vertex_reason,
 			"distance_to_reachable_goal": distance_to_reachable_goal,
-			"active_obstacle_count": active_obstacles.size(),
+			"active_obstacle_count": active_obstacle_count,
 			"dynamic_obstacle_count": dynamic_obstacle_count,
 		}
 		return vertex_path
@@ -211,7 +227,7 @@ func plan_path(
 		"grid_usec": grid_usec,
 		"skipped_vertex_reason": skipped_vertex_reason,
 		"distance_to_reachable_goal": distance_to_reachable_goal,
-		"active_obstacle_count": active_obstacles.size(),
+		"active_obstacle_count": active_obstacle_count,
 		"dynamic_obstacle_count": dynamic_obstacle_count,
 		"long_path_result": _long_path_result_to_report(long_result),
 		"core_refined_path_size": long_path.size(),
