@@ -58,6 +58,19 @@ func _test_constructor_defaults() -> void:
 	_assert_null(request.goal, "short path request goal should default to null")
 	_assert_float(256.0, request.range_px, "short path request range should default to 256 px")
 	_assert_true(request.avoid_moving_units, "short path request should avoid moving units by default")
+	var default_filter := request.get_obstruction_filter()
+	_assert_true(default_filter.include_static, "short path default filter should include static obstructions")
+	_assert_true(default_filter.include_units, "short path default filter should include unit obstructions")
+
+	var short_result := SimNavShortPathResult.new()
+	short_result.configure_query(request)
+	_assert_equal_str(SimNavShortPathResult.STATUS_INVALID_QUERY, short_result.status, "short path result default status should be invalid_query")
+	_assert_float(256.0, short_result.range_px, "short path result should snapshot query range")
+
+	var movement_line := SimNavMovementLineResult.new()
+	movement_line.configure_query(Vector2.ZERO, Vector2(8.0, 0.0), 2.0, 1, SimNavObstructionFilter.units_only(), true)
+	_assert_equal_str(SimNavMovementLineResult.STATUS_INVALID_QUERY, movement_line.status, "movement line result default status should be invalid_query")
+	_assert_true(movement_line.unit_only, "movement line result should snapshot unit-only query mode")
 
 	var path := SimNavWaypointPath.new()
 	_assert_true(path.is_empty(), "new waypoint path should be empty")

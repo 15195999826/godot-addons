@@ -14,6 +14,24 @@ static func segment_clear(a: Vector2, b: Vector2, shapes: Array, buffer: float) 
 	return true
 
 
+static func first_blocking_shape(a: Vector2, b: Vector2, shapes: Array, buffer: float) -> SimNavObstructionShape:
+	for shape in shapes:
+		var obstruction_shape := shape as SimNavObstructionShape
+		if obstruction_shape != null and shape_blocks_segment(a, b, obstruction_shape, buffer):
+			return obstruction_shape
+	return null
+
+
+static func shape_blocks_segment(a: Vector2, b: Vector2, shape: SimNavObstructionShape, buffer: float) -> bool:
+	if shape is SimNavObstructionShapeUnit:
+		var unit_shape := shape as SimNavObstructionShapeUnit
+		var threshold := unit_shape.clearance + buffer
+		return _segment_to_point_dist(a, b, unit_shape.center) < threshold
+	if shape is SimNavObstructionShapeStatic:
+		return _segment_to_obb_dist(a, b, shape as SimNavObstructionShapeStatic, buffer) < buffer
+	return false
+
+
 static func _segment_to_point_dist(a: Vector2, b: Vector2, point: Vector2) -> float:
 	var ab := b - a
 	var len_sq := ab.length_squared()

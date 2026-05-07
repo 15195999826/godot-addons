@@ -8,6 +8,7 @@
         "smoke/smoke_rts_pathfinding_lab_terrain_adapter.tscn",
         "smoke/smoke_rts_pathfinding_lab_clearance_adapter.tscn",
         "smoke/smoke_rts_pathfinding_lab_long_path_result_adapter.tscn",
+        "smoke/smoke_rts_pathfinding_lab_core_primitive_adapter.tscn",
         "smoke/smoke_rts_pathfinding_lab_scene_load.tscn"
       ]
     }

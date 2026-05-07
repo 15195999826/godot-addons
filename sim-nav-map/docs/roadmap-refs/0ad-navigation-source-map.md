@@ -39,9 +39,9 @@ the core addon.
 | Dirty / cache lifecycle | `source/simulation2/components/CCmpPathfinder.cpp`, `source/simulation2/helpers/HierarchicalPathfinder.h`, `source/simulation2/helpers/LongPathfinder.h` | obstruction / terrain change -> `UpdateGrid()`, hierarchical update, jump cache clear. |
 | Reachability | `source/simulation2/helpers/HierarchicalPathfinder.h`, `source/simulation2/helpers/HierarchicalPathfinder.cpp` | chunk / region / global region, `IsGoalReachable()`, `MakeGoalReachable()`. |
 | Long path | `source/simulation2/helpers/LongPathfinder.h`, `source/simulation2/helpers/LongPathfinder.cpp` | A* / JPS, `WaypointPath`, `ImprovePathWaypoints()`, excluded regions, debug data. |
-| Short path | `source/simulation2/helpers/VertexPathfinder.h`, `source/simulation2/helpers/VertexPathfinder.cpp`, `source/simulation2/components/ICmpObstructionManager.h` | visibility graph, range-limited short path, `avoidMovingUnits`, group filter. |
-| Request queue | `source/simulation2/helpers/Pathfinding.h`, `source/simulation2/components/CCmpPathfinder.cpp`, `source/simulation2/components/CCmpUnitMotion.h` | `LongPathRequest` / `ShortPathRequest`, async ticket, `m_MaxSameTurnMoves`, expected ticket. |
-| Diagnostics exports | `source/simulation2/components/ICmpPathfinder.h`, `source/simulation2/helpers/HierarchicalPathfinder.h` | AI dirtiness information, connectivity grid read-only export. |
+| Short path | `source/simulation2/helpers/Pathfinding.h`, `source/simulation2/helpers/VertexPathfinder.h`, `source/simulation2/helpers/VertexPathfinder.cpp`, `source/simulation2/components/ICmpObstructionManager.h`, `source/simulation2/components/CCmpUnitMotion.h` | `ShortPathRequest`, visibility graph, range-limited short path, `avoidMovingUnits`, group filter, long-waypoint rejoin policy caller. |
+| Request queue | `source/simulation2/helpers/Pathfinding.h`, `source/simulation2/components/CCmpPathfinder.cpp`, `source/simulation2/components/CCmpPathfinder_Common.h`, `source/simulation2/components/CCmpUnitMotion.h` | `LongPathRequest` / `ShortPathRequest`, async ticket, `PathRequests`, `m_MaxSameTurnMoves`, expected ticket. |
+| Diagnostics exports | `source/simulation2/helpers/Grid.h`, `source/simulation2/components/ICmpPathfinder.h`, `source/simulation2/components/CCmpPathfinder.cpp`, `source/simulation2/components/CCmpPathfinder_Common.h`, `source/simulation2/helpers/HierarchicalPathfinder.h` | `GridUpdateInformation`, AI dirtiness information, passability grid, debug data, connectivity grid read-only export. |
 | Formation as example policy | `source/simulation2/components/CCmpUnitMotion.h`, `source/simulation2/components/CCmpUnitMotion_System.cpp` | formation controller runs before unit motion; useful validation idea, not a core plugin target. |
 
 ## Feature 5 Long-Path Source Audit
@@ -162,6 +162,234 @@ source/simulation2/components/CCmpUnitMotion.h
   Feature 5 did not move `CCmpUnitMotion`-style short-path fallback, retry
   cadence, push/yield, stuck/deadlock, formation, or movement controller policy
   into core.
+
+## Feature 6 Filtered Short Query And Line Validation Source Audit
+
+This section refreshes the Feature 6 target against the local 0 A.D. source.
+Use it before changing `sim-nav-map` short-path requests, obstruction filters,
+or line-validation APIs. If the source is refreshed, re-check these files before
+relying on the bullets below:
+
+```text
+source/simulation2/helpers/Pathfinding.h
+source/simulation2/helpers/Pathfinding.cpp
+source/simulation2/helpers/VertexPathfinder.h
+source/simulation2/helpers/VertexPathfinder.cpp
+source/simulation2/components/ICmpPathfinder.h
+source/simulation2/components/ICmpObstructionManager.h
+source/simulation2/components/CCmpObstructionManager.cpp
+source/simulation2/components/CCmpUnitMotion.h
+```
+
+### 0 A.D. Source Facts
+
+- `ShortPathRequest` carries ticket, start coordinates, clearance, search
+  range, `PathGoal`, passability class, `avoidMovingUnits`, control group, and
+  notify entity. It is still a navigation request, not a movement controller.
+- `VertexPathfinder::ComputeShortPath()` builds a local visibility graph inside
+  a range-limited search region. The range boundary itself becomes an
+  impassable edge so short-path work stays local.
+- The short pathfinder asks the obstruction manager for static and unit
+  obstruction squares in range, using `ControlGroupMovementObstructionFilter`
+  built from `avoidMovingUnits` and the request control group.
+- `WaypointPath` is reconstructed in reverse consumption order for short paths,
+  consistent with the long-path result shape.
+- `ICmpObstructionManager` exposes exact collision primitives with an
+  `IObstructionTestFilter`: `TestLine()`, `TestUnitLine()`, static/unit shape
+  tests, and static/unit/all obstruction range queries.
+- The concrete filter family covers useful navigation cases: include all,
+  stationary-only, skip a tag, skip control groups, require flags, and combine
+  tag/group/flag predicates.
+- `Pathfinding::CheckLineMovement()` validates a line segment against the
+  passability grid. `ICmpPathfinder::CheckMovement()` combines obstruction-line
+  collision with terrain/passability line validation and returns a boolean
+  legality answer.
+- `CCmpObstructionManager::TestLine()` checks both static and unit obstructions;
+  `TestUnitLine()` checks only unit obstructions. Both accept the same filter
+  protocol and swept radius input.
+- `CCmpUnitMotion` uses `CheckMovement()` before advancing along a segment and
+  uses `TestUnitLine()` while following a long path to detect upcoming dynamic
+  unit blockage. Its decision to request a short path after a blocked segment is
+  caller policy, not part of the primitive.
+
+### Sim Nav Map Feature 6 Implications
+
+- A `sim-nav-map` obstruction filter contract should be explicit and reusable
+  across shape range queries, short-path queries, movement-line validation, and
+  unit-only line validation. Avoid adding unrelated booleans to each API.
+- Filter inputs should model navigation predicates: tag/self ignore, static vs
+  dynamic inclusion, moving-state inclusion, flags, control group, and secondary
+  control group. They should not encode unit role, command intent, formation
+  assignment, or game-side priority.
+- Short-path result failure should expose status/metadata when range, invalid
+  query, blocked start, blocked goal, or no local route can be distinguished.
+  Adapters should not infer every case from an empty `SimNavWaypointPath`.
+- Movement-line validation should answer whether a swept segment is legal
+  against passability and filtered obstructions. It must not decide whether a
+  unit retries, stops, pushes, yields, or declares itself stuck.
+- Unit-only line validation should use the same filter protocol but restrict
+  collision to dynamic unit obstruction shapes. It is a primitive for adapters
+  that want to know whether the next long-path segment is blocked by units.
+- If long-path segment consumption is documented, keep it at the boundary level:
+  core may expose the primitive and metadata; lab decides when to ask for a
+  short path and how often to retry.
+- Lab smoke should prove adapter consumption of filters and line validation
+  without rewriting `_move_unit()` / `_resolve_separation()` or importing
+  `CCmpUnitMotion` movement policy.
+
+### Feature 6 Documentation Updates Needed
+
+- Update `public-api.md` with the chosen filter DTO/factory names, supported
+  predicates, short query status/result metadata, and line-validation result
+  contract.
+- Update `feature-roadmap.md` if implementation findings change the Feature 6
+  scope or reveal a stale assumption from this audit.
+- Update `smoke-matrix.md` with core and lab smoke scenes for filter parity,
+  movement-line validation, unit-only line validation, range-limited short
+  query status, and adapter-only consumption.
+
+## Feature 7 Request Queue Budget / Worker Contract Source Audit
+
+This section refreshes the Feature 7 target against the local 0 A.D. source.
+Use it before changing `SimNavPathRequestQueue`, ticket/result DTOs, or worker
+batch semantics. If the source is refreshed, re-check these files before relying
+on the bullets below:
+
+```text
+source/simulation2/helpers/Pathfinding.h
+source/simulation2/components/ICmpPathfinder.h
+source/simulation2/components/CCmpPathfinder.cpp
+source/simulation2/components/CCmpPathfinder_Common.h
+source/simulation2/components/CCmpUnitMotion.h
+```
+
+### 0 A.D. Source Facts
+
+- `ICmpPathfinder::ComputePathAsync()` and `ComputeShortPathAsync()` return a
+  unique non-zero ticket. The eventual `CMessagePathResult` carries the matching
+  ticket and a `WaypointPath`.
+- `CCmpPathfinder` stores long and short requests separately but processes both
+  through the same `PathRequests<T>` template shape: request vector, result
+  vector, atomic next-work index, and compute-done flag.
+- `PathRequests::PrepareForComputation(max)` selects how many pending requests
+  are eligible for this compute pass. `m_MaxSameTurnMoves` is the configured
+  cap when same-turn processing should be budgeted.
+- Worker tasks and the main thread share the same request batch through an
+  atomic work index. Each worker writes the result slot for its assigned work
+  item, preserving ticket/result identity.
+- `SendRequestedPaths()` finishes outstanding work, posts short and long
+  `CMessagePathResult` messages, then clears only the computed slice. Uncomputed
+  requests stay pending for a later pass.
+- Pending requests are serialized with the next ticket value. After
+  deserialization, the pathfinder starts processing if pending requests exist.
+- `CCmpUnitMotion` stores an expected ticket and expected type, ignores obsolete
+  path results, and clears the expectation when a matching result arrives.
+- `CCmpUnitMotion` also layers gameplay policy on result handling: short-path
+  fallback after a failed long path, rejecting paths that move farther from the
+  goal, imperfect-path countdown, and target-motion retry cadence.
+
+### Sim Nav Map Feature 7 Implications
+
+- Queue requests should be cloned at enqueue time and identified by stable
+  tickets. Later caller mutation must not alter pending work.
+- Long and short requests can share ticket lifecycle, cancellation, result
+  collection, pending counts, and diagnostics, but their result DTOs should
+  retain their own query/result metadata.
+- Budgeted processing should define exactly how many requests may be computed
+  per call and what remains pending. Result order should be deterministic enough
+  for smoke tests to assert ticket identity and stale-result handling.
+- 0 A.D. applies its same-turn cap when preparing each request batch. In
+  `sim-nav-map`, the queue API exposes an explicit per-call compute cap instead
+  of a gameplay turn cadence; adapters decide how often to call it.
+- Cancellation should be explicit in `sim-nav-map`, even though 0 A.D. mostly
+  relies on consumers ignoring obsolete tickets. This is an intentional API
+  improvement for adapters that do not have an engine message bus.
+- Worker/batch support should be a queue execution mechanism, not a policy that
+  decides when a unit should replan. Lab can choose request cadence and ticket
+  invalidation rules.
+- Diagnostics should expose navigation scheduling facts such as pending,
+  processed, cancelled, stale, worker-running, and result counts. They should
+  not expose movement strategy or unit command policy as core state.
+
+### Feature 7 Documentation Updates Needed
+
+- Update `public-api.md` with queue request/result types, ticket lifecycle,
+  cancellation behavior, budget semantics, worker semantics, and diagnostics.
+- Update `feature-roadmap.md` if implementation findings change Feature 7 scope
+  or split worker support from budgeted processing.
+- Update `smoke-matrix.md` with core queue smoke for cloning, cancellation,
+  partial budget processing, stale result isolation, worker collection, and lab
+  adapter consumption.
+
+## Feature 8 Scale Diagnostics And Perf Scenarios Source Audit
+
+This section refreshes the Feature 8 target against the local 0 A.D. source.
+Use it before adding diagnostics exports, scale smoke, or benchmark-only scenes.
+If the source is refreshed, re-check these files before relying on the bullets
+below:
+
+```text
+source/simulation2/helpers/Grid.h
+source/simulation2/helpers/HierarchicalPathfinder.h
+source/simulation2/helpers/HierarchicalPathfinder.cpp
+source/simulation2/helpers/LongPathfinder.h
+source/simulation2/helpers/VertexPathfinder.h
+source/simulation2/components/ICmpPathfinder.h
+source/simulation2/components/CCmpPathfinder.cpp
+source/simulation2/components/CCmpPathfinder_Common.h
+```
+
+### 0 A.D. Source Facts
+
+- `GridUpdateInformation` records whether pathfinding data is dirty, whether it
+  is globally dirty, and a per-navcell dirtiness grid. It can merge new updates
+  and then clear the source update payload.
+- `CCmpPathfinder` keeps internal dirtiness information for pathfinder updates
+  and a separate accumulated AI dirtiness payload. The AI-facing payload can be
+  read and flushed independently.
+- `ICmpPathfinder` exposes the passability grid, AI pathfinder dirtiness
+  information, an explicit flush call, and debug data from the latest long-path
+  computation.
+- `CCmpPathfinder::UpdateGrid()` lazily initializes grids, merges obstruction
+  and terrain updates, updates the long pathfinder and hierarchical pathfinder,
+  and accumulates AI-facing dirtiness information.
+- `HierarchicalPathfinder` builds chunk regions and global regions for
+  connectivity. Partial updates can replace dirty chunks and then rebuild global
+  region connectivity where needed.
+- `HierarchicalPathfinder::GetConnectivityGrid()` generates a read-only grid
+  of connected areas for a passability class by mapping reachable regions to
+  compact ids.
+- Long and vertex pathfinder debug/implementation state exists to reason about
+  path computation cost, but 0 A.D. does not turn movement feel, formation
+  quality, or deadlock recovery into pathfinder diagnostics.
+
+### Sim Nav Map Feature 8 Implications
+
+- Diagnostics exports should be snapshots, not mutable access to internal grids.
+  Useful snapshots include map/navcell size, passability masks, dirty scope,
+  obstruction counts, queue counts, last query cost, and connectivity regions.
+- Dirtiness exports should distinguish current core dirty state from
+  accumulated consumer-facing dirtiness. If a flush API is added, smoke should
+  prove it does not clear unrelated internal state needed by pathfinding.
+- Connectivity export should be passability-class scoped and should report
+  enough metadata for adapters/tests to verify region count and passability
+  class identity without depending on internal chunk objects.
+- Scale scenarios should separate correctness smoke from benchmark-only runs.
+  Correctness smoke can assert stable diagnostics shape and monotonic counters;
+  benchmark scenes should document how to run and interpret results without
+  making fragile timing thresholds the default gate.
+- Lab can render or print diagnostics, but core owns only navigation data. HUD
+  layout, movement smoothness, formation behavior, and deadlock recovery remain
+  lab/game policy observations.
+
+### Feature 8 Documentation Updates Needed
+
+- Update `public-api.md` with diagnostic DTO names, snapshot fields,
+  connectivity/dirtiness export semantics, and any flush behavior.
+- Update `feature-roadmap.md` if implementation findings change Feature 8 scope
+  or split benchmark-only work from correctness diagnostics.
+- Update `smoke-matrix.md` with core diagnostics smoke and any benchmark-only
+  scene instructions, clearly separated from required correctness groups.
 
 ## Accepted Gap Review Items
 

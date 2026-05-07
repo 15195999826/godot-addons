@@ -100,6 +100,16 @@ func get_obstructions_in_range(center: Vector2, query_range: float) -> Array[Sim
 	return _nav_map.get_obstruction_shapes_in_range(center, query_range)
 
 
+func get_obstructions_in_range_filtered(
+	center: Vector2,
+	query_range: float,
+	filter: SimNavObstructionFilter
+) -> Array[SimNavObstructionShape]:
+	if _nav_map == null:
+		return []
+	return _nav_map.get_obstruction_shapes_in_range_filtered(center, query_range, filter)
+
+
 func rasterize() -> void:
 	if _nav_map != null:
 		_nav_map.rasterize_dirty_obstructions()

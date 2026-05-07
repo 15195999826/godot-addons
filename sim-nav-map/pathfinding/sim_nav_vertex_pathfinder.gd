@@ -36,6 +36,50 @@ func compute_short_path_immediate(req: SimNavShortPathRequest) -> SimNavWaypoint
 	return best_path
 
 
+func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathResult:
+	var result := SimNavShortPathResult.new()
+	result.configure_query(req)
+	if _nav_map == null or req == null or req.goal == null:
+		var reason := SimNavShortPathResult.FAILURE_NAV_MAP_MISSING if _nav_map == null else SimNavShortPathResult.FAILURE_GOAL_MISSING
+		result.set_failure(SimNavShortPathResult.STATUS_INVALID_QUERY, reason)
+		return result
+	if req.goal.contains_point(req.start):
+		var same := SimNavWaypointPath.new()
+		same.push_back(req.start)
+		result.set_path(SimNavShortPathResult.STATUS_SAME_GOAL, same)
+		return result
+
+	var obstacles := _collect_obstacles(req)
+	result.obstruction_count = obstacles.size()
+	var virtual_goals := _goal_candidates(req)
+	result.candidate_count = virtual_goals.size()
+	var best_path := SimNavWaypointPath.new()
+	var best_length := _MAX_PATH_LENGTH
+	var had_candidate_in_range := false
+	for virtual_goal in virtual_goals:
+		if not _goal_candidate_in_range(req, virtual_goal):
+			continue
+		had_candidate_in_range = true
+		var candidate_path := _compute_to_virtual_goal(req.start, virtual_goal, obstacles, req.clearance)
+		if candidate_path.is_empty():
+			continue
+		var candidate_length := _path_length(req.start, candidate_path)
+		if candidate_length < best_length:
+			best_length = candidate_length
+			best_path = candidate_path
+	if best_path.is_empty():
+		if not had_candidate_in_range:
+			result.set_failure(SimNavShortPathResult.STATUS_OUT_OF_RANGE, SimNavShortPathResult.FAILURE_RANGE_EXCEEDED)
+		else:
+			result.set_failure(SimNavShortPathResult.STATUS_NO_PATH, SimNavShortPathResult.FAILURE_NO_ROUTE)
+		return result
+	var status := SimNavShortPathResult.STATUS_SUCCESS
+	if best_path.size() == 1:
+		status = SimNavShortPathResult.STATUS_DIRECT_GOAL
+	result.set_path(status, best_path)
+	return result
+
+
 func _compute_to_virtual_goal(
 	start: Vector2,
 	virtual_goal: Vector2,
@@ -105,27 +149,42 @@ func _append_unique_candidate(candidates: Array[Vector2], point: Vector2) -> voi
 	candidates.append(point)
 
 
+func _goal_candidate_in_range(req: SimNavShortPathRequest, point: Vector2) -> bool:
+	if req.range_px <= 0.0:
+		return true
+	return req.start.distance_to(point) <= req.range_px + req.clearance + 0.001
+
+
 func _collect_obstacles(req: SimNavShortPathRequest) -> Array:
 	var result: Array = []
+	var filter := req.obstruction_filter
 	for static_shape in _nav_map.get_static_obstruction_shapes():
 		if (static_shape.flags & SimNavObstructionFlags.BLOCK_PATHFINDING) == 0:
 			continue
-		if _is_same_control_group(static_shape, req.control_group):
+		if filter != null and not filter.matches(static_shape):
+			continue
+		if filter == null and _is_same_control_group(static_shape, req.control_group):
 			continue
 		result.append(static_shape)
-	_append_blocked_navcell_obstacles(result, req)
+	_append_blocked_navcell_obstacles(result, req, filter)
 	for unit_shape in _nav_map.get_dynamic_obstruction_shapes():
 		if (unit_shape.flags & SimNavObstructionFlags.BLOCK_MOVEMENT) == 0:
 			continue
-		if _is_same_control_group(unit_shape, req.control_group):
+		if filter != null and not filter.matches(unit_shape):
 			continue
-		if not req.avoid_moving_units and ((unit_shape.flags & SimNavObstructionFlags.MOVING) != 0 or unit_shape.moving):
+		if filter == null and _is_same_control_group(unit_shape, req.control_group):
+			continue
+		if filter == null and not req.avoid_moving_units and ((unit_shape.flags & SimNavObstructionFlags.MOVING) != 0 or unit_shape.moving):
 			continue
 		result.append(unit_shape)
 	return result
 
 
-func _append_blocked_navcell_obstacles(result: Array, req: SimNavShortPathRequest) -> void:
+func _append_blocked_navcell_obstacles(
+	result: Array,
+	req: SimNavShortPathRequest,
+	filter: SimNavObstructionFilter
+) -> void:
 	if req.pass_mask == 0:
 		return
 	var virtual_goal := req.goal.nearest_point_on_goal(req.start)
@@ -149,7 +208,7 @@ func _append_blocked_navcell_obstacles(result: Array, req: SimNavShortPathReques
 			var coord := Vector2i(x, y)
 			if _nav_map.is_passable_navcell(coord, req.pass_mask):
 				continue
-			if _static_shape_covers_navcell(coord, req.clearance):
+			if _static_shape_covers_navcell(coord, req.clearance, filter):
 				continue
 			result.append(_blocked_navcell_shape(coord))
 
@@ -164,10 +223,12 @@ func _blocked_navcell_shape(coord: Vector2i) -> SimNavObstructionShapeStatic:
 	return shape
 
 
-func _static_shape_covers_navcell(coord: Vector2i, clearance: float) -> bool:
+func _static_shape_covers_navcell(coord: Vector2i, clearance: float, filter: SimNavObstructionFilter) -> bool:
 	var center_world := _nav_map.navcell_center_world(coord)
 	for shape in _nav_map.get_static_obstruction_shapes():
 		if (shape.flags & SimNavObstructionFlags.BLOCK_PATHFINDING) == 0:
+			continue
+		if filter != null and not filter.matches(shape):
 			continue
 		if shape.contains_point_with_clearance(center_world, clearance):
 			return true

@@ -19,7 +19,9 @@
         "smoke_sim_nav_jump_point_cache.tscn",
         "smoke_sim_nav_long_pathfinder.tscn",
         "smoke_sim_nav_vertex_pathfinder.tscn",
-        "smoke_sim_nav_path_request_queue.tscn"
+        "smoke_sim_nav_line_validation.tscn",
+        "smoke_sim_nav_path_request_queue.tscn",
+        "smoke_sim_nav_diagnostics_exports.tscn"
       ]
     }
   }

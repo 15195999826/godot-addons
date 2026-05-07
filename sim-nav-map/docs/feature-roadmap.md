@@ -70,13 +70,40 @@ Feature 5 已补齐：
   `rts-pathfinding-lab` 只作为 adapter consumer 暴露 metadata，不承载 core
   movement policy。
 
+Feature 6 已补齐：
+
+- `SimNavObstructionFilter` 统一 short path、range query、movement-line validation
+  和 unit-only line validation 的 obstruction participation contract。
+- `SimNavShortPathResult` 明确 short query status、range failure、path length、
+  candidate count 和 obstruction count。
+- `SimNavPathfinderFacade.validate_movement_line()` /
+  `validate_unit_line()` 只回答 navigation legality，不决定 retry、stop、push 或
+  stuck 行为。
+
+Feature 7 已补齐：
+
+- `SimNavPathRequestQueue` 对 long / short request 提供稳定 ticket lifecycle、
+  enqueue clone、cancel、budget processing、worker batch collection、stale result
+  isolation 和 diagnostics。
+- `take_result()` 保留 path-only 兼容；`take_long_path_result()` /
+  `take_short_path_result()` 返回 metadata DTO。
+
+Feature 8 已补齐：
+
+- `SimNavMap.get_dirtiness_snapshot()` / `get_diagnostics()` 暴露 read-only map
+  diagnostics。
+- `SimNavHierarchicalPathfinder.export_connectivity()` 暴露 passability-scoped
+  connectivity snapshot。
+- `SimNavPathfinderFacade.get_navigation_diagnostics()` 聚合 core diagnostics；
+  correctness smoke 与 benchmark-only 阈值保持分离。
+
 当前开发节点：
 
-- **已完成到 Feature 5**。下一段默认从 Feature 6 的 filtered short query /
-  line validation 开始，且只能做 pure query primitive。
-- Feature 6 的 pure filter / unit-line validation 子集也可以并行设计，但任何
-  long-path segment consumption、queue 集成或 lab motion-controller 重构，都要等
-  Feature 5 的 result boundary 稳定后再接。
+- **已完成到 Feature 8 core roadmap**。后续默认进入真实使用、lab/application
+  validation 或 optional example-only feature，而不是继续把 movement policy 上提到
+  core。
+- `rts-pathfinding-lab-formation-validation` 仍是 optional example-only 工作，不属于
+  core roadmap completion。
 
 V1 不承诺：
 
@@ -156,11 +183,9 @@ addons/sim-nav-map/docs/roadmap-refs/0ad-navigation-source-map.md
 | 7 | Request queue budget / worker contract | 长短路径统一排队、取消、收集、预算和诊断。 | ticket queue + per-turn path budget。 | 依赖 Feature 4-6。 |
 | 8 | Scale diagnostics and perf scenarios | core navigation 性能边界和诊断数据。 | 大地图 / 多单位下用分层和队列控成本。 | 依赖 Feature 3 和 7。 |
 
-Feature 1-4 是地图 / passability / reachability 基础链，当前已经完成。Feature 5-7
-是 path query 质量和调度链：Feature 5 是默认下一步；Feature 6 可拆出纯 filter /
-line-validation 子任务并行推进，但 `long path -> short path` 消费、queue 集成和 lab
-movement refactor 需要等 Feature 5 result contract 稳定。Feature 8 只在核心行为稳定后
-做，否则 benchmark 没有可比较意义。
+Feature 1-4 是地图 / passability / reachability 基础链，已经完成。Feature 5-7
+是 path query 质量和调度链，也已经完成。Feature 8 的 correctness diagnostics 已完成；
+后续 benchmark-only 场景必须单独标记运行方式和判读标准，不作为默认 smoke gate。
 
 ## Feature 0: Baseline Guard
 
@@ -750,6 +775,23 @@ movement-line validation 另见 `source/simulation2/helpers/Pathfinding.cpp` 和
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
 
+### 完成记录
+
+Feature 6 的当前完成契约：
+
+- core filter / short-result contract 在 `smoke_sim_nav_vertex_pathfinder.tscn`
+  和 `smoke_sim_nav_public_api_contract.tscn` 中覆盖。
+- movement-line / unit-only line validation 在
+  `smoke_sim_nav_line_validation.tscn` 中覆盖：passability blocked、static
+  obstruction blocked、ignored-tag filter、unit-only dynamic blocker、control group
+  filter。
+- lab adapter consumption 在
+  `smoke_rts_pathfinding_lab_core_primitive_adapter.tscn` 中覆盖。short-result、
+  movement-line 和 unit-line metadata 通过 `inspect_core_primitives()` 显式检查
+  入口消费，避免把 smoke/debug validation 放进 playable `plan_path()` hot path。
+  没有重构 `_move_unit()` / `_resolve_separation()`，也没有把 retry、push/yield、
+  stuck/deadlock 或 formation policy 写进 core。
+
 ## Feature 7: Request Queue Budget / Worker Contract
 
 ### 增加什么插件能力
@@ -804,6 +846,18 @@ worker 算完后按 ticket 回传结果。这样大量单位同 turn 下命令�
 ```powershell
 ./tools/run_tests.ps1 simnav/smoke rtslab/smoke
 ```
+
+### 完成记录
+
+Feature 7 的当前完成契约：
+
+- `smoke_sim_nav_path_request_queue.tscn` 覆盖 monotonic ticket、FIFO budget、
+  pending/result cancellation、stale result removal、short/long result metadata、
+  worker batch collect、in-flight cancellation、filter clone 和 queue diagnostics。
+- `process_budget(max_requests)` 是 explicit per-call compute cap；adapter 决定何时
+  调用，不把 replan cadence 上提到 core。
+- `get_diagnostics()` 只暴露 scheduling facts：pending/result tickets、cancelled、
+  stale、worker state、processed/collected counts。
 
 ## Feature 8: Scale Diagnostics And Perf Scenarios
 
@@ -872,6 +926,18 @@ correctness gate：
 
 如果新增 benchmark-only scene，应在对应 docs 中标清运行方式和判读标准，不把它混进
 必须稳定为 0/1 的 correctness smoke，除非阈值已经足够稳定。
+
+### 完成记录
+
+Feature 8 的当前完成契约：
+
+- `smoke_sim_nav_diagnostics_exports.tscn` 覆盖 `SimNavMap` dirtiness diagnostics、
+  map/obstruction counts、`SimNavHierarchicalPathfinder.export_connectivity()` 的
+  passability-scoped region grid shape、facade diagnostic aggregation，以及一个不做
+  timing threshold gate 的 scale/perf scenario。
+- Queue diagnostics 由 `smoke_sim_nav_path_request_queue.tscn` 覆盖。
+- 当前只提交 correctness diagnostics；benchmark-only scene 如未来需要，应独立于
+  `simnav/smoke` 默认 gate。
 
 ## Example Application Policy Track
 

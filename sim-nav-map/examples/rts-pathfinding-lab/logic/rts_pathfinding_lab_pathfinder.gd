@@ -129,14 +129,7 @@ func plan_path(
 		reachable_goal = reachability.canonical_goal.center
 		used_make_goal_reachable = reachability.canonicalized or not goal_passable
 
-	var short_request := SimNavShortPathRequest.new()
-	short_request.start = start
-	short_request.goal = SimNavPathGoal.point(reachable_goal)
-	short_request.clearance = unit_radius
-	short_request.range_px = map_size.length()
-	short_request.pass_mask = pass_mask
-	short_request.avoid_moving_units = avoid_moving_units
-	short_request.control_group = moving_group_id if group_filter_enabled else ""
+	var short_request := _make_short_path_request(start, reachable_goal, pass_mask, moving_group_id, avoid_moving_units, group_filter_enabled)
 	var distance_to_reachable_goal := start.distance_to(reachable_goal)
 	var dynamic_obstacle_count := maxi(active_obstacles.size() - static_obstacles.size(), 0)
 	var skipped_vertex_reason := ""
@@ -227,6 +220,42 @@ func plan_path(
 	return smoothed
 
 
+func inspect_core_primitives(
+	start: Vector2,
+	goal: Vector2,
+	static_obstacles: Array[RtsPathfindingLabObstacle],
+	units: Array[RtsPathfindingLabUnit],
+	moving_group_id: String,
+	avoid_moving_units: bool,
+	group_filter_enabled: bool
+) -> Dictionary:
+	plan_path(start, goal, static_obstacles, units, moving_group_id, avoid_moving_units, group_filter_enabled)
+	var report := last_report.duplicate(true)
+	var nav_context := _get_static_nav_context(static_obstacles)
+	var nav_map: SimNavMap = nav_context["nav_map"]
+	var pass_mask := int(nav_context["pass_mask"])
+	var hierarchical: SimNavHierarchicalPathfinder = nav_context["hierarchical"]
+	nav_map.replace_dynamic_obstructions(_build_dynamic_obstruction_shapes(
+		units,
+		moving_group_id,
+		avoid_moving_units,
+		group_filter_enabled
+	))
+	var reachable_goal: Vector2 = report.get("reachable_goal", goal) as Vector2
+	var short_request := _make_short_path_request(start, reachable_goal, pass_mask, moving_group_id, avoid_moving_units, group_filter_enabled)
+	var short_filter := short_request.get_obstruction_filter()
+	var short_result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(short_request)
+	var primitive_facade := SimNavPathfinderFacade.new(nav_map, hierarchical, null)
+	report["short_path_result"] = _short_path_result_to_report(short_result)
+	report["movement_line_validation"] = _line_result_to_report(
+		primitive_facade.validate_movement_line(start, reachable_goal, unit_radius, pass_mask, short_filter)
+	)
+	report["unit_line_validation"] = _line_result_to_report(
+		primitive_facade.validate_unit_line(start, reachable_goal, unit_radius, short_filter)
+	)
+	return report
+
+
 func is_point_passable(point: Vector2, obstacles: Array[RtsPathfindingLabObstacle], clearance: float) -> bool:
 	if point.x < 0.0 or point.y < 0.0 or point.x > map_size.x or point.y > map_size.y:
 		return false
@@ -261,6 +290,25 @@ func build_obstacles_for_analysis(
 	group_filter_enabled: bool
 ) -> Array[RtsPathfindingLabObstacle]:
 	return _build_active_obstacles(static_obstacles, units, moving_group_id, avoid_moving_units, group_filter_enabled)
+
+
+func _make_short_path_request(
+	start: Vector2,
+	reachable_goal: Vector2,
+	pass_mask: int,
+	moving_group_id: String,
+	avoid_moving_units: bool,
+	group_filter_enabled: bool
+) -> SimNavShortPathRequest:
+	var short_request := SimNavShortPathRequest.new()
+	short_request.start = start
+	short_request.goal = SimNavPathGoal.point(reachable_goal)
+	short_request.clearance = unit_radius
+	short_request.range_px = map_size.length()
+	short_request.pass_mask = pass_mask
+	short_request.avoid_moving_units = avoid_moving_units
+	short_request.control_group = moving_group_id if group_filter_enabled else ""
+	return short_request
 
 
 func _build_active_obstacles(
@@ -456,6 +504,37 @@ func _long_path_result_to_report(result: SimNavLongPathResult) -> Dictionary:
 		"post_process": result.post_process,
 		"waypoint_spacing": result.waypoint_spacing,
 		"excluded_region_count": result.excluded_regions.size(),
+	}
+
+
+func _short_path_result_to_report(result: SimNavShortPathResult) -> Dictionary:
+	if result == null:
+		return {}
+	return {
+		"status": result.status,
+		"failure_reason": result.failure_reason,
+		"path_size": result.path.size(),
+		"path_length": result.path_length,
+		"candidate_count": result.candidate_count,
+		"obstruction_count": result.obstruction_count,
+		"range_px": result.range_px,
+		"pass_mask": result.pass_mask,
+	}
+
+
+func _line_result_to_report(result: SimNavMovementLineResult) -> Dictionary:
+	if result == null:
+		return {}
+	return {
+		"status": result.status,
+		"failure_reason": result.failure_reason,
+		"unit_only": result.unit_only,
+		"checked_navcell_count": result.checked_navcell_count,
+		"checked_obstruction_count": result.checked_obstruction_count,
+		"blocked_navcell": result.blocked_navcell,
+		"blocked_obstruction_tag": result.blocked_obstruction_tag,
+		"blocked_obstruction_entity_id": result.blocked_obstruction_entity_id,
+		"blocked_obstruction_type": result.blocked_obstruction_type,
 	}
 
 

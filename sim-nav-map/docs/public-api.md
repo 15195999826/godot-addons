@@ -25,6 +25,10 @@ reachability and canonical goal metadata. Feature 5 long-path result coverage is
 in `smoke_sim_nav_long_pathfinder.tscn`,
 `smoke_sim_nav_path_request_queue.tscn`, and
 `examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_long_path_result_adapter.tscn`.
+Feature 6-8 coverage adds `smoke_sim_nav_line_validation.tscn`,
+`smoke_sim_nav_diagnostics_exports.tscn`, expanded queue/vertex/public API smoke,
+and
+`examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_core_primitive_adapter.tscn`.
 
 ## Stable Entry Points
 
@@ -40,11 +44,14 @@ These classes are the supported integration surface for game/example adapters:
 | `SimNavObstructionShape` | Base projection DTO returned by map/manager query APIs. Adapters normally instantiate `Static` or `Unit`, not this base class. |
 | `SimNavObstructionShapeStatic` | Static oriented rectangle projection for buildings, walls, rocks, blockers, and terrain-like obstacles. |
 | `SimNavObstructionShapeUnit` | Dynamic circular projection for units. This is not a unit model. |
+| `SimNavObstructionFilter` | Reusable obstruction filter DTO for range queries, short-path queries, movement-line validation, and unit-only line validation. |
 | `SimNavPathGoal` | Path target geometry: point, circle, square, and inverted variants. |
 | `SimNavReachabilityResult` | Result DTO for explicit reachability/canonical goal queries. |
 | `SimNavWaypointPath` | Returned path container. Callers own movement along these waypoints. |
 | `SimNavLongPathQuery` | Request DTO for long-path queries: start, goal, passability mask/class name, request-scoped excluded regions, and post-processing preferences. |
 | `SimNavLongPathResult` | Result DTO for long-path status, failure/canonicalization metadata, raw navcell path, refined waypoint path, cost, and length. |
+| `SimNavShortPathResult` | Result DTO for short-path status, range failure, query metadata, path length, candidate count, and obstruction count. |
+| `SimNavMovementLineResult` | Result DTO for movement-line and unit-only line validation status plus blocker metadata. |
 | `SimNavHierarchicalPathfinder` | Reachability and nearest reachable navcell canonicalization. |
 | `SimNavLongPathfinder` | Long navcell path search. |
 | `SimNavVertexPathfinder` | Local short path search around nearby obstructions. |
@@ -73,13 +80,15 @@ methods remain implementation details.
 - Obstructions: `add_static_obstruction()`, `add_dynamic_obstruction()`,
   `remove_obstruction()`, `move_obstruction()`, `clear_dynamic_obstructions()`,
   `replace_dynamic_obstructions()`, `get_obstruction_shape()`,
-  `get_obstruction_shapes_in_range()`, `get_static_obstruction_shapes()`,
+  `get_obstruction_shapes_in_range()`, `get_obstruction_shapes_in_range_filtered()`,
+  `get_static_obstruction_shapes()`,
   `get_dynamic_obstruction_shapes()`.
 - Dirty/raster lifecycle: `rebuild_dirty()`, `rasterize_dirty_obstructions()`,
   `mark_dirty_navcell()`, `is_dirty_navcell()`, `collect_dirty_navcells()`,
   `collect_dirty_obstruction_navcells()`, `has_dirty_navcells()`,
   `has_dirty_obstruction_navcells()`, `clear_dirty_navcells()`,
-  `clear_dirty_obstruction_navcells()`.
+  `clear_dirty_obstruction_navcells()`, `get_dirtiness_snapshot()`, and
+  `get_diagnostics()`. Diagnostics are read-only snapshots.
 - Navcell helpers: `navcell_center_world()`, `world_to_navcell()`,
   `is_passable_navcell()`, `get_navcell_data()`, `set_navcell_data()`,
   `or_navcell_data()`, `and_navcell_data()`, `is_valid_navcell()`.
@@ -96,6 +105,12 @@ Projection DTOs:
 - `SimNavObstructionShape`: base fields `type`, `tag`, `entity_id`, `center`,
   `flags`, `control_group`, and `control_group_2`. Treat it as a returned base
   type, not as an adapter input type.
+- `SimNavObstructionFilter`: field DTO plus factories `all()`,
+  `for_short_path()`, and `units_only()`. It supports static/unit inclusion,
+  moving/stationary unit inclusion, ignored tag/entity ids, control-group
+  filtering, required flags, excluded flags, `matches()`, and `clone()`.
+  It describes navigation query participation only; it does not encode unit
+  role, command, formation, priority, or movement policy.
 
 ### Passability And Terrain
 
@@ -189,20 +204,32 @@ Projection DTOs:
    `is_recomputed()`, `get_region()`, `get_global_region()`,
    `is_navcell_reachable()`, `query_goal_reachability()`,
    `make_goal_reachable_navcell()`, and `find_nearest_passable_navcell()` for
-   integration. `get_chunk()`,
-   `get_global_regions()`, and `next_global_region()` are diagnostics/test
-   support and should not become game logic dependencies.
+   integration. `export_connectivity()` returns a passability-scoped read-only
+   connectivity snapshot. `get_chunk()`, `get_global_regions()`,
+   `next_global_region()`, and `get_diagnostics()` are diagnostics/test support
+   and should not become game logic dependencies.
 - `SimNavLongPathfinder` exposes `compute_path_immediate()` and
   `compute_path_result()`, plus `invalidate_jump_point_cache()`. Dirty navcells
   invalidate the jump-point cache before subsequent queries.
   `compute_path_immediate()` is the compatibility path-only API.
   `compute_path_result()` is the Feature 5 contract API and returns
   `SimNavLongPathResult`.
-- `SimNavVertexPathfinder` exposes `compute_short_path_immediate()`.
+- `SimNavVertexPathfinder` exposes `compute_short_path_immediate()` and
+  `compute_short_path_result()`. The immediate method preserves path-only
+  compatibility; the result method returns status/metadata.
 - `SimNavShortPathRequest` is a field DTO: `start`, `goal`, `clearance`,
-  `range_px`, `pass_mask`, `avoid_moving_units`, and `control_group`.
+  `range_px`, `pass_mask`, `avoid_moving_units`, `control_group`, and optional
+  `obstruction_filter`. `get_obstruction_filter()` derives the legacy
+  `avoid_moving_units` / `control_group` fields into the shared filter protocol
+  when no explicit filter is supplied. `clone()` owns the goal and filter data.
+- `SimNavShortPathResult` exposes statuses `success`, `direct_goal`,
+  `same_goal`, `out_of_range`, `no_path`, and `invalid_query`; failure reasons
+  `none`, `nav_map_missing`, `goal_missing`, `range_exceeded`, and `no_route`;
+  query metadata, filter snapshot, path, path length, candidate count, and
+  obstruction count.
 - `SimNavPathfinderFacade` exposes `recompute_dirty()`, `query_reachability()`,
-  `compute_path_result()`, and `compute_path_immediate()`. `recompute_dirty()` is the stable batch edit
+  `compute_path_result()`, `compute_path_immediate()`, `validate_movement_line()`,
+  `validate_unit_line()`, and `get_navigation_diagnostics()`. `recompute_dirty()` is the stable batch edit
   lifecycle entry: it rasterizes dirty static obstructions, recomputes dirty
   hierarchical chunks, invalidates the long-path jump-point cache, and clears
   dirty navcells by default. `query_reachability()` returns
@@ -211,16 +238,43 @@ Projection DTOs:
   search and snapshots canonicalization/start-recovery metadata into
   `SimNavLongPathResult`. `compute_path_immediate()` remains a compatibility
   path-only API and may canonicalize the supplied goal object in place when a
-  fallback point goal is required.
+  fallback point goal is required. `validate_movement_line()` checks a swept
+  segment against passability and filtered obstructions. `validate_unit_line()`
+  checks only dynamic unit obstructions under the same filter protocol. Neither
+  method decides retry, stop, push, yield, or stuck behavior.
 - `SimNavPathRequestQueue` exposes `enqueue_long_path()`, `enqueue_short_path()`,
   `enqueue_long_path_query()`, `cancel()`, `process_budget()`, `start_worker()`,
   `is_worker_running()`, `collect_worker_results()`, `has_result()`,
-  `take_result()`, `take_long_path_result()`, `pending_count()`,
-  `result_count()`, and `clear()`. Queue enqueue clones the supplied
+  `take_result()`, `take_long_path_result()`, `take_short_path_result()`,
+  `pending_count()`, `result_count()`, `pending_tickets()`, `result_tickets()`,
+  `get_diagnostics()`, and `clear()`. Queue enqueue clones the supplied
   goal/request/query data, so later caller-side mutation does not alter the
   queued request. `take_result()` preserves the path-only compatibility contract;
-  `take_long_path_result()` returns long-path metadata for Feature 5 consumers.
-  This does not add Feature 7 budget/worker policy.
+  `take_long_path_result()` and `take_short_path_result()` return metadata DTOs.
+  `process_budget(max_requests)` computes at most that many live queued requests
+  per call. `start_worker(max_requests)` takes a deterministic batch and
+  `collect_worker_results()` stores live results while skipping cancelled
+  in-flight tickets as stale results.
+- `SimNavMovementLineResult` exposes statuses `clear`, `blocked`, and
+  `invalid_query`; failure reasons for passability, out-of-bounds, static
+  obstruction, unit obstruction, and missing map; checked counts; blocked
+  navcell; blocked obstruction tag/entity/type; filter snapshot; and
+  `is_success()`.
+
+### Diagnostics And Exports
+
+- `SimNavMap.get_dirtiness_snapshot()` returns read-only arrays/counts for dirty
+  navcells and dirty obstruction navcells. `get_diagnostics()` adds map size,
+  origin, navcell size, passability class count, and obstruction counts.
+- `SimNavHierarchicalPathfinder.export_connectivity(pass_mask, class_name)`
+  returns a read-only global-region grid snapshot for one passability class plus
+  chunk/map metadata. Consumers must not depend on chunk objects.
+- `SimNavPathfinderFacade.get_navigation_diagnostics(passability_masks)`
+  aggregates map and hierarchical diagnostics.
+- `SimNavPathRequestQueue.get_diagnostics()` returns scheduling facts: pending
+  and result tickets, cancellation/stale counts, worker state, batch size, and
+  processed/collected ticket ids. It does not expose movement cadence or unit
+  command policy.
 
 ### 0 A.D. Intentional Differences
 
@@ -237,6 +291,9 @@ API:
 - 0 A.D. UnitMotion layers short-path fallback, retry cadence, push/yield, and
   movement policy on top of sparse results. Those policies remain outside
   `sim-nav-map` core.
+- Feature 6-8 follow the same boundary: 0 A.D. supplies filter, line-test,
+  ticket/batch, dirtiness, and connectivity ideas; `sim-nav-map` exposes small
+  GDScript DTOs and snapshots while leaving movement policy to adapters.
 
 ## Adapter Boundary
 
