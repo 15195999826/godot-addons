@@ -19,6 +19,16 @@ extends Node
 #  10. partial_wall_with_gap       — vertical wall with a 50 px gap, units must find it
 #  11. dynamic_blocker_swarm       — six circular blockers seeded across the corridor
 #  12. formation_packing           — open-area arrival, isolates formation slot logic
+#  13. progressive_seal_all_paths  — close every passable corridor in sequence while
+#                                    units travel until the cluster is fully isolated
+#  14. seal_behind_unit            — drop a forward wall, then seal the rear so the
+#                                    cluster is boxed in (escape / trapped-replan test)
+#  15. gap_close_mid_travel        — long wall with 50 px gap, then close the gap
+#                                    after units have committed to it
+#  16. goal_blocked_at_arrival     — drop a 60×60 wall on the default target after
+#                                    units are en route — mid-flight canonicalization
+#  17. alternating_corridor_seal   — alternate which y-detour is sealed every 30 ticks
+#                                    to maximize replan pressure
 #
 # Each phase prints one EXPLORE_OBSERVATION dict with: arrived units, total
 # replans, max single-step wall time, max single-step world-space delta and
@@ -58,6 +68,11 @@ func _ready() -> void:
 	_phase_partial_wall_with_gap()
 	_phase_dynamic_blocker_swarm()
 	_phase_formation_packing()
+	_phase_progressive_seal_all_paths()
+	_phase_seal_behind_unit()
+	_phase_gap_close_mid_travel()
+	_phase_goal_blocked_at_arrival()
+	_phase_alternating_corridor_seal()
 	_print_summary_table()
 	print("=== EXPLORATION PLAYTHROUGH END ===")
 	get_tree().quit(0)
@@ -286,6 +301,170 @@ func _phase_formation_packing() -> void:
 	_record(observer.finish())
 
 
+func _phase_progressive_seal_all_paths() -> void:
+	# Close every passable corridor in turn while units are travelling, until
+	# no route to (610, 210) remains. Default scene leaves four ways through
+	# the central wall column: (A) the top edge above north_wall, (B) the
+	# upper detour between north_wall and stone_block, (C) the lower detour
+	# between stone_block and south_wall, and (D) the bottom edge below
+	# south_wall. We seal A → D → B → C in 30-tick increments so the units
+	# pick a route, lose it, repick, and finally sit fully isolated.
+	# NOTE: phase observer's `arrived` count means "settled" (reached goal
+	# OR gave up via _settle_idle_unit), not "reached goal". The real
+	# success metric is `units_far_from_goal` — units sitting > 50 px from
+	# the goal at the end. Fast units may slip past corridor seals before
+	# closure completes — that's expected. The bug-magnet signal is
+	# units_far_from_goal == 0/N: every unit escaped before any seal landed.
+	var world := LabWorld.new()
+	world.setup_default()
+	var observer := PhaseObserver.new(world, "13_progressive_seal_all_paths")
+	observer.run_steps(30, false)
+	world.add_static_obstacle(Vector2(340.0, 5.0), Vector2(300.0, 30.0))
+	observer.note("event_30", "top edge sealed (A) — 300×30 at y=5")
+	observer.run_steps(30, false)
+	world.add_static_obstacle(Vector2(340.0, 415.0), Vector2(300.0, 30.0))
+	observer.note("event_60", "bottom edge sealed (D) — 300×30 at y=415")
+	observer.run_steps(30, false)
+	world.add_static_obstacle(Vector2(340.0, 130.0), Vector2(40.0, 30.0))
+	observer.note("event_90", "upper detour sealed (B) — 40×30 at y=130")
+	observer.run_steps(30, false)
+	world.add_static_obstacle(Vector2(340.0, 290.0), Vector2(40.0, 30.0))
+	observer.note("event_120", "lower detour sealed (C) — 40×30 at y=290 (full isolation)")
+	observer.run_steps(220, true)
+	var goal := Vector2(610.0, 210.0)
+	var far_count := 0
+	var empty_path_count := 0
+	for unit in world.get_mobile_units():
+		if unit.position.distance_to(goal) > 50.0:
+			far_count += 1
+		if not unit.arrived and unit.path.is_empty():
+			empty_path_count += 1
+	observer.note("units_far_from_goal", "%d/%d" % [far_count, world.get_mobile_units().size()])
+	observer.note("empty_path_units", "%d/%d" % [empty_path_count, world.get_mobile_units().size()])
+	_record(observer.finish())
+
+
+func _phase_seal_behind_unit() -> void:
+	# Box-in test: drop a full-height forward wall first to invalidate the
+	# planned route, give 20 ticks for the cluster to rethink, then drop a
+	# matching rear wall so retreat is also gone. Walls are tall (40×420)
+	# so they span the full map height — every alternative (top edge, upper
+	# detour, lower detour, bottom edge) is killed by a single drop.
+	# Same `arrived` caveat as phase 13 — units that give up via
+	# _settle_idle_unit are still counted as arrived. Real signal is
+	# `units_far_from_goal`: a successful trap leaves every unit far
+	# from (610, 210). units_far_from_goal == 0/N means the trap leaked.
+	# This is the active variant of phase 5 — phase 5 walls before motion;
+	# this phase walls *after* the cluster has moved and committed.
+	var world := LabWorld.new()
+	world.setup_default()
+	var observer := PhaseObserver.new(world, "14_seal_behind_unit")
+	observer.run_steps(30, false)
+	world.add_static_obstacle(Vector2(480.0, 210.0), Vector2(40.0, 420.0))
+	observer.note("event_30", "forward wall at x=480 (40×420) — target unreachable")
+	observer.run_steps(20, false)
+	world.add_static_obstacle(Vector2(180.0, 210.0), Vector2(40.0, 420.0))
+	observer.note("event_50", "rear wall at x=180 (40×420) — boxed in")
+	observer.run_steps(280, true)
+	var goal := Vector2(610.0, 210.0)
+	var far_count := 0
+	for unit in world.get_mobile_units():
+		if unit.position.distance_to(goal) > 50.0:
+			far_count += 1
+	observer.note("units_far_from_goal", "%d/%d" % [far_count, world.get_mobile_units().size()])
+	_record(observer.finish())
+
+
+func _phase_gap_close_mid_travel() -> void:
+	# Funnel + late closure: a tall wall column at x=520 with a 50 px gap
+	# centered at y=210 forces every unit toward that single opening. After
+	# 80 ticks (units have committed to the gap and are funnelling through),
+	# a third obstacle plugs the gap. Tests how mid-flight replans cope when
+	# the planned path tail becomes blocked at the last moment.
+	# Expectation: at most a few units slip through before closure; the rest
+	# replan and either stop short or look for a long detour.
+	var world := LabWorld.new()
+	world.setup_default()
+	world.add_static_obstacle(Vector2(520.0, 132.0), Vector2(40.0, 105.0))
+	world.add_static_obstacle(Vector2(520.0, 287.0), Vector2(40.0, 105.0))
+	world.set_group_target(Vector2(610.0, 210.0))
+	var observer := PhaseObserver.new(world, "15_gap_close_mid_travel")
+	observer.note("event_0", "wall column at x=520 with 50 px gap centered y=210")
+	observer.run_steps(80, false)
+	world.add_static_obstacle(Vector2(520.0, 210.0), Vector2(40.0, 50.0))
+	observer.note("event_80", "gap plug dropped at y=210 — column now solid")
+	observer.run_steps(260, true)
+	_record(observer.finish())
+
+
+func _phase_goal_blocked_at_arrival() -> void:
+	# Mid-flight goal invalidation: the default target (610, 210) is open
+	# until tick 200, then a 60×60 wall is dropped on top of it so the goal
+	# point sits inside a static obstacle. add_static_obstacle triggers a
+	# replan-all; the make-goal-reachable canonicalization should kick in
+	# and split unit.target (player intent, still the original click) from
+	# unit.path_target (canonical reachable stop). This is the active
+	# (mid-flight) variant of phase 4 — it locks LAB-005 behavior under
+	# late binding rather than a goal that was unreachable from t=0.
+	var world := LabWorld.new()
+	world.setup_default()
+	var observer := PhaseObserver.new(world, "16_goal_blocked_at_arrival")
+	var goal := Vector2(610.0, 210.0)
+	observer.run_steps(200, false)
+	var min_dist_at_drop := INF
+	for unit in world.get_mobile_units():
+		if not unit.arrived:
+			min_dist_at_drop = minf(min_dist_at_drop, unit.position.distance_to(goal))
+	world.add_static_obstacle(goal, Vector2(60.0, 60.0))
+	observer.note("event_200", "60×60 wall dropped on goal (closest in-flight unit %.1f px away)" % min_dist_at_drop)
+	observer.run_steps(220, true)
+	var separated := 0
+	for unit in world.get_mobile_units():
+		if unit.target.distance_to(unit.path_target) > 0.5:
+			separated += 1
+	observer.note("target_path_target_separated", "%d/%d units" % [separated, world.get_mobile_units().size()])
+	_record(observer.finish())
+
+
+func _phase_alternating_corridor_seal() -> void:
+	# Replan-pressure stress: only one of the two y-detours through the
+	# default scene is passable at any moment, and which one flips every
+	# 30 ticks. Initial state seals the upper detour; each swap removes the
+	# current seal and drops the opposite one. Units that committed to the
+	# now-closed corridor must reroute every cycle. 30 ticks ≈ one
+	# REPLAN_INTERVAL — designed to keep the replan queue saturated.
+	# Note: top-edge and bottom-edge routes remain open, so some units may
+	# bypass the corridor flip entirely. The interesting observation is
+	# total_replans and max_step_usec under the swap pressure.
+	var world := LabWorld.new()
+	world.setup_default()
+	var observer := PhaseObserver.new(world, "17_alternating_corridor_seal")
+	var upper_pos := Vector2(340.0, 130.0)
+	var lower_pos := Vector2(340.0, 290.0)
+	var seal_size := Vector2(40.0, 30.0)
+	world.add_static_obstacle(upper_pos, seal_size)
+	observer.note("event_0", "upper detour sealed — lower detour open")
+	var upper_closed := true
+	var swap_count := 0
+	for i in range(360):
+		if i > 0 and i % 30 == 0:
+			if upper_closed:
+				world.remove_nearest_editable(upper_pos, 50.0)
+				world.add_static_obstacle(lower_pos, seal_size)
+				upper_closed = false
+			else:
+				world.remove_nearest_editable(lower_pos, 50.0)
+				world.add_static_obstacle(upper_pos, seal_size)
+				upper_closed = true
+			swap_count += 1
+		observer.before_step()
+		world.step(DT)
+		observer.after_step()
+	observer.note("seal_swaps", str(swap_count))
+	observer.note("final_state", "upper_closed=%s" % str(upper_closed))
+	_record(observer.finish())
+
+
 # ---------------------------------------------------------------------------
 # Observer + summary
 # ---------------------------------------------------------------------------
@@ -455,6 +634,26 @@ func _suspected_issue(r: Dictionary) -> String:
 		var min_pair_dist: float = min_pair_str.to_float()
 		if min_pair_dist > 0.0 and min_pair_dist < 1.0:
 			hits.append("formation slots collapsed: min pair < 1 px (needs LAB-004 follow-up)")
+	if phase.ends_with("progressive_seal_all_paths"):
+		var prog_far: String = str(notes.get("units_far_from_goal", "0/0"))
+		if prog_far.begins_with("0/"):
+			hits.append("seal ineffective: every unit reached goal before any corridor closure landed")
+	if phase.ends_with("seal_behind_unit"):
+		var trap_far: String = str(notes.get("units_far_from_goal", "0/0"))
+		if trap_far.begins_with("0/"):
+			hits.append("trap leaked: every unit reached goal — forward+rear walls did not isolate the cluster")
+	if phase.ends_with("gap_close_mid_travel"):
+		var gap_arrived: String = str(r.get("arrived", "0/0"))
+		if gap_arrived.begins_with("0/"):
+			hits.append("gap closure trapped all units — replan tail invalidation observation (no core blame yet)")
+	if phase.ends_with("goal_blocked_at_arrival"):
+		var goal_sep: String = str(notes.get("target_path_target_separated", ""))
+		if goal_sep.begins_with("0/"):
+			hits.append("LAB-005 (mid-flight canonicalization missing — target/path_target not separated after goal walled)")
+	if phase.ends_with("alternating_corridor_seal"):
+		var alt_replans: int = int(r.get("total_replans", 0))
+		if alt_replans < 30:
+			hits.append("replan starvation: only %d total replans across 360 ticks of seal swaps" % alt_replans)
 	if hits.is_empty():
 		return "(no flagged anomalies)"
 	return ", ".join(hits)
