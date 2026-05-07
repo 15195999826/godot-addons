@@ -12,7 +12,10 @@ var pass_mask: int = 0
 var hierarchical: SimNavHierarchicalPathfinder = null
 var long_pathfinder: SimNavLongPathfinder = null
 var facade: SimNavPathfinderFacade = null
+var vertex_pathfinder: SimNavVertexPathfinder = null
+var path_queue: SimNavPathRequestQueue = null
 var last_report: Dictionary = {}
+var dynamic_refreshes: int = 0
 
 
 func _init(
@@ -42,17 +45,37 @@ func rebuild_context(static_obstacles: Array[ZeroAdRtsLabObstacle]) -> void:
 	hierarchical.recompute(nav_map, [pass_mask])
 	long_pathfinder = SimNavLongPathfinder.new(nav_map)
 	facade = SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
+	vertex_pathfinder = SimNavVertexPathfinder.new(nav_map)
+	path_queue = SimNavPathRequestQueue.new(facade, vertex_pathfinder)
+	dynamic_refreshes = 0
 
 
 func compute_long_path(unit: ZeroAdRtsLabUnit, goal: Vector2) -> SimNavLongPathResult:
 	if facade == null:
 		return SimNavLongPathResult.new()
-	var query := SimNavLongPathQuery.from_values(unit.position, SimNavPathGoal.point(goal), pass_mask, PASSABILITY_CLASS_NAME)
-	query.post_process = SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT
-	query.waypoint_spacing = cell_size * 4.0
+	var query := build_long_path_query(unit, goal)
 	var result := facade.compute_path_result(query)
 	last_report["long_path"] = _long_result_to_report(result)
 	return result
+
+
+func build_long_path_query(unit: ZeroAdRtsLabUnit, goal: Vector2) -> SimNavLongPathQuery:
+	var query := SimNavLongPathQuery.from_values(unit.position, SimNavPathGoal.point(goal), pass_mask, PASSABILITY_CLASS_NAME)
+	query.post_process = SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT
+	query.waypoint_spacing = cell_size * 4.0
+	return query
+
+
+func enqueue_long_path(unit: ZeroAdRtsLabUnit, goal: Vector2) -> int:
+	if path_queue == null:
+		return 0
+	var ticket := path_queue.enqueue_long_path_query(build_long_path_query(unit, goal))
+	last_report["long_path_queued"] = {
+		"ticket": ticket,
+		"unit_id": unit.id,
+		"goal": goal,
+	}
+	return ticket
 
 
 func compute_short_path(
@@ -62,6 +85,17 @@ func compute_short_path(
 	search_range: float
 ) -> SimNavShortPathResult:
 	_refresh_dynamic_units(units)
+	var request := build_short_path_request(unit, goal, search_range)
+	var result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(request)
+	last_report["short_path"] = _short_result_to_report(result)
+	return result
+
+
+func build_short_path_request(
+	unit: ZeroAdRtsLabUnit,
+	goal: SimNavPathGoal,
+	search_range: float
+) -> SimNavShortPathRequest:
 	var request := SimNavShortPathRequest.new()
 	request.start = unit.position
 	request.goal = goal
@@ -71,18 +105,74 @@ func compute_short_path(
 	request.avoid_moving_units = true
 	request.control_group = unit.group_id
 	request.obstruction_filter = movement_filter_for_unit(unit)
-	var result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(request)
-	last_report["short_path"] = _short_result_to_report(result)
-	return result
+	return request
+
+
+func enqueue_short_path(
+	unit: ZeroAdRtsLabUnit,
+	goal: SimNavPathGoal,
+	units: Array[ZeroAdRtsLabUnit],
+	search_range: float
+) -> int:
+	if path_queue == null:
+		return 0
+	var ticket := path_queue.enqueue_short_path(build_short_path_request(unit, goal, search_range))
+	last_report["short_path_queued"] = {
+		"ticket": ticket,
+		"unit_id": unit.id,
+		"goal": goal.center if goal != null else Vector2.ZERO,
+	}
+	return ticket
+
+
+func process_path_budget(units: Array[ZeroAdRtsLabUnit], max_requests: int) -> int:
+	if path_queue == null:
+		return 0
+	if path_queue.pending_count() <= 0:
+		return 0
+	_refresh_dynamic_units(units)
+	var processed := path_queue.process_budget(max_requests)
+	if processed > 0:
+		last_report["path_queue_processed"] = {
+			"processed": processed,
+			"diagnostics": path_queue.get_diagnostics(),
+		}
+	return processed
+
+
+func cancel_path_request(ticket: int) -> void:
+	if path_queue == null or ticket <= 0:
+		return
+	path_queue.cancel(ticket)
+
+
+func take_long_path_result(ticket: int) -> SimNavLongPathResult:
+	if path_queue == null or ticket <= 0:
+		return null
+	return path_queue.take_long_path_result(ticket)
+
+
+func take_short_path_result(ticket: int) -> SimNavShortPathResult:
+	if path_queue == null or ticket <= 0:
+		return null
+	return path_queue.take_short_path_result(ticket)
+
+
+func path_queue_diagnostics() -> Dictionary:
+	if path_queue == null:
+		return {}
+	return path_queue.get_diagnostics()
 
 
 func validate_movement_line(
 	unit: ZeroAdRtsLabUnit,
 	start: Vector2,
 	target: Vector2,
-	units: Array[ZeroAdRtsLabUnit]
+	units: Array[ZeroAdRtsLabUnit],
+	refresh_dynamic: bool = true
 ) -> SimNavMovementLineResult:
-	_refresh_dynamic_units(units)
+	if refresh_dynamic:
+		_refresh_dynamic_units(units)
 	var result := facade.validate_movement_line(start, target, unit.radius, pass_mask, movement_filter_for_unit(unit))
 	last_report["movement_line"] = _line_result_to_report(result)
 	return result
@@ -92,9 +182,11 @@ func validate_unit_line(
 	unit: ZeroAdRtsLabUnit,
 	start: Vector2,
 	target: Vector2,
-	units: Array[ZeroAdRtsLabUnit]
+	units: Array[ZeroAdRtsLabUnit],
+	refresh_dynamic: bool = true
 ) -> SimNavMovementLineResult:
-	_refresh_dynamic_units(units)
+	if refresh_dynamic:
+		_refresh_dynamic_units(units)
 	var result := facade.validate_unit_line(start, target, unit.radius, movement_filter_for_unit(unit))
 	last_report["unit_line"] = _line_result_to_report(result)
 	return result
@@ -115,7 +207,7 @@ func point_inside_static(point: Vector2, clearance: float) -> bool:
 	return false
 
 
-func _refresh_dynamic_units(units: Array[ZeroAdRtsLabUnit]) -> void:
+func refresh_dynamic_units(units: Array[ZeroAdRtsLabUnit]) -> void:
 	if nav_map == null:
 		return
 	var shapes: Array[SimNavObstructionShapeUnit] = []
@@ -133,6 +225,11 @@ func _refresh_dynamic_units(units: Array[ZeroAdRtsLabUnit]) -> void:
 			shape.moving = true
 		shapes.append(shape)
 	nav_map.replace_dynamic_obstructions(shapes)
+	dynamic_refreshes += 1
+
+
+func _refresh_dynamic_units(units: Array[ZeroAdRtsLabUnit]) -> void:
+	refresh_dynamic_units(units)
 
 
 func _static_shape_for_obstacle(obstacle: ZeroAdRtsLabObstacle) -> SimNavObstructionShapeStatic:

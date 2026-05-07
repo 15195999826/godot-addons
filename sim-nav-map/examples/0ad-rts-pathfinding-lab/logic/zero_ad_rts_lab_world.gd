@@ -5,6 +5,7 @@ extends RefCounted
 const MOBILE_GROUP_ID: String = "blue"
 const DEFAULT_OBSTACLE_SIZE: Vector2 = Vector2(74.0, 74.0)
 const DEFAULT_BLOCKER_RADIUS: float = 14.0
+const PATH_REQUEST_BUDGET_PER_TICK: int = 2
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var obstacles: Array[ZeroAdRtsLabObstacle] = []
@@ -80,8 +81,14 @@ func issue_move(unit_id: String, goal: Vector2) -> void:
 
 
 func step(delta: float) -> void:
+	pathfinder.process_path_budget(units, PATH_REQUEST_BUDGET_PER_TICK)
+	motion.apply_path_results(units, pathfinder)
+	var has_active_mobile := _has_active_mobile()
+	if has_active_mobile:
+		pathfinder.refresh_dynamic_units(units)
 	for unit in get_mobile_units():
 		motion.step_unit(unit, delta, pathfinder, units)
+	pathfinder.refresh_dynamic_units(units)
 	motion.apply_push_adjust(units, pathfinder)
 	tick_count += 1
 
@@ -207,9 +214,17 @@ func get_metrics() -> Dictionary:
 		"active_count": active_count,
 		"short_path_requests": motion.short_path_requests,
 		"long_path_requests": motion.long_path_requests,
+		"path_results_applied": motion.path_results_applied,
+		"path_result_failures": motion.path_result_failures,
+		"path_queue_pending": int(pathfinder.path_queue_diagnostics().get("pending_count", 0)),
+		"path_queue_results": int(pathfinder.path_queue_diagnostics().get("result_count", 0)),
+		"path_queue_processed": int(pathfinder.path_queue_diagnostics().get("processed_count", 0)),
+		"dynamic_refreshes": pathfinder.dynamic_refreshes,
 		"blocked_moves": motion.blocked_moves,
 		"applied_pushes": motion.applied_pushes,
 		"rejected_pushes": motion.rejected_pushes,
+		"push_pair_checks": motion.push_pair_checks,
+		"push_grid_cells": motion.push_grid_cells,
 		"static_violation": max_static_violation,
 	}
 
@@ -222,6 +237,13 @@ func _replan_active_mobile() -> void:
 	for unit in get_mobile_units():
 		if unit.has_move_order:
 			motion.issue_move_order(unit, unit.target, pathfinder)
+
+
+func _has_active_mobile() -> bool:
+	for unit in get_mobile_units():
+		if unit.has_move_order:
+			return true
+	return false
 
 
 func _formation_offsets(count: int) -> Array[Vector2]:
