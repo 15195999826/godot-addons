@@ -72,6 +72,14 @@ methods remain implementation details.
 - Constructor: `SimNavMap.new(width, height, navcell_size, origin, navcells_per_tile)`.
   `navcells_per_tile` is clamped to at least `1`; default constructor creates an
   empty clean map.
+- Playable bounds: `set_bounds(x0, z0, x1, z1)`, `is_inside_playable_bounds(world_pos)`,
+  `get_playable_bounds_min()`, `get_playable_bounds_max()`. Mirrors 0 A.D.
+  `ICmpObstructionManager::SetBounds`. Default bounds equal the full backing-grid
+  world extent. Long-path queries with start or `POINT` goal outside the playable
+  bounds return `STATUS_INVALID_QUERY` with `FAILURE_START_OUT_OF_BOUNDS` /
+  `FAILURE_GOAL_OUT_OF_BOUNDS`. Static rasterization clips: a static obstruction
+  straddling the rectangle only rasterizes its in-bounds cells. Circular bounds
+  remain intentionally deferred.
 - Passability: `register_passability_class()`, `get_passability_registry()`,
   `get_passability_classes()`, `get_passability_mask()`.
 - Terrain: `get_terrain_tile_map()`, `navcell_to_terrain_tile()`,

@@ -55,6 +55,9 @@ func compute_path_result(query: SimNavLongPathQuery) -> SimNavLongPathResult:
 	if not _nav_map.is_valid_navcell(start_cell):
 		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_START_OUT_OF_BOUNDS)
 		return result
+	if not _nav_map.is_inside_playable_bounds(query.start_world):
+		result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_START_OUT_OF_BOUNDS)
+		return result
 	if not _is_passable_with_exclusions(start_cell, query.pass_mask, query.excluded_regions):
 		result.set_failure(SimNavLongPathResult.STATUS_INVALID_START, SimNavLongPathResult.FAILURE_START_BLOCKED)
 		return result
@@ -63,6 +66,9 @@ func compute_path_result(query: SimNavLongPathQuery) -> SimNavLongPathResult:
 		var goal_cell := _nav_map.world_to_navcell(query.goal.center)
 		result.canonical_navcell = goal_cell
 		if not _nav_map.is_valid_navcell(goal_cell):
+			result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_GOAL_OUT_OF_BOUNDS)
+			return result
+		if not _nav_map.is_inside_playable_bounds(query.goal.center):
 			result.set_failure(SimNavLongPathResult.STATUS_INVALID_QUERY, SimNavLongPathResult.FAILURE_GOAL_OUT_OF_BOUNDS)
 			return result
 		if not _is_passable_with_exclusions(goal_cell, query.pass_mask, query.excluded_regions):

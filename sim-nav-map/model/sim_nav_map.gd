@@ -27,6 +27,16 @@ var _static_obstruction_index: SimNavSpatialIndex = null
 var _dynamic_obstruction_index: SimNavSpatialIndex = null
 var _next_obstruction_tag: int = 1
 
+# Playable bounds in world coordinates. Defaults to the full backing-grid
+# extent so existing callers see no behavior change. set_bounds() lets a
+# caller express a tighter rectangle: long-path start/goal queries reject
+# points outside it (status=invalid_query, failure_reason=...out_of_bounds),
+# and static rasterization clips to it (cells whose center is outside the
+# rectangle are not marked blocked, so a straddling OBB only rasterizes its
+# in-bounds portion). Mirrors 0 A.D. ICmpObstructionManager::SetBounds.
+var _playable_bounds_min: Vector2 = Vector2.ZERO
+var _playable_bounds_max: Vector2 = Vector2.ZERO
+
 
 func _init(
 	p_width: int = 0,
@@ -40,6 +50,8 @@ func _init(
 	navcell_size = p_navcell_size
 	origin = p_origin
 	navcells_per_tile = maxi(1, p_navcells_per_tile)
+	_playable_bounds_min = origin
+	_playable_bounds_max = origin + Vector2(float(width), float(height)) * navcell_size
 	_terrain_tile_map = SimNavTerrainTileMap.new(width, height, navcells_per_tile)
 	_static_obstruction_index = SimNavSpatialIndex.new(_default_spatial_cell_size())
 	_dynamic_obstruction_index = SimNavSpatialIndex.new(_default_spatial_cell_size())
@@ -456,6 +468,8 @@ func _rasterize_static_obstruction(shape: SimNavObstructionShapeStatic, mark_dir
 
 
 func _blocked_mask_for_point(shape: SimNavObstructionShapeStatic, point: Vector2) -> int:
+	if not is_inside_playable_bounds(point):
+		return 0
 	var result := 0
 	for config in _passability_registry.get_classes():
 		if not config.affects_pathfinding:
@@ -463,6 +477,29 @@ func _blocked_mask_for_point(shape: SimNavObstructionShapeStatic, point: Vector2
 		if shape.contains_point_with_clearance(point, config.clearance):
 			result |= 1 << config.bit_index
 	return result
+
+
+func set_bounds(x0: float, z0: float, x1: float, z1: float) -> void:
+	_playable_bounds_min = Vector2(minf(x0, x1), minf(z0, z1))
+	_playable_bounds_max = Vector2(maxf(x0, x1), maxf(z0, z1))
+	_mark_all_static_obstructions_dirty()
+
+
+func get_playable_bounds_min() -> Vector2:
+	return _playable_bounds_min
+
+
+func get_playable_bounds_max() -> Vector2:
+	return _playable_bounds_max
+
+
+func is_inside_playable_bounds(world_pos: Vector2) -> bool:
+	return (
+		world_pos.x >= _playable_bounds_min.x
+		and world_pos.y >= _playable_bounds_min.y
+		and world_pos.x <= _playable_bounds_max.x
+		and world_pos.y <= _playable_bounds_max.y
+	)
 
 
 func _clear_navcell_data(mark_dirty: bool = false) -> void:
