@@ -122,7 +122,7 @@ func step_unit(
 		return
 	if bool(move_result.get("moved", false)):
 		unit.failed_movements = 0
-		_emit_motion_update(unit, MotionUpdateScript.TYPE_CLEAR, "", tick)
+		_emit_clear_update_if_needed(unit, tick)
 		if unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON and not unit.has_path():
 			_emit_motion_update(unit, MotionUpdateScript.TYPE_REACHED_GOAL, "", tick)
 		elif went_straight:
@@ -404,16 +404,22 @@ func _try_going_straight_to_target(
 
 func _note_obstructed(unit: ZeroAdRtsLabUnit, tick: int) -> void:
 	if unit.failed_movements < 2:
-		_emit_motion_update(unit, MotionUpdateScript.TYPE_CLEAR, "", tick)
+		_emit_clear_update_if_needed(unit, tick)
 		return
 	if unit.failed_movements >= VERY_OBSTRUCTED_THRESHOLD:
-		very_obstructed_notifications += 1
-		unit.note_order_metric("very_obstructed_notifications")
-		_emit_motion_update(unit, MotionUpdateScript.TYPE_VERY_OBSTRUCTED, "", tick)
+		_emit_obstruction_update_if_needed(
+			unit,
+			MotionUpdateScript.TYPE_VERY_OBSTRUCTED,
+			"very_obstructed",
+			tick
+		)
 	else:
-		obstructed_notifications += 1
-		unit.note_order_metric("obstructed_notifications")
-		_emit_motion_update(unit, MotionUpdateScript.TYPE_OBSTRUCTED, "", tick)
+		_emit_obstruction_update_if_needed(
+			unit,
+			MotionUpdateScript.TYPE_OBSTRUCTED,
+			"obstructed",
+			tick
+		)
 
 
 func _note_known_imperfect_path_if_needed(
@@ -426,9 +432,12 @@ func _note_known_imperfect_path_if_needed(
 	if not _pathing_update_needed(unit):
 		return
 	unit.follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
-	known_imperfect_paths += 1
-	unit.note_order_metric("known_imperfect_paths")
-	_emit_motion_update(unit, MotionUpdateScript.TYPE_KNOWN_IMPERFECT, "", tick)
+	_emit_obstruction_update_if_needed(
+		unit,
+		MotionUpdateScript.TYPE_KNOWN_IMPERFECT,
+		"known_imperfect_path",
+		tick
+	)
 
 
 func _pathing_update_needed(unit: ZeroAdRtsLabUnit) -> bool:
@@ -495,6 +504,33 @@ func _emit_motion_update(
 		unit.position,
 		reason
 	))
+
+
+func _emit_clear_update_if_needed(unit: ZeroAdRtsLabUnit, tick: int) -> void:
+	if not unit.was_obstructed and unit.obstruction_state == "":
+		return
+	_emit_motion_update(unit, MotionUpdateScript.TYPE_CLEAR, "", tick)
+
+
+func _emit_obstruction_update_if_needed(
+	unit: ZeroAdRtsLabUnit,
+	update_type: String,
+	next_state: String,
+	tick: int
+) -> void:
+	if unit.obstruction_state == next_state:
+		return
+	match update_type:
+		MotionUpdateScript.TYPE_OBSTRUCTED:
+			obstructed_notifications += 1
+			unit.note_order_metric("obstructed_notifications")
+		MotionUpdateScript.TYPE_VERY_OBSTRUCTED:
+			very_obstructed_notifications += 1
+			unit.note_order_metric("very_obstructed_notifications")
+		MotionUpdateScript.TYPE_KNOWN_IMPERFECT:
+			known_imperfect_paths += 1
+			unit.note_order_metric("known_imperfect_paths")
+	_emit_motion_update(unit, update_type, "", tick)
 
 
 func _cancel_pending_path_requests(unit: ZeroAdRtsLabUnit, pathfinder: ZeroAdRtsLabPathfinder) -> void:

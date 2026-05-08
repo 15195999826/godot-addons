@@ -250,6 +250,11 @@ func _test_unit_actor_tracks_move_order() -> void:
 		_failures.append("order-track: expected per-order long path metric")
 	if world.recent_motion_updates.is_empty():
 		_failures.append("order-track: expected world motion update log")
+	if world.recent_motion_updates.size() > 2:
+		_failures.append("order-track: expected semantic motion updates only, got %d updates=%s" % [
+			world.recent_motion_updates.size(),
+			str(world.recent_motion_updates),
+		])
 
 
 func _run_world_steps(world: ZeroAdRtsLabWorld, count: int) -> void:
