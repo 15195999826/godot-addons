@@ -6,12 +6,14 @@ const MOBILE_GROUP_ID: String = "blue"
 const DEFAULT_OBSTACLE_SIZE: Vector2 = Vector2(74.0, 74.0)
 const DEFAULT_BLOCKER_RADIUS: float = 14.0
 const PATH_REQUEST_BUDGET_PER_TICK: int = 2
+const MAX_RECENT_MOTION_UPDATES: int = 160
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var obstacles: Array[ZeroAdRtsLabObstacle] = []
 var units: Array[ZeroAdRtsLabUnit] = []
 var pathfinder: ZeroAdRtsLabPathfinder = null
 var motion: ZeroAdRtsLabMotionController = null
+var recent_motion_updates: Array[Dictionary] = []
 var tick_count: int = 0
 var current_target: Vector2 = Vector2(610.0, 210.0)
 var _obstacle_seq: int = 0
@@ -40,6 +42,7 @@ func setup_default() -> void:
 	]
 	_rebuild_navigation()
 	tick_count = 0
+	recent_motion_updates.clear()
 	clear_traces()
 
 
@@ -70,24 +73,28 @@ func set_units_target(unit_ids: Array[String], target: Vector2) -> void:
 	for i in range(target_units.size()):
 		var unit := target_units[i]
 		var unit_goal := _clamp_unit_point(target + offsets[i], unit.radius)
-		motion.issue_move_order(unit, unit_goal, pathfinder)
+		unit.begin_move_order(unit_goal, tick_count)
+		motion.start_move_order(unit, pathfinder)
 
 
 func issue_move(unit_id: String, goal: Vector2) -> void:
 	var unit := get_unit(unit_id)
 	if unit == null:
 		return
-	motion.issue_move_order(unit, goal, pathfinder)
+	unit.begin_move_order(goal, tick_count)
+	motion.start_move_order(unit, pathfinder)
 
 
 func step(delta: float) -> void:
 	pathfinder.process_path_budget(units, PATH_REQUEST_BUDGET_PER_TICK)
-	motion.apply_path_results(units, pathfinder)
+	motion.apply_path_results(units, pathfinder, tick_count)
+	_dispatch_motion_updates()
 	var has_active_mobile := _has_active_mobile()
 	if has_active_mobile:
 		pathfinder.refresh_dynamic_units(units)
 	for unit in get_mobile_units():
-		motion.step_unit(unit, delta, pathfinder, units)
+		motion.step_unit(unit, delta, pathfinder, units, tick_count)
+	_dispatch_motion_updates()
 	pathfinder.refresh_dynamic_units(units)
 	motion.apply_push_adjust(units, pathfinder)
 	tick_count += 1
@@ -247,7 +254,7 @@ func _rebuild_navigation() -> void:
 func _replan_active_mobile() -> void:
 	for unit in get_mobile_units():
 		if unit.has_move_order:
-			motion.issue_move_order(unit, unit.target, pathfinder)
+			motion.replan_active_order(unit, pathfinder)
 
 
 func _has_active_mobile() -> bool:
@@ -255,6 +262,18 @@ func _has_active_mobile() -> bool:
 		if unit.has_move_order:
 			return true
 	return false
+
+
+func _dispatch_motion_updates() -> void:
+	var updates := motion.drain_motion_updates()
+	for update in updates:
+		var unit := get_unit(update.actor_id)
+		if unit == null:
+			continue
+		unit.on_motion_update(update)
+		recent_motion_updates.append(update.to_snapshot())
+		while recent_motion_updates.size() > MAX_RECENT_MOTION_UPDATES:
+			recent_motion_updates.pop_front()
 
 
 func _formation_offsets(count: int) -> Array[Vector2]:
