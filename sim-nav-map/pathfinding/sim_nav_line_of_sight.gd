@@ -3,14 +3,9 @@ class_name SimNavLineOfSight
 
 static func segment_clear(a: Vector2, b: Vector2, shapes: Array, buffer: float) -> bool:
 	for shape in shapes:
-		if shape is SimNavObstructionShapeUnit:
-			var unit_shape := shape as SimNavObstructionShapeUnit
-			var threshold := unit_shape.clearance + buffer
-			if _segment_to_point_dist(a, b, unit_shape.center) < threshold:
-				return false
-		elif shape is SimNavObstructionShapeStatic:
-			if _segment_to_obb_dist(a, b, shape as SimNavObstructionShapeStatic, buffer) < buffer:
-				return false
+		var obstruction_shape := shape as SimNavObstructionShape
+		if obstruction_shape != null and shape_blocks_segment(a, b, obstruction_shape, buffer):
+			return false
 	return true
 
 
@@ -26,9 +21,18 @@ static func shape_blocks_segment(a: Vector2, b: Vector2, shape: SimNavObstructio
 	if shape is SimNavObstructionShapeUnit:
 		var unit_shape := shape as SimNavObstructionShapeUnit
 		var threshold := unit_shape.clearance + buffer
+		if unit_shape.center.distance_to(a) <= threshold:
+			return false
+		if unit_shape.center.distance_to(b) <= threshold:
+			return true
 		return _segment_to_point_dist(a, b, unit_shape.center) < threshold
 	if shape is SimNavObstructionShapeStatic:
-		return _segment_to_obb_dist(a, b, shape as SimNavObstructionShapeStatic, buffer) < buffer
+		var static_shape := shape as SimNavObstructionShapeStatic
+		if static_shape.contains_point_with_clearance(a, buffer):
+			return false
+		if static_shape.contains_point_with_clearance(b, buffer):
+			return true
+		return _segment_to_obb_dist(a, b, static_shape, buffer) < buffer
 	return false
 
 

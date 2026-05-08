@@ -24,7 +24,7 @@ func _ready() -> void:
 func _test_path_requests_are_budgeted() -> void:
 	var world := ZeroAdRtsLabWorld.new()
 	world.obstacles = []
-	world.units = _make_grid_units(UNIT_COUNT)
+	world.units = _make_grid_units(UNIT_COUNT, false)
 	world.pathfinder.rebuild_context(world.obstacles)
 	world.clear_traces()
 
@@ -85,11 +85,13 @@ func _test_push_adjust_uses_spatial_bucket() -> void:
 		_failures.append("push-grid: expected units to be distributed across buckets")
 
 
-func _make_grid_units(count: int) -> Array[ZeroAdRtsLabUnit]:
+func _make_grid_units(count: int, blocks_pathfinding: bool = true) -> Array[ZeroAdRtsLabUnit]:
 	var result: Array[ZeroAdRtsLabUnit] = []
 	for i in range(count):
 		var x := 48.0 + float(i % 8) * 70.0
 		@warning_ignore("integer_division")
 		var y := 52.0 + float(i / 8) * 54.0
-		result.append(ZeroAdRtsLabUnit.new("blue_%02d" % i, "blue", Vector2(x, y), 10.0, 96.0, true))
+		var unit := ZeroAdRtsLabUnit.new("blue_%02d" % i, "blue", Vector2(x, y), 10.0, 96.0, true)
+		unit.blocks_pathfinding = blocks_pathfinding
+		result.append(unit)
 	return result

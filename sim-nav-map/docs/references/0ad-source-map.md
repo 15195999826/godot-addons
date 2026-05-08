@@ -44,6 +44,100 @@ the core addon.
 | Diagnostics exports | `source/simulation2/helpers/Grid.h`, `source/simulation2/components/ICmpPathfinder.h`, `source/simulation2/components/CCmpPathfinder.cpp`, `source/simulation2/components/CCmpPathfinder_Common.h`, `source/simulation2/helpers/HierarchicalPathfinder.h` | `GridUpdateInformation`, AI dirtiness information, passability grid, debug data, connectivity grid read-only export. |
 | Formation as example policy | `source/simulation2/components/CCmpUnitMotion.h`, `source/simulation2/components/CCmpUnitMotion_System.cpp` | formation controller runs before unit motion; useful validation idea, not a core plugin target. |
 
+## Long / Short Path Cooperation Source Audit
+
+This section records the 0 A.D. source-level mental model for how global and
+local pathfinding cooperate. Reopen the listed files before using this as an
+implementation decision; this note is a source-audit summary, not a replacement
+for the local source checkout.
+
+Relevant source files:
+
+```text
+source/simulation2/components/CCmpUnitMotion.h
+source/simulation2/components/CCmpPathfinder.cpp
+source/simulation2/components/ICmpPathfinder.h
+source/simulation2/components/ICmpObstructionManager.h
+source/simulation2/components/CCmpObstruction.cpp
+source/simulation2/components/CCmpObstructionManager.cpp
+source/simulation2/helpers/LongPathfinder.cpp
+source/simulation2/helpers/VertexPathfinder.cpp
+```
+
+### 0 A.D. Source Facts
+
+- `CCmpUnitMotion::MoveTo()` computes a goal and immediately calls
+  `ComputePathToGoal()`. That function is the first long-vs-short path decision
+  point for a move order.
+- If the target is close and `TryGoingStraightToTarget(from, false)` succeeds,
+  UnitMotion clears the short path but still requests a long path. The comment
+  says this is a hedge because the next frame may fail the straight move, and
+  the long path should stay up to date.
+- Otherwise `ComputePathToGoal()` chooses short path when the goal is in short
+  range and long path when it is farther away. `ShouldAlternatePathfinder()` can
+  flip that choice after repeated failures, so short and long are recovery
+  alternatives as well as range-based tools.
+- Long and short path requests are asynchronous ticketed requests through
+  `CCmpPathfinder`. The result message only carries the ticket and
+  `WaypointPath`; `CCmpUnitMotion::PathResult()` ignores obsolete tickets before
+  writing either `m_LongPath` or `m_ShortPath`.
+- Movement consumes `m_ShortPath` first when it exists; otherwise it follows
+  `m_LongPath`. The actual segment advance is still checked by movement-line
+  validation, so a path result is a plan, not permission to teleport through a
+  later obstruction.
+- While following a long path with no active short path, `PostMove()` checks the
+  next long waypoint with `TestUnitLine()`. If a dynamic unit obstruction is in
+  front, it requests a short path toward a circle around a later long waypoint,
+  or toward the final goal when there is no later waypoint.
+- On blocked movement, `HandleObstructedMove()` treats the long path as
+  salvageable first: it may skip a nearby long waypoint, request a short path to
+  the vicinity of the next long waypoint, use a small backup hack near corner
+  mismatch cases, or occasionally request a fresh long path.
+- `PathingUpdateNeeded()` gates path churn for moved targets or invalid final
+  waypoints, and `m_FollowKnownImperfectPathCountdown` suppresses repeated
+  updates for a short period when a known imperfect path should still be
+  followed.
+
+### Dynamic Obstruction Policy
+
+- `LongPathRequest` does not carry `avoidMovingUnits` or control-group inputs.
+  Long path computation is driven by the passability grid and hierarchical/JPS
+  layers.
+- `CCmpPathfinder::UpdateGrid()` builds that grid from terrain and rasterized
+  obstructions. Rasterization uses `FLAG_BLOCK_PATHFINDING`; the obstruction
+  component schema explicitly describes `BlockPathfinding` as something that
+  should only be set for large stationary obstructions.
+- This means standard moving unit avoidance is not a global long-path concern.
+  A unit-shaped obstruction can technically be rasterized if it has
+  `FLAG_BLOCK_PATHFINDING`, but the intended high-frequency moving-unit path is
+  local handling, not constantly changing the global long-path grid.
+- `ShortPathRequest` does carry `avoidMovingUnits` and a control group.
+  `VertexPathfinder::ComputeShortPath()` builds a bounded visibility graph from
+  static obstructions and unit obstructions inside the local search range.
+- `ICmpObstructionManager::TestLine()` and `TestUnitLine()` are the runtime
+  legality checks used by UnitMotion. This is where dynamic unit collisions are
+  observed while executing or pre-checking a segment.
+
+### Sim Nav Map Implications
+
+- Do not model dense dynamic units as a reason for the long pathfinder to
+  globally reject or rebuild routes. That would make global path work scale with
+  transient crowd layout and would fight the 0 A.D. separation of concerns.
+- Long-path post-processing should be strict about static/passability legality:
+  it must not create a waypoint segment that crosses blocked terrain or a
+  rasterized static obstruction for the unit's clearance.
+- Dynamic-unit avoidance belongs in local policy: unit-line pre-checks,
+  short-path requests to a nearby long-path rejoin goal, blocked-move recovery,
+  request cooldowns, and per-tick request budgets.
+- In the `0ad-rts-pathfinding-lab`, a dense moving crowd should therefore
+  increase local short-path and blocked-move activity, not cause repeated global
+  long-path rejection. If diagnostics show long-path churn under moving-unit
+  pressure, treat that as a policy bug in the lab layer before changing core
+  long-path contracts.
+- Useful diagnostics for this boundary are: long/short request counts,
+  cancelled or obsolete tickets, `repath_suppressed`, path queue processed
+  counts, blocked moves, unit-line failures, and frame average/max time.
+
 ## Feature 5 Long-Path Source Audit
 
 This section refreshes the Feature 5 target against the local 0 A.D. source.
@@ -243,6 +337,38 @@ source/simulation2/components/CCmpUnitMotion.h
 - Update `smoke-matrix.md` with core and lab smoke scenes for filter parity,
   movement-line validation, unit-only line validation, range-limited short
   query status, and adapter-only consumption.
+
+### Sim Nav Map Feature 6 Implementation Notes
+
+- Movement-line passability validation should walk every crossed navcell, like
+  0 A.D. `Pathfinding::CheckLineMovement()`. Uniform sampling can miss a
+  briefly crossed blocked navcell, so the core smoke includes an adversarial
+  diagonal segment for this case.
+- Movement-line passability validation should not expand by clearance again.
+  `sim-nav-map` rasterizes terrain/static obstruction clearance into the
+  passability grid per class, so line validation should test the path-center
+  navcells against the already-expanded mask.
+- Short-path visibility edges must satisfy both exact obstruction line-of-sight
+  and passability-grid line validation. This keeps local vertex paths from
+  accepting a tangent geometry edge that crosses a rasterized blocked cell.
+- 0 A.D. control groups are not factions. `CCmpUnitMotion::GetGroup()` uses the
+  formation controller for formation members and otherwise falls back to the
+  unit's own entity id; `PreMove()` only exports a formation control group.
+  Therefore same-faction non-formation units still block short paths and
+  movement-line validation. Lab adapters should keep `group_id` as team/faction
+  data and ignore only the querying entity unless a real formation controller is
+  introduced.
+- 0 A.D. push/separation also uses each unit's initial and final motion-state
+  positions to detect crossed paths, then applies a perpendicular nudge. The
+  current 0AD lab only fixes the control-group/faction mismatch; if narrow
+  passage swaps still appear, the next source-aligned improvement is to add
+  motion-state crossing detection rather than loosening clearance.
+- `CCmpObstructionManager::TestLine()` / `TestUnitLine()` call
+  `Geometry::TestRaySquare()` / `TestRayAASquare()`, whose collision rule is
+  directional: a ray starting inside an obstruction is not considered a new
+  collision. This lets overlapped units move out of each other instead of being
+  permanently blocked by their current overlap; only outside-to-inside or
+  outside-through-obstruction segments are blocked.
 
 ## Feature 7 Request Queue Budget / Worker Contract Source Audit
 

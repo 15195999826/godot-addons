@@ -20,6 +20,7 @@ func _run() -> void:
 	_test_static_obb_corner_path()
 	_test_dynamic_blocker_reroute()
 	_test_blocked_navcell_terrain_edge_reroute()
+	_test_static_raster_passability_blocks_tangent_short_edge()
 	_test_circle_goal_lands_on_nearest_goal_point()
 	_test_circle_goal_uses_alternate_boundary_candidate()
 	_test_avoid_moving_units_false_allows_direct_path()
@@ -80,6 +81,42 @@ func _test_blocked_navcell_terrain_edge_reroute() -> void:
 	var path := SimNavVertexPathfinder.new(nav_map).compute_short_path_immediate(req)
 	_assert_true(path.size() >= 2, "blocked navcell should produce terrain-edge reroute")
 	_assert_path_waypoints_passable(path, nav_map, req.pass_mask, "terrain-edge path")
+
+
+func _test_static_raster_passability_blocks_tangent_short_edge() -> void:
+	var nav_map := SimNavMap.new(45, 27, 16.0, Vector2.ZERO, 1)
+	var ground := SimNavPassabilityClassConfig.new()
+	ground.class_name_id = "ground"
+	ground.clearance = 11.0
+	ground.affects_pathfinding = true
+	var pass_mask := nav_map.register_passability_class(ground)
+	var blocker := SimNavObstructionShapeStatic.new()
+	blocker.entity_id = "center_block"
+	blocker.center = Vector2(360.0, 210.0)
+	blocker.width = 48.0
+	blocker.height = 128.0
+	blocker.flags = SimNavObstructionFlags.BLOCK_PATHFINDING
+	nav_map.add_static_obstruction(blocker)
+	nav_map.rebuild_dirty()
+
+	var req := SimNavShortPathRequest.new()
+	req.start = Vector2(398.0, 120.0)
+	req.goal = SimNavPathGoal.point(Vector2(398.0, 300.0))
+	req.clearance = 11.0
+	req.range_px = 320.0
+	req.pass_mask = pass_mask
+
+	_assert_true(
+		SimNavLineOfSight.segment_clear(req.start, req.goal.center, nav_map.get_static_obstruction_shapes(), req.clearance),
+		"setup direct edge should be geometrically clear against exact static shape"
+	)
+	var result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(req)
+	_assert_false(
+		result.status == SimNavShortPathResult.STATUS_DIRECT_GOAL,
+		"raster-blocked tangent short edge should not stay direct"
+	)
+	if result.has_path():
+		_assert_movement_segments_clear(req.start, result.path, nav_map, req.clearance, req.pass_mask, "raster tangent reroute")
 
 
 func _test_circle_goal_lands_on_nearest_goal_point() -> void:
@@ -210,6 +247,31 @@ func _assert_path_waypoints_passable(path: SimNavWaypointPath, nav_map: SimNavMa
 		if not nav_map.is_passable_navcell(coord, pass_mask):
 			_failures.append("%s contains blocked waypoint at %s" % [label, str(coord)])
 			return
+
+
+func _assert_movement_segments_clear(
+	start: Vector2,
+	path: SimNavWaypointPath,
+	nav_map: SimNavMap,
+	clearance: float,
+	pass_mask: int,
+	label: String
+) -> void:
+	var facade := SimNavPathfinderFacade.new(nav_map)
+	var prev := start
+	for i in range(path.waypoints.size() - 1, -1, -1):
+		var point := path.waypoints[i]
+		var result := facade.validate_movement_line(prev, point, clearance, pass_mask)
+		if not result.is_success():
+			_failures.append("%s movement segment blocked: %s -> %s (%s/%s)" % [
+				label,
+				str(prev),
+				str(point),
+				result.status,
+				result.failure_reason,
+			])
+			return
+		prev = point
 
 
 func _assert_true(value: bool, message: String) -> void:

@@ -19,8 +19,11 @@ func _ready() -> void:
 func _run() -> void:
 	_test_filtered_range_query()
 	_test_movement_line_blocks_on_passability()
+	_test_movement_line_uses_grid_walk_not_sampling()
+	_test_movement_line_does_not_double_expand_passability()
 	_test_movement_line_obstruction_filter()
 	_test_unit_only_line_validation()
+	_test_unit_line_allows_overlap_escape()
 
 
 func _test_filtered_range_query() -> void:
@@ -65,6 +68,33 @@ func _test_movement_line_blocks_on_passability() -> void:
 	_assert_equal_str(SimNavMovementLineResult.STATUS_BLOCKED, result.status, "movement line should block on passability")
 	_assert_equal_str(SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED, result.failure_reason, "movement line should expose passability reason")
 	_assert_equal_vec2i(Vector2i(6, 6), result.blocked_navcell, "movement line should expose blocked navcell")
+
+
+func _test_movement_line_uses_grid_walk_not_sampling() -> void:
+	var nav_map := _base_map()
+	nav_map.or_navcell_data(Vector2i(5, 5), 1)
+	var facade := SimNavPathfinderFacade.new(nav_map)
+	var result := facade.validate_movement_line(
+		Vector2(32.0, 47.0),
+		Vector2(52.0, 49.0),
+		0.0,
+		1
+	)
+	_assert_equal_str(SimNavMovementLineResult.STATUS_BLOCKED, result.status, "movement line should not skip a briefly crossed blocked navcell")
+	_assert_equal_vec2i(Vector2i(5, 5), result.blocked_navcell, "movement line should report the crossed blocked navcell")
+
+
+func _test_movement_line_does_not_double_expand_passability() -> void:
+	var nav_map := _base_map()
+	nav_map.or_navcell_data(Vector2i(3, 1), 1)
+	var facade := SimNavPathfinderFacade.new(nav_map)
+	var result := facade.validate_movement_line(
+		nav_map.navcell_center_world(Vector2i(1, 0)),
+		nav_map.navcell_center_world(Vector2i(4, 0)),
+		8.0,
+		1
+	)
+	_assert_true(result.is_success(), "movement line should not expand passability mask by clearance")
 
 
 func _test_movement_line_obstruction_filter() -> void:
@@ -113,6 +143,26 @@ func _test_unit_only_line_validation() -> void:
 	var filter := SimNavObstructionFilter.units_only(true, "blue")
 	var clear := facade.validate_unit_line(Vector2(8.0, 48.0), Vector2(104.0, 48.0), 0.0, filter)
 	_assert_true(clear.is_success(), "unit line should respect control group filter")
+
+
+func _test_unit_line_allows_overlap_escape() -> void:
+	var nav_map := _base_map()
+	var manager := SimNavObstructionManager.new(nav_map)
+	manager.add_unit_shape(
+		"unit",
+		Vector2(64.0, 48.0),
+		8.0,
+		SimNavObstructionFlags.BLOCK_MOVEMENT
+	)
+	var facade := SimNavPathfinderFacade.new(nav_map)
+	var escape := facade.validate_unit_line(Vector2(50.0, 48.0), Vector2(32.0, 48.0), 8.0)
+	_assert_true(escape.is_success(), "unit line should allow moving out of an existing overlap")
+	var enter := facade.validate_unit_line(Vector2(32.0, 48.0), Vector2(50.0, 48.0), 8.0)
+	_assert_equal_str(
+		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,
+		enter.failure_reason,
+		"unit line should still block moving into a unit obstruction"
+	)
 
 
 func _base_map() -> SimNavMap:

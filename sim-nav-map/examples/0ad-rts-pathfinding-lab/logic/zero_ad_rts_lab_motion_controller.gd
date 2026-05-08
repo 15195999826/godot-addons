@@ -108,7 +108,11 @@ func step_unit(
 		_emit_motion_update(unit, MotionUpdateScript.TYPE_REACHED_GOAL, "", tick)
 		return
 
-	var went_straight := _try_going_straight_to_target(unit, pathfinder, units, true)
+	var went_straight := false
+	# Keep an existing planned path. Near rasterized corners, replacing it with
+	# a borderline direct target line can drop an executable long path.
+	if not unit.has_path():
+		went_straight = _try_going_straight_to_target(unit, pathfinder, units, true)
 	if not went_straight:
 		_maybe_request_short_path_for_long_segment(unit, pathfinder, units)
 	if not unit.has_path():
@@ -559,8 +563,7 @@ func _accumulate_pair_push(
 		direction = delta / distance
 	var overlap: float = min_distance - distance
 	var both_moving: bool = a.has_move_order and b.has_move_order
-	var same_group: bool = a.group_id != "" and a.group_id == b.group_id
-	if not both_moving and not same_group:
+	if not both_moving:
 		return
 	var amount: float = overlap * 0.5
 	pushes[a.id] = (pushes.get(a.id, Vector2.ZERO) as Vector2) + direction * amount

@@ -223,47 +223,88 @@ func _validate_line(
 func _first_blocked_line_navcell(
 	start_world: Vector2,
 	target_world: Vector2,
-	clearance: float,
+	_clearance: float,
 	pass_mask: int,
 	result: SimNavMovementLineResult
 ) -> Dictionary:
-	var distance := start_world.distance_to(target_world)
-	var step := maxf(_nav_map.navcell_size * 0.5, 1.0)
-	var sample_count := maxi(1, int(ceil(distance / step)))
-	for i in range(sample_count + 1):
-		var t := float(i) / float(sample_count)
-		var point := start_world.lerp(target_world, t)
-		var coord := _nav_map.world_to_navcell(point)
-		result.checked_navcell_count += 1
-		if not _nav_map.is_valid_navcell(coord):
-			var reason := SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED
-			if i == 0:
-				reason = SimNavMovementLineResult.FAILURE_START_OUT_OF_BOUNDS
-			elif i == sample_count:
-				reason = SimNavMovementLineResult.FAILURE_END_OUT_OF_BOUNDS
-			return {
-				"coord": coord,
-				"reason": reason,
-			}
-		if not _line_point_passable_with_clearance(point, pass_mask, clearance):
-			return {
-				"coord": coord,
-				"reason": SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED,
-			}
+	var origin := _nav_map.origin
+	var cell_size := _nav_map.navcell_size
+	var i0 := int(floor((start_world.x - origin.x) / cell_size))
+	var j0 := int(floor((start_world.y - origin.y) / cell_size))
+	var i1 := int(floor((target_world.x - origin.x) / cell_size))
+	var j1 := int(floor((target_world.y - origin.y) / cell_size))
+	var current := Vector2i(i0, j0)
+	var target := Vector2i(i1, j1)
+	var initial := _line_navcell_failure(current, target, pass_mask, true, result)
+	if not initial.is_empty():
+		return initial
+	if current == target:
+		return {}
+
+	var dx := target_world.x - start_world.x
+	var dy := target_world.y - start_world.y
+	var step_i := 0
+	var step_j := 0
+	var t_max_x := INF
+	var t_max_y := INF
+	var delta_t_x := INF
+	var delta_t_y := INF
+	if dx > 0.0:
+		step_i = 1
+		t_max_x = (origin.x + float(i0 + 1) * cell_size - start_world.x) / dx
+		delta_t_x = cell_size / dx
+	elif dx < 0.0:
+		step_i = -1
+		t_max_x = (origin.x + float(i0) * cell_size - start_world.x) / dx
+		delta_t_x = -cell_size / dx
+	if dy > 0.0:
+		step_j = 1
+		t_max_y = (origin.y + float(j0 + 1) * cell_size - start_world.y) / dy
+		delta_t_y = cell_size / dy
+	elif dy < 0.0:
+		step_j = -1
+		t_max_y = (origin.y + float(j0) * cell_size - start_world.y) / dy
+		delta_t_y = -cell_size / dy
+
+	var max_steps := absi(i1 - i0) + absi(j1 - j0) + 4
+	while current != target and max_steps > 0:
+		max_steps -= 1
+		if t_max_x < t_max_y:
+			current.x += step_i
+			t_max_x += delta_t_x
+		else:
+			current.y += step_j
+			t_max_y += delta_t_y
+		var failure := _line_navcell_failure(current, target, pass_mask, false, result)
+		if not failure.is_empty():
+			return failure
 	return {}
 
 
-func _line_point_passable_with_clearance(point: Vector2, pass_mask: int, clearance: float) -> bool:
-	var center_coord := _nav_map.world_to_navcell(point)
-	var padding := int(ceil(maxf(clearance, 0.0) / maxf(_nav_map.navcell_size, 0.001)))
-	for y in range(center_coord.y - padding, center_coord.y + padding + 1):
-		for x in range(center_coord.x - padding, center_coord.x + padding + 1):
-			var coord := Vector2i(x, y)
-			if not _nav_map.is_valid_navcell(coord):
-				return false
-			if not _nav_map.is_passable_navcell(coord, pass_mask):
-				return false
-	return true
+func _line_navcell_failure(
+	coord: Vector2i,
+	target_coord: Vector2i,
+	pass_mask: int,
+	is_start: bool,
+	result: SimNavMovementLineResult
+) -> Dictionary:
+	result.checked_navcell_count += 1
+	if not _nav_map.is_valid_navcell(coord):
+		var reason := SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED
+		if is_start:
+			reason = SimNavMovementLineResult.FAILURE_START_OUT_OF_BOUNDS
+		elif coord == target_coord:
+			reason = SimNavMovementLineResult.FAILURE_END_OUT_OF_BOUNDS
+		return {
+			"coord": coord,
+			"reason": reason,
+		}
+	if not _nav_map.is_passable_navcell(coord, pass_mask):
+		return {
+			"coord": coord,
+			"reason": SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED,
+		}
+	return {}
 
 
 func _collect_line_obstructions(

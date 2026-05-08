@@ -103,7 +103,7 @@ func build_short_path_request(
 	request.range_px = search_range
 	request.pass_mask = pass_mask
 	request.avoid_moving_units = true
-	request.control_group = unit.group_id
+	request.control_group = ""
 	request.obstruction_filter = movement_filter_for_unit(unit)
 	return request
 
@@ -193,7 +193,7 @@ func validate_unit_line(
 
 
 func movement_filter_for_unit(unit: ZeroAdRtsLabUnit) -> SimNavObstructionFilter:
-	var filter := SimNavObstructionFilter.for_short_path(true, unit.group_id)
+	var filter := SimNavObstructionFilter.for_short_path(true, "")
 	filter.ignored_entity_id = unit.id
 	return filter
 
@@ -219,7 +219,6 @@ func refresh_dynamic_units(units: Array[ZeroAdRtsLabUnit]) -> void:
 		shape.center = unit.position
 		shape.clearance = unit.radius
 		shape.flags = SimNavObstructionFlags.BLOCK_MOVEMENT
-		shape.control_group = unit.group_id
 		if unit.has_move_order:
 			shape.flags |= SimNavObstructionFlags.MOVING
 			shape.moving = true

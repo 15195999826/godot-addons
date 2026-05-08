@@ -38,6 +38,10 @@ source/simulation2/components/CCmpUnitMotion_System.cpp
 source/simulation2/components/CCmpUnitMotionManager.h
 ```
 
+当前源码索引和审计笔记见 [`0ad-source-map.md`](0ad-source-map.md)，其中包含
+LongPath / ShortPath 在 `CCmpUnitMotion` 中的协作关系、动态障碍分工、以及
+`sim-nav-map` 侧的实现边界。
+
 ## Usage Rule
 
 可以学习 0 A.D. 的分层、contract 和数据流，但不要复制 GPL 源码实现。
