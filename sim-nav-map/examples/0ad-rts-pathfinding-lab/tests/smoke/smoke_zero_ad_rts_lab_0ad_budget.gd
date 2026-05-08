@@ -47,8 +47,9 @@ func _test_path_requests_are_budgeted() -> void:
 			break
 	if int(world.pathfinder.path_queue_diagnostics().get("pending_count", 0)) != 0:
 		_failures.append("budget: queued long paths did not drain over later frames")
-	if world.motion.path_results_applied < UNIT_COUNT:
-		_failures.append("budget: expected one long-path result per mobile unit")
+	var processed_total := int(world.pathfinder.path_queue_diagnostics().get("processed_count", 0))
+	if processed_total < UNIT_COUNT:
+		_failures.append("budget: expected queued long-path requests to be processed")
 
 
 func _test_push_adjust_uses_spatial_bucket() -> void:

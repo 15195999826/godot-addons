@@ -121,7 +121,7 @@ func _compute_to_virtual_goal(
 				vertices.append(static_shape.center + sx * ehw * su + sy * ehh * sv)
 
 	for unit_shape in units:
-		var radius := unit_shape.clearance + clearance
+		var radius := unit_shape.clearance + clearance + EDGE_EXPAND_DELTA
 		vertices.append(unit_shape.center + Vector2(radius, radius))
 		vertices.append(unit_shape.center + Vector2(radius, -radius))
 		vertices.append(unit_shape.center + Vector2(-radius, -radius))

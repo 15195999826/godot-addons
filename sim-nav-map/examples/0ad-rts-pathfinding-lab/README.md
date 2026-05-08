@@ -12,13 +12,22 @@ The boundary is intentional:
 
 ## 0 A.D.-Style Motion Contract
 
-The first baseline keeps the policy small:
+The baseline keeps the policy small, but mirrors the important 0 A.D. motion
+gates:
 
 - Candidate displacement is validated before a unit position changes.
-- A blocked movement increments a failed-movement counter and requests a local
-  short path.
+- Path requests are owned by the unit as a single expected request: a new long
+  request cancels a pending short request, and a new short request cancels a
+  pending long request.
+- A blocked movement increments a failed-movement counter, widens local short
+  path search with repeated failures, occasionally alternates back to long
+  pathfinding, and eventually records an explicit move failure instead of
+  growing requests forever.
 - While following a long path, unit-line validation can trigger a short-path
-  request before the unit hits a dynamic blocker.
+  request before the unit hits a dynamic blocker. Multi-waypoint long paths pop
+  the current waypoint and short-path toward the next waypoint neighborhood.
+- Known-imperfect paths are followed for a short countdown before another
+  update is allowed.
 - Push adjustment is applied only when the pushed segment is movement-line
   valid. Invalid push is discarded and marks the unit obstructed.
 - There is no static obstacle escape, teleport settle, or post-move push-out
@@ -31,6 +40,8 @@ The first baseline keeps the policy small:
 - `ZeroAdRtsLabWorld.step()` processes only a small fixed path budget per tick.
 - Blocked movement can enqueue local short-path requests, but results are still
   applied from the same budgeted queue.
+- Suppressed repaths, stale request cancellation, move failures, and
+  known-imperfect path cooldowns are exposed in metrics and export logs.
 - Push adjustment uses a spatial bucket around each unit instead of scanning all
   unit pairs globally.
 
@@ -46,6 +57,7 @@ frontend/zero_ad_rts_pathfinding_lab.tscn
 tests/smoke/smoke_zero_ad_rts_lab_motion.tscn
 tests/smoke/smoke_zero_ad_rts_lab_ui_ops.tscn
 tests/smoke/smoke_zero_ad_rts_lab_0ad_budget.tscn
+tests/exploration/exploration_playthrough.tscn
 ```
 
 ## Controls

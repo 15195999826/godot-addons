@@ -13,8 +13,11 @@ var target: Vector2 = Vector2.ZERO
 var path_target: Vector2 = Vector2.ZERO
 var has_move_order: bool = false
 var arrived: bool = true
+var move_failed: bool = false
 var was_obstructed: bool = false
+var obstruction_state: String = ""
 var failed_movements: int = 0
+var follow_known_imperfect_path_countdown: int = 0
 var long_path: SimNavWaypointPath = SimNavWaypointPath.new()
 var short_path: SimNavWaypointPath = SimNavWaypointPath.new()
 var trace: PackedVector2Array = PackedVector2Array()
@@ -46,8 +49,11 @@ func begin_move_order(goal: Vector2) -> void:
 	path_target = goal
 	has_move_order = true
 	arrived = false
+	move_failed = false
 	was_obstructed = false
+	obstruction_state = ""
 	failed_movements = 0
+	follow_known_imperfect_path_countdown = 0
 	long_path = SimNavWaypointPath.new()
 	short_path = SimNavWaypointPath.new()
 	pending_long_ticket = 0
@@ -58,11 +64,29 @@ func begin_move_order(goal: Vector2) -> void:
 func finish_move_order() -> void:
 	has_move_order = false
 	arrived = true
+	move_failed = false
 	was_obstructed = false
+	obstruction_state = ""
 	failed_movements = 0
+	follow_known_imperfect_path_countdown = 0
 	long_path = SimNavWaypointPath.new()
 	short_path = SimNavWaypointPath.new()
 	path_target = position
+	pending_long_ticket = 0
+	pending_short_ticket = 0
+	short_repath_cooldown = 0.0
+
+
+func fail_move_order() -> void:
+	has_move_order = false
+	arrived = false
+	move_failed = true
+	was_obstructed = true
+	obstruction_state = "likely_failure"
+	failed_movements = 0
+	follow_known_imperfect_path_countdown = 0
+	long_path = SimNavWaypointPath.new()
+	short_path = SimNavWaypointPath.new()
 	pending_long_ticket = 0
 	pending_short_ticket = 0
 	short_repath_cooldown = 0.0

@@ -15,6 +15,17 @@ func _ready() -> void:
 	if not instance.has_method("_draw"):
 		_fail("scene-load: frontend script missing draw method")
 		return
+	var world: ZeroAdRtsLabWorld = instance.get("_world") as ZeroAdRtsLabWorld
+	if world == null:
+		_fail("scene-load: frontend world missing")
+		return
+	if int(world.get_metrics().get("active_count", 0)) <= 0:
+		_fail("scene-load: startup should issue the default group move")
+		return
+	var queued := int(world.get_metrics().get("long_path_requests", 0))
+	if queued <= 0:
+		_fail("scene-load: startup default move should enqueue long paths")
+		return
 	print("SMOKE_TEST_RESULT: PASS - 0ad rts lab scene load")
 	get_tree().quit(0)
 
@@ -24,4 +35,3 @@ func _fail(message: String) -> void:
 	printerr(output)
 	print(output)
 	get_tree().quit(1)
-
