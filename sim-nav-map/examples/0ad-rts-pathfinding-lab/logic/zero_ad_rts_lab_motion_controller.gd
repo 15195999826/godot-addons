@@ -2,6 +2,8 @@ class_name ZeroAdRtsLabMotionController
 extends RefCounted
 
 
+const MotionUpdateScript := preload("res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_motion_update.gd")
+
 const ARRIVE_EPSILON: float = 8.0
 const NAVCELL_SIZE: float = 16.0
 const SHORT_PATH_MIN_SEARCH_RANGE: float = 12.0 * NAVCELL_SIZE
@@ -9,6 +11,7 @@ const SHORT_PATH_MAX_SEARCH_RANGE: float = 56.0 * NAVCELL_SIZE
 const SHORT_PATH_SEARCH_RANGE_INCREMENT: float = 4.0 * NAVCELL_SIZE
 const SHORT_PATH_SEARCH_RANGE_INCREASE_DELAY: int = 1
 const SHORT_PATH_LONG_WAYPOINT_RANGE: float = 4.0 * NAVCELL_SIZE
+const LONG_PATH_UNIT_LINE_SUBGOAL_RADIUS: float = 2.0 * NAVCELL_SIZE
 const LONG_PATH_MIN_DIST: float = 16.0 * NAVCELL_SIZE
 const DIRECT_PATH_RANGE: float = 24.0 * NAVCELL_SIZE
 const KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN: int = 12
@@ -40,47 +43,69 @@ var path_results_applied: int = 0
 var path_result_failures: int = 0
 var push_pair_checks: int = 0
 var push_grid_cells: int = 0
+var _motion_updates: Array[RefCounted] = []
 
 
-func issue_move_order(
+func start_move_order(
 	unit: ZeroAdRtsLabUnit,
-	goal: Vector2,
 	pathfinder: ZeroAdRtsLabPathfinder
 ) -> void:
 	_cancel_pending_path_requests(unit, pathfinder)
-	unit.begin_move_order(goal)
-	_request_long_path(unit, goal, pathfinder)
+	_request_long_path(unit, unit.target, pathfinder)
+
+
+func replan_active_order(
+	unit: ZeroAdRtsLabUnit,
+	pathfinder: ZeroAdRtsLabPathfinder
+) -> void:
+	if not unit.has_move_order:
+		return
+	_cancel_pending_path_requests(unit, pathfinder)
+	unit.long_path = SimNavWaypointPath.new()
+	unit.short_path = SimNavWaypointPath.new()
+	unit.pending_long_ticket = 0
+	unit.pending_short_ticket = 0
+	unit.short_repath_cooldown = 0.0
+	_request_long_path(unit, unit.target, pathfinder)
+
+
+func drain_motion_updates() -> Array[RefCounted]:
+	var result: Array[RefCounted] = _motion_updates.duplicate()
+	_motion_updates.clear()
+	return result
 
 
 func apply_path_results(
 	units: Array[ZeroAdRtsLabUnit],
-	pathfinder: ZeroAdRtsLabPathfinder
+	pathfinder: ZeroAdRtsLabPathfinder,
+	tick: int = 0
 ) -> void:
 	for unit in units:
 		if unit.pending_long_ticket > 0:
 			var long_result := pathfinder.take_long_path_result(unit.pending_long_ticket)
 			if long_result != null:
 				unit.pending_long_ticket = 0
-				_apply_long_path_result(unit, long_result)
+				_apply_long_path_result(unit, long_result, tick)
 		if unit.pending_short_ticket > 0:
 			var short_result := pathfinder.take_short_path_result(unit.pending_short_ticket)
 			if short_result != null:
 				unit.pending_short_ticket = 0
-				_apply_short_path_result(unit, short_result)
+				_apply_short_path_result(unit, short_result, tick)
 
 
 func step_unit(
 	unit: ZeroAdRtsLabUnit,
 	delta: float,
 	pathfinder: ZeroAdRtsLabPathfinder,
-	units: Array[ZeroAdRtsLabUnit]
+	units: Array[ZeroAdRtsLabUnit],
+	tick: int = 0
 ) -> void:
 	if not unit.mobile or not unit.has_move_order:
 		return
 	unit.short_repath_cooldown = maxf(0.0, unit.short_repath_cooldown - delta)
 	unit.follow_known_imperfect_path_countdown = maxi(0, unit.follow_known_imperfect_path_countdown - 1)
 	if unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON and not unit.has_path():
-		unit.finish_move_order()
+		_emit_motion_update(unit, MotionUpdateScript.TYPE_REACHED_GOAL, "", tick)
 		return
 
 	var went_straight := _try_going_straight_to_target(unit, pathfinder, units, true)
@@ -88,23 +113,22 @@ func step_unit(
 		_maybe_request_short_path_for_long_segment(unit, pathfinder, units)
 	if not unit.has_path():
 		if unit.pending_long_ticket == 0 and unit.pending_short_ticket == 0:
-			_handle_blocked_move(unit, pathfinder, units, false)
+			_handle_blocked_move(unit, pathfinder, units, false, tick)
 		return
 
 	var move_result := _perform_move(unit, delta, pathfinder, units)
 	if bool(move_result.get("obstructed", false)):
-		_handle_blocked_move(unit, pathfinder, units, bool(move_result.get("moved", false)))
+		_handle_blocked_move(unit, pathfinder, units, bool(move_result.get("moved", false)), tick)
 		return
 	if bool(move_result.get("moved", false)):
 		unit.failed_movements = 0
-		unit.was_obstructed = false
-		unit.obstruction_state = ""
+		_emit_motion_update(unit, MotionUpdateScript.TYPE_CLEAR, "", tick)
 		if unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON and not unit.has_path():
-			unit.finish_move_order()
+			_emit_motion_update(unit, MotionUpdateScript.TYPE_REACHED_GOAL, "", tick)
 		elif went_straight:
 			unit.short_path = SimNavWaypointPath.new()
 		return
-	_handle_blocked_move(unit, pathfinder, units, false)
+	_handle_blocked_move(unit, pathfinder, units, false, tick)
 
 
 func apply_push_adjust(
@@ -152,11 +176,12 @@ func _perform_move(
 		var waypoint := unit.current_waypoint()
 		var to_waypoint := waypoint - unit.position
 		var waypoint_distance := to_waypoint.length()
-		if waypoint_distance <= ARRIVE_EPSILON:
+		if waypoint_distance <= 0.0001:
 			unit.consume_current_waypoint()
 			continue
-		var move_distance := minf(remaining_distance, waypoint_distance)
-		var candidate := unit.position + to_waypoint / waypoint_distance * move_distance
+		var reaches_waypoint := waypoint_distance <= remaining_distance
+		var move_distance := waypoint_distance if reaches_waypoint else remaining_distance
+		var candidate := waypoint if reaches_waypoint else unit.position + to_waypoint / waypoint_distance * move_distance
 		var line_result := pathfinder.validate_movement_line(unit, unit.position, candidate, units, false)
 		if not line_result.is_success():
 			return {
@@ -167,7 +192,7 @@ func _perform_move(
 		unit.remember_position()
 		moved = true
 		remaining_distance -= move_distance
-		if unit.position.distance_to(waypoint) <= ARRIVE_EPSILON:
+		if reaches_waypoint:
 			unit.consume_current_waypoint()
 	return {
 		"obstructed": false,
@@ -184,22 +209,27 @@ func _request_long_path(
 		pathfinder.cancel_path_request(unit.pending_short_ticket)
 		unit.pending_short_ticket = 0
 		obsolete_path_requests += 1
+		unit.note_order_metric("obsolete_path_requests")
 	if unit.pending_long_ticket > 0:
 		pathfinder.cancel_path_request(unit.pending_long_ticket)
 		obsolete_path_requests += 1
+		unit.note_order_metric("obsolete_path_requests")
 	long_path_requests += 1
+	unit.note_order_metric("long_path_requests")
 	unit.pending_long_ticket = pathfinder.enqueue_long_path(unit, goal)
 
 
-func _apply_long_path_result(unit: ZeroAdRtsLabUnit, result: SimNavLongPathResult) -> void:
+func _apply_long_path_result(unit: ZeroAdRtsLabUnit, result: SimNavLongPathResult, tick: int) -> void:
 	path_results_applied += 1
+	unit.note_order_metric("path_results_applied")
 	if result.is_success():
 		unit.long_path = result.path
 		unit.short_path = SimNavWaypointPath.new()
 		unit.path_target = result.canonical_goal.center if result.canonical_goal != null else unit.target
-		_note_known_imperfect_path_if_needed(unit, true)
+		_note_known_imperfect_path_if_needed(unit, true, tick)
 	else:
 		path_result_failures += 1
+		unit.note_order_metric("path_result_failures")
 		unit.long_path = SimNavWaypointPath.new()
 		unit.path_target = unit.target
 
@@ -213,27 +243,33 @@ func _request_short_path(
 ) -> bool:
 	if unit.pending_short_ticket > 0:
 		repath_suppressed += 1
+		unit.note_order_metric("repath_suppressed")
 		return false
 	if unit.short_repath_cooldown > 0.0:
 		repath_suppressed += 1
+		unit.note_order_metric("repath_suppressed")
 		return false
 	if unit.pending_long_ticket > 0:
 		pathfinder.cancel_path_request(unit.pending_long_ticket)
 		unit.pending_long_ticket = 0
 		obsolete_path_requests += 1
+		unit.note_order_metric("obsolete_path_requests")
 	short_path_requests += 1
+	unit.note_order_metric("short_path_requests")
 	unit.pending_short_ticket = pathfinder.enqueue_short_path(unit, goal, units, search_range)
 	unit.short_repath_cooldown = SHORT_REPATH_COOLDOWN_SEC
 	return true
 
 
-func _apply_short_path_result(unit: ZeroAdRtsLabUnit, result: SimNavShortPathResult) -> void:
+func _apply_short_path_result(unit: ZeroAdRtsLabUnit, result: SimNavShortPathResult, tick: int) -> void:
 	path_results_applied += 1
+	unit.note_order_metric("path_results_applied")
 	if result.is_success():
 		unit.short_path = result.path
-		_note_known_imperfect_path_if_needed(unit, unit.long_path == null or unit.long_path.is_empty())
+		_note_known_imperfect_path_if_needed(unit, unit.long_path == null or unit.long_path.is_empty(), tick)
 	else:
 		path_result_failures += 1
+		unit.note_order_metric("path_result_failures")
 
 
 func _maybe_request_short_path_for_long_segment(
@@ -249,6 +285,7 @@ func _maybe_request_short_path_for_long_segment(
 		return
 	if unit.follow_known_imperfect_path_countdown > 0:
 		known_imperfect_suppressed += 1
+		unit.note_order_metric("known_imperfect_suppressed")
 		return
 	var next_long: Vector2 = unit.long_path.back()
 	var unit_line := pathfinder.validate_unit_line(unit, unit.position, next_long, units, false)
@@ -257,7 +294,7 @@ func _maybe_request_short_path_for_long_segment(
 	if unit.long_path.size() > 1:
 		unit.long_path.pop_back()
 		next_long = unit.long_path.back()
-	var goal := SimNavPathGoal.circle(next_long, SHORT_PATH_LONG_WAYPOINT_RANGE)
+	var goal := SimNavPathGoal.circle(next_long, LONG_PATH_UNIT_LINE_SUBGOAL_RADIUS)
 	_request_short_path(unit, goal, pathfinder, units, _short_path_search_range(unit, false))
 
 
@@ -265,14 +302,15 @@ func _handle_blocked_move(
 	unit: ZeroAdRtsLabUnit,
 	pathfinder: ZeroAdRtsLabPathfinder,
 	units: Array[ZeroAdRtsLabUnit],
-	moved: bool
+	moved: bool,
+	tick: int
 ) -> void:
 	blocked_moves += 1
-	unit.was_obstructed = true
+	unit.note_order_metric("blocked_moves")
 	if not moved or unit.failed_movements < 2:
-		if _increment_failed_movements_and_maybe_fail(unit, pathfinder):
+		if _increment_failed_movements_and_maybe_fail(unit, pathfinder, tick):
 			return
-		_note_obstructed(unit)
+		_note_obstructed(unit, tick)
 
 	var goal := SimNavPathGoal.point(unit.path_target)
 	if _in_short_path_range(goal, unit.position):
@@ -311,6 +349,7 @@ func _compute_path_to_goal(
 		return
 	if unit.follow_known_imperfect_path_countdown > 0 and unit.has_path():
 		known_imperfect_suppressed += 1
+		unit.note_order_metric("known_imperfect_suppressed")
 		return
 	if not _should_alternate_pathfinder(unit) and _try_going_straight_to_target(unit, pathfinder, units, false):
 		unit.short_path = SimNavWaypointPath.new()
@@ -329,14 +368,16 @@ func _compute_path_to_goal(
 
 func _increment_failed_movements_and_maybe_fail(
 	unit: ZeroAdRtsLabUnit,
-	pathfinder: ZeroAdRtsLabPathfinder
+	pathfinder: ZeroAdRtsLabPathfinder,
+	tick: int
 ) -> bool:
 	unit.failed_movements += 1
 	if unit.failed_movements < MAX_FAILED_MOVEMENTS:
 		return false
 	_cancel_pending_path_requests(unit, pathfinder)
-	unit.fail_move_order()
 	move_failures += 1
+	unit.note_order_metric("move_failures")
+	_emit_motion_update(unit, MotionUpdateScript.TYPE_LIKELY_FAILURE, "max_failed_movements", tick)
 	return true
 
 
@@ -361,26 +402,33 @@ func _try_going_straight_to_target(
 	return true
 
 
-func _note_obstructed(unit: ZeroAdRtsLabUnit) -> void:
+func _note_obstructed(unit: ZeroAdRtsLabUnit, tick: int) -> void:
 	if unit.failed_movements < 2:
-		unit.obstruction_state = ""
+		_emit_motion_update(unit, MotionUpdateScript.TYPE_CLEAR, "", tick)
 		return
 	if unit.failed_movements >= VERY_OBSTRUCTED_THRESHOLD:
-		unit.obstruction_state = "very_obstructed"
 		very_obstructed_notifications += 1
+		unit.note_order_metric("very_obstructed_notifications")
+		_emit_motion_update(unit, MotionUpdateScript.TYPE_VERY_OBSTRUCTED, "", tick)
 	else:
-		unit.obstruction_state = "obstructed"
 		obstructed_notifications += 1
+		unit.note_order_metric("obstructed_notifications")
+		_emit_motion_update(unit, MotionUpdateScript.TYPE_OBSTRUCTED, "", tick)
 
 
-func _note_known_imperfect_path_if_needed(unit: ZeroAdRtsLabUnit, pathed_towards_goal: bool) -> void:
+func _note_known_imperfect_path_if_needed(
+	unit: ZeroAdRtsLabUnit,
+	pathed_towards_goal: bool,
+	tick: int
+) -> void:
 	if not pathed_towards_goal:
 		return
 	if not _pathing_update_needed(unit):
 		return
 	unit.follow_known_imperfect_path_countdown = KNOWN_IMPERFECT_PATH_RESET_COUNTDOWN
-	unit.obstruction_state = "known_imperfect_path"
 	known_imperfect_paths += 1
+	unit.note_order_metric("known_imperfect_paths")
+	_emit_motion_update(unit, MotionUpdateScript.TYPE_KNOWN_IMPERFECT, "", tick)
 
 
 func _pathing_update_needed(unit: ZeroAdRtsLabUnit) -> bool:
@@ -431,6 +479,22 @@ func _should_alternate_pathfinder(unit: ZeroAdRtsLabUnit) -> bool:
 		unit.failed_movements > ALTERNATE_PATH_TYPE_DELAY
 		and (unit.failed_movements - ALTERNATE_PATH_TYPE_DELAY) % ALTERNATE_PATH_TYPE_EVERY == 0
 	)
+
+
+func _emit_motion_update(
+	unit: ZeroAdRtsLabUnit,
+	update_type: String,
+	reason: String,
+	tick: int
+) -> void:
+	_motion_updates.append(MotionUpdateScript.new(
+		unit.id,
+		unit.active_order_id(),
+		update_type,
+		tick,
+		unit.position,
+		reason
+	))
 
 
 func _cancel_pending_path_requests(unit: ZeroAdRtsLabUnit, pathfinder: ZeroAdRtsLabPathfinder) -> void:

@@ -7,8 +7,10 @@ The boundary is intentional:
 
 - `sim-nav-map` core answers navigation questions: long path, short path,
   movement-line validation, unit-line validation, filters, and diagnostics.
-- This example decides movement policy: waypoint consumption, blocked movement
-  handling, short-path retry, push adjustment, and arrival state.
+- This example decides movement policy and order semantics: `UnitActor` owns the
+  current move order, `MotionController` handles path following/recovery and
+  emits motion updates, and `World` dispatches those updates on the simulation
+  tick.
 
 ## 0 A.D.-Style Motion Contract
 
@@ -50,6 +52,8 @@ gates:
 ```text
 logic/zero_ad_rts_lab_world.gd
 logic/zero_ad_rts_lab_motion_controller.gd
+logic/zero_ad_rts_lab_move_order.gd
+logic/zero_ad_rts_lab_motion_update.gd
 logic/zero_ad_rts_lab_pathfinder.gd
 logic/zero_ad_rts_lab_unit.gd
 logic/zero_ad_rts_lab_obstacle.gd

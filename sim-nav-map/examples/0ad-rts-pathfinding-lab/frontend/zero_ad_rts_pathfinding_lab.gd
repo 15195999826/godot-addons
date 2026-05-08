@@ -413,6 +413,7 @@ func _build_export_snapshot() -> Dictionary:
 		},
 		"obstacles": _snapshot_obstacles(),
 		"units": _snapshot_units(),
+		"recent_motion_updates": _world.recent_motion_updates.duplicate(true),
 		"recent_events": _event_log.duplicate(true),
 	}
 
@@ -446,6 +447,9 @@ func _snapshot_units() -> Array[Dictionary]:
 			"arrived": unit.arrived,
 			"move_failed": unit.move_failed,
 			"has_move_order": unit.has_move_order,
+			"active_order_id": unit.active_order_id(),
+			"current_order": unit.current_order_snapshot(),
+			"last_order": unit.last_order_snapshot(),
 			"obstruction_state": unit.obstruction_state,
 			"failed_movements": unit.failed_movements,
 			"follow_known_imperfect_path_countdown": unit.follow_known_imperfect_path_countdown,
