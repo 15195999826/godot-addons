@@ -369,6 +369,14 @@ source/simulation2/components/CCmpUnitMotion.h
   collision. This lets overlapped units move out of each other instead of being
   permanently blocked by their current overlap; only outside-to-inside or
   outside-through-obstruction segments are blocked.
+- With pushing enabled, `CCmpUnitMotion::ShouldCollideWithMovingUnits()`
+  returns false, so moving unit obstructions are ignored by short path and
+  movement-line checks; idle unit obstructions still block. The motion manager
+  then handles moving-moving contact through push.
+- `CCmpUnitMotionManager::Push()` deliberately separates moving-moving and
+  stopped-stopped pairs, but returns immediately for moving-stopped pairs.
+  Moving-stopped soft push only exists for the same formation control group,
+  which the current 0AD lab does not model yet.
 
 ## Feature 7 Request Queue Budget / Worker Contract Source Audit
 

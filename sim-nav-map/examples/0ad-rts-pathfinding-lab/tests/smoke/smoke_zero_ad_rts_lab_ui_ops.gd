@@ -33,7 +33,7 @@ func _test_frontend_ui_ops() -> void:
 	add_child(instance_node)
 	await get_tree().process_frame
 
-	var world: Variant = instance._world
+	var world: ZeroAdRtsLabWorld = instance._world as ZeroAdRtsLabWorld
 	if world == null:
 		_failures.append("ui-ops: frontend did not create world")
 		instance_node.queue_free()
@@ -69,11 +69,14 @@ func _test_frontend_ui_ops() -> void:
 	instance._move_selection(target)
 	if world.current_target.distance_to(target) > 0.001:
 		_failures.append("ui-ops: move command did not update current target")
-	var moving_count := 0
-	for unit in world.get_mobile_units():
+	var selected_moving_count := 0
+	for unit_id in instance._selected_unit_ids:
+		var unit := world.get_unit(unit_id)
+		if unit == null:
+			continue
 		if unit.has_move_order:
-			moving_count += 1
-	if moving_count != 2:
+			selected_moving_count += 1
+	if selected_moving_count != instance._selected_unit_ids.size():
 		_failures.append("ui-ops: move command did not issue orders to selected units")
 
 	instance._handle_key(KEY_C)

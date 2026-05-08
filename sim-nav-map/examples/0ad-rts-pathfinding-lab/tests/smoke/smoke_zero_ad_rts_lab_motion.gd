@@ -5,8 +5,11 @@ var _failures: Array[String] = []
 
 
 func _ready() -> void:
+	_test_default_scene_has_six_mobile_units()
 	_test_movement_line_blocks_static_crossing()
 	_test_same_team_units_block_movement_line()
+	_test_moving_units_are_soft_obstructions()
+	_test_push_rules_match_0ad_moving_state()
 	_test_unit_line_blockage_requests_short_path()
 	_test_push_adjust_does_not_cross_static_wall()
 	_test_user_reported_repath_loop_converges()
@@ -45,6 +48,11 @@ func _test_movement_line_blocks_static_crossing() -> void:
 	_assert_equal_str(SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED, line_result.failure_reason, "static-crossing should fail by passability")
 
 
+func _test_default_scene_has_six_mobile_units() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	_assert_equal(6, world.get_mobile_unit_ids().size(), "default scene should expose a larger mobile group")
+
+
 func _test_same_team_units_block_movement_line() -> void:
 	var world := ZeroAdRtsLabWorld.new()
 	world.obstacles = []
@@ -69,6 +77,88 @@ func _test_same_team_units_block_movement_line() -> void:
 		line_result.failure_reason,
 		"same-team-unit-line should fail by unit obstruction"
 	)
+
+
+func _test_moving_units_are_soft_obstructions() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(40.0, 80.0), 10.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_1", "blue", Vector2(120.0, 80.0), 10.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var blocker := world.get_unit("blue_1")
+	if blocker == null:
+		_failures.append("moving-soft: missing blue_1")
+		return
+	blocker.has_move_order = true
+	world.pathfinder.refresh_dynamic_units(world.units)
+	var moving_line := world.pathfinder.validate_unit_line(
+		world.get_unit("blue_0"),
+		Vector2(40.0, 80.0),
+		Vector2(200.0, 80.0),
+		world.units,
+		false
+	)
+	if not moving_line.is_success():
+		_failures.append("moving-soft: expected moving blocker to be ignored, got %s/%s" % [
+			moving_line.status,
+			moving_line.failure_reason,
+		])
+
+	blocker.has_move_order = false
+	world.pathfinder.refresh_dynamic_units(world.units)
+	var idle_line := world.pathfinder.validate_unit_line(
+		world.get_unit("blue_0"),
+		Vector2(40.0, 80.0),
+		Vector2(200.0, 80.0),
+		world.units,
+		false
+	)
+	_assert_equal_str(
+		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,
+		idle_line.failure_reason,
+		"moving-soft should still block on idle units"
+	)
+
+
+func _test_push_rules_match_0ad_moving_state() -> void:
+	var moving_world := _overlap_push_world()
+	for unit in moving_world.units:
+		unit.has_move_order = true
+	var moving_distance_before := _unit_distance(moving_world, "blue_0", "blue_1")
+	moving_world.motion.apply_push_adjust(moving_world.units, moving_world.pathfinder)
+	var moving_distance_after := _unit_distance(moving_world, "blue_0", "blue_1")
+	if moving_distance_after <= moving_distance_before:
+		_failures.append("push-rules: moving-moving pair should separate, before=%.2f after=%.2f" % [
+			moving_distance_before,
+			moving_distance_after,
+		])
+
+	var mixed_world := _overlap_push_world()
+	var mixed_mover := mixed_world.get_unit("blue_0")
+	if mixed_mover == null:
+		_failures.append("push-rules: missing mixed mover")
+		return
+	mixed_mover.has_move_order = true
+	var mixed_distance_before := _unit_distance(mixed_world, "blue_0", "blue_1")
+	mixed_world.motion.apply_push_adjust(mixed_world.units, mixed_world.pathfinder)
+	var mixed_distance_after := _unit_distance(mixed_world, "blue_0", "blue_1")
+	if absf(mixed_distance_after - mixed_distance_before) > 0.001:
+		_failures.append("push-rules: moving-idle pair should not push, before=%.2f after=%.2f" % [
+			mixed_distance_before,
+			mixed_distance_after,
+		])
+
+	var idle_world := _overlap_push_world()
+	var idle_distance_before := _unit_distance(idle_world, "blue_0", "blue_1")
+	idle_world.motion.apply_push_adjust(idle_world.units, idle_world.pathfinder)
+	var idle_distance_after := _unit_distance(idle_world, "blue_0", "blue_1")
+	if idle_distance_after <= idle_distance_before:
+		_failures.append("push-rules: idle-idle pair should separate, before=%.2f after=%.2f" % [
+			idle_distance_before,
+			idle_distance_after,
+		])
 
 
 func _test_unit_line_blockage_requests_short_path() -> void:
@@ -521,6 +611,11 @@ func _assert_equal_str(expected: String, actual: String, message: String) -> voi
 		_failures.append("%s (expected=%s actual=%s)" % [message, expected, actual])
 
 
+func _assert_equal(expected: int, actual: int, message: String) -> void:
+	if expected != actual:
+		_failures.append("%s (expected=%d actual=%d)" % [message, expected, actual])
+
+
 func _mobile_unit_summary(world: ZeroAdRtsLabWorld) -> Array[String]:
 	var result: Array[String] = []
 	for unit in world.get_mobile_units():
@@ -532,6 +627,26 @@ func _mobile_unit_summary(world: ZeroAdRtsLabWorld) -> Array[String]:
 			str(unit.last_order_snapshot()),
 		])
 	return result
+
+
+func _overlap_push_world() -> ZeroAdRtsLabWorld:
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(80.0, 80.0), 10.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_1", "blue", Vector2(96.0, 80.0), 10.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	world.clear_traces()
+	return world
+
+
+func _unit_distance(world: ZeroAdRtsLabWorld, a_id: String, b_id: String) -> float:
+	var unit_a := world.get_unit(a_id)
+	var unit_b := world.get_unit(b_id)
+	if unit_a == null or unit_b == null:
+		return -1.0
+	return unit_a.position.distance_to(unit_b.position)
 
 
 func _inside_default_top_passage(point: Vector2) -> bool:
