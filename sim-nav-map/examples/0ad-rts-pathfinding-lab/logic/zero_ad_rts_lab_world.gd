@@ -92,11 +92,13 @@ func step(delta: float) -> void:
 	var has_active_mobile := _has_active_mobile()
 	if has_active_mobile:
 		pathfinder.refresh_dynamic_units(units)
-	for unit in get_mobile_units():
-		motion.step_unit(unit, delta, pathfinder, units, tick_count)
-	_dispatch_motion_updates()
-	pathfinder.refresh_dynamic_units(units)
-	motion.apply_push_adjust(units, pathfinder)
+		for unit in units:
+			if not unit.mobile:
+				continue
+			motion.step_unit(unit, delta, pathfinder, units, tick_count)
+		_dispatch_motion_updates()
+		pathfinder.refresh_dynamic_units(units)
+		motion.apply_push_adjust(units, pathfinder)
 	tick_count += 1
 
 
@@ -258,8 +260,8 @@ func _replan_active_mobile() -> void:
 
 
 func _has_active_mobile() -> bool:
-	for unit in get_mobile_units():
-		if unit.has_move_order:
+	for unit in units:
+		if unit.mobile and unit.has_move_order:
 			return true
 	return false
 

@@ -8,6 +8,7 @@ var _failures: Array[String] = []
 
 func _ready() -> void:
 	_test_path_requests_are_budgeted()
+	_test_idle_step_skips_dynamic_refresh_and_push()
 	_test_push_adjust_uses_spatial_bucket()
 
 	if _failures.is_empty():
@@ -50,6 +51,21 @@ func _test_path_requests_are_budgeted() -> void:
 	var processed_total := int(world.pathfinder.path_queue_diagnostics().get("processed_count", 0))
 	if processed_total < UNIT_COUNT:
 		_failures.append("budget: expected queued long-path requests to be processed")
+
+
+func _test_idle_step_skips_dynamic_refresh_and_push() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	var base_dynamic_refreshes := world.pathfinder.dynamic_refreshes
+	var sentinel_push_checks := 123
+	world.motion.push_pair_checks = sentinel_push_checks
+
+	world.step(0.1)
+	world.step(0.1)
+
+	if world.pathfinder.dynamic_refreshes != base_dynamic_refreshes:
+		_failures.append("idle-budget: expected idle steps to skip dynamic refresh")
+	if world.motion.push_pair_checks != sentinel_push_checks:
+		_failures.append("idle-budget: expected idle steps to skip push adjust")
 
 
 func _test_push_adjust_uses_spatial_bucket() -> void:
