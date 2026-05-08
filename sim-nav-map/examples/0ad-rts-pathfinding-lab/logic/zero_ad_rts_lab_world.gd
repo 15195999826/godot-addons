@@ -195,15 +195,18 @@ func clear_traces() -> void:
 func get_metrics() -> Dictionary:
 	var arrived_count := 0
 	var active_count := 0
+	var pathless_active_count := 0
 	var mobile_count := 0
 	var max_static_violation := 0.0
 	for unit in units:
 		if unit.mobile:
 			mobile_count += 1
-		if unit.arrived:
-			arrived_count += 1
+			if unit.arrived:
+				arrived_count += 1
 		if unit.has_move_order:
 			active_count += 1
+			if not unit.has_path() and unit.pending_long_ticket == 0 and unit.pending_short_ticket == 0:
+				pathless_active_count += 1
 		for obstacle in obstacles:
 			if obstacle.contains_point_with_clearance(unit.position, unit.radius):
 				max_static_violation = maxf(max_static_violation, 1.0)
@@ -212,6 +215,7 @@ func get_metrics() -> Dictionary:
 		"arrived_count": arrived_count,
 		"mobile_count": mobile_count,
 		"active_count": active_count,
+		"pathless_active_count": pathless_active_count,
 		"short_path_requests": motion.short_path_requests,
 		"long_path_requests": motion.long_path_requests,
 		"path_results_applied": motion.path_results_applied,
@@ -221,6 +225,13 @@ func get_metrics() -> Dictionary:
 		"path_queue_processed": int(pathfinder.path_queue_diagnostics().get("processed_count", 0)),
 		"dynamic_refreshes": pathfinder.dynamic_refreshes,
 		"blocked_moves": motion.blocked_moves,
+		"move_failures": motion.move_failures,
+		"obstructed_notifications": motion.obstructed_notifications,
+		"very_obstructed_notifications": motion.very_obstructed_notifications,
+		"repath_suppressed": motion.repath_suppressed,
+		"obsolete_path_requests": motion.obsolete_path_requests,
+		"known_imperfect_paths": motion.known_imperfect_paths,
+		"known_imperfect_suppressed": motion.known_imperfect_suppressed,
 		"applied_pushes": motion.applied_pushes,
 		"rejected_pushes": motion.rejected_pushes,
 		"push_pair_checks": motion.push_pair_checks,

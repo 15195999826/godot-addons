@@ -34,6 +34,7 @@ var _last_export_path: String = ""
 
 func _ready() -> void:
 	_world = ZeroAdRtsLabWorld.new()
+	_world.set_group_target(_world.current_target)
 	_selected_unit_ids = _world.get_mobile_unit_ids()
 	_hud = Label.new()
 	_hud.position = Vector2(12.0, 10.0)
@@ -110,6 +111,7 @@ func _handle_key(keycode: int) -> void:
 			_record_event("clear_traces", {})
 		KEY_R:
 			_world.setup_default()
+			_world.set_group_target(_world.current_target)
 			_selected_unit_ids = _world.get_mobile_unit_ids()
 			_reset_perf_metrics()
 			_last_action = "reset"
@@ -299,7 +301,7 @@ func _update_hud() -> void:
 		return
 	var metrics := _world.get_metrics()
 	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
-	_hud.text = "0AD RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space %s\narrived %d/%d active %d  short %d  long %d  queue p/r/proc %d/%d/%d\nblocked %d  push ok/reject %d/%d  pair checks %d  buckets %d  static %.0f\nworld.step %.2fms  avg %.2fms  max %.2fms%s" % [
+	_hud.text = "0AD RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space %s\narrived %d/%d active %d pathless %d  short %d  long %d  queue p/r/proc %d/%d/%d\nblocked %d  fail %d  obs/vobs %d/%d  suppress %d  stale %d  imperfect %d/%d\npush ok/reject %d/%d  pair checks %d  buckets %d  static %.0f\nworld.step %.2fms  avg %.2fms  max %.2fms%s" % [
 		_mode_name(),
 		_selected_unit_ids.size(),
 		_last_action,
@@ -307,12 +309,20 @@ func _update_hud() -> void:
 		int(metrics.get("arrived_count", 0)),
 		int(metrics.get("mobile_count", 0)),
 		int(metrics.get("active_count", 0)),
+		int(metrics.get("pathless_active_count", 0)),
 		int(metrics.get("short_path_requests", 0)),
 		int(metrics.get("long_path_requests", 0)),
 		int(metrics.get("path_queue_pending", 0)),
 		int(metrics.get("path_queue_results", 0)),
 		int(metrics.get("path_queue_processed", 0)),
 		int(metrics.get("blocked_moves", 0)),
+		int(metrics.get("move_failures", 0)),
+		int(metrics.get("obstructed_notifications", 0)),
+		int(metrics.get("very_obstructed_notifications", 0)),
+		int(metrics.get("repath_suppressed", 0)),
+		int(metrics.get("obsolete_path_requests", 0)),
+		int(metrics.get("known_imperfect_paths", 0)),
+		int(metrics.get("known_imperfect_suppressed", 0)),
 		int(metrics.get("applied_pushes", 0)),
 		int(metrics.get("rejected_pushes", 0)),
 		int(metrics.get("push_pair_checks", 0)),
@@ -434,8 +444,11 @@ func _snapshot_units() -> Array[Dictionary]:
 			"radius": unit.radius,
 			"speed": unit.speed,
 			"arrived": unit.arrived,
+			"move_failed": unit.move_failed,
 			"has_move_order": unit.has_move_order,
+			"obstruction_state": unit.obstruction_state,
 			"failed_movements": unit.failed_movements,
+			"follow_known_imperfect_path_countdown": unit.follow_known_imperfect_path_countdown,
 			"pending_long_ticket": unit.pending_long_ticket,
 			"pending_short_ticket": unit.pending_short_ticket,
 			"long_path_size": unit.long_path.size() if unit.long_path != null else 0,
