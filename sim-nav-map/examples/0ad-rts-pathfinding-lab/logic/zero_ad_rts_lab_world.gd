@@ -31,7 +31,7 @@ func setup_default() -> void:
 	motion = ZeroAdRtsLabMotionController.new()
 	current_target = Vector2(610.0, 210.0)
 	obstacles = [
-		ZeroAdRtsLabObstacle.new("center_block", Vector2(360.0, 210.0), Vector2(96.0, 128.0)),
+		ZeroAdRtsLabObstacle.new("center_block", Vector2(360.0, 210.0), Vector2(48.0, 128.0)),
 		ZeroAdRtsLabObstacle.new("north_block", Vector2(360.0, 76.0), Vector2(132.0, 56.0)),
 		ZeroAdRtsLabObstacle.new("south_block", Vector2(360.0, 344.0), Vector2(132.0, 56.0)),
 	]

@@ -80,7 +80,7 @@ func _phase_user_reported_runaway_repath() -> void:
 func _phase_unreachable_goal_inside() -> void:
 	var world := ZeroAdRtsLabWorld.new()
 	world.setup_default()
-	var unreachable := Vector2(340.0, 210.0)
+	var unreachable := Vector2(360.0, 210.0)
 	world.set_group_target(unreachable)
 	var observer := PhaseObserver.new(world, "3_unreachable_goal_inside")
 	observer.run_steps(240, true)

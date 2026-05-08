@@ -30,7 +30,7 @@ func compute_short_path_immediate(req: SimNavShortPathRequest) -> SimNavWaypoint
 	var best_path := SimNavWaypointPath.new()
 	var best_length := _MAX_PATH_LENGTH
 	for virtual_goal in virtual_goals:
-		var candidate_path := _compute_to_virtual_goal(req.start, virtual_goal, obstacles, req.clearance)
+		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, obstacles)
 		if candidate_path.is_empty():
 			continue
 		var candidate_length := _path_length(req.start, candidate_path)
@@ -64,7 +64,7 @@ func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathRe
 		if not _goal_candidate_in_range(req, virtual_goal):
 			continue
 		had_candidate_in_range = true
-		var candidate_path := _compute_to_virtual_goal(req.start, virtual_goal, obstacles, req.clearance)
+		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, obstacles)
 		if candidate_path.is_empty():
 			continue
 		var candidate_length := _path_length(req.start, candidate_path)
@@ -85,16 +85,16 @@ func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathRe
 
 
 func _compute_to_virtual_goal(
-	start: Vector2,
+	req: SimNavShortPathRequest,
 	virtual_goal: Vector2,
-	obstacles: Array,
-	clearance: float
+	obstacles: Array
 ) -> SimNavWaypointPath:
+	var start := req.start
 	if start.distance_squared_to(virtual_goal) < 1.0:
 		var same := SimNavWaypointPath.new()
 		same.push_back(virtual_goal)
 		return same
-	if SimNavLineOfSight.segment_clear(start, virtual_goal, obstacles, clearance):
+	if _segment_clear_for_request(req, start, virtual_goal, obstacles):
 		var direct := SimNavWaypointPath.new()
 		direct.push_back(virtual_goal)
 		return direct
@@ -114,20 +114,20 @@ func _compute_to_virtual_goal(
 		var axes := static_shape.get_axes()
 		var su := axes[0]
 		var sv := axes[1]
-		var ehw := static_shape.width * 0.5 + clearance + EDGE_EXPAND_DELTA
-		var ehh := static_shape.height * 0.5 + clearance + EDGE_EXPAND_DELTA
+		var ehw := static_shape.width * 0.5 + req.clearance + EDGE_EXPAND_DELTA
+		var ehh := static_shape.height * 0.5 + req.clearance + EDGE_EXPAND_DELTA
 		for sx in [-1.0, 1.0]:
 			for sy in [-1.0, 1.0]:
 				vertices.append(static_shape.center + sx * ehw * su + sy * ehh * sv)
 
 	for unit_shape in units:
-		var radius := unit_shape.clearance + clearance + EDGE_EXPAND_DELTA
+		var radius := unit_shape.clearance + req.clearance + EDGE_EXPAND_DELTA
 		vertices.append(unit_shape.center + Vector2(radius, radius))
 		vertices.append(unit_shape.center + Vector2(radius, -radius))
 		vertices.append(unit_shape.center + Vector2(-radius, -radius))
 		vertices.append(unit_shape.center + Vector2(-radius, radius))
 
-	return _astar_visibility(vertices, obstacles, clearance)
+	return _astar_visibility(vertices, obstacles, req)
 
 
 func _goal_candidates(req: SimNavShortPathRequest) -> Array[Vector2]:
@@ -253,7 +253,11 @@ func _is_same_control_group(shape: SimNavObstructionShape, control_group: String
 	return shape.control_group_2 == control_group
 
 
-func _astar_visibility(vertices: Array[Vector2], obstacles: Array, clearance: float) -> SimNavWaypointPath:
+func _astar_visibility(
+	vertices: Array[Vector2],
+	obstacles: Array,
+	req: SimNavShortPathRequest
+) -> SimNavWaypointPath:
 	var open_keys: Array = []
 	var came_from: Dictionary = {}
 	var g_score: Dictionary = {}
@@ -282,7 +286,7 @@ func _astar_visibility(vertices: Array[Vector2], obstacles: Array, clearance: fl
 			if next_idx == current_idx or closed.has(next_idx):
 				continue
 			var next_pos := vertices[next_idx]
-			if not SimNavLineOfSight.segment_clear(current_pos, next_pos, obstacles, clearance):
+			if not _segment_clear_for_request(req, current_pos, next_pos, obstacles):
 				continue
 			var next_g := current_g + current_pos.distance_to(next_pos)
 			if g_score.has(next_idx) and next_g >= float(g_score[next_idx]):
@@ -294,6 +298,70 @@ func _astar_visibility(vertices: Array[Vector2], obstacles: Array, clearance: fl
 			SimNavPathfinderHeap.insert(open_keys, [f, next_h, _coord_int(next_pos.x), _coord_int(next_pos.y), insertion_seq, next_idx])
 			insertion_seq += 1
 	return SimNavWaypointPath.new()
+
+
+func _segment_clear_for_request(
+	req: SimNavShortPathRequest,
+	a: Vector2,
+	b: Vector2,
+	obstacles: Array
+) -> bool:
+	if not SimNavLineOfSight.segment_clear(a, b, obstacles, req.clearance):
+		return false
+	if req.pass_mask == 0:
+		return true
+	return _segment_passable_clear(a, b, req.pass_mask)
+
+
+func _segment_passable_clear(a: Vector2, b: Vector2, pass_mask: int) -> bool:
+	var origin := _nav_map.origin
+	var cell_size := _nav_map.navcell_size
+	var i0 := int(floor((a.x - origin.x) / cell_size))
+	var j0 := int(floor((a.y - origin.y) / cell_size))
+	var i1 := int(floor((b.x - origin.x) / cell_size))
+	var j1 := int(floor((b.y - origin.y) / cell_size))
+	if not _nav_map.is_passable_navcell(Vector2i(i0, j0), pass_mask):
+		return false
+	if i0 == i1 and j0 == j1:
+		return true
+	var dx := b.x - a.x
+	var dy := b.y - a.y
+	var step_i := 0
+	var step_j := 0
+	var t_max_x := INF
+	var t_max_y := INF
+	var delta_t_x := INF
+	var delta_t_y := INF
+	if dx > 0.0:
+		step_i = 1
+		t_max_x = (origin.x + float(i0 + 1) * cell_size - a.x) / dx
+		delta_t_x = cell_size / dx
+	elif dx < 0.0:
+		step_i = -1
+		t_max_x = (origin.x + float(i0) * cell_size - a.x) / dx
+		delta_t_x = -cell_size / dx
+	if dy > 0.0:
+		step_j = 1
+		t_max_y = (origin.y + float(j0 + 1) * cell_size - a.y) / dy
+		delta_t_y = cell_size / dy
+	elif dy < 0.0:
+		step_j = -1
+		t_max_y = (origin.y + float(j0) * cell_size - a.y) / dy
+		delta_t_y = -cell_size / dy
+	var i := i0
+	var j := j0
+	var max_steps := absi(i1 - i0) + absi(j1 - j0) + 4
+	while (i != i1 or j != j1) and max_steps > 0:
+		max_steps -= 1
+		if t_max_x < t_max_y:
+			i += step_i
+			t_max_x += delta_t_x
+		else:
+			j += step_j
+			t_max_y += delta_t_y
+		if not _nav_map.is_passable_navcell(Vector2i(i, j), pass_mask):
+			return false
+	return true
 
 
 func _reconstruct(vertices: Array[Vector2], came_from: Dictionary, goal_idx: int) -> SimNavWaypointPath:
