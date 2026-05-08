@@ -553,6 +553,8 @@ func _accumulate_pair_push(
 ) -> void:
 	if not a.blocks_pathfinding or not b.blocks_pathfinding:
 		return
+	if not a.mobile or not b.mobile:
+		return
 	var delta: Vector2 = a.position - b.position
 	var distance: float = delta.length()
 	var min_distance: float = (a.radius + b.radius) * PUSH_RADIUS_MULTIPLIER
@@ -562,8 +564,8 @@ func _accumulate_pair_push(
 	if distance > 0.001:
 		direction = delta / distance
 	var overlap: float = min_distance - distance
-	var both_moving: bool = a.has_move_order and b.has_move_order
-	if not both_moving:
+	var moving_count := (1 if a.has_move_order else 0) + (1 if b.has_move_order else 0)
+	if moving_count == 1:
 		return
 	var amount: float = overlap * 0.5
 	pushes[a.id] = (pushes.get(a.id, Vector2.ZERO) as Vector2) + direction * amount

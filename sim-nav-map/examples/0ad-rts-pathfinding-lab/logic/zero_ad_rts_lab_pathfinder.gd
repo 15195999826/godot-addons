@@ -102,7 +102,7 @@ func build_short_path_request(
 	request.clearance = unit.radius
 	request.range_px = search_range
 	request.pass_mask = pass_mask
-	request.avoid_moving_units = true
+	request.avoid_moving_units = false
 	request.control_group = ""
 	request.obstruction_filter = movement_filter_for_unit(unit)
 	return request
@@ -193,7 +193,7 @@ func validate_unit_line(
 
 
 func movement_filter_for_unit(unit: ZeroAdRtsLabUnit) -> SimNavObstructionFilter:
-	var filter := SimNavObstructionFilter.for_short_path(true, "")
+	var filter := SimNavObstructionFilter.for_short_path(false, "")
 	filter.ignored_entity_id = unit.id
 	return filter
 

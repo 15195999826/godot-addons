@@ -36,8 +36,12 @@ func setup_default() -> void:
 		ZeroAdRtsLabObstacle.new("south_block", Vector2(360.0, 344.0), Vector2(132.0, 56.0)),
 	]
 	units = [
+		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(56.0, 170.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_3", "blue", Vector2(56.0, 250.0), 11.0, 96.0, true),
 		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(96.0, 190.0), 11.0, 96.0, true),
 		ZeroAdRtsLabUnit.new("blue_1", "blue", Vector2(96.0, 230.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_4", "blue", Vector2(136.0, 170.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_5", "blue", Vector2(136.0, 250.0), 11.0, 96.0, true),
 		ZeroAdRtsLabUnit.new("red_blocker", "red", Vector2(260.0, 210.0), 13.0, 0.0, false),
 	]
 	_rebuild_navigation()
