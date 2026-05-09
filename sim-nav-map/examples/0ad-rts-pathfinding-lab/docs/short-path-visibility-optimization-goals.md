@@ -54,6 +54,24 @@ Follow-up source pass on 2026-05-09:
 | `partial_wall_with_gap` | 725.77 | 24494 | 961 | Arrives `6/6`; static short path remains under target. |
 | `rapid_obstacle_thrash` | 3436.82 | 16636 | 13562 | Improved by virtual-goal search and no-op terrain fallback guard, but still a dense dynamic-unit no-path problem. |
 
+Interactive export `zero_ad_rts_lab_2026-05-09T18-09-04_tick_4443.json`
+showed a different spike shape: stable lifetime `avg_step_usec` was
+`564.75`, but the worst frame was `19985us` at tick `4057`. That frame was
+not a short-path visibility spike. Its `path_budget_usec` was `19130us`, caused
+by two synchronous long-path requests in the same tick (`9582us` and `9408us`).
+
+After adding the synchronous elapsed budget, exploration no longer combines two
+very expensive long paths into one 19ms-class frame. The remaining worst frames
+are either one expensive long-path request or two cheaper requests that still
+fit the count budget:
+
+| Scenario | `avg_step_usec` | `max_step_usec` | `max_short_compute_usec` | Notes |
+|---|---:|---:|---:|---|
+| `baseline_open_movement` | 790.96 | 5245 | 0 | Initial long paths are spread over later ticks. |
+| `fully_blocked_path` | 890.96 | 11792 | 2050 | Static short path still under target; worst frame is one long path. |
+| `partial_wall_with_gap` | 748.64 | 12451 | 957 | Arrives `6/6`; worst frame is one long path. |
+| `rapid_obstacle_thrash` | 3490.61 | 7896 | 2412 | Still a dynamic blocker thrash / runaway loop issue, but no 19ms frame in this run. |
+
 ## 0 A.D. Reference
 
 Re-check the local 0 A.D. source before changing algorithm shape:
@@ -87,6 +105,15 @@ Relevant 0 A.D. strategy:
   and a virtual goal vertex for non-point goals.
 - Async request processing exists in 0 A.D., but it is a scheduling decision,
   not a substitute for making each short-path query cheap enough.
+- Long/short path requests are queued through `CCmpPathfinder::ComputePathAsync()`
+  and `ComputeShortPathAsync()`. `CSimulation2Impl::UpdateComponents()` processes
+  limited same-turn batches with `StartProcessingMoves(true)` and then starts
+  uncapped worker processing at turn end with `StartProcessingMoves(false)`.
+  The cap is `MaxSameTurnMoves`, loaded in `CCmpPathfinder::Init()`, and exists
+  specifically to avoid spending too much time in the immediate feedback phases.
+  In the Godot lab, which intentionally does not use async workers for this
+  phase, the equivalent guard is a synchronous elapsed-time budget layered on
+  top of the existing request-count budget.
 
 Source files re-read for the current implementation:
 
@@ -125,6 +152,12 @@ The first-stage optimization now follows this shape:
 - Terrain fallback now reruns search only when terrain extraction adds vertices.
   This avoids repeating the identical explicit-obstruction graph for dynamic
   unit no-path cases.
+- `SimNavPathRequestQueue.process_budget()` now accepts an optional elapsed
+  microsecond budget. The 0AD lab still caps requests by count, but also stops
+  after the first live request that exhausts the synchronous budget. The lab
+  default is `3500us`, so cheap requests can still share a frame while expensive
+  long paths are spread over later ticks instead of combining into one visible
+  frame spike.
 - `SimNavShortPathResult` and path request batch diagnostics expose structural
   counters: explicit static/unit obstruction counts, terrain edge/vertex count,
   total vertex count, visibility check count, and A* expansion count.

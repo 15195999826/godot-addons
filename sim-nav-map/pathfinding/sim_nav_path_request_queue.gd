@@ -21,6 +21,8 @@ var _stale_result_count: int = 0
 var _worker_batch_count: int = 0
 var _worker_collected_count: int = 0
 var _last_batch_size: int = 0
+var _last_process_budget_usec: int = 0
+var _last_process_elapsed_usec: int = 0
 var _last_processed_tickets: Array[int] = []
 var _last_collected_tickets: Array[int] = []
 var _last_processed_requests: Array[Dictionary] = []
@@ -82,10 +84,13 @@ func cancel(ticket_id: int) -> bool:
 	return removed
 
 
-func process_budget(max_requests: int) -> int:
+func process_budget(max_requests: int, max_usec: int = 0) -> int:
+	_last_process_budget_usec = max_usec
+	_last_process_elapsed_usec = 0
 	if max_requests <= 0:
 		return 0
 	var processed := 0
+	var budget_start_usec := Time.get_ticks_usec()
 	_last_processed_tickets.clear()
 	_last_processed_requests.clear()
 	while processed < max_requests and not _pending.is_empty():
@@ -112,6 +117,9 @@ func process_budget(max_requests: int) -> int:
 		_merge_result_diagnostics(diagnostic, result)
 		_last_processed_requests.append(diagnostic)
 		processed += 1
+		_last_process_elapsed_usec = Time.get_ticks_usec() - budget_start_usec
+		if max_usec > 0 and _last_process_elapsed_usec >= max_usec:
+			break
 	return processed
 
 
@@ -239,6 +247,8 @@ func get_diagnostics() -> Dictionary:
 		"worker_batch_count": _worker_batch_count,
 		"worker_collected_count": _worker_collected_count,
 		"last_batch_size": _last_batch_size,
+		"last_process_budget_usec": _last_process_budget_usec,
+		"last_process_elapsed_usec": _last_process_elapsed_usec,
 		"last_processed_tickets": _last_processed_tickets.duplicate(),
 		"last_collected_tickets": _last_collected_tickets.duplicate(),
 		"last_processed_requests": _last_processed_requests.duplicate(true),
@@ -253,6 +263,8 @@ func clear() -> void:
 	_cancelled.clear()
 	_in_worker.clear()
 	_last_batch_size = 0
+	_last_process_budget_usec = 0
+	_last_process_elapsed_usec = 0
 	_last_processed_tickets.clear()
 	_last_collected_tickets.clear()
 	_last_processed_requests.clear()
