@@ -119,6 +119,8 @@ func _test_raw_refined_boundary_and_max_spacing() -> void:
 	compressed_query.post_process = SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT
 	var compressed_result := long_pathfinder.compute_path_result(compressed_query)
 	_assert_equal_str(SimNavLongPathResult.STATUS_SUCCESS, compressed_result.status, "open row should report success")
+	_assert_equal_str("jps", compressed_result.search_algorithm, "ordinary result queries should use JPS search")
+	_assert_true(compressed_result.search_expansion_count > 0, "JPS result should expose expansion diagnostics")
 	_assert_true(compressed_result.raw_navcell_count > compressed_result.refined_waypoint_count, "line-of-sight post-process should reduce raw waypoints")
 	_assert_true(compressed_result.raw_waypoint_count > compressed_result.refined_waypoint_count, "raw waypoint count should remain visible after refinement")
 	_assert_equal_vec(nav_map.navcell_center_world(Vector2i(1, 1)), nav_map.navcell_center_world(compressed_result.raw_navcell_path[0]), "raw navcell path should start at start cell")
@@ -170,6 +172,8 @@ func _test_excluded_region_query_isolation() -> void:
 	excluded_query.add_excluded_circle(nav_map.navcell_center_world(lower_gap), 8.1)
 	var excluded_result := long_pathfinder.compute_path_result(excluded_query)
 	_assert_equal_str(SimNavLongPathResult.STATUS_SUCCESS, excluded_result.status, "excluded-region query should still find alternate gap")
+	_assert_equal_str("astar_excluded", excluded_result.search_algorithm, "excluded-region query should keep request-scoped A* semantics")
+	_assert_true(excluded_result.search_expansion_count > 0, "excluded-region result should expose A* expansion diagnostics")
 	_assert_false(_path_uses_cell(excluded_result.raw_navcell_path, lower_gap), "excluded query should avoid request-scoped lower gap")
 	_assert_true(_path_uses_cell(excluded_result.raw_navcell_path, upper_gap), "excluded query should detour through upper gap")
 	_assert_true(nav_map.is_passable_navcell(lower_gap, ground_mask), "excluded region should not mutate map passability")

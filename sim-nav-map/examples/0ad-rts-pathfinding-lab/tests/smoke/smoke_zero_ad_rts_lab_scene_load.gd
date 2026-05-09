@@ -19,6 +19,12 @@ func _ready() -> void:
 	if world == null:
 		_fail("scene-load: frontend world missing")
 		return
+	if world.pathfinder == null or world.pathfinder.nav_map == null:
+		_fail("scene-load: navigation context missing")
+		return
+	if world.pathfinder.nav_map.has_dirty_navcells():
+		_fail("scene-load: full navigation rebuild should leave long-path cache dirtiness clean")
+		return
 	if int(world.get_metrics().get("active_count", 0)) <= 0:
 		_fail("scene-load: startup should issue the default group move")
 		return

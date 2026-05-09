@@ -80,16 +80,32 @@ func compute_path_result(query: SimNavLongPathQuery) -> SimNavLongPathResult:
 		direct_path.push_back(query.goal.nearest_point_on_goal(query.start_world))
 		var direct_cells: Array[Vector2i] = [start_cell]
 		var refined_direct := _refine_waypoint_path(direct_path, query, result.post_process, result.waypoint_spacing)
+		result.apply_search_diagnostics(_new_search_diagnostics("direct"))
 		result.set_paths(SimNavLongPathResult.STATUS_DIRECT_GOAL, direct_cells, direct_path, refined_direct, 0)
 		return result
 
-	var raw_cells := _astar_cells(start_cell, query.goal, query.pass_mask, query.excluded_regions)
+	var diagnostics := _new_search_diagnostics("jps")
+	var raw_cells: Array[Vector2i] = []
+	var refinement_cells: Array[Vector2i] = []
+	if query.excluded_regions.is_empty():
+		var sparse_cells := _jps_cells(start_cell, query.goal, query.pass_mask, diagnostics)
+		refinement_cells = sparse_cells
+		raw_cells = _expand_sparse_navcell_path(sparse_cells)
+	else:
+		diagnostics = _new_search_diagnostics("astar_excluded")
+		raw_cells = _astar_cells(start_cell, query.goal, query.pass_mask, query.excluded_regions, diagnostics)
+		refinement_cells = raw_cells
+	_set_search_count(diagnostics, "path_cell_count", refinement_cells.size())
+	result.apply_search_diagnostics(diagnostics)
 	if raw_cells.is_empty():
 		result.set_failure(SimNavLongPathResult.STATUS_NO_PATH, SimNavLongPathResult.FAILURE_NO_ROUTE)
 		return result
 
 	var raw_path := _waypoint_path_from_cells(raw_cells, query.goal)
-	var refined_path := _refine_waypoint_path(raw_path, query, result.post_process, result.waypoint_spacing)
+	var refinement_path := raw_path
+	if refinement_cells.size() != raw_cells.size():
+		refinement_path = _waypoint_path_from_cells(refinement_cells, query.goal)
+	var refined_path := _refine_waypoint_path(refinement_path, query, result.post_process, result.waypoint_spacing)
 	result.canonical_navcell = raw_cells[raw_cells.size() - 1]
 	result.set_paths(
 		SimNavLongPathResult.STATUS_SUCCESS,
@@ -139,7 +155,8 @@ func _astar_cells(
 	start: Vector2i,
 	goal: SimNavPathGoal,
 	pass_mask: int,
-	excluded_regions: Array[Dictionary]
+	excluded_regions: Array[Dictionary],
+	diagnostics: Dictionary = {}
 ) -> Array[Vector2i]:
 	var open_keys: Array = []
 	var came_from: Dictionary = {}
@@ -152,6 +169,8 @@ func _astar_cells(
 	var h0 := _heuristic(start, goal)
 	open_keys.append([h0, h0, start.x, start.y, insertion_seq])
 	insertion_seq += 1
+	_increment_search_count(diagnostics, "push_count")
+	_update_search_max_open(diagnostics, open_keys.size())
 
 	while not open_keys.is_empty():
 		var key: Array = open_keys[0]
@@ -161,6 +180,8 @@ func _astar_cells(
 		if closed.has(current_pack):
 			continue
 		closed[current_pack] = true
+		_increment_search_count(diagnostics, "expansion_count")
+		_set_search_count(diagnostics, "closed_count", closed.size())
 		if goal.navcell_contains_goal(_nav_map, current):
 			return _reconstruct_cells(came_from, start_pack, current_pack)
 
@@ -181,6 +202,8 @@ func _astar_cells(
 			var f := next_g + next_h
 			SimNavPathfinderHeap.insert(open_keys, [f, next_h, next_cell.x, next_cell.y, insertion_seq])
 			insertion_seq += 1
+			_increment_search_count(diagnostics, "push_count")
+			_update_search_max_open(diagnostics, open_keys.size())
 	return []
 
 
@@ -196,6 +219,36 @@ func _reconstruct_cells(came_from: Dictionary, start_pack: int, goal_pack: int) 
 	for i in range(reverse_cells.size() - 1, -1, -1):
 		cells.append(_cell_from_pack(reverse_cells[i]))
 	return cells
+
+
+func _expand_sparse_navcell_path(cells: Array[Vector2i]) -> Array[Vector2i]:
+	if cells.size() <= 1:
+		return cells.duplicate()
+	var expanded: Array[Vector2i] = [cells[0]]
+	for i in range(1, cells.size()):
+		var segment := _expand_navcell_segment(cells[i - 1], cells[i])
+		for j in range(1, segment.size()):
+			expanded.append(segment[j])
+	return expanded
+
+
+func _expand_navcell_segment(from_cell: Vector2i, to_cell: Vector2i) -> Array[Vector2i]:
+	var segment: Array[Vector2i] = [from_cell]
+	var delta := to_cell - from_cell
+	var step_count := maxi(absi(delta.x), absi(delta.y))
+	if step_count <= 0:
+		return segment
+	for step in range(1, step_count + 1):
+		var t := float(step) / float(step_count)
+		var cell := Vector2i(
+			from_cell.x + int(round(float(delta.x) * t)),
+			from_cell.y + int(round(float(delta.y) * t))
+		)
+		if segment[segment.size() - 1] != cell:
+			segment.append(cell)
+	if segment[segment.size() - 1] != to_cell:
+		segment.append(to_cell)
+	return segment
 
 
 func _waypoint_path_from_cells(cells: Array[Vector2i], goal: SimNavPathGoal) -> SimNavWaypointPath:
@@ -378,6 +431,31 @@ func _effective_waypoint_spacing(query: SimNavLongPathQuery) -> float:
 	return 0.0
 
 
+func _new_search_diagnostics(algorithm: String) -> Dictionary:
+	return {
+		"algorithm": algorithm,
+		"expansion_count": 0,
+		"push_count": 0,
+		"jump_count": 0,
+		"closed_count": 0,
+		"max_open_count": 0,
+		"path_cell_count": 0,
+	}
+
+
+func _increment_search_count(diagnostics: Dictionary, key: String) -> void:
+	diagnostics[key] = int(diagnostics.get(key, 0)) + 1
+
+
+func _set_search_count(diagnostics: Dictionary, key: String, value: int) -> void:
+	diagnostics[key] = value
+
+
+func _update_search_max_open(diagnostics: Dictionary, open_count: int) -> void:
+	if open_count > int(diagnostics.get("max_open_count", 0)):
+		diagnostics["max_open_count"] = open_count
+
+
 func _can_step_with_exclusions(
 	from_cell: Vector2i,
 	to_cell: Vector2i,
@@ -419,6 +497,18 @@ func _is_cell_excluded(cell: Vector2i, excluded_regions: Array[Dictionary]) -> b
 
 
 func _jps(start: Vector2i, goal: SimNavPathGoal, pass_mask: int) -> SimNavWaypointPath:
+	var cells := _jps_cells(start, goal, pass_mask, _new_search_diagnostics("jps_immediate"))
+	if cells.is_empty():
+		return SimNavWaypointPath.new()
+	return _waypoint_path_from_cells(cells, goal)
+
+
+func _jps_cells(
+	start: Vector2i,
+	goal: SimNavPathGoal,
+	pass_mask: int,
+	diagnostics: Dictionary = {}
+) -> Array[Vector2i]:
 	var cache := _jump_point_cache(pass_mask)
 	var open_keys: Array = []
 	var came_from: Dictionary = {}
@@ -431,6 +521,8 @@ func _jps(start: Vector2i, goal: SimNavPathGoal, pass_mask: int) -> SimNavWaypoi
 	var h0 := _heuristic(start, goal)
 	open_keys.append([h0, h0, start.x, start.y, insertion_seq])
 	insertion_seq += 1
+	_increment_search_count(diagnostics, "push_count")
+	_update_search_max_open(diagnostics, open_keys.size())
 
 	while not open_keys.is_empty():
 		var key: Array = open_keys[0]
@@ -440,8 +532,10 @@ func _jps(start: Vector2i, goal: SimNavPathGoal, pass_mask: int) -> SimNavWaypoi
 		if closed.has(current_pack):
 			continue
 		closed[current_pack] = true
+		_increment_search_count(diagnostics, "expansion_count")
+		_set_search_count(diagnostics, "closed_count", closed.size())
 		if goal.navcell_contains_goal(_nav_map, current):
-			return _reconstruct(came_from, start_pack, current_pack, goal)
+			return _reconstruct_cells(came_from, start_pack, current_pack)
 
 		var current_g: int = int(g_score[current_pack])
 		if current_pack == start_pack:
@@ -455,10 +549,12 @@ func _jps(start: Vector2i, goal: SimNavPathGoal, pass_mask: int) -> SimNavWaypoi
 				came_from,
 				g_score,
 				closed,
-				insertion_seq
+				insertion_seq,
+				diagnostics
 			)
 			continue
 		for direction in _successor_directions(current, current_pack, start_pack, came_from, pass_mask):
+			_increment_search_count(diagnostics, "jump_count")
 			var jump := _jump(current, direction, goal, pass_mask, cache)
 			if jump == current:
 				continue
@@ -474,7 +570,9 @@ func _jps(start: Vector2i, goal: SimNavPathGoal, pass_mask: int) -> SimNavWaypoi
 			var f := jump_g + jump_h
 			SimNavPathfinderHeap.insert(open_keys, [f, jump_h, jump.x, jump.y, insertion_seq])
 			insertion_seq += 1
-	return SimNavWaypointPath.new()
+			_increment_search_count(diagnostics, "push_count")
+			_update_search_max_open(diagnostics, open_keys.size())
+	return []
 
 
 func _add_start_successors(
@@ -487,7 +585,8 @@ func _add_start_successors(
 	came_from: Dictionary,
 	g_score: Dictionary,
 	closed: Dictionary,
-	insertion_seq: int
+	insertion_seq: int,
+	diagnostics: Dictionary = {}
 ) -> int:
 	for direction in _DIRECTIONS:
 		var next_cell := current + direction
@@ -505,6 +604,8 @@ func _add_start_successors(
 		var f := next_g + next_h
 		SimNavPathfinderHeap.insert(open_keys, [f, next_h, next_cell.x, next_cell.y, insertion_seq])
 		insertion_seq += 1
+		_increment_search_count(diagnostics, "push_count")
+		_update_search_max_open(diagnostics, open_keys.size())
 	return insertion_seq
 
 
@@ -548,20 +649,20 @@ func _successor_directions(
 			_append_successor_direction(result, Vector2i(dx, -dy))
 	elif dx != 0:
 		_append_successor_direction(result, Vector2i(dx, 0))
-		if not _is_passable(Vector2i(current.x, current.y - 1), pass_mask) \
-				and _is_passable(Vector2i(current.x + dx, current.y - 1), pass_mask):
+		if not _is_passable(Vector2i(current.x - dx, current.y - 1), pass_mask):
 			_append_successor_direction(result, Vector2i(dx, -1))
-		if not _is_passable(Vector2i(current.x, current.y + 1), pass_mask) \
-				and _is_passable(Vector2i(current.x + dx, current.y + 1), pass_mask):
+			_append_successor_direction(result, Vector2i(0, -1))
+		if not _is_passable(Vector2i(current.x - dx, current.y + 1), pass_mask):
 			_append_successor_direction(result, Vector2i(dx, 1))
+			_append_successor_direction(result, Vector2i(0, 1))
 	elif dy != 0:
 		_append_successor_direction(result, Vector2i(0, dy))
-		if not _is_passable(Vector2i(current.x - 1, current.y), pass_mask) \
-				and _is_passable(Vector2i(current.x - 1, current.y + dy), pass_mask):
+		if not _is_passable(Vector2i(current.x - 1, current.y - dy), pass_mask):
 			_append_successor_direction(result, Vector2i(-1, dy))
-		if not _is_passable(Vector2i(current.x + 1, current.y), pass_mask) \
-				and _is_passable(Vector2i(current.x + 1, current.y + dy), pass_mask):
+			_append_successor_direction(result, Vector2i(-1, 0))
+		if not _is_passable(Vector2i(current.x + 1, current.y - dy), pass_mask):
 			_append_successor_direction(result, Vector2i(1, dy))
+			_append_successor_direction(result, Vector2i(1, 0))
 	return result
 
 
