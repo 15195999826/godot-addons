@@ -133,6 +133,26 @@ func apply_path_results(
 				_apply_short_path_result(unit, short_result, short_ticket, pathfinder, units, tick)
 
 
+func _apply_pending_short_path_same_tick(
+	unit: ZeroAdRtsLabUnit,
+	pathfinder: ZeroAdRtsLabPathfinder,
+	units: Array[ZeroAdRtsLabUnit],
+	tick: int
+) -> void:
+	if unit.pending_short_ticket <= 0:
+		return
+	var requested_ticket := unit.pending_short_ticket
+	pathfinder.process_path_budget(units, 1)
+	var single_unit: Array[ZeroAdRtsLabUnit] = [unit]
+	apply_path_results(single_unit, pathfinder, tick)
+	if unit.pending_short_ticket == requested_ticket:
+		return
+	_record_path_decision(unit, "same_tick_short_takeover_applied", tick, {
+		"ticket": requested_ticket,
+		"short_path_size": unit.short_path.size() if unit.short_path != null else 0,
+	})
+
+
 func step_unit(
 	unit: ZeroAdRtsLabUnit,
 	delta: float,
@@ -153,8 +173,17 @@ func step_unit(
 	# a borderline direct target line can drop an executable long path.
 	if not unit.has_path():
 		went_straight = _try_going_straight_to_target(unit, pathfinder, units, true)
+	var short_takeover_requested := false
 	if not went_straight:
-		_maybe_request_short_path_for_long_segment(unit, pathfinder, units, tick)
+		short_takeover_requested = _maybe_request_short_path_for_long_segment(unit, pathfinder, units, tick)
+	if short_takeover_requested:
+		_apply_pending_short_path_same_tick(unit, pathfinder, units, tick)
+		if unit.pending_short_ticket > 0 and (unit.short_path == null or unit.short_path.is_empty()):
+			_record_path_decision(unit, "defer_stale_long_move_after_short_takeover", tick, {
+				"pending_short_ticket": unit.pending_short_ticket,
+				"long_path_size": unit.long_path.size() if unit.long_path != null else 0,
+			})
+			return
 	if not unit.has_path():
 		if unit.pending_long_ticket == 0 and unit.pending_short_ticket == 0:
 			_handle_blocked_move(unit, pathfinder, units, false, tick)
@@ -580,22 +609,22 @@ func _maybe_request_short_path_for_long_segment(
 	pathfinder: ZeroAdRtsLabPathfinder,
 	units: Array[ZeroAdRtsLabUnit],
 	tick: int
-) -> void:
+) -> bool:
 	if unit.short_path != null and not unit.short_path.is_empty():
-		return
+		return false
 	if unit.pending_short_ticket > 0:
-		return
+		return false
 	if unit.long_path == null or unit.long_path.is_empty():
-		return
+		return false
 	if unit.follow_known_imperfect_path_countdown > 0:
 		known_imperfect_suppressed += 1
 		unit.note_order_metric("known_imperfect_suppressed")
-		return
+		return false
 	var blocked_waypoint: Vector2 = unit.long_path.back()
 	var skipped_waypoint := _next_long_waypoint_after_blocked(unit)
 	var unit_line := pathfinder.validate_unit_line(unit, unit.position, blocked_waypoint, units, false)
 	if unit_line.is_success():
-		return
+		return false
 	var requested_goal := SimNavPathGoal.point(unit.path_target)
 	var skipped_blocked_waypoint := false
 	if unit.long_path.size() > 1:
@@ -623,7 +652,7 @@ func _maybe_request_short_path_for_long_segment(
 		"requested_short_path_goal": requested_short_path_goal,
 		"line": _line_result_snapshot(unit_line, units),
 	})
-	_request_short_path(
+	return _request_short_path(
 		unit,
 		requested_goal,
 		pathfinder,
