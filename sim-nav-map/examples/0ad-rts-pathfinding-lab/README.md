@@ -50,7 +50,8 @@ gates:
 ## Files
 
 ```text
-docs/short-path-visibility-optimization-goals.md
+docs/steady-state-frame-performance-plan.md
+docs/archive/2026-05-09-short-path-visibility-optimization.md
 logic/zero_ad_rts_lab_world.gd
 logic/zero_ad_rts_lab_motion_controller.gd
 logic/zero_ad_rts_lab_move_order.gd
