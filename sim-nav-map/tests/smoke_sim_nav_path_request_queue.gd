@@ -19,6 +19,7 @@ func _ready() -> void:
 func _run() -> void:
 	_test_ticket_ids_are_nonzero_monotonic()
 	_test_budget_processes_fifo()
+	_test_elapsed_budget_limits_followup_requests()
 	_test_cancel_pending_skips_without_spending_budget()
 	_test_cancel_result_removes_stale_result()
 	_test_short_request_result()
@@ -66,6 +67,21 @@ func _test_budget_processes_fifo() -> void:
 	_assert_equal(1, queue.process_budget(1), "second budget step should process second request")
 	var path_b := queue.take_result(ticket_b)
 	_assert_equal_vec(nav_map.navcell_center_world(Vector2i(5, 1)), path_b.waypoints[0], "second result should match second queued goal")
+
+
+func _test_elapsed_budget_limits_followup_requests() -> void:
+	var fixture := _make_long_fixture()
+	var queue: SimNavPathRequestQueue = fixture["queue"]
+	var nav_map: SimNavMap = fixture["nav_map"]
+	var pass_mask := int(fixture["pass_mask"])
+	var start := nav_map.navcell_center_world(Vector2i(1, 1))
+	var ticket_a := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(4, 1))), pass_mask)
+	var ticket_b := queue.enqueue_long_path(start, SimNavPathGoal.point(nav_map.navcell_center_world(Vector2i(5, 1))), pass_mask)
+
+	_assert_equal(1, queue.process_budget(2, 1), "elapsed budget should stop after the first live request")
+	_assert_true(queue.has_result(ticket_a), "first ticket should still complete under elapsed budget")
+	_assert_false(queue.has_result(ticket_b), "second ticket should wait when elapsed budget is exhausted")
+	_assert_equal(1, int(queue.get_diagnostics().get("pending_count", 0)), "elapsed budget should leave pending work queued")
 
 
 func _test_cancel_pending_skips_without_spending_budget() -> void:

@@ -3,6 +3,7 @@ extends RefCounted
 
 
 const PASSABILITY_CLASS_NAME: String = "ground"
+const DEFAULT_SYNC_PATH_BUDGET_USEC: int = 3500
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var cell_size: float = 16.0
@@ -128,13 +129,17 @@ func enqueue_short_path(
 	return ticket
 
 
-func process_path_budget(units: Array[ZeroAdRtsLabUnit], max_requests: int) -> int:
+func process_path_budget(
+	units: Array[ZeroAdRtsLabUnit],
+	max_requests: int,
+	max_usec: int = DEFAULT_SYNC_PATH_BUDGET_USEC
+) -> int:
 	if path_queue == null:
 		return 0
 	if path_queue.pending_count() <= 0:
 		return 0
 	_refresh_dynamic_units(units)
-	var processed := path_queue.process_budget(max_requests)
+	var processed := path_queue.process_budget(max_requests, max_usec)
 	if processed > 0:
 		last_report["path_queue_processed"] = {
 			"processed": processed,
