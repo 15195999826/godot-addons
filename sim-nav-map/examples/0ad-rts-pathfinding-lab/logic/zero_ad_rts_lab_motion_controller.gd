@@ -49,7 +49,10 @@ const SHORT_REPATH_COOLDOWN_SEC: float = 0.22
 const MAX_PATH_DECISION_LOG_ENTRIES: int = 240
 const CROSSING_NUDGE_DOT_THRESHOLD: float = -0.1
 const CROSSING_NUDGE_DISTANCE: float = 3.0
+const LONG_SEGMENT_TAKEOVER_POLICY_0AD_SKIP_BLOCKED_WAYPOINT: String = "0ad_skip_blocked_waypoint"
+const LONG_SEGMENT_TAKEOVER_POLICY_LAB_KEEP_BLOCKED_WAYPOINT: String = "lab_keep_blocked_waypoint"
 
+var long_segment_takeover_policy: String = LONG_SEGMENT_TAKEOVER_POLICY_LAB_KEEP_BLOCKED_WAYPOINT
 var short_path_requests: int = 0
 var long_path_requests: int = 0
 var blocked_moves: int = 0
@@ -71,6 +74,7 @@ var push_pair_checks: int = 0
 var push_grid_cells: int = 0
 var _motion_updates: Array[RefCounted] = []
 var _path_decisions: Array[Dictionary] = []
+var _pending_short_path_contexts: Dictionary = {}
 
 
 func start_move_order(
@@ -122,10 +126,11 @@ func apply_path_results(
 				unit.pending_long_ticket = 0
 				_apply_long_path_result(unit, long_result, tick)
 		if unit.pending_short_ticket > 0:
-			var short_result := pathfinder.take_short_path_result(unit.pending_short_ticket)
+			var short_ticket := unit.pending_short_ticket
+			var short_result := pathfinder.take_short_path_result(short_ticket)
 			if short_result != null:
 				unit.pending_short_ticket = 0
-				_apply_short_path_result(unit, short_result, pathfinder, units, tick)
+				_apply_short_path_result(unit, short_result, short_ticket, pathfinder, units, tick)
 
 
 func step_unit(
@@ -367,6 +372,7 @@ func _request_long_path(
 ) -> void:
 	if unit.pending_short_ticket > 0:
 		pathfinder.cancel_path_request(unit.pending_short_ticket)
+		_pending_short_path_contexts.erase(unit.pending_short_ticket)
 		unit.pending_short_ticket = 0
 		obsolete_path_requests += 1
 		unit.note_order_metric("obsolete_path_requests")
@@ -420,7 +426,8 @@ func _request_short_path(
 	units: Array[ZeroAdRtsLabUnit],
 	search_range: float = SHORT_PATH_MIN_SEARCH_RANGE,
 	tick: int = 0,
-	reason: String = ""
+	reason: String = "",
+	request_context: Dictionary = {}
 ) -> bool:
 	if unit.pending_short_ticket > 0:
 		repath_suppressed += 1
@@ -446,10 +453,17 @@ func _request_short_path(
 	short_path_requests += 1
 	unit.note_order_metric("short_path_requests")
 	unit.pending_short_ticket = pathfinder.enqueue_short_path(unit, goal, units, search_range)
+	var context := request_context.duplicate(true)
+	context["reason"] = reason
+	context["requested_short_path_goal"] = goal.center if goal != null else Vector2.ZERO
+	context["final_goal"] = unit.path_target
+	context["ticket"] = unit.pending_short_ticket
+	_pending_short_path_contexts[unit.pending_short_ticket] = context
 	unit.short_repath_cooldown = SHORT_REPATH_COOLDOWN_SEC
 	_record_path_decision(unit, "short_path_requested", tick, {
 		"reason": reason,
 		"goal": goal.center if goal != null else Vector2.ZERO,
+		"requested_short_path_goal": goal.center if goal != null else Vector2.ZERO,
 		"search_range": search_range,
 		"ticket": unit.pending_short_ticket,
 	})
@@ -459,32 +473,41 @@ func _request_short_path(
 func _apply_short_path_result(
 	unit: ZeroAdRtsLabUnit,
 	result: SimNavShortPathResult,
+	ticket: int,
 	pathfinder: ZeroAdRtsLabPathfinder,
 	units: Array[ZeroAdRtsLabUnit],
 	tick: int
 ) -> void:
 	path_results_applied += 1
 	unit.note_order_metric("path_results_applied")
+	var request_context: Dictionary = _pending_short_path_contexts.get(ticket, {}) as Dictionary
+	_pending_short_path_contexts.erase(ticket)
 	if result.is_success():
 		unit.short_path = result.path
 		_trim_regressive_short_waypoint(unit, pathfinder, units, tick)
-		_record_path_decision(unit, "short_path_result", tick, {
+		var details := {
 			"status": result.status,
 			"failure_reason": result.failure_reason,
 			"path_size": result.path.size(),
 			"path_length": result.path_length,
+			"short_path_length": result.path_length,
 			"path": _path_snapshot(result.path),
-		})
+		}
+		_add_short_path_result_diagnostics(details, unit, request_context)
+		_record_path_decision(unit, "short_path_result", tick, details)
 		_note_known_imperfect_path_if_needed(unit, unit.long_path == null or unit.long_path.is_empty(), tick)
 	else:
 		path_result_failures += 1
 		unit.note_order_metric("path_result_failures")
-		_record_path_decision(unit, "short_path_result", tick, {
+		var failure_details := {
 			"status": result.status,
 			"failure_reason": result.failure_reason,
 			"path_size": result.path.size(),
 			"path_length": result.path_length,
-		})
+			"short_path_length": result.path_length,
+		}
+		_add_short_path_result_diagnostics(failure_details, unit, request_context)
+		_record_path_decision(unit, "short_path_result", tick, failure_details)
 
 
 func _trim_regressive_short_waypoint(
@@ -519,6 +542,39 @@ func _trim_regressive_short_waypoint(
 	})
 
 
+func _add_short_path_result_diagnostics(
+	details: Dictionary,
+	unit: ZeroAdRtsLabUnit,
+	request_context: Dictionary
+) -> void:
+	var request_reason := String(request_context.get("reason", ""))
+	if request_reason != "":
+		details["request_reason"] = request_reason
+	for key in [
+		"takeover_policy",
+		"blocked_waypoint",
+		"skipped_waypoint",
+		"skipped_blocked_waypoint",
+		"requested_short_path_goal",
+	]:
+		if request_context.has(key):
+			details[key] = request_context[key]
+	var has_first_waypoint := unit.short_path != null and not unit.short_path.is_empty()
+	var first_waypoint := Vector2.ZERO
+	if has_first_waypoint:
+		first_waypoint = unit.short_path.back()
+	var current_goal_distance := unit.position.distance_to(unit.path_target)
+	var first_goal_distance := first_waypoint.distance_to(unit.path_target)
+	details["has_first_consumed_short_waypoint"] = has_first_waypoint
+	details["first_consumed_short_waypoint"] = first_waypoint
+	details["current_final_goal_distance"] = current_goal_distance
+	details["first_short_waypoint_final_goal_distance"] = first_goal_distance
+	details["first_short_waypoint_farther_from_final_goal"] = (
+		has_first_waypoint
+		and first_goal_distance > current_goal_distance + 0.01
+	)
+
+
 func _maybe_request_short_path_for_long_segment(
 	unit: ZeroAdRtsLabUnit,
 	pathfinder: ZeroAdRtsLabPathfinder,
@@ -535,27 +591,54 @@ func _maybe_request_short_path_for_long_segment(
 		known_imperfect_suppressed += 1
 		unit.note_order_metric("known_imperfect_suppressed")
 		return
-	var next_long: Vector2 = unit.long_path.back()
-	var unit_line := pathfinder.validate_unit_line(unit, unit.position, next_long, units, false)
+	var blocked_waypoint: Vector2 = unit.long_path.back()
+	var skipped_waypoint := _next_long_waypoint_after_blocked(unit)
+	var unit_line := pathfinder.validate_unit_line(unit, unit.position, blocked_waypoint, units, false)
 	if unit_line.is_success():
 		return
+	var requested_goal := SimNavPathGoal.point(unit.path_target)
+	var skipped_blocked_waypoint := false
+	if unit.long_path.size() > 1:
+		if long_segment_takeover_policy == LONG_SEGMENT_TAKEOVER_POLICY_0AD_SKIP_BLOCKED_WAYPOINT:
+			unit.long_path.pop_back()
+			requested_goal = SimNavPathGoal.circle(unit.long_path.back(), LONG_PATH_UNIT_LINE_SUBGOAL_RADIUS)
+			skipped_blocked_waypoint = true
+		else:
+			requested_goal = SimNavPathGoal.circle(blocked_waypoint, LONG_PATH_UNIT_LINE_SUBGOAL_RADIUS)
+	var requested_short_path_goal: Vector2 = requested_goal.center if requested_goal != null else Vector2.ZERO
+	var takeover_context := {
+		"takeover_policy": long_segment_takeover_policy,
+		"blocked_waypoint": blocked_waypoint,
+		"skipped_waypoint": skipped_waypoint,
+		"skipped_blocked_waypoint": skipped_blocked_waypoint,
+		"requested_short_path_goal": requested_short_path_goal,
+	}
 	_record_path_decision(unit, "long_segment_unit_line_blocked", tick, {
 		"from": unit.position,
-		"next_long": next_long,
+		"next_long": blocked_waypoint,
+		"blocked_waypoint": blocked_waypoint,
+		"skipped_waypoint": skipped_waypoint,
+		"takeover_policy": long_segment_takeover_policy,
+		"skipped_blocked_waypoint": skipped_blocked_waypoint,
+		"requested_short_path_goal": requested_short_path_goal,
 		"line": _line_result_snapshot(unit_line, units),
 	})
-	# 0 A.D. normally skips this waypoint. Keep it temporarily because the
-	# logged lab scene produces a large detour until the parity gap is isolated.
-	var goal := SimNavPathGoal.circle(next_long, LONG_PATH_UNIT_LINE_SUBGOAL_RADIUS)
 	_request_short_path(
 		unit,
-		goal,
+		requested_goal,
 		pathfinder,
 		units,
 		_short_path_search_range(unit, false),
 		tick,
-		"long_segment_unit_line_blocked"
+		"long_segment_unit_line_blocked",
+		takeover_context
 	)
+
+
+func _next_long_waypoint_after_blocked(unit: ZeroAdRtsLabUnit) -> Vector2:
+	if unit.long_path == null or unit.long_path.size() < 2:
+		return Vector2.ZERO
+	return unit.long_path.waypoints[unit.long_path.size() - 2]
 
 
 func _handle_blocked_move(
@@ -916,6 +999,7 @@ func _cancel_pending_path_requests(unit: ZeroAdRtsLabUnit, pathfinder: ZeroAdRts
 		unit.pending_long_ticket = 0
 	if unit.pending_short_ticket > 0:
 		pathfinder.cancel_path_request(unit.pending_short_ticket)
+		_pending_short_path_contexts.erase(unit.pending_short_ticket)
 		unit.pending_short_ticket = 0
 
 

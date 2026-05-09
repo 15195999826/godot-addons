@@ -20,6 +20,11 @@ When `long_segment_unit_line_blocked` fires, the lab keeps the blocked immediate
 long waypoint and short-paths back to that waypoint neighborhood. This prevents
 the logged detour, but it is not 0 A.D. parity.
 
+The controller now exposes a lab-only experiment toggle:
+
+- `0ad_skip_blocked_waypoint`
+- `lab_keep_blocked_waypoint` (current default)
+
 0 A.D. baseline does the opposite for multi-waypoint long paths: it pops the
 current waypoint and short-paths toward the following waypoint. That rule is in
 `docs/references/0ad-source/source/simulation2/components/CCmpUnitMotion.h`,
@@ -135,6 +140,55 @@ The next step should be a parity experiment:
    keep it documented as a lab policy deviation and keep the smoke regression
    that protects the logged case.
 
+## Parity Experiment Result
+
+Status: partial parity experiment complete; do not restore the 0 A.D. skip rule
+yet.
+
+The motion decision log now records the `long_segment_unit_line_blocked`
+takeover context:
+
+- `blocked_waypoint`
+- `skipped_waypoint`
+- `takeover_policy`
+- `skipped_blocked_waypoint`
+- `requested_short_path_goal`
+
+The matching `short_path_result` also carries the request context plus:
+
+- `first_consumed_short_waypoint`
+- `short_path_length`
+- `first_short_waypoint_farther_from_final_goal`
+- `current_final_goal_distance`
+- `first_short_waypoint_final_goal_distance`
+
+The logged tick-3665 replay must include the local idle-unit cluster from the
+export. A reduced replay with only `blue_3` does not reproduce the bad skip
+path; the bad route depends on the nearby dynamic unit geometry around
+`blue_0` / `blue_1` / `blue_2` / `blue_3` / `blue_4`.
+
+Under `0ad_skip_blocked_waypoint`, the lab reproduces the old policy shape:
+`blocked_waypoint = (605.0, 202.5)` is popped and the requested short-path goal
+becomes `skipped_waypoint = (639.0, 241.25)`. In the exported scene geometry,
+that short-path result begins with a waypoint that moves farther away from the
+final goal before recovering, matching the observed large detour.
+
+Under `lab_keep_blocked_waypoint`, the requested short-path goal stays at the
+blocked immediate waypoint and the long path keeps that waypoint. This remains
+the better lab behavior for the logged case, but it is still a documented
+temporary deviation from 0 A.D.
+
+Current conclusion:
+
+- Keep `lab_keep_blocked_waypoint` as the default for now.
+- Do not tune cooldown, search range, speed, or collision radius to hide this.
+- Do not treat async / threading as the first fix.
+- Before restoring 0 A.D. skip parity, fix the mismatch that makes the local
+  short path accept a retreating first waypoint for this subgoal. The most
+  likely next checks are short-path unit obstacle geometry, filter semantics,
+  `PostMove()`-style timing, and whether subgoal short paths need a bounded
+  equivalent to the 0 A.D. path-quality rejection/hack.
+
 ## Current Guard
 
 The current smoke regression is:
@@ -142,7 +196,10 @@ The current smoke regression is:
 ```text
 tests/smoke/smoke_zero_ad_rts_lab_motion.gd
 _test_logged_long_segment_short_takeover_keeps_immediate_subgoal()
+_test_logged_long_segment_policy_diagnostics_compare_skip_and_keep()
 ```
 
-It proves the logged detour no longer occurs under the current lab policy. It
-does not prove 0 A.D. parity.
+The first test proves the logged detour no longer occurs under the current lab
+policy. The second compares both takeover policies against the export-derived
+local unit cluster and proves the current 0 A.D.-style skip still exposes the
+detour-risk diagnostics. Neither test means full 0 A.D. parity is complete.

@@ -16,6 +16,7 @@ func _ready() -> void:
 	_test_logged_same_control_group_arrival_does_not_tunnel()
 	_test_unit_line_blockage_requests_short_path()
 	_test_logged_long_segment_short_takeover_keeps_immediate_subgoal()
+	_test_logged_long_segment_policy_diagnostics_compare_skip_and_keep()
 	_test_push_adjust_does_not_cross_static_wall()
 	_test_user_reported_repath_loop_converges()
 	_test_blocker_contact_oscillation_converges()
@@ -341,50 +342,23 @@ func _test_unit_line_blockage_requests_short_path() -> void:
 
 
 func _test_logged_long_segment_short_takeover_keeps_immediate_subgoal() -> void:
-	var world := ZeroAdRtsLabWorld.new()
-	world.units = [
-		ZeroAdRtsLabUnit.new("blue_5", "blue", Vector2(571.8230, 164.6880), 11.0, 96.0, true),
-		ZeroAdRtsLabUnit.new("blue_3", "blue", Vector2(597.5954, 161.7442), 11.0, 0.0, true),
-	]
-	world.pathfinder.rebuild_context(world.obstacles)
-	world.clear_traces()
-	var mover := world.get_unit("blue_5")
+	var replay := _logged_long_takeover_replay(
+		ZeroAdRtsLabMotionController.LONG_SEGMENT_TAKEOVER_POLICY_LAB_KEEP_BLOCKED_WAYPOINT
+	)
+	var world: ZeroAdRtsLabWorld = replay.get("world", null) as ZeroAdRtsLabWorld
+	var mover: ZeroAdRtsLabUnit = replay.get("mover", null) as ZeroAdRtsLabUnit
 	if mover == null:
 		_failures.append("logged-long-takeover: missing blue_5")
 		return
-	var blocked_waypoint := Vector2(605.0, 202.5)
-	var skipped_waypoint := Vector2(639.0, 241.25)
-	mover.begin_move_order(Vector2(673.0, 280.0), 3665)
-	mover.long_path = SimNavWaypointPath.new()
-	for point in [
-		Vector2(673.0, 280.0),
-		skipped_waypoint,
-		blocked_waypoint,
-	]:
-		mover.long_path.push_back(point)
-	world.pathfinder.refresh_dynamic_units(world.units)
-	world.motion._maybe_request_short_path_for_long_segment(
-		mover,
-		world.pathfinder,
-		world.units,
-		3665
-	)
-	var requested_goal := Vector2.ZERO
-	var found_request := false
-	for decision in world.motion.recent_path_decisions():
-		if String(decision.get("unit_id", "")) != "blue_5":
-			continue
-		if String(decision.get("kind", "")) != "short_path_requested":
-			continue
-		if String(decision.get("reason", "")) != "long_segment_unit_line_blocked":
-			continue
-		requested_goal = decision.get("goal", Vector2.ZERO) as Vector2
-		found_request = true
-	if not found_request:
+	var blocked_waypoint: Vector2 = replay.get("blocked_waypoint", Vector2.ZERO) as Vector2
+	var skipped_waypoint: Vector2 = replay.get("skipped_waypoint", Vector2.ZERO) as Vector2
+	var short_request: Dictionary = replay.get("short_request", {}) as Dictionary
+	if short_request.is_empty():
 		_failures.append("logged-long-takeover: expected short-path request, decisions=%s" % [
 			str(world.motion.recent_path_decisions()),
 		])
 		return
+	var requested_goal: Vector2 = short_request.get("goal", Vector2.ZERO) as Vector2
 	if requested_goal.distance_to(blocked_waypoint) > 0.01:
 		_failures.append("logged-long-takeover: expected immediate long subgoal %s, got %s skipped=%s decisions=%s" % [
 			str(blocked_waypoint),
@@ -395,6 +369,58 @@ func _test_logged_long_segment_short_takeover_keeps_immediate_subgoal() -> void:
 	if mover.long_path == null or mover.long_path.is_empty() or mover.long_path.back().distance_to(blocked_waypoint) > 0.01:
 		_failures.append("logged-long-takeover: expected long path to retain blocked waypoint, path=%s" % [
 			str(mover.long_path.waypoints if mover.long_path != null else []),
+		])
+	var short_result: Dictionary = replay.get("short_result", {}) as Dictionary
+	if short_result.is_empty() or not short_result.has("first_consumed_short_waypoint"):
+		_failures.append("logged-long-takeover: expected short-result diagnostics, result=%s decisions=%s" % [
+			str(short_result),
+			str(world.motion.recent_path_decisions()),
+		])
+
+
+func _test_logged_long_segment_policy_diagnostics_compare_skip_and_keep() -> void:
+	var keep_replay := _logged_long_takeover_replay(
+		ZeroAdRtsLabMotionController.LONG_SEGMENT_TAKEOVER_POLICY_LAB_KEEP_BLOCKED_WAYPOINT
+	)
+	var skip_replay := _logged_long_takeover_replay(
+		ZeroAdRtsLabMotionController.LONG_SEGMENT_TAKEOVER_POLICY_0AD_SKIP_BLOCKED_WAYPOINT
+	)
+	var blocked_waypoint: Vector2 = keep_replay.get("blocked_waypoint", Vector2.ZERO) as Vector2
+	var skipped_waypoint: Vector2 = keep_replay.get("skipped_waypoint", Vector2.ZERO) as Vector2
+	var keep_request: Dictionary = keep_replay.get("short_request", {}) as Dictionary
+	var skip_request: Dictionary = skip_replay.get("short_request", {}) as Dictionary
+	var skip_result: Dictionary = skip_replay.get("short_result", {}) as Dictionary
+	if keep_request.is_empty() or skip_request.is_empty() or skip_result.is_empty():
+		_failures.append("logged-long-policy: expected both policy replays to emit request/result diagnostics, keep=%s skip=%s" % [
+			str(keep_replay),
+			str(skip_replay),
+		])
+		return
+	var keep_goal: Vector2 = keep_request.get("requested_short_path_goal", Vector2.ZERO) as Vector2
+	var skip_goal: Vector2 = skip_request.get("requested_short_path_goal", Vector2.ZERO) as Vector2
+	if keep_goal.distance_to(blocked_waypoint) > 0.01:
+		_failures.append("logged-long-policy: keep policy should request blocked waypoint, goal=%s blocked=%s" % [
+			str(keep_goal),
+			str(blocked_waypoint),
+		])
+	if skip_goal.distance_to(skipped_waypoint) > 0.01:
+		_failures.append("logged-long-policy: 0ad skip policy should request next waypoint, goal=%s skipped=%s" % [
+			str(skip_goal),
+			str(skipped_waypoint),
+		])
+	if String(skip_result.get("takeover_policy", "")) != ZeroAdRtsLabMotionController.LONG_SEGMENT_TAKEOVER_POLICY_0AD_SKIP_BLOCKED_WAYPOINT:
+		_failures.append("logged-long-policy: short result should keep takeover policy context, result=%s" % str(skip_result))
+	if not bool(skip_result.get("skipped_blocked_waypoint", false)):
+		_failures.append("logged-long-policy: 0ad replay should record skipped blocked waypoint, result=%s" % str(skip_result))
+	if not bool(skip_result.get("first_short_waypoint_farther_from_final_goal", false)):
+		_failures.append("logged-long-policy: expected current 0ad-skip replay to expose regressive first short waypoint, result=%s" % str(skip_result))
+	var current_goal_distance := float(skip_result.get("current_final_goal_distance", 0.0))
+	var first_goal_distance := float(skip_result.get("first_short_waypoint_final_goal_distance", 0.0))
+	if first_goal_distance <= current_goal_distance + 0.01:
+		_failures.append("logged-long-policy: expected first short waypoint to be farther from final goal, current=%.2f first=%.2f result=%s" % [
+			current_goal_distance,
+			first_goal_distance,
+			str(skip_result),
 		])
 
 
@@ -1007,6 +1033,58 @@ func _run_world_steps(world: ZeroAdRtsLabWorld, count: int) -> void:
 		world.step(0.1)
 
 
+func _logged_long_takeover_replay(policy: String) -> Dictionary:
+	var world := ZeroAdRtsLabWorld.new()
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(557.0, 192.0), 11.0, 0.0, true),
+		ZeroAdRtsLabUnit.new("blue_3", "blue", Vector2(597.5954, 161.7442), 11.0, 0.0, true),
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(578.0, 224.0), 11.0, 0.0, true),
+		ZeroAdRtsLabUnit.new("blue_1", "blue", Vector2(624.0251, 164.1872), 11.0, 0.0, true),
+		ZeroAdRtsLabUnit.new("blue_4", "blue", Vector2(639.0815, 196.9077), 11.0, 0.0, true),
+		ZeroAdRtsLabUnit.new("blue_5", "blue", Vector2(571.8230, 164.6880), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("red_blocker", "red", Vector2(260.0, 210.0), 13.0, 0.0, false),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	world.clear_traces()
+	world.motion.long_segment_takeover_policy = policy
+	var mover := world.get_unit("blue_5")
+	var blocked_waypoint := Vector2(605.0, 202.5)
+	var skipped_waypoint := Vector2(639.0, 241.25)
+	if mover == null:
+		return {
+			"world": world,
+			"mover": null,
+			"blocked_waypoint": blocked_waypoint,
+			"skipped_waypoint": skipped_waypoint,
+		}
+	mover.begin_move_order(Vector2(673.0, 280.0), 3665)
+	mover.long_path = SimNavWaypointPath.new()
+	for point in [
+		Vector2(673.0, 280.0),
+		skipped_waypoint,
+		blocked_waypoint,
+	]:
+		mover.long_path.push_back(point)
+	world.pathfinder.refresh_dynamic_units(world.units)
+	world.motion._maybe_request_short_path_for_long_segment(
+		mover,
+		world.pathfinder,
+		world.units,
+		3665
+	)
+	world.pathfinder.process_path_budget(world.units, 4)
+	world.motion.apply_path_results(world.units, world.pathfinder, 3666)
+	return {
+		"world": world,
+		"mover": mover,
+		"blocked_waypoint": blocked_waypoint,
+		"skipped_waypoint": skipped_waypoint,
+		"block_decision": _latest_path_decision(world, "blue_5", "long_segment_unit_line_blocked"),
+		"short_request": _latest_path_decision(world, "blue_5", "short_path_requested", "long_segment_unit_line_blocked"),
+		"short_result": _latest_path_decision(world, "blue_5", "short_path_result", "long_segment_unit_line_blocked"),
+	}
+
+
 func _assert_equal_str(expected: String, actual: String, message: String) -> void:
 	if expected != actual:
 		_failures.append("%s (expected=%s actual=%s)" % [message, expected, actual])
@@ -1055,6 +1133,27 @@ func _has_decision_kind(decisions: Array[Dictionary], kind: String) -> bool:
 		if String(decision.get("kind", "")) == kind:
 			return true
 	return false
+
+
+func _latest_path_decision(
+	world: ZeroAdRtsLabWorld,
+	unit_id: String,
+	kind: String,
+	request_reason: String = ""
+) -> Dictionary:
+	var decisions := world.motion.recent_path_decisions()
+	for i in range(decisions.size() - 1, -1, -1):
+		var decision: Dictionary = decisions[i]
+		if String(decision.get("unit_id", "")) != unit_id:
+			continue
+		if String(decision.get("kind", "")) != kind:
+			continue
+		if request_reason != "":
+			var reason := String(decision.get("reason", decision.get("request_reason", "")))
+			if reason != request_reason:
+				continue
+		return decision
+	return {}
 
 
 func _inside_default_top_passage(point: Vector2) -> bool:
