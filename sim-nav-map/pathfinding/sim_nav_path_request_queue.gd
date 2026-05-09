@@ -370,3 +370,6 @@ func _merge_result_diagnostics(diagnostic: Dictionary, result) -> void:
 		diagnostic["status"] = long_result.status
 		diagnostic["failure_reason"] = long_result.failure_reason
 		diagnostic["path_size"] = long_result.path.size()
+		var search_diagnostics := long_result.search_diagnostics()
+		for key in search_diagnostics.keys():
+			diagnostic[key] = search_diagnostics[key]

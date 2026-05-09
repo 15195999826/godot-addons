@@ -230,6 +230,11 @@ func _test_queue_diagnostics_contract() -> void:
 	_assert_equal(1, int(diagnostics.get("cancelled_count", 0)), "diagnostics should expose cancelled count")
 	var result_tickets: Array = diagnostics.get("result_tickets", [])
 	_assert_equal(ticket_a, int(result_tickets[0]), "diagnostics should expose result ticket identity")
+	var processed_requests: Array = diagnostics.get("last_processed_requests", [])
+	_assert_equal(1, processed_requests.size(), "diagnostics should expose the processed request metadata")
+	var request_diagnostic := processed_requests[0] as Dictionary
+	_assert_equal_str("jps", str(request_diagnostic.get("search_algorithm", "")), "long request diagnostics should expose search algorithm")
+	_assert_true(int(request_diagnostic.get("search_expansion_count", 0)) > 0, "long request diagnostics should expose expansion count")
 
 
 func _run_deterministic_queue_once() -> String:

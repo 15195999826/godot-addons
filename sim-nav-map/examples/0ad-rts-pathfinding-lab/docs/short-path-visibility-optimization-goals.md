@@ -72,6 +72,48 @@ fit the count budget:
 | `partial_wall_with_gap` | 748.64 | 12451 | 957 | Arrives `6/6`; worst frame is one long path. |
 | `rapid_obstacle_thrash` | 3490.61 | 7896 | 2412 | Still a dynamic blocker thrash / runaway loop issue, but no 19ms frame in this run. |
 
+Long-path follow-up on 2026-05-09:
+
+0 A.D. `LongPathfinder::ComputePath()` routes through `ComputeJPSPath()`,
+tracks `PathfinderState.steps`, uses `JumpPointCache`, reconstructs a reverse
+waypoint path, and then runs `ImprovePathWaypoints()` on the JPS waypoint chain.
+The local queued/result path contract was still using dense `_astar_cells()`.
+That made the remaining long-path spike a real algorithm mismatch, not a short
+path visibility regression.
+
+The current result path now uses JPS for ordinary long-path result queries,
+keeps request-scoped `excluded_regions` on the A* path because local JPS does
+not support exclusions yet, and exports long-search diagnostics:
+`search_algorithm`, `search_expansion_count`, `search_push_count`,
+`search_jump_count`, `search_closed_count`, `search_max_open_count`, and
+`search_path_cell_count`.
+
+One local JPS correctness gap was fixed while doing this pass: cardinal
+successor pruning now follows the 0 A.D. shape that adds both the forward
+diagonal and the perpendicular jump when the tile behind the side channel is
+blocked. This removed the old hidden dependency on `compute_path_immediate()`'s
+A* fallback for wall and start-recovery cases.
+
+The JPS chain is still expanded for `raw_navcell_path` export so the public
+result contract remains start-to-goal navcells, but line-of-sight refinement now
+uses the sparse JPS chain, matching 0 A.D.'s `ImprovePathWaypoints()` strategy
+more closely.
+
+Latest exploration after this pass:
+
+| Scenario | `avg_step_usec` | `max_step_usec` | Max long request | `max_short_compute_usec` | Notes |
+|---|---:|---:|---:|---:|---|
+| `baseline_open_movement` | 700.11 | 6071 | 2778 | 0 | Max frame is two JPS long requests in one tick. |
+| `fully_blocked_path` | 673.09 | 7099 | 3346 | 0 | Static short path is no longer the spike; no runaway replan in this run. |
+| `partial_wall_with_gap` | 650.28 | 7085 | 3291 | 0 | Arrives `6/6`; max frame is two JPS long requests. |
+| `rapid_obstacle_thrash` | 2568.07 | 6305 | 2878 | 2471 | Still dynamic blocker thrash, but no 19ms frame in this run. |
+
+Conclusion: the single long-path 9-12ms spike is addressed in this run. The
+remaining 6-7ms max frames are primarily two 2-3.4ms synchronous JPS long
+requests sharing one tick, plus dynamic-thrash policy work in the stress phase.
+That is a scheduler / motion-policy follow-up, not the original long-path
+algorithm spike.
+
 ## 0 A.D. Reference
 
 Re-check the local 0 A.D. source before changing algorithm shape:
@@ -79,6 +121,8 @@ Re-check the local 0 A.D. source before changing algorithm shape:
 ```text
 docs/references/0ad-source/source/simulation2/helpers/Pathfinding.h
 docs/references/0ad-source/source/simulation2/helpers/Pathfinding.cpp
+docs/references/0ad-source/source/simulation2/helpers/LongPathfinder.h
+docs/references/0ad-source/source/simulation2/helpers/LongPathfinder.cpp
 docs/references/0ad-source/source/simulation2/helpers/VertexPathfinder.h
 docs/references/0ad-source/source/simulation2/helpers/VertexPathfinder.cpp
 docs/references/0ad-source/source/simulation2/components/CCmpPathfinder.cpp
@@ -127,6 +171,9 @@ Source files re-read for the current implementation:
 - `CCmpPathfinder.cpp`: `CheckMovement()`.
 - `CCmpUnitMotion.h`: `RequestShortPath()`,
   `ShouldCollideWithMovingUnits()`, and target/short-path handoff behavior.
+- `LongPathfinder.h` / `LongPathfinder.cpp`: `PathfinderState`,
+  `JumpPointCache`, `ComputeJPSPath()`, cardinal/diagonal jump expansion,
+  path reconstruction, and `ImprovePathWaypoints()`.
 
 ## Current Implementation Notes
 
@@ -158,6 +205,16 @@ The first-stage optimization now follows this shape:
   default is `3500us`, so cheap requests can still share a frame while expensive
   long paths are spread over later ticks instead of combining into one visible
   frame spike.
+- `SimNavLongPathfinder.compute_path_result()` now uses JPS for ordinary result
+  queries, preserving A* only for request-scoped `excluded_regions`. The local
+  JPS cardinal successor pruning was corrected against 0 A.D.'s
+  `AddJumpedHoriz()` / `AddJumpedVert()` expansion shape.
+- Long-path result diagnostics now expose search structure (`search_algorithm`,
+  expansion/push/jump/closed/max-open counts, and sparse path cell count), so
+  slow frames can distinguish search growth from scheduling multiple path
+  requests in one tick.
+- JPS result queries refine the sparse JPS waypoint chain while still exporting
+  dense `raw_navcell_path` for the existing public result contract.
 - `SimNavShortPathResult` and path request batch diagnostics expose structural
   counters: explicit static/unit obstruction counts, terrain edge/vertex count,
   total vertex count, visibility check count, and A* expansion count.

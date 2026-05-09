@@ -54,6 +54,13 @@ var path_length: float = 0.0
 var raw_navcell_count: int = 0
 var raw_waypoint_count: int = 0
 var refined_waypoint_count: int = 0
+var search_algorithm: String = ""
+var search_expansion_count: int = 0
+var search_push_count: int = 0
+var search_jump_count: int = 0
+var search_closed_count: int = 0
+var search_max_open_count: int = 0
+var search_path_cell_count: int = 0
 
 
 func configure_query(query: SimNavLongPathQuery, nav_map: SimNavMap = null) -> void:
@@ -107,6 +114,28 @@ func set_paths(
 	raw_navcell_count = raw_navcell_path.size()
 	raw_waypoint_count = raw_waypoint_path.size()
 	refined_waypoint_count = refined_waypoint_path.size()
+
+
+func apply_search_diagnostics(diagnostics: Dictionary) -> void:
+	search_algorithm = str(diagnostics.get("algorithm", search_algorithm))
+	search_expansion_count = int(diagnostics.get("expansion_count", search_expansion_count))
+	search_push_count = int(diagnostics.get("push_count", search_push_count))
+	search_jump_count = int(diagnostics.get("jump_count", search_jump_count))
+	search_closed_count = int(diagnostics.get("closed_count", search_closed_count))
+	search_max_open_count = int(diagnostics.get("max_open_count", search_max_open_count))
+	search_path_cell_count = int(diagnostics.get("path_cell_count", search_path_cell_count))
+
+
+func search_diagnostics() -> Dictionary:
+	return {
+		"search_algorithm": search_algorithm,
+		"search_expansion_count": search_expansion_count,
+		"search_push_count": search_push_count,
+		"search_jump_count": search_jump_count,
+		"search_closed_count": search_closed_count,
+		"search_max_open_count": search_max_open_count,
+		"search_path_cell_count": search_path_cell_count,
+	}
 
 
 func is_success() -> bool:

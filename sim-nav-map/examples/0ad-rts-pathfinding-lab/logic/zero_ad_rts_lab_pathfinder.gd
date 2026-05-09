@@ -46,6 +46,7 @@ func rebuild_context(static_obstacles: Array[ZeroAdRtsLabObstacle]) -> void:
 	nav_map.rebuild_dirty()
 	hierarchical = SimNavHierarchicalPathfinder.new()
 	hierarchical.recompute(nav_map, [pass_mask])
+	nav_map.clear_dirty_navcells()
 	long_pathfinder = SimNavLongPathfinder.new(nav_map)
 	facade = SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
 	vertex_pathfinder = SimNavVertexPathfinder.new(nav_map)
