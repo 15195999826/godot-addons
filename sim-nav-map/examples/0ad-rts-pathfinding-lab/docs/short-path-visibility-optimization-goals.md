@@ -114,6 +114,27 @@ requests sharing one tick, plus dynamic-thrash policy work in the stress phase.
 That is a scheduler / motion-policy follow-up, not the original long-path
 algorithm spike.
 
+Interactive behavior follow-up on 2026-05-09:
+
+```text
+C:/Users/Administrator/AppData/Roaming/Godot/app_userdata/Inkmon/zero_ad_rts_pathfinding_lab_logs/zero_ad_rts_lab_2026-05-09T18-57-37_tick_5476.json
+```
+
+This export did not contain a performance spike (`slow_frames = 0`,
+`avg_step_usec = 488.14`, `max_step_usec = 7459` at tick 2), but it did expose
+two behavior diagnostics:
+
+- Unit-made chokepoints can look passable while the exact movement line is
+  blocked by another stationary unit. This matches the 0 A.D. split: ordinary
+  dynamic units are handled by `TestUnitLine()` / short path, not by long-path
+  global passability. This is a visual / local-geometry edge case, not a
+  current long-path bug.
+- Some short-path results contained duplicate adjacent waypoints when the
+  dynamic virtual goal landed on an obstruction-corner vertex, for example
+  paths shaped like `goal-corner -> same corner -> next corner`. This is a
+  core short-path quality bug and is now covered by
+  `smoke_sim_nav_vertex_pathfinder`.
+
 ## 0 A.D. Reference
 
 Re-check the local 0 A.D. source before changing algorithm shape:
@@ -196,6 +217,9 @@ The first-stage optimization now follows this shape:
   `VertexPathfinder::ComputeShortPath()` more closely. The goal point is
   recomputed from the current vertex instead of trying several fixed goal
   candidates and rerunning visibility search.
+- If a visibility vertex already lies inside the non-point short goal, the
+  search now reconstructs the path to that vertex directly instead of appending
+  a duplicate virtual-goal waypoint at the same position.
 - Terrain fallback now reruns search only when terrain extraction adds vertices.
   This avoids repeating the identical explicit-obstruction graph for dynamic
   unit no-path cases.
@@ -324,5 +348,7 @@ Avoid these as first-line fixes:
 - [x] `fully_blocked_path` remains bounded and does not repeatedly replan.
 - [x] `rapid_obstacle_thrash` is measured separately and not claimed solved by
       the static optimization.
+- [x] Duplicate short-path virtual-goal waypoints are covered by a core smoke
+      test and are not mixed with dynamic-unit chokepoint policy.
 - [x] `./tools/run_tests.ps1 zeroadlab/smoke simnav/smoke` passes.
 - [x] The implementation notes mention which 0 A.D. source files were re-read.

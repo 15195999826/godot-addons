@@ -116,7 +116,9 @@ func step(delta: float) -> void:
 	var snapshot_usec := Time.get_ticks_usec() - snapshot_start_usec
 	var path_budget_start_usec := Time.get_ticks_usec()
 	var processed_paths := pathfinder.process_path_budget(units, PATH_REQUEST_BUDGET_PER_TICK)
-	var queue_report: Dictionary = pathfinder.last_report.get("path_queue_processed", {}) as Dictionary
+	var queue_report: Dictionary = {}
+	if processed_paths > 0:
+		queue_report = pathfinder.last_report.get("path_queue_processed", {}) as Dictionary
 	var queue_diagnostics: Dictionary = queue_report.get("diagnostics", {}) as Dictionary
 	var path_budget_usec := Time.get_ticks_usec() - path_budget_start_usec
 	var apply_results_start_usec := Time.get_ticks_usec()
