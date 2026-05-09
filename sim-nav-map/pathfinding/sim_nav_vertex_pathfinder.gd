@@ -26,27 +26,16 @@ func compute_short_path_immediate(req: SimNavShortPathRequest) -> SimNavWaypoint
 		same.push_back(req.start)
 		return same
 
-	var virtual_goals := _goal_candidates(req)
 	var diagnostics := _new_graph_diagnostics()
 	var visibility_inputs := _collect_visibility_inputs(req, diagnostics, false)
-	var best_path := _first_successful_path(req, virtual_goals, visibility_inputs, diagnostics)
+	var best_path := _compute_to_goal(req, visibility_inputs, diagnostics)
 	if best_path.is_empty():
-		visibility_inputs = _collect_visibility_inputs(req, diagnostics, true)
-		best_path = _first_successful_path(req, virtual_goals, visibility_inputs, diagnostics)
+		var terrain_diagnostics := _new_graph_diagnostics()
+		visibility_inputs = _collect_visibility_inputs(req, terrain_diagnostics, true)
+		if _terrain_fallback_added_vertices(terrain_diagnostics):
+			diagnostics = terrain_diagnostics
+			best_path = _compute_to_goal(req, visibility_inputs, diagnostics)
 	return best_path
-
-
-func _first_successful_path(
-	req: SimNavShortPathRequest,
-	virtual_goals: Array[Vector2],
-	visibility_inputs: Dictionary,
-	diagnostics: Dictionary
-) -> SimNavWaypointPath:
-	for virtual_goal in virtual_goals:
-		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, visibility_inputs, diagnostics)
-		if not candidate_path.is_empty():
-			return candidate_path
-	return SimNavWaypointPath.new()
 
 
 func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathResult:
@@ -62,38 +51,20 @@ func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathRe
 		result.set_path(SimNavShortPathResult.STATUS_SAME_GOAL, same)
 		return result
 
-	var virtual_goals := _goal_candidates(req)
-	result.candidate_count = virtual_goals.size()
-	var best_path := SimNavWaypointPath.new()
-	var had_candidate_in_range := false
-	for virtual_goal in virtual_goals:
-		if _goal_candidate_in_range(req, virtual_goal):
-			had_candidate_in_range = true
-			break
-	if not had_candidate_in_range:
+	result.candidate_count = 1
+	if not _goal_in_search_range(req):
 		result.set_failure(SimNavShortPathResult.STATUS_OUT_OF_RANGE, SimNavShortPathResult.FAILURE_RANGE_EXCEEDED)
 		return result
 
 	var diagnostics := _new_graph_diagnostics()
 	var visibility_inputs := _collect_visibility_inputs(req, diagnostics, false)
-	for virtual_goal in virtual_goals:
-		if not _goal_candidate_in_range(req, virtual_goal):
-			continue
-		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, visibility_inputs, diagnostics)
-		if candidate_path.is_empty():
-			continue
-		best_path = candidate_path
-		break
+	var best_path := _compute_to_goal(req, visibility_inputs, diagnostics)
 	if best_path.is_empty():
-		visibility_inputs = _collect_visibility_inputs(req, diagnostics, true)
-		for virtual_goal in virtual_goals:
-			if not _goal_candidate_in_range(req, virtual_goal):
-				continue
-			var candidate_path := _compute_to_virtual_goal(req, virtual_goal, visibility_inputs, diagnostics)
-			if candidate_path.is_empty():
-				continue
-			best_path = candidate_path
-			break
+		var terrain_diagnostics := _new_graph_diagnostics()
+		visibility_inputs = _collect_visibility_inputs(req, terrain_diagnostics, true)
+		if _terrain_fallback_added_vertices(terrain_diagnostics):
+			diagnostics = terrain_diagnostics
+			best_path = _compute_to_goal(req, visibility_inputs, diagnostics)
 	if best_path.is_empty():
 		result.set_failure(SimNavShortPathResult.STATUS_NO_PATH, SimNavShortPathResult.FAILURE_NO_ROUTE)
 		_apply_graph_diagnostics(result, diagnostics)
@@ -106,25 +77,25 @@ func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathRe
 	return result
 
 
-func _compute_to_virtual_goal(
+func _compute_to_goal(
 	req: SimNavShortPathRequest,
-	virtual_goal: Vector2,
 	visibility_inputs: Dictionary,
 	diagnostics: Dictionary
 ) -> SimNavWaypointPath:
 	var start := req.start
 	var obstacles: Array = visibility_inputs.get("obstacles", [])
-	if start.distance_squared_to(virtual_goal) < 1.0:
+	var initial_goal := _goal_point_for_vertex(req, start)
+	if start.distance_squared_to(initial_goal) < 1.0:
 		var same := SimNavWaypointPath.new()
-		same.push_back(virtual_goal)
+		same.push_back(initial_goal)
 		return same
 	diagnostics["vertex_count"] = maxi(int(diagnostics.get("vertex_count", 0)), 2)
-	if _segment_clear_for_request(req, start, virtual_goal, obstacles, diagnostics):
+	if _segment_clear_for_request(req, start, initial_goal, obstacles, diagnostics):
 		var direct := SimNavWaypointPath.new()
-		direct.push_back(virtual_goal)
+		direct.push_back(initial_goal)
 		return direct
 
-	var vertices: Array[Vector2] = [start, virtual_goal]
+	var vertices: Array[Vector2] = [start, initial_goal]
 	var obstacle_vertices: Array = visibility_inputs.get("vertices", [])
 	for vertex in obstacle_vertices:
 		vertices.append(vertex as Vector2)
@@ -133,39 +104,25 @@ func _compute_to_virtual_goal(
 	return _astar_visibility(vertices, obstacles, req, diagnostics)
 
 
-func _goal_candidates(req: SimNavShortPathRequest) -> Array[Vector2]:
-	var candidates: Array[Vector2] = []
-	_append_unique_candidate(candidates, req.goal.nearest_point_on_goal(req.start))
-	match req.goal.type:
-		SimNavPathGoal.Type.CIRCLE, SimNavPathGoal.Type.INVERTED_CIRCLE:
-			var radius := req.goal.hw
-			_append_unique_candidate(candidates, req.goal.center + Vector2(radius, 0.0))
-			_append_unique_candidate(candidates, req.goal.center + Vector2(0.0, radius))
-			_append_unique_candidate(candidates, req.goal.center + Vector2(-radius, 0.0))
-			_append_unique_candidate(candidates, req.goal.center + Vector2(0.0, -radius))
-		SimNavPathGoal.Type.SQUARE, SimNavPathGoal.Type.INVERTED_SQUARE:
-			_append_unique_candidate(candidates, req.goal.center + req.goal.u * req.goal.hw)
-			_append_unique_candidate(candidates, req.goal.center - req.goal.u * req.goal.hw)
-			_append_unique_candidate(candidates, req.goal.center + req.goal.v * req.goal.hh)
-			_append_unique_candidate(candidates, req.goal.center - req.goal.v * req.goal.hh)
-			_append_unique_candidate(candidates, req.goal.center + req.goal.u * req.goal.hw + req.goal.v * req.goal.hh)
-			_append_unique_candidate(candidates, req.goal.center + req.goal.u * req.goal.hw - req.goal.v * req.goal.hh)
-			_append_unique_candidate(candidates, req.goal.center - req.goal.u * req.goal.hw + req.goal.v * req.goal.hh)
-			_append_unique_candidate(candidates, req.goal.center - req.goal.u * req.goal.hw - req.goal.v * req.goal.hh)
-	return candidates
-
-
-func _append_unique_candidate(candidates: Array[Vector2], point: Vector2) -> void:
-	for existing in candidates:
-		if existing.distance_squared_to(point) < 0.01:
-			return
-	candidates.append(point)
-
-
-func _goal_candidate_in_range(req: SimNavShortPathRequest, point: Vector2) -> bool:
+func _goal_in_search_range(req: SimNavShortPathRequest) -> bool:
 	if req.range_px <= 0.0:
 		return true
-	return req.start.distance_to(point) <= req.range_px + req.clearance + 0.001
+	return req.goal.distance_to_point(req.start) <= req.range_px + req.clearance + 0.001
+
+
+func _goal_point_for_vertex(req: SimNavShortPathRequest, from: Vector2) -> Vector2:
+	var goal_point := req.goal.nearest_point_on_goal(from)
+	if req.range_px <= 0.0:
+		return goal_point
+	var to_goal := goal_point - req.start
+	var goal_dist := to_goal.length()
+	if goal_dist <= req.range_px or goal_dist <= 0.001:
+		return goal_point
+	return req.start + to_goal / goal_dist * req.range_px
+
+
+func _terrain_fallback_added_vertices(diagnostics: Dictionary) -> bool:
+	return int(diagnostics.get("terrain_vertex_count", 0)) > 0
 
 
 func _new_graph_diagnostics() -> Dictionary:
@@ -399,7 +356,7 @@ func _astar_visibility(
 
 	var goal_idx := 1
 	g_score[0] = 0.0
-	var h0 := vertices[0].distance_to(vertices[goal_idx]) * heuristic_weight
+	var h0 := req.goal.distance_to_point(vertices[0]) * heuristic_weight
 	open_keys.append([h0, h0, _coord_int(vertices[0].x), _coord_int(vertices[0].y), insertion_seq, 0])
 	insertion_seq += 1
 
@@ -418,14 +375,18 @@ func _astar_visibility(
 		var current_g: float = float(g_score[current_idx])
 		for next_idx in _visibility_neighbor_indices(vertices, current_idx, goal_idx, closed):
 			var next_pos := vertices[next_idx]
+			if next_idx == goal_idx:
+				next_pos = _goal_point_for_vertex(req, current_pos)
 			if not _segment_clear_for_request(req, current_pos, next_pos, obstacles, diagnostics):
 				continue
 			var next_g := current_g + current_pos.distance_to(next_pos)
 			if g_score.has(next_idx) and next_g >= float(g_score[next_idx]):
 				continue
+			if next_idx == goal_idx:
+				vertices[goal_idx] = next_pos
 			g_score[next_idx] = next_g
 			came_from[next_idx] = current_idx
-			var next_h := next_pos.distance_to(vertices[goal_idx]) * heuristic_weight
+			var next_h := 0.0 if next_idx == goal_idx else req.goal.distance_to_point(next_pos) * heuristic_weight
 			var f := next_g + next_h
 			SimNavPathfinderHeap.insert(open_keys, [f, next_h, _coord_int(next_pos.x), _coord_int(next_pos.y), insertion_seq, next_idx])
 			insertion_seq += 1
