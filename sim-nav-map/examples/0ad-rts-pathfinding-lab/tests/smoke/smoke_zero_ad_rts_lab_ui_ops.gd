@@ -112,6 +112,19 @@ func _test_frontend_ui_ops() -> void:
 				var world_data: Dictionary = parsed_dict.get("world", {}) as Dictionary
 				if not perf.has("max_step_tick"):
 					_failures.append("ui-ops: export log missing max_step_tick")
+				if not perf.has("max_step_stage_classification"):
+					_failures.append("ui-ops: export log missing max_step_stage_classification")
+				for perf_key in [
+					"warm_avg_step_usec",
+					"p95_step_usec",
+					"p99_step_usec",
+					"idle_avg_step_usec",
+					"slow_frame_stage_counts",
+					"warm_stage_avg_usec",
+					"idle_stage_avg_usec",
+				]:
+					if not perf.has(perf_key):
+						_failures.append("ui-ops: export log missing perf.%s" % perf_key)
 				if not world_data.has("last_step_profile"):
 					_failures.append("ui-ops: export log missing world.last_step_profile")
 				if not world_data.has("recent_step_profiles"):

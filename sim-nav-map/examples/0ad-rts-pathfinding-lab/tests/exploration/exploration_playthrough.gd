@@ -31,6 +31,7 @@ func _ready() -> void:
 		_fuzz_mode_main()
 		return
 	print("=== 0AD EXPLORATION PLAYTHROUGH BEGIN ===")
+	_phase_idle_default_scene()
 	_phase_baseline_open_movement()
 	_phase_user_reported_runaway_repath()
 	_phase_unreachable_goal_inside()
@@ -50,6 +51,15 @@ func _ready() -> void:
 	_print_summary_table()
 	print("=== 0AD EXPLORATION PLAYTHROUGH END ===")
 	get_tree().quit(0)
+
+
+func _phase_idle_default_scene() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.setup_default()
+	var observer := PhaseObserver.new(world, "0_idle_default_scene")
+	observer.run_steps(180, false)
+	observer.note("expected", "idle default scene should skip dynamic refresh, movement, and push")
+	_record(observer.finish())
 
 
 func _phase_baseline_open_movement() -> void:
@@ -378,6 +388,8 @@ class PhaseObserver:
 	const STUCK_MOVEMENT_THRESHOLD_PX := 1.0
 	const RUNAWAY_REPATH_THRESHOLD := 40
 	const RUNAWAY_BLOCKED_THRESHOLD := 80
+	const MAX_SLOW_FRAME_LOG_ENTRIES := 24
+	const PerfSummaryScript := preload("res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_perf_summary.gd")
 
 	var world: ZeroAdRtsLabWorld
 	var phase_name: String
@@ -388,6 +400,11 @@ class PhaseObserver:
 	var max_step_profile: Dictionary = {}
 	var max_short_compute_usec: int = 0
 	var max_short_profile: Dictionary = {}
+	var step_usec_samples: Array[int] = []
+	var idle_step_usec_samples: Array[int] = []
+	var step_profiles: Array[Dictionary] = []
+	var idle_step_profiles: Array[Dictionary] = []
+	var slow_frames: Array[Dictionary] = []
 	var max_jump_px: float = 0.0
 	var max_jump_unit: String = ""
 	var max_jump_at: int = -1
@@ -419,10 +436,18 @@ class PhaseObserver:
 	func after_step() -> void:
 		var step_usec := Time.get_ticks_usec() - _step_t0
 		total_step_usec += step_usec
+		var profile := world.last_step_profile.duplicate(true)
+		step_usec_samples.append(step_usec)
+		step_profiles.append(profile)
+		if PerfSummaryScript.is_idle_profile(profile):
+			idle_step_usec_samples.append(step_usec)
+			idle_step_profiles.append(profile)
 		if step_usec > max_step_usec:
 			max_step_usec = step_usec
 			max_step_at = step_count
 			max_step_profile = world.last_step_profile.duplicate(true)
+		if step_usec >= PerfSummaryScript.DEFAULT_SLOW_FRAME_THRESHOLD_USEC:
+			_record_slow_frame(step_usec)
 		for request in world.last_step_profile.get("path_request_batch", []):
 			var request_data: Dictionary = request as Dictionary
 			if String(request_data.get("kind", "")) != "short":
@@ -494,6 +519,10 @@ class PhaseObserver:
 		var long_delta := int(metrics.get("long_path_requests", 0)) - int(_base_metrics.get("long_path_requests", 0))
 		var blocked_delta := int(metrics.get("blocked_moves", 0)) - int(_base_metrics.get("blocked_moves", 0))
 		var avg_step_usec := float(total_step_usec) / float(maxi(step_count, 1))
+		var perf_summary := PerfSummaryScript.summarize_steps(step_usec_samples, idle_step_usec_samples)
+		var slow_summary := PerfSummaryScript.summarize_slow_frames(slow_frames)
+		var stage_summary := PerfSummaryScript.summarize_stage_profiles(step_profiles, idle_step_profiles)
+		var max_step_stage_classification := PerfSummaryScript.classify_step(max_step_profile)
 		var result := {
 			"phase": phase_name,
 			"steps_run": step_count,
@@ -501,8 +530,26 @@ class PhaseObserver:
 			"arrived_at_step": arrived_at_step,
 			"active_count": active,
 			"avg_step_usec": "%.2f" % avg_step_usec,
+			"warm_avg_step_usec": float(perf_summary.get("warm_avg_step_usec", 0.0)),
+			"p95_step_usec": int(perf_summary.get("p95_step_usec", 0)),
+			"p99_step_usec": int(perf_summary.get("p99_step_usec", 0)),
+			"idle_avg_step_usec": float(perf_summary.get("idle_avg_step_usec", 0.0)),
+			"warm_sample_count": int(perf_summary.get("warm_sample_count", 0)),
+			"idle_sample_count": int(perf_summary.get("idle_sample_count", 0)),
+			"percentile_scope": String(perf_summary.get("percentile_scope", "")),
+			"slow_frame_count": int(slow_summary.get("slow_frame_count", 0)),
+			"slow_frame_stage_counts": slow_summary.get("slow_frame_stage_counts", {}),
+			"slow_frame_dominant_stage": String(slow_summary.get("slow_frame_dominant_stage", "none")),
+			"slow_frames": slow_frames.duplicate(true),
+			"stage_avg_usec": stage_summary.get("stage_avg_usec", {}),
+			"warm_stage_avg_usec": stage_summary.get("warm_stage_avg_usec", {}),
+			"idle_stage_avg_usec": stage_summary.get("idle_stage_avg_usec", {}),
+			"dominant_stage": stage_summary.get("dominant_stage", {}),
+			"warm_dominant_stage": stage_summary.get("warm_dominant_stage", {}),
+			"idle_dominant_stage": stage_summary.get("idle_dominant_stage", {}),
 			"max_step_usec": max_step_usec,
 			"max_step_at": max_step_at,
+			"max_step_stage_classification": max_step_stage_classification,
 			"max_step_profile": max_step_profile,
 			"max_short_compute_usec": max_short_compute_usec,
 			"max_short_profile": max_short_profile,
@@ -556,6 +603,17 @@ class PhaseObserver:
 			or (unit.short_path != null and not unit.short_path.is_empty())
 		)
 
+	func _record_slow_frame(step_usec: int) -> void:
+		slow_frames.append({
+			"step": step_count,
+			"tick": int(world.last_step_profile.get("tick", world.tick_count)),
+			"step_usec": step_usec,
+			"stage_classification": PerfSummaryScript.classify_step(world.last_step_profile),
+			"world_step_profile": world.last_step_profile.duplicate(true),
+		})
+		while slow_frames.size() > MAX_SLOW_FRAME_LOG_ENTRIES:
+			slow_frames.pop_front()
+
 
 func _record(result: Dictionary) -> void:
 	_phase_results.append(result)
@@ -564,14 +622,22 @@ func _record(result: Dictionary) -> void:
 func _print_summary_table() -> void:
 	print("")
 	print("=== 0AD EXPLORATION SUMMARY ===")
-	print("phase                          | arrived  | active | avg_us | max_us | short_us | jump_px | short | long | blocked | fail | suppress | runaway | suspected_issue")
-	print("-------------------------------|----------|--------|--------|--------|----------|---------|-------|------|---------|------|----------|---------|----------------")
+	print("phase                          | arrived  | active | avg_us | warm_us | p95  | p99  | idle_us | max_us | max_stage    | slow | slow_stage   | short_us | jump_px | short | long | blocked | fail | suppress | runaway | suspected_issue")
+	print("-------------------------------|----------|--------|--------|---------|------|------|---------|--------|--------------|------|--------------|----------|---------|-------|------|---------|------|----------|---------|----------------")
 	for result in _phase_results:
 		var phase_name: String = str(result.get("phase", ""))
 		var arrived: String = str(result.get("arrived", ""))
 		var active_count := int(result.get("active_count", 0))
 		var avg_step_us: String = str(result.get("avg_step_usec", "0.00"))
+		var warm_step_us := "%.2f" % float(result.get("warm_avg_step_usec", 0.0))
+		var p95_step_us := int(result.get("p95_step_usec", 0))
+		var p99_step_us := int(result.get("p99_step_usec", 0))
+		var idle_step_us := "%.2f" % float(result.get("idle_avg_step_usec", 0.0))
 		var max_step_us := int(result.get("max_step_usec", 0))
+		var max_stage_data: Dictionary = result.get("max_step_stage_classification", {}) as Dictionary
+		var max_stage: String = str(max_stage_data.get("stage", "none"))
+		var slow_count := int(result.get("slow_frame_count", 0))
+		var slow_stage: String = str(result.get("slow_frame_dominant_stage", "none"))
 		var max_short_us := int(result.get("max_short_compute_usec", 0))
 		var jump_str: String = str(result.get("max_jump_px", "0"))
 		var short_requests := int(result.get("short_requests", 0))
@@ -581,12 +647,19 @@ func _print_summary_table() -> void:
 		var suppressed := int(result.get("repath_suppressed", 0))
 		var runaway := "yes" if _result_has_runaway_repath(result) else "no"
 		var suspect := _suspected_issue(result)
-		print("%-30s | %-8s | %-6d | %-6s | %-6d | %-8d | %-7s | %-5d | %-4d | %-7d | %-4d | %-8d | %-7s | %s" % [
+		print("%-30s | %-8s | %-6d | %-6s | %-7s | %-4d | %-4d | %-7s | %-6d | %-12s | %-4d | %-12s | %-8d | %-7s | %-5d | %-4d | %-7d | %-4d | %-8d | %-7s | %s" % [
 			phase_name,
 			arrived,
 			active_count,
 			avg_step_us,
+			warm_step_us,
+			p95_step_us,
+			p99_step_us,
+			idle_step_us,
 			max_step_us,
+			max_stage,
+			slow_count,
+			slow_stage,
 			max_short_us,
 			jump_str,
 			short_requests,

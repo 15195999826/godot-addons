@@ -15,6 +15,7 @@ const MAX_EVENT_LOG_ENTRIES: int = 160
 const MAX_SLOW_FRAME_LOG_ENTRIES: int = 80
 const SLOW_FRAME_THRESHOLD_USEC: int = 8000
 const TRACE_EXPORT_LIMIT: int = 120
+const PerfSummaryScript := preload("res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_perf_summary.gd")
 
 var _world: ZeroAdRtsLabWorld = null
 var _paused: bool = false
@@ -29,8 +30,13 @@ var _last_action: String = "ready"
 var _last_step_usec: int = 0
 var _max_step_usec: int = 0
 var _max_step_tick: int = 0
+var _max_step_stage_classification: Dictionary = {}
 var _total_step_usec: int = 0
 var _measured_step_count: int = 0
+var _step_usec_samples: Array[int] = []
+var _idle_step_usec_samples: Array[int] = []
+var _step_profiles: Array[Dictionary] = []
+var _idle_step_profiles: Array[Dictionary] = []
 var _event_log: Array[Dictionary] = []
 var _slow_frame_log: Array[Dictionary] = []
 var _last_export_path: String = ""
@@ -65,8 +71,10 @@ func _process(delta: float) -> void:
 		if _last_step_usec > _max_step_usec:
 			_max_step_usec = _last_step_usec
 			_max_step_tick = step_tick
+			_max_step_stage_classification = PerfSummaryScript.classify_step(_world.last_step_profile)
 		_total_step_usec += _last_step_usec
 		_measured_step_count += 1
+		_record_step_sample(_last_step_usec)
 		if _last_step_usec >= SLOW_FRAME_THRESHOLD_USEC:
 			_record_slow_frame(step_tick, _last_step_usec, minf(delta, 0.05))
 	_update_hud()
@@ -369,10 +377,24 @@ func _reset_perf_metrics() -> void:
 	_last_step_usec = 0
 	_max_step_usec = 0
 	_max_step_tick = 0
+	_max_step_stage_classification = {}
 	_total_step_usec = 0
 	_measured_step_count = 0
+	_step_usec_samples.clear()
+	_idle_step_usec_samples.clear()
+	_step_profiles.clear()
+	_idle_step_profiles.clear()
 	_slow_frame_log.clear()
 	_last_export_path = ""
+
+
+func _record_step_sample(step_usec: int) -> void:
+	_step_usec_samples.append(step_usec)
+	var profile := _world.last_step_profile.duplicate(true)
+	_step_profiles.append(profile)
+	if PerfSummaryScript.is_idle_profile(profile):
+		_idle_step_usec_samples.append(step_usec)
+		_idle_step_profiles.append(profile)
 
 
 func _ensure_log_dir() -> bool:
@@ -400,6 +422,24 @@ func _default_export_path() -> String:
 
 func _build_export_snapshot() -> Dictionary:
 	var avg_step_usec := float(_total_step_usec) / float(maxi(_measured_step_count, 1))
+	var perf_summary := PerfSummaryScript.summarize_steps(_step_usec_samples, _idle_step_usec_samples)
+	var slow_frame_summary := PerfSummaryScript.summarize_slow_frames(_slow_frame_log)
+	var stage_summary := PerfSummaryScript.summarize_stage_profiles(_step_profiles, _idle_step_profiles)
+	var perf := {
+		"last_step_usec": _last_step_usec,
+		"max_step_usec": _max_step_usec,
+		"max_step_tick": _max_step_tick,
+		"max_step_stage_classification": _max_step_stage_classification.duplicate(true),
+		"avg_step_usec": avg_step_usec,
+		"measured_step_count": _measured_step_count,
+		"slow_frame_threshold_usec": SLOW_FRAME_THRESHOLD_USEC,
+	}
+	for key in perf_summary.keys():
+		perf[key] = perf_summary[key]
+	for key in slow_frame_summary.keys():
+		perf[key] = slow_frame_summary[key]
+	for key in stage_summary.keys():
+		perf[key] = stage_summary[key]
 	return {
 		"schema": "zero_ad_rts_pathfinding_lab_debug_log_v2",
 		"exported_at": Time.get_datetime_string_from_system(false, false),
@@ -410,14 +450,7 @@ func _build_export_snapshot() -> Dictionary:
 		"selected_unit_ids": _selected_unit_ids.duplicate(),
 		"current_target": _vector_snapshot(_world.current_target),
 		"map_size": _vector_snapshot(_world.map_size),
-		"perf": {
-			"last_step_usec": _last_step_usec,
-			"max_step_usec": _max_step_usec,
-			"max_step_tick": _max_step_tick,
-			"avg_step_usec": avg_step_usec,
-			"measured_step_count": _measured_step_count,
-			"slow_frame_threshold_usec": SLOW_FRAME_THRESHOLD_USEC,
-		},
+		"perf": perf,
 		"world": {
 			"tick_count": _world.tick_count,
 			"metrics": _world.get_metrics(),
@@ -505,10 +538,12 @@ func _record_event(kind: String, data: Dictionary) -> void:
 func _record_slow_frame(tick: int, step_usec: int, delta: float) -> void:
 	if _world == null:
 		return
+	var stage_classification := PerfSummaryScript.classify_step(_world.last_step_profile)
 	_slow_frame_log.append({
 		"tick": tick,
 		"step_usec": step_usec,
 		"delta": delta,
+		"stage_classification": stage_classification,
 		"last_action": _last_action,
 		"selected_unit_ids": _selected_unit_ids.duplicate(),
 		"world_metrics": _world.get_metrics(),

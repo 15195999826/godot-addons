@@ -3,6 +3,7 @@ extends Node
 
 const UNIT_COUNT: int = 32
 const STATIC_WALL_SHORT_PATH_MAX_USEC: int = 8000
+const PerfSummaryScript := preload("res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_perf_summary.gd")
 
 var _failures: Array[String] = []
 
@@ -13,6 +14,7 @@ func _ready() -> void:
 	_test_push_adjust_uses_spatial_bucket()
 	_test_static_wall_short_path_does_not_burn_frame()
 	_test_partial_wall_with_gap_arrives_with_fast_short_path()
+	_test_perf_summary_classifies_step_stages()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - 0ad rts lab budget")
@@ -148,6 +150,47 @@ func _test_partial_wall_with_gap_arrives_with_fast_short_path() -> void:
 			max_short_compute_usec,
 			str(max_profile),
 		])
+
+
+func _test_perf_summary_classifies_step_stages() -> void:
+	var summary := PerfSummaryScript.summarize_steps(
+		[100, 200, 300, 400],
+		[90, 110],
+		2
+	)
+	if float(summary.get("warm_avg_step_usec", 0.0)) != 350.0:
+		_failures.append("perf-summary: unexpected warm avg %s" % str(summary))
+	if int(summary.get("p95_step_usec", 0)) != 400:
+		_failures.append("perf-summary: unexpected p95 %s" % str(summary))
+	if int(summary.get("p99_step_usec", 0)) != 400:
+		_failures.append("perf-summary: unexpected p99 %s" % str(summary))
+	if float(summary.get("idle_avg_step_usec", 0.0)) != 100.0:
+		_failures.append("perf-summary: unexpected idle avg %s" % str(summary))
+	var classification := PerfSummaryScript.classify_step({
+		"total_usec": 1000,
+		"path_budget_usec": 650,
+		"apply_results_usec": 10,
+		"step_units_usec": 80,
+		"refresh_before_usec": 40,
+		"refresh_after_usec": 40,
+		"push_adjust_usec": 20,
+		"pair_contacts_usec": 10,
+		"path_request_batch": [
+			{"kind": "long", "compute_usec": 620},
+		],
+	})
+	if String(classification.get("stage", "")) != "path_request":
+		_failures.append("perf-summary: expected path_request classification %s" % str(classification))
+	var stage_summary := PerfSummaryScript.summarize_stage_profiles([
+		{"path_budget_usec": 10, "step_units_usec": 20},
+		{"path_budget_usec": 30, "step_units_usec": 10},
+		{"path_budget_usec": 5, "step_units_usec": 40},
+	], [
+		{"path_budget_usec": 1, "step_units_usec": 0},
+	], 1)
+	var warm_stage_avg: Dictionary = stage_summary.get("warm_stage_avg_usec", {}) as Dictionary
+	if float(warm_stage_avg.get("movement", 0.0)) != 25.0:
+		_failures.append("perf-summary: unexpected warm stage avg %s" % str(stage_summary))
 
 
 func _make_grid_units(count: int, blocks_pathfinding: bool = true) -> Array[ZeroAdRtsLabUnit]:
