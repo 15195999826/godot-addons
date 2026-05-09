@@ -9,6 +9,7 @@ const COORD_INT_SCALE: int = 10
 # is its float-math equivalent at the lab's clearance scale.
 const EDGE_EXPAND_DELTA: float = 0.5
 const _MAX_PATH_LENGTH: float = 1.0e20
+const _MAX_VISIBILITY_NEIGHBORS: int = 8
 
 var _nav_map: SimNavMap = null
 
@@ -25,19 +26,27 @@ func compute_short_path_immediate(req: SimNavShortPathRequest) -> SimNavWaypoint
 		same.push_back(req.start)
 		return same
 
-	var obstacles := _collect_obstacles(req)
 	var virtual_goals := _goal_candidates(req)
-	var best_path := SimNavWaypointPath.new()
-	var best_length := _MAX_PATH_LENGTH
-	for virtual_goal in virtual_goals:
-		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, obstacles)
-		if candidate_path.is_empty():
-			continue
-		var candidate_length := _path_length(req.start, candidate_path)
-		if candidate_length < best_length:
-			best_length = candidate_length
-			best_path = candidate_path
+	var diagnostics := _new_graph_diagnostics()
+	var visibility_inputs := _collect_visibility_inputs(req, diagnostics, false)
+	var best_path := _first_successful_path(req, virtual_goals, visibility_inputs, diagnostics)
+	if best_path.is_empty():
+		visibility_inputs = _collect_visibility_inputs(req, diagnostics, true)
+		best_path = _first_successful_path(req, virtual_goals, visibility_inputs, diagnostics)
 	return best_path
+
+
+func _first_successful_path(
+	req: SimNavShortPathRequest,
+	virtual_goals: Array[Vector2],
+	visibility_inputs: Dictionary,
+	diagnostics: Dictionary
+) -> SimNavWaypointPath:
+	for virtual_goal in virtual_goals:
+		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, visibility_inputs, diagnostics)
+		if not candidate_path.is_empty():
+			return candidate_path
+	return SimNavWaypointPath.new()
 
 
 func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathResult:
@@ -53,81 +62,75 @@ func compute_short_path_result(req: SimNavShortPathRequest) -> SimNavShortPathRe
 		result.set_path(SimNavShortPathResult.STATUS_SAME_GOAL, same)
 		return result
 
-	var obstacles := _collect_obstacles(req)
-	result.obstruction_count = obstacles.size()
 	var virtual_goals := _goal_candidates(req)
 	result.candidate_count = virtual_goals.size()
 	var best_path := SimNavWaypointPath.new()
-	var best_length := _MAX_PATH_LENGTH
 	var had_candidate_in_range := false
+	for virtual_goal in virtual_goals:
+		if _goal_candidate_in_range(req, virtual_goal):
+			had_candidate_in_range = true
+			break
+	if not had_candidate_in_range:
+		result.set_failure(SimNavShortPathResult.STATUS_OUT_OF_RANGE, SimNavShortPathResult.FAILURE_RANGE_EXCEEDED)
+		return result
+
+	var diagnostics := _new_graph_diagnostics()
+	var visibility_inputs := _collect_visibility_inputs(req, diagnostics, false)
 	for virtual_goal in virtual_goals:
 		if not _goal_candidate_in_range(req, virtual_goal):
 			continue
-		had_candidate_in_range = true
-		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, obstacles)
+		var candidate_path := _compute_to_virtual_goal(req, virtual_goal, visibility_inputs, diagnostics)
 		if candidate_path.is_empty():
 			continue
-		var candidate_length := _path_length(req.start, candidate_path)
-		if candidate_length < best_length:
-			best_length = candidate_length
-			best_path = candidate_path
+		best_path = candidate_path
+		break
 	if best_path.is_empty():
-		if not had_candidate_in_range:
-			result.set_failure(SimNavShortPathResult.STATUS_OUT_OF_RANGE, SimNavShortPathResult.FAILURE_RANGE_EXCEEDED)
-		else:
-			result.set_failure(SimNavShortPathResult.STATUS_NO_PATH, SimNavShortPathResult.FAILURE_NO_ROUTE)
+		visibility_inputs = _collect_visibility_inputs(req, diagnostics, true)
+		for virtual_goal in virtual_goals:
+			if not _goal_candidate_in_range(req, virtual_goal):
+				continue
+			var candidate_path := _compute_to_virtual_goal(req, virtual_goal, visibility_inputs, diagnostics)
+			if candidate_path.is_empty():
+				continue
+			best_path = candidate_path
+			break
+	if best_path.is_empty():
+		result.set_failure(SimNavShortPathResult.STATUS_NO_PATH, SimNavShortPathResult.FAILURE_NO_ROUTE)
+		_apply_graph_diagnostics(result, diagnostics)
 		return result
 	var status := SimNavShortPathResult.STATUS_SUCCESS
 	if best_path.size() == 1:
 		status = SimNavShortPathResult.STATUS_DIRECT_GOAL
 	result.set_path(status, best_path)
+	_apply_graph_diagnostics(result, diagnostics)
 	return result
 
 
 func _compute_to_virtual_goal(
 	req: SimNavShortPathRequest,
 	virtual_goal: Vector2,
-	obstacles: Array
+	visibility_inputs: Dictionary,
+	diagnostics: Dictionary
 ) -> SimNavWaypointPath:
 	var start := req.start
+	var obstacles: Array = visibility_inputs.get("obstacles", [])
 	if start.distance_squared_to(virtual_goal) < 1.0:
 		var same := SimNavWaypointPath.new()
 		same.push_back(virtual_goal)
 		return same
-	if _segment_clear_for_request(req, start, virtual_goal, obstacles):
+	diagnostics["vertex_count"] = maxi(int(diagnostics.get("vertex_count", 0)), 2)
+	if _segment_clear_for_request(req, start, virtual_goal, obstacles, diagnostics):
 		var direct := SimNavWaypointPath.new()
 		direct.push_back(virtual_goal)
 		return direct
 
 	var vertices: Array[Vector2] = [start, virtual_goal]
-	var statics: Array[SimNavObstructionShapeStatic] = []
-	var units: Array[SimNavObstructionShapeUnit] = []
-	for shape in obstacles:
-		if shape is SimNavObstructionShapeStatic:
-			statics.append(shape as SimNavObstructionShapeStatic)
-		elif shape is SimNavObstructionShapeUnit:
-			units.append(shape as SimNavObstructionShapeUnit)
+	var obstacle_vertices: Array = visibility_inputs.get("vertices", [])
+	for vertex in obstacle_vertices:
+		vertices.append(vertex as Vector2)
+	diagnostics["vertex_count"] = maxi(int(diagnostics.get("vertex_count", 0)), vertices.size())
 
-	for static_shape in statics:
-		# Expand OBB corners along the obstacle's own axes (u, v), not corner-to-center
-		# radials, so clearance is uniform regardless of aspect ratio.
-		var axes := static_shape.get_axes()
-		var su := axes[0]
-		var sv := axes[1]
-		var ehw := static_shape.width * 0.5 + req.clearance + EDGE_EXPAND_DELTA
-		var ehh := static_shape.height * 0.5 + req.clearance + EDGE_EXPAND_DELTA
-		for sx in [-1.0, 1.0]:
-			for sy in [-1.0, 1.0]:
-				vertices.append(static_shape.center + sx * ehw * su + sy * ehh * sv)
-
-	for unit_shape in units:
-		var radius := unit_shape.clearance + req.clearance + EDGE_EXPAND_DELTA
-		vertices.append(unit_shape.center + Vector2(radius, radius))
-		vertices.append(unit_shape.center + Vector2(radius, -radius))
-		vertices.append(unit_shape.center + Vector2(-radius, -radius))
-		vertices.append(unit_shape.center + Vector2(-radius, radius))
-
-	return _astar_visibility(vertices, obstacles, req)
+	return _astar_visibility(vertices, obstacles, req, diagnostics)
 
 
 func _goal_candidates(req: SimNavShortPathRequest) -> Array[Vector2]:
@@ -165,50 +168,114 @@ func _goal_candidate_in_range(req: SimNavShortPathRequest, point: Vector2) -> bo
 	return req.start.distance_to(point) <= req.range_px + req.clearance + 0.001
 
 
-func _collect_obstacles(req: SimNavShortPathRequest) -> Array:
-	var result: Array = []
-	var filter := req.obstruction_filter
-	for static_shape in _nav_map.get_static_obstruction_shapes():
+func _new_graph_diagnostics() -> Dictionary:
+	return {
+		"obstruction_count": 0,
+		"explicit_static_obstruction_count": 0,
+		"explicit_unit_obstruction_count": 0,
+		"terrain_edge_count": 0,
+		"terrain_vertex_count": 0,
+		"vertex_count": 0,
+		"visibility_check_count": 0,
+		"astar_expansion_count": 0,
+	}
+
+
+func _apply_graph_diagnostics(result: SimNavShortPathResult, diagnostics: Dictionary) -> void:
+	result.obstruction_count = int(diagnostics.get("obstruction_count", 0))
+	result.explicit_static_obstruction_count = int(diagnostics.get("explicit_static_obstruction_count", 0))
+	result.explicit_unit_obstruction_count = int(diagnostics.get("explicit_unit_obstruction_count", 0))
+	result.terrain_edge_count = int(diagnostics.get("terrain_edge_count", 0))
+	result.terrain_vertex_count = int(diagnostics.get("terrain_vertex_count", 0))
+	result.vertex_count = int(diagnostics.get("vertex_count", 0))
+	result.visibility_check_count = int(diagnostics.get("visibility_check_count", 0))
+	result.astar_expansion_count = int(diagnostics.get("astar_expansion_count", 0))
+
+
+func _collect_visibility_inputs(req: SimNavShortPathRequest, diagnostics: Dictionary, include_terrain: bool) -> Dictionary:
+	diagnostics["obstruction_count"] = 0
+	diagnostics["explicit_static_obstruction_count"] = 0
+	diagnostics["explicit_unit_obstruction_count"] = 0
+	diagnostics["terrain_edge_count"] = 0
+	diagnostics["terrain_vertex_count"] = 0
+	var obstacles: Array = []
+	var vertices: Array[Vector2] = []
+	var seen_vertices: Dictionary = {}
+	var filter := req.get_obstruction_filter()
+	var query_range := _obstruction_query_range(req)
+	var static_shapes := _nav_map.get_static_obstruction_shapes()
+	if query_range > 0.0:
+		static_shapes = _nav_map.get_static_obstruction_shapes_in_range(req.start, query_range)
+	for static_shape in static_shapes:
 		if (static_shape.flags & SimNavObstructionFlags.BLOCK_PATHFINDING) == 0:
 			continue
 		if filter != null and not filter.matches(static_shape):
 			continue
-		if filter == null and _is_same_control_group(static_shape, req.control_group):
-			continue
-		result.append(static_shape)
-	_append_blocked_navcell_obstacles(result, req, filter)
-	for unit_shape in _nav_map.get_dynamic_obstruction_shapes():
+		obstacles.append(static_shape)
+		diagnostics["explicit_static_obstruction_count"] = int(diagnostics.get("explicit_static_obstruction_count", 0)) + 1
+		_append_static_obstacle_vertices(vertices, seen_vertices, req, static_shape)
+	if include_terrain:
+		_append_terrain_edge_vertices(vertices, seen_vertices, req, filter, diagnostics)
+	var unit_shapes := _nav_map.get_dynamic_obstruction_shapes()
+	if query_range > 0.0:
+		unit_shapes = _nav_map.get_dynamic_obstruction_shapes_in_range(req.start, query_range)
+	for unit_shape in unit_shapes:
 		if (unit_shape.flags & SimNavObstructionFlags.BLOCK_MOVEMENT) == 0:
 			continue
 		if filter != null and not filter.matches(unit_shape):
 			continue
-		if filter == null and _is_same_control_group(unit_shape, req.control_group):
-			continue
-		if filter == null and not req.avoid_moving_units and ((unit_shape.flags & SimNavObstructionFlags.MOVING) != 0 or unit_shape.moving):
-			continue
-		result.append(unit_shape)
-	return result
+		obstacles.append(unit_shape)
+		diagnostics["explicit_unit_obstruction_count"] = int(diagnostics.get("explicit_unit_obstruction_count", 0)) + 1
+		_append_unit_obstacle_vertices(vertices, seen_vertices, req, unit_shape)
+	diagnostics["obstruction_count"] = obstacles.size()
+	diagnostics["terrain_vertex_count"] = int(diagnostics.get("terrain_vertex_count", 0))
+	return {
+		"obstacles": obstacles,
+		"vertices": vertices,
+	}
 
 
-func _append_blocked_navcell_obstacles(
-	result: Array,
+func _append_static_obstacle_vertices(
+	vertices: Array[Vector2],
+	seen_vertices: Dictionary,
 	req: SimNavShortPathRequest,
-	filter: SimNavObstructionFilter
+	static_shape: SimNavObstructionShapeStatic
+) -> void:
+	var axes := static_shape.get_axes()
+	var su := axes[0]
+	var sv := axes[1]
+	var ehw := static_shape.width * 0.5 + req.clearance + req.static_vertex_extra_outset + EDGE_EXPAND_DELTA
+	var ehh := static_shape.height * 0.5 + req.clearance + req.static_vertex_extra_outset + EDGE_EXPAND_DELTA
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			_append_unique_vertex(vertices, seen_vertices, static_shape.center + sx * ehw * su + sy * ehh * sv)
+
+
+func _append_unit_obstacle_vertices(
+	vertices: Array[Vector2],
+	seen_vertices: Dictionary,
+	req: SimNavShortPathRequest,
+	unit_shape: SimNavObstructionShapeUnit
+) -> void:
+	var radius := unit_shape.clearance + req.clearance + EDGE_EXPAND_DELTA
+	_append_unique_vertex(vertices, seen_vertices, unit_shape.center + Vector2(radius, radius))
+	_append_unique_vertex(vertices, seen_vertices, unit_shape.center + Vector2(radius, -radius))
+	_append_unique_vertex(vertices, seen_vertices, unit_shape.center + Vector2(-radius, -radius))
+	_append_unique_vertex(vertices, seen_vertices, unit_shape.center + Vector2(-radius, radius))
+
+
+func _append_terrain_edge_vertices(
+	vertices: Array[Vector2],
+	seen_vertices: Dictionary,
+	req: SimNavShortPathRequest,
+	filter: SimNavObstructionFilter,
+	diagnostics: Dictionary
 ) -> void:
 	if req.pass_mask == 0:
 		return
-	var virtual_goal := req.goal.nearest_point_on_goal(req.start)
-	var scan_padding := maxf(req.clearance + _nav_map.navcell_size * 2.0, _nav_map.navcell_size)
-	var min_world := Vector2(
-		minf(req.start.x, virtual_goal.x) - scan_padding,
-		minf(req.start.y, virtual_goal.y) - scan_padding
-	)
-	var max_world := Vector2(
-		maxf(req.start.x, virtual_goal.x) + scan_padding,
-		maxf(req.start.y, virtual_goal.y) + scan_padding
-	)
-	var min_cell := _nav_map.world_to_navcell(min_world)
-	var max_cell := _nav_map.world_to_navcell(max_world)
+	var bounds := _short_path_search_bounds(req)
+	var min_cell := _nav_map.world_to_navcell(bounds.position)
+	var max_cell := _nav_map.world_to_navcell(bounds.position + bounds.size)
 	var start_x := maxi(0, mini(min_cell.x, max_cell.x))
 	var end_x := mini(_nav_map.width - 1, maxi(min_cell.x, max_cell.x))
 	var start_y := maxi(0, mini(min_cell.y, max_cell.y))
@@ -220,22 +287,69 @@ func _append_blocked_navcell_obstacles(
 				continue
 			if _static_shape_covers_navcell(coord, req.clearance, filter):
 				continue
-			result.append(_blocked_navcell_shape(coord))
+			_append_exposed_terrain_cell_vertices(vertices, seen_vertices, coord, req, diagnostics)
 
 
-func _blocked_navcell_shape(coord: Vector2i) -> SimNavObstructionShapeStatic:
-	var shape := SimNavObstructionShapeStatic.new()
-	shape.entity_id = "terrain_%d_%d" % [coord.x, coord.y]
-	shape.center = _nav_map.navcell_center_world(coord)
-	shape.width = _nav_map.navcell_size
-	shape.height = _nav_map.navcell_size
-	shape.flags = SimNavObstructionFlags.BLOCK_PATHFINDING
-	return shape
+func _append_exposed_terrain_cell_vertices(
+	vertices: Array[Vector2],
+	seen_vertices: Dictionary,
+	coord: Vector2i,
+	req: SimNavShortPathRequest,
+	diagnostics: Dictionary
+) -> void:
+	var left := Vector2i(coord.x - 1, coord.y)
+	var right := Vector2i(coord.x + 1, coord.y)
+	var up := Vector2i(coord.x, coord.y - 1)
+	var down := Vector2i(coord.x, coord.y + 1)
+	if _nav_map.is_passable_navcell(left, req.pass_mask):
+		diagnostics["terrain_edge_count"] = int(diagnostics.get("terrain_edge_count", 0)) + 1
+		_append_terrain_corner(vertices, seen_vertices, coord, -1.0, -1.0, req, diagnostics)
+		_append_terrain_corner(vertices, seen_vertices, coord, -1.0, 1.0, req, diagnostics)
+	if _nav_map.is_passable_navcell(right, req.pass_mask):
+		diagnostics["terrain_edge_count"] = int(diagnostics.get("terrain_edge_count", 0)) + 1
+		_append_terrain_corner(vertices, seen_vertices, coord, 1.0, -1.0, req, diagnostics)
+		_append_terrain_corner(vertices, seen_vertices, coord, 1.0, 1.0, req, diagnostics)
+	if _nav_map.is_passable_navcell(up, req.pass_mask):
+		diagnostics["terrain_edge_count"] = int(diagnostics.get("terrain_edge_count", 0)) + 1
+		_append_terrain_corner(vertices, seen_vertices, coord, -1.0, -1.0, req, diagnostics)
+		_append_terrain_corner(vertices, seen_vertices, coord, 1.0, -1.0, req, diagnostics)
+	if _nav_map.is_passable_navcell(down, req.pass_mask):
+		diagnostics["terrain_edge_count"] = int(diagnostics.get("terrain_edge_count", 0)) + 1
+		_append_terrain_corner(vertices, seen_vertices, coord, -1.0, 1.0, req, diagnostics)
+		_append_terrain_corner(vertices, seen_vertices, coord, 1.0, 1.0, req, diagnostics)
+
+
+func _append_terrain_corner(
+	vertices: Array[Vector2],
+	seen_vertices: Dictionary,
+	coord: Vector2i,
+	sx: float,
+	sy: float,
+	req: SimNavShortPathRequest,
+	diagnostics: Dictionary
+) -> void:
+	var half_cell := _nav_map.navcell_size * 0.5
+	var corner := _nav_map.navcell_center_world(coord) + Vector2(sx * (half_cell + EDGE_EXPAND_DELTA), sy * (half_cell + EDGE_EXPAND_DELTA))
+	if not _nav_map.is_passable_navcell(_nav_map.world_to_navcell(corner), req.pass_mask):
+		return
+	var before := vertices.size()
+	_append_unique_vertex(vertices, seen_vertices, corner)
+	if vertices.size() > before:
+		diagnostics["terrain_vertex_count"] = int(diagnostics.get("terrain_vertex_count", 0)) + 1
+
+
+func _append_unique_vertex(vertices: Array[Vector2], seen_vertices: Dictionary, point: Vector2) -> void:
+	var key := Vector2i(_coord_int(point.x), _coord_int(point.y))
+	if seen_vertices.has(key):
+		return
+	seen_vertices[key] = true
+	vertices.append(point)
 
 
 func _static_shape_covers_navcell(coord: Vector2i, clearance: float, filter: SimNavObstructionFilter) -> bool:
 	var center_world := _nav_map.navcell_center_world(coord)
-	for shape in _nav_map.get_static_obstruction_shapes():
+	var query_range := clearance + _nav_map.navcell_size
+	for shape in _nav_map.get_static_obstruction_shapes_in_range(center_world, query_range):
 		if (shape.flags & SimNavObstructionFlags.BLOCK_PATHFINDING) == 0:
 			continue
 		if filter != null and not filter.matches(shape):
@@ -245,28 +359,47 @@ func _static_shape_covers_navcell(coord: Vector2i, clearance: float, filter: Sim
 	return false
 
 
-func _is_same_control_group(shape: SimNavObstructionShape, control_group: String) -> bool:
-	if control_group == "":
-		return false
-	if shape.control_group == control_group:
-		return true
-	return shape.control_group_2 == control_group
+func _obstruction_query_range(req: SimNavShortPathRequest) -> float:
+	if req.range_px <= 0.0:
+		return -1.0
+	return req.range_px + req.clearance + _nav_map.navcell_size * 2.0
+
+
+func _short_path_search_bounds(req: SimNavShortPathRequest) -> Rect2:
+	var virtual_goal := req.goal.nearest_point_on_goal(req.start)
+	if req.range_px > 0.0:
+		var to_goal := virtual_goal - req.start
+		var goal_dist := to_goal.length()
+		if goal_dist > req.range_px and goal_dist > 0.001:
+			virtual_goal = req.start + to_goal / goal_dist * req.range_px
+	var padding := maxf(req.clearance + _nav_map.navcell_size * 2.0, _nav_map.navcell_size)
+	var min_world := Vector2(
+		minf(req.start.x, virtual_goal.x) - padding,
+		minf(req.start.y, virtual_goal.y) - padding
+	)
+	var max_world := Vector2(
+		maxf(req.start.x, virtual_goal.x) + padding,
+		maxf(req.start.y, virtual_goal.y) + padding
+	)
+	return Rect2(min_world, max_world - min_world)
 
 
 func _astar_visibility(
 	vertices: Array[Vector2],
 	obstacles: Array,
-	req: SimNavShortPathRequest
+	req: SimNavShortPathRequest,
+	diagnostics: Dictionary
 ) -> SimNavWaypointPath:
 	var open_keys: Array = []
 	var came_from: Dictionary = {}
 	var g_score: Dictionary = {}
 	var closed: Dictionary = {}
 	var insertion_seq := 0
+	var heuristic_weight := 1.0
 
 	var goal_idx := 1
 	g_score[0] = 0.0
-	var h0 := vertices[0].distance_to(vertices[goal_idx])
+	var h0 := vertices[0].distance_to(vertices[goal_idx]) * heuristic_weight
 	open_keys.append([h0, h0, _coord_int(vertices[0].x), _coord_int(vertices[0].y), insertion_seq, 0])
 	insertion_seq += 1
 
@@ -279,33 +412,62 @@ func _astar_visibility(
 		closed[current_idx] = true
 		if current_idx == goal_idx:
 			return _reconstruct(vertices, came_from, current_idx)
+		diagnostics["astar_expansion_count"] = int(diagnostics.get("astar_expansion_count", 0)) + 1
 
 		var current_pos := vertices[current_idx]
 		var current_g: float = float(g_score[current_idx])
-		for next_idx in range(vertices.size()):
-			if next_idx == current_idx or closed.has(next_idx):
-				continue
+		for next_idx in _visibility_neighbor_indices(vertices, current_idx, goal_idx, closed):
 			var next_pos := vertices[next_idx]
-			if not _segment_clear_for_request(req, current_pos, next_pos, obstacles):
+			if not _segment_clear_for_request(req, current_pos, next_pos, obstacles, diagnostics):
 				continue
 			var next_g := current_g + current_pos.distance_to(next_pos)
 			if g_score.has(next_idx) and next_g >= float(g_score[next_idx]):
 				continue
 			g_score[next_idx] = next_g
 			came_from[next_idx] = current_idx
-			var next_h := next_pos.distance_to(vertices[goal_idx])
+			var next_h := next_pos.distance_to(vertices[goal_idx]) * heuristic_weight
 			var f := next_g + next_h
 			SimNavPathfinderHeap.insert(open_keys, [f, next_h, _coord_int(next_pos.x), _coord_int(next_pos.y), insertion_seq, next_idx])
 			insertion_seq += 1
 	return SimNavWaypointPath.new()
 
 
+func _visibility_neighbor_indices(
+	vertices: Array[Vector2],
+	current_idx: int,
+	goal_idx: int,
+	closed: Dictionary
+) -> Array[int]:
+	var result: Array[int] = []
+	if current_idx != goal_idx and not closed.has(goal_idx):
+		result.append(goal_idx)
+	var current_pos := vertices[current_idx]
+	var keys: Array = []
+	for next_idx in range(vertices.size()):
+		if next_idx == current_idx or next_idx == goal_idx or closed.has(next_idx):
+			continue
+		var next_pos := vertices[next_idx]
+		keys.append([current_pos.distance_squared_to(next_pos), next_idx])
+	keys.sort_custom(func(a: Array, b: Array) -> bool:
+		if float(a[0]) == float(b[0]):
+			return int(a[1]) < int(b[1])
+		return float(a[0]) < float(b[0])
+	)
+	var limit := mini(_MAX_VISIBILITY_NEIGHBORS, keys.size())
+	for i in range(limit):
+		result.append(int(keys[i][1]))
+	return result
+
+
 func _segment_clear_for_request(
 	req: SimNavShortPathRequest,
 	a: Vector2,
 	b: Vector2,
-	obstacles: Array
+	obstacles: Array,
+	diagnostics: Dictionary = {}
 ) -> bool:
+	if diagnostics != null:
+		diagnostics["visibility_check_count"] = int(diagnostics.get("visibility_check_count", 0)) + 1
 	if not SimNavLineOfSight.segment_clear(a, b, obstacles, req.clearance):
 		return false
 	if req.pass_mask == 0:

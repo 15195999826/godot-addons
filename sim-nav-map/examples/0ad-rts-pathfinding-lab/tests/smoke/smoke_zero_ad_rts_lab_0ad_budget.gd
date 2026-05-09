@@ -2,6 +2,7 @@ extends Node
 
 
 const UNIT_COUNT: int = 32
+const STATIC_WALL_SHORT_PATH_MAX_USEC: int = 8000
 
 var _failures: Array[String] = []
 
@@ -10,6 +11,8 @@ func _ready() -> void:
 	_test_path_requests_are_budgeted()
 	_test_idle_step_skips_dynamic_refresh_and_push()
 	_test_push_adjust_uses_spatial_bucket()
+	_test_static_wall_short_path_does_not_burn_frame()
+	_test_partial_wall_with_gap_arrives_with_fast_short_path()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - 0ad rts lab budget")
@@ -85,6 +88,68 @@ func _test_push_adjust_uses_spatial_bucket() -> void:
 		_failures.append("push-grid: expected units to be distributed across buckets")
 
 
+func _test_static_wall_short_path_does_not_burn_frame() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	for y_value in [110.0, 165.0, 215.0, 270.0, 325.0]:
+		world.add_static_obstacle(Vector2(400.0, y_value), Vector2(40.0, 60.0))
+	world.set_group_target(Vector2(610.0, 210.0))
+	var base_metrics := world.get_metrics()
+	var max_short_compute_usec := 0
+	var max_profile: Dictionary = {}
+	for _i in range(360):
+		world.step(1.0 / 60.0)
+		for request in world.last_step_profile.get("path_request_batch", []):
+			var request_data: Dictionary = request as Dictionary
+			if String(request_data.get("kind", "")) != "short":
+				continue
+			var compute_usec := int(request_data.get("compute_usec", 0))
+			if compute_usec > max_short_compute_usec:
+				max_short_compute_usec = compute_usec
+				max_profile = world.last_step_profile.duplicate(true)
+	var metrics := world.get_metrics()
+	var short_delta := int(metrics.get("short_path_requests", 0)) - int(base_metrics.get("short_path_requests", 0))
+	var long_delta := int(metrics.get("long_path_requests", 0)) - int(base_metrics.get("long_path_requests", 0))
+	if max_short_compute_usec > STATIC_WALL_SHORT_PATH_MAX_USEC:
+		_failures.append("static-wall-short-path: short path burned %dus, profile=%s" % [
+			max_short_compute_usec,
+			str(max_profile),
+		])
+	if short_delta + long_delta > 20:
+		_failures.append("static-wall-short-path: expected bounded replans, short=%d long=%d metrics=%s" % [
+			short_delta,
+			long_delta,
+			str(metrics),
+		])
+
+
+func _test_partial_wall_with_gap_arrives_with_fast_short_path() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.add_static_obstacle(Vector2(400.0, 132.0), Vector2(40.0, 105.0))
+	world.add_static_obstacle(Vector2(400.0, 287.0), Vector2(40.0, 105.0))
+	world.set_group_target(Vector2(560.0, 210.0))
+	var max_short_compute_usec := 0
+	var max_profile: Dictionary = {}
+	for _i in range(500):
+		world.step(1.0 / 60.0)
+		for request in world.last_step_profile.get("path_request_batch", []):
+			var request_data: Dictionary = request as Dictionary
+			if String(request_data.get("kind", "")) != "short":
+				continue
+			var compute_usec := int(request_data.get("compute_usec", 0))
+			if compute_usec > max_short_compute_usec:
+				max_short_compute_usec = compute_usec
+				max_profile = world.last_step_profile.duplicate(true)
+		if _all_mobile_arrived(world):
+			break
+	if not _all_mobile_arrived(world):
+		_failures.append("partial-wall-gap: expected all mobile units to arrive, metrics=%s" % str(world.get_metrics()))
+	if max_short_compute_usec > STATIC_WALL_SHORT_PATH_MAX_USEC:
+		_failures.append("partial-wall-gap: short path burned %dus, profile=%s" % [
+			max_short_compute_usec,
+			str(max_profile),
+		])
+
+
 func _make_grid_units(count: int, blocks_pathfinding: bool = true) -> Array[ZeroAdRtsLabUnit]:
 	var result: Array[ZeroAdRtsLabUnit] = []
 	for i in range(count):
@@ -95,3 +160,10 @@ func _make_grid_units(count: int, blocks_pathfinding: bool = true) -> Array[Zero
 		unit.blocks_pathfinding = blocks_pathfinding
 		result.append(unit)
 	return result
+
+
+func _all_mobile_arrived(world: ZeroAdRtsLabWorld) -> bool:
+	for unit in world.get_mobile_units():
+		if not unit.arrived:
+			return false
+	return true

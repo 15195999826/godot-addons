@@ -23,6 +23,8 @@ var _worker_collected_count: int = 0
 var _last_batch_size: int = 0
 var _last_processed_tickets: Array[int] = []
 var _last_collected_tickets: Array[int] = []
+var _last_processed_requests: Array[Dictionary] = []
+var _last_collected_requests: Array[Dictionary] = []
 
 
 func _init(facade: SimNavPathfinderFacade = null, vertex_pathfinder: SimNavVertexPathfinder = null) -> void:
@@ -85,19 +87,30 @@ func process_budget(max_requests: int) -> int:
 		return 0
 	var processed := 0
 	_last_processed_tickets.clear()
+	_last_processed_requests.clear()
 	while processed < max_requests and not _pending.is_empty():
 		var request: Dictionary = _pending[0]
 		_pending.remove_at(0)
 		var ticket_id := int(request["ticket"])
 		if _cancelled.has(ticket_id):
 			continue
+		var kind := int(request["kind"])
+		var compute_start_usec := Time.get_ticks_usec()
 		var result = _compute_request(request)
+		var compute_usec := Time.get_ticks_usec() - compute_start_usec
 		if _cancelled.has(ticket_id):
 			_stale_result_count += 1
 			continue
 		_results[ticket_id] = result
 		_processed_count += 1
 		_last_processed_tickets.append(ticket_id)
+		var diagnostic := {
+			"ticket": ticket_id,
+			"kind": _request_kind_name(kind),
+			"compute_usec": compute_usec,
+		}
+		_merge_result_diagnostics(diagnostic, result)
+		_last_processed_requests.append(diagnostic)
 		processed += 1
 	return processed
 
@@ -134,6 +147,7 @@ func collect_worker_results(block: bool = false) -> int:
 	_worker_thread = null
 	var collected := 0
 	_last_collected_tickets.clear()
+	_last_collected_requests.clear()
 	for result in worker_results:
 		var result_dict := result as Dictionary
 		var ticket_id := int(result_dict["ticket"])
@@ -144,6 +158,7 @@ func collect_worker_results(block: bool = false) -> int:
 		_results[ticket_id] = result_dict["result"]
 		_worker_collected_count += 1
 		_last_collected_tickets.append(ticket_id)
+		_last_collected_requests.append(result_dict.get("diagnostic", {}) as Dictionary)
 		collected += 1
 	return collected
 
@@ -226,6 +241,8 @@ func get_diagnostics() -> Dictionary:
 		"last_batch_size": _last_batch_size,
 		"last_processed_tickets": _last_processed_tickets.duplicate(),
 		"last_collected_tickets": _last_collected_tickets.duplicate(),
+		"last_processed_requests": _last_processed_requests.duplicate(true),
+		"last_collected_requests": _last_collected_requests.duplicate(true),
 	}
 
 
@@ -238,6 +255,8 @@ func clear() -> void:
 	_last_batch_size = 0
 	_last_processed_tickets.clear()
 	_last_collected_tickets.clear()
+	_last_processed_requests.clear()
+	_last_collected_requests.clear()
 
 
 func _allocate_ticket() -> int:
@@ -270,6 +289,16 @@ func _compute_request(request: Dictionary):
 	return SimNavWaypointPath.new()
 
 
+func _request_kind_name(request_kind: int) -> String:
+	match request_kind:
+		RequestKind.LONG:
+			return "long"
+		RequestKind.SHORT:
+			return "short"
+		_:
+			return "unknown"
+
+
 func _take_worker_batch(max_requests: int) -> Array[Dictionary]:
 	var batch: Array[Dictionary] = []
 	var limit := max_requests
@@ -289,8 +318,43 @@ func _take_worker_batch(max_requests: int) -> Array[Dictionary]:
 func _compute_worker_batch(batch: Array[Dictionary]) -> Array[Dictionary]:
 	var worker_results: Array[Dictionary] = []
 	for request in batch:
+		var compute_start_usec := Time.get_ticks_usec()
+		var request_result = _compute_request(request)
+		var kind := int(request["kind"])
 		worker_results.append({
 			"ticket": int(request["ticket"]),
-			"result": _compute_request(request),
+			"result": request_result,
+			"diagnostic": _request_diagnostic(
+				int(request["ticket"]),
+				kind,
+				Time.get_ticks_usec() - compute_start_usec,
+				request_result
+			),
 		})
 	return worker_results
+
+
+func _request_diagnostic(ticket_id: int, kind: int, compute_usec: int, result) -> Dictionary:
+	var diagnostic := {
+		"ticket": ticket_id,
+		"kind": _request_kind_name(kind),
+		"compute_usec": compute_usec,
+	}
+	_merge_result_diagnostics(diagnostic, result)
+	return diagnostic
+
+
+func _merge_result_diagnostics(diagnostic: Dictionary, result) -> void:
+	if result is SimNavShortPathResult:
+		var short_result := result as SimNavShortPathResult
+		diagnostic["status"] = short_result.status
+		diagnostic["failure_reason"] = short_result.failure_reason
+		diagnostic["path_size"] = short_result.path.size()
+		var graph_diagnostics := short_result.graph_diagnostics()
+		for key in graph_diagnostics.keys():
+			diagnostic[key] = graph_diagnostics[key]
+	elif result is SimNavLongPathResult:
+		var long_result := result as SimNavLongPathResult
+		diagnostic["status"] = long_result.status
+		diagnostic["failure_reason"] = long_result.failure_reason
+		diagnostic["path_size"] = long_result.path.size()

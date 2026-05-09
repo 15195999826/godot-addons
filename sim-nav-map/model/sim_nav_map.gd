@@ -206,19 +206,35 @@ func get_obstruction_shape(tag: int) -> SimNavObstructionShape:
 
 func get_obstruction_shapes_in_range(center: Vector2, query_range: float) -> Array[SimNavObstructionShape]:
 	var result: Array[SimNavObstructionShape] = []
-	var query_min := center - Vector2(query_range, query_range)
-	var query_max := center + Vector2(query_range, query_range)
-	for tag in _static_obstruction_index.query(query_min, query_max):
-		var static_shape := _static_obstructions.get(tag, null) as SimNavObstructionShape
-		if static_shape != null and static_shape.center.distance_to(center) <= query_range + _shape_query_radius(static_shape):
-			result.append(static_shape)
-	for tag in _dynamic_obstruction_index.query(query_min, query_max):
-		var unit_shape := _dynamic_obstructions.get(tag, null) as SimNavObstructionShape
-		if unit_shape != null and unit_shape.center.distance_to(center) <= query_range + _shape_query_radius(unit_shape):
-			result.append(unit_shape)
+	for static_shape in get_static_obstruction_shapes_in_range(center, query_range):
+		result.append(static_shape)
+	for unit_shape in get_dynamic_obstruction_shapes_in_range(center, query_range):
+		result.append(unit_shape)
 	result.sort_custom(func(a: SimNavObstructionShape, b: SimNavObstructionShape) -> bool:
 		return a.tag < b.tag
 	)
+	return result
+
+
+func get_static_obstruction_shapes_in_range(center: Vector2, query_range: float) -> Array[SimNavObstructionShapeStatic]:
+	var result: Array[SimNavObstructionShapeStatic] = []
+	var query_min := center - Vector2(query_range, query_range)
+	var query_max := center + Vector2(query_range, query_range)
+	for tag in _static_obstruction_index.query(query_min, query_max):
+		var static_shape := _static_obstructions.get(tag, null) as SimNavObstructionShapeStatic
+		if static_shape != null and static_shape.center.distance_to(center) <= query_range + _shape_query_radius(static_shape):
+			result.append(static_shape)
+	return result
+
+
+func get_dynamic_obstruction_shapes_in_range(center: Vector2, query_range: float) -> Array[SimNavObstructionShapeUnit]:
+	var result: Array[SimNavObstructionShapeUnit] = []
+	var query_min := center - Vector2(query_range, query_range)
+	var query_max := center + Vector2(query_range, query_range)
+	for tag in _dynamic_obstruction_index.query(query_min, query_max):
+		var unit_shape := _dynamic_obstructions.get(tag, null) as SimNavObstructionShapeUnit
+		if unit_shape != null and unit_shape.center.distance_to(center) <= query_range + _shape_query_radius(unit_shape):
+			result.append(unit_shape)
 	return result
 
 

@@ -27,6 +27,13 @@ var path: SimNavWaypointPath = SimNavWaypointPath.new()
 var path_length: float = 0.0
 var candidate_count: int = 0
 var obstruction_count: int = 0
+var explicit_static_obstruction_count: int = 0
+var explicit_unit_obstruction_count: int = 0
+var terrain_edge_count: int = 0
+var terrain_vertex_count: int = 0
+var vertex_count: int = 0
+var visibility_check_count: int = 0
+var astar_expansion_count: int = 0
 
 
 func configure_query(request: SimNavShortPathRequest) -> void:
@@ -60,6 +67,20 @@ func is_success() -> bool:
 
 func has_path() -> bool:
 	return path != null and not path.is_empty()
+
+
+func graph_diagnostics() -> Dictionary:
+	return {
+		"candidate_count": candidate_count,
+		"obstruction_count": obstruction_count,
+		"explicit_static_obstruction_count": explicit_static_obstruction_count,
+		"explicit_unit_obstruction_count": explicit_unit_obstruction_count,
+		"terrain_edge_count": terrain_edge_count,
+		"terrain_vertex_count": terrain_vertex_count,
+		"vertex_count": vertex_count,
+		"visibility_check_count": visibility_check_count,
+		"astar_expansion_count": astar_expansion_count,
+	}
 
 
 func _measure_path_length(origin: Vector2, waypoint_path: SimNavWaypointPath) -> float:

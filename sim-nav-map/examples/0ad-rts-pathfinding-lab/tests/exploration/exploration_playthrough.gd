@@ -385,6 +385,9 @@ class PhaseObserver:
 	var total_step_usec: int = 0
 	var max_step_usec: int = 0
 	var max_step_at: int = -1
+	var max_step_profile: Dictionary = {}
+	var max_short_compute_usec: int = 0
+	var max_short_profile: Dictionary = {}
 	var max_jump_px: float = 0.0
 	var max_jump_unit: String = ""
 	var max_jump_at: int = -1
@@ -419,6 +422,15 @@ class PhaseObserver:
 		if step_usec > max_step_usec:
 			max_step_usec = step_usec
 			max_step_at = step_count
+			max_step_profile = world.last_step_profile.duplicate(true)
+		for request in world.last_step_profile.get("path_request_batch", []):
+			var request_data: Dictionary = request as Dictionary
+			if String(request_data.get("kind", "")) != "short":
+				continue
+			var compute_usec := int(request_data.get("compute_usec", 0))
+			if compute_usec > max_short_compute_usec:
+				max_short_compute_usec = compute_usec
+				max_short_profile = world.last_step_profile.duplicate(true)
 		for unit in world.get_mobile_units():
 			if unit.has_move_order:
 				saw_move_order = true
@@ -491,6 +503,9 @@ class PhaseObserver:
 			"avg_step_usec": "%.2f" % avg_step_usec,
 			"max_step_usec": max_step_usec,
 			"max_step_at": max_step_at,
+			"max_step_profile": max_step_profile,
+			"max_short_compute_usec": max_short_compute_usec,
+			"max_short_profile": max_short_profile,
 			"max_jump_px": "%.2f" % max_jump_px,
 			"max_jump_unit": max_jump_unit,
 			"max_jump_at": max_jump_at,
@@ -549,14 +564,15 @@ func _record(result: Dictionary) -> void:
 func _print_summary_table() -> void:
 	print("")
 	print("=== 0AD EXPLORATION SUMMARY ===")
-	print("phase                          | arrived  | active | avg_us | max_us | jump_px | short | long | blocked | fail | suppress | runaway | suspected_issue")
-	print("-------------------------------|----------|--------|--------|--------|---------|-------|------|---------|------|----------|---------|----------------")
+	print("phase                          | arrived  | active | avg_us | max_us | short_us | jump_px | short | long | blocked | fail | suppress | runaway | suspected_issue")
+	print("-------------------------------|----------|--------|--------|--------|----------|---------|-------|------|---------|------|----------|---------|----------------")
 	for result in _phase_results:
 		var phase_name: String = str(result.get("phase", ""))
 		var arrived: String = str(result.get("arrived", ""))
 		var active_count := int(result.get("active_count", 0))
 		var avg_step_us: String = str(result.get("avg_step_usec", "0.00"))
 		var max_step_us := int(result.get("max_step_usec", 0))
+		var max_short_us := int(result.get("max_short_compute_usec", 0))
 		var jump_str: String = str(result.get("max_jump_px", "0"))
 		var short_requests := int(result.get("short_requests", 0))
 		var long_requests := int(result.get("long_requests", 0))
@@ -565,12 +581,13 @@ func _print_summary_table() -> void:
 		var suppressed := int(result.get("repath_suppressed", 0))
 		var runaway := "yes" if _result_has_runaway_repath(result) else "no"
 		var suspect := _suspected_issue(result)
-		print("%-30s | %-8s | %-6d | %-6s | %-6d | %-7s | %-5d | %-4d | %-7d | %-4d | %-8d | %-7s | %s" % [
+		print("%-30s | %-8s | %-6d | %-6s | %-6d | %-8d | %-7s | %-5d | %-4d | %-7d | %-4d | %-8d | %-7s | %s" % [
 			phase_name,
 			arrived,
 			active_count,
 			avg_step_us,
 			max_step_us,
+			max_short_us,
 			jump_str,
 			short_requests,
 			long_requests,
