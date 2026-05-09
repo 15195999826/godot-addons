@@ -16,6 +16,7 @@ func _ready() -> void:
 	_test_logged_same_control_group_arrival_does_not_tunnel()
 	_test_unit_line_blockage_requests_short_path()
 	_test_logged_long_segment_short_takeover_keeps_immediate_subgoal()
+	_test_long_takeover_applies_short_path_same_tick()
 	_test_logged_long_segment_policy_diagnostics_compare_skip_and_keep()
 	_test_push_adjust_does_not_cross_static_wall()
 	_test_user_reported_repath_loop_converges()
@@ -374,6 +375,57 @@ func _test_logged_long_segment_short_takeover_keeps_immediate_subgoal() -> void:
 	if short_result.is_empty() or not short_result.has("first_consumed_short_waypoint"):
 		_failures.append("logged-long-takeover: expected short-result diagnostics, result=%s decisions=%s" % [
 			str(short_result),
+			str(world.motion.recent_path_decisions()),
+		])
+
+
+func _test_long_takeover_applies_short_path_same_tick() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(40.0, 80.0), 10.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_blocker", "blue", Vector2(120.0, 80.0), 12.0, 0.0, false),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	world.clear_traces()
+	var mover := world.get_unit("blue_0")
+	if mover == null:
+		_failures.append("long-takeover-same-tick: missing blue_0")
+		return
+	mover.begin_move_order(Vector2(200.0, 80.0), 3665)
+	mover.long_path.push_back(Vector2(200.0, 80.0))
+	world.pathfinder.refresh_dynamic_units(world.units)
+	var before := mover.position
+	world.motion.step_unit(mover, 1.0 / 60.0, world.pathfinder, world.units, 3665)
+	if mover.pending_short_ticket != 0:
+		_failures.append("long-takeover-same-tick: expected short path to be applied immediately, pending=%d decisions=%s" % [
+			mover.pending_short_ticket,
+			str(world.motion.recent_path_decisions()),
+		])
+		return
+	if mover.position.distance_to(before) <= 0.01:
+		_failures.append("long-takeover-same-tick: expected unit to move on same-tick short path")
+	if mover.short_path == null or mover.short_path.is_empty():
+		_failures.append("long-takeover-same-tick: expected active short path, decisions=%s" % [
+			str(world.motion.recent_path_decisions()),
+		])
+		return
+	var saw_takeover := false
+	var saw_same_tick_apply := false
+	var stale_move_blocked := false
+	var stale_recovery := false
+	for decision in world.motion.recent_path_decisions():
+		if String(decision.get("unit_id", "")) != "blue_0":
+			continue
+		if int(decision.get("tick", -1)) != 3665:
+			continue
+		var kind := String(decision.get("kind", ""))
+		saw_takeover = saw_takeover or kind == "long_segment_unit_line_blocked"
+		saw_same_tick_apply = saw_same_tick_apply or kind == "same_tick_short_takeover_applied"
+		stale_move_blocked = stale_move_blocked or kind == "movement_line_blocked"
+		stale_recovery = stale_recovery or kind == "blocked_recovery"
+	if not saw_takeover or not saw_same_tick_apply or stale_move_blocked or stale_recovery:
+		_failures.append("long-takeover-same-tick: expected takeover/result before stale long move, decisions=%s" % [
 			str(world.motion.recent_path_decisions()),
 		])
 
@@ -1033,7 +1085,7 @@ func _run_world_steps(world: ZeroAdRtsLabWorld, count: int) -> void:
 		world.step(0.1)
 
 
-func _logged_long_takeover_replay(policy: String) -> Dictionary:
+func _setup_logged_long_takeover_world(policy: String) -> Dictionary:
 	var world := ZeroAdRtsLabWorld.new()
 	world.units = [
 		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(557.0, 192.0), 11.0, 0.0, true),
@@ -1066,6 +1118,22 @@ func _logged_long_takeover_replay(policy: String) -> Dictionary:
 	]:
 		mover.long_path.push_back(point)
 	world.pathfinder.refresh_dynamic_units(world.units)
+	return {
+		"world": world,
+		"mover": mover,
+		"blocked_waypoint": blocked_waypoint,
+		"skipped_waypoint": skipped_waypoint,
+	}
+
+
+func _logged_long_takeover_replay(policy: String) -> Dictionary:
+	var replay := _setup_logged_long_takeover_world(policy)
+	var world: ZeroAdRtsLabWorld = replay.get("world", null) as ZeroAdRtsLabWorld
+	var mover: ZeroAdRtsLabUnit = replay.get("mover", null) as ZeroAdRtsLabUnit
+	var blocked_waypoint: Vector2 = replay.get("blocked_waypoint", Vector2.ZERO) as Vector2
+	var skipped_waypoint: Vector2 = replay.get("skipped_waypoint", Vector2.ZERO) as Vector2
+	if mover == null:
+		return replay
 	world.motion._maybe_request_short_path_for_long_segment(
 		mover,
 		world.pathfinder,
