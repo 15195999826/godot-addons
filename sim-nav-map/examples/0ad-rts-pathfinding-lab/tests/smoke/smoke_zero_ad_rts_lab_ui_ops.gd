@@ -104,6 +104,18 @@ func _test_frontend_ui_ops() -> void:
 				_failures.append("ui-ops: export log missing recent_path_decisions")
 			elif not (parsed as Dictionary).has("recent_pair_contacts"):
 				_failures.append("ui-ops: export log missing recent_pair_contacts")
+			elif not (parsed as Dictionary).has("slow_frames"):
+				_failures.append("ui-ops: export log missing slow_frames")
+			else:
+				var parsed_dict: Dictionary = parsed as Dictionary
+				var perf: Dictionary = parsed_dict.get("perf", {}) as Dictionary
+				var world_data: Dictionary = parsed_dict.get("world", {}) as Dictionary
+				if not perf.has("max_step_tick"):
+					_failures.append("ui-ops: export log missing max_step_tick")
+				if not world_data.has("last_step_profile"):
+					_failures.append("ui-ops: export log missing world.last_step_profile")
+				if not world_data.has("recent_step_profiles"):
+					_failures.append("ui-ops: export log missing world.recent_step_profiles")
 
 	instance_node.queue_free()
 

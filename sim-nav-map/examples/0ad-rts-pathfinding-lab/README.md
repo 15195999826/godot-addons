@@ -50,6 +50,7 @@ gates:
 ## Files
 
 ```text
+docs/short-path-visibility-optimization-goals.md
 logic/zero_ad_rts_lab_world.gd
 logic/zero_ad_rts_lab_motion_controller.gd
 logic/zero_ad_rts_lab_move_order.gd
