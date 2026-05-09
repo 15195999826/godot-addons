@@ -177,14 +177,17 @@ Selected warm stage averages:
 
 下一轮建议：
 
-1. 不进入 async / 多线程。当前 p95/p99 和 slow-frame 数据不支持把 async 作为
+1. 先做 UnitMotion policy parity audit。用户 export 暴露出 short-path takeover
+   策略问题，当前入口是
+   `docs/0ad-unit-motion-policy-parity-audit.md`。
+2. 不进入 async / 多线程。当前 p95/p99 和 slow-frame 数据不支持把 async 作为
    immediate plan。
-2. 不优先优化 path request。它主导 max frame，但没有主导 moving warm avg，也没有
+3. 不优先优化 path request。它主导 max frame，但没有主导 moving warm avg，也没有
    产生当前 slow frames。
-3. 如果要继续压稳定 avg，先看 movement loop 内部实际操作，再看 refresh。
+4. 如果要继续压稳定 avg，先看 movement loop 内部实际操作，再看 refresh。
    在用户列出的候选项里，`refresh` 是比 `push` / `diagnostics` 更值得下一轮检查的
    常驻成本。
-4. `dynamic blocker thrash` 仍是独立 motion-policy 问题；`8_rapid_obstacle_thrash`
+5. `dynamic blocker thrash` 仍是独立 motion-policy 问题；`8_rapid_obstacle_thrash`
    的 warm avg 仍是 `2.57ms`，不能混称为已经解决。
 
 ## 暂时不做什么
