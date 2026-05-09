@@ -15,6 +15,7 @@ func _ready() -> void:
 	_test_same_control_group_ignores_and_pushes_members()
 	_test_logged_same_control_group_arrival_does_not_tunnel()
 	_test_unit_line_blockage_requests_short_path()
+	_test_logged_long_segment_short_takeover_keeps_immediate_subgoal()
 	_test_push_adjust_does_not_cross_static_wall()
 	_test_user_reported_repath_loop_converges()
 	_test_blocker_contact_oscillation_converges()
@@ -336,6 +337,64 @@ func _test_unit_line_blockage_requests_short_path() -> void:
 			world.motion.path_results_applied,
 			world.motion.path_result_failures,
 			str(world.pathfinder.path_queue_diagnostics()),
+		])
+
+
+func _test_logged_long_segment_short_takeover_keeps_immediate_subgoal() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_5", "blue", Vector2(571.8230, 164.6880), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_3", "blue", Vector2(597.5954, 161.7442), 11.0, 0.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	world.clear_traces()
+	var mover := world.get_unit("blue_5")
+	if mover == null:
+		_failures.append("logged-long-takeover: missing blue_5")
+		return
+	var blocked_waypoint := Vector2(605.0, 202.5)
+	var skipped_waypoint := Vector2(639.0, 241.25)
+	mover.begin_move_order(Vector2(673.0, 280.0), 3665)
+	mover.long_path = SimNavWaypointPath.new()
+	for point in [
+		Vector2(673.0, 280.0),
+		skipped_waypoint,
+		blocked_waypoint,
+	]:
+		mover.long_path.push_back(point)
+	world.pathfinder.refresh_dynamic_units(world.units)
+	world.motion._maybe_request_short_path_for_long_segment(
+		mover,
+		world.pathfinder,
+		world.units,
+		3665
+	)
+	var requested_goal := Vector2.ZERO
+	var found_request := false
+	for decision in world.motion.recent_path_decisions():
+		if String(decision.get("unit_id", "")) != "blue_5":
+			continue
+		if String(decision.get("kind", "")) != "short_path_requested":
+			continue
+		if String(decision.get("reason", "")) != "long_segment_unit_line_blocked":
+			continue
+		requested_goal = decision.get("goal", Vector2.ZERO) as Vector2
+		found_request = true
+	if not found_request:
+		_failures.append("logged-long-takeover: expected short-path request, decisions=%s" % [
+			str(world.motion.recent_path_decisions()),
+		])
+		return
+	if requested_goal.distance_to(blocked_waypoint) > 0.01:
+		_failures.append("logged-long-takeover: expected immediate long subgoal %s, got %s skipped=%s decisions=%s" % [
+			str(blocked_waypoint),
+			str(requested_goal),
+			str(skipped_waypoint),
+			str(world.motion.recent_path_decisions()),
+		])
+	if mover.long_path == null or mover.long_path.is_empty() or mover.long_path.back().distance_to(blocked_waypoint) > 0.01:
+		_failures.append("logged-long-takeover: expected long path to retain blocked waypoint, path=%s" % [
+			str(mover.long_path.waypoints if mover.long_path != null else []),
 		])
 
 

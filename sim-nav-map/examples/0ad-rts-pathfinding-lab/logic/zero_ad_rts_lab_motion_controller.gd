@@ -544,9 +544,8 @@ func _maybe_request_short_path_for_long_segment(
 		"next_long": next_long,
 		"line": _line_result_snapshot(unit_line, units),
 	})
-	if unit.long_path.size() > 1:
-		unit.long_path.pop_back()
-		next_long = unit.long_path.back()
+	# 0 A.D. normally skips this waypoint. Keep it temporarily because the
+	# logged lab scene produces a large detour until the parity gap is isolated.
 	var goal := SimNavPathGoal.circle(next_long, LONG_PATH_UNIT_LINE_SUBGOAL_RADIUS)
 	_request_short_path(
 		unit,

@@ -26,8 +26,10 @@ gates:
   pathfinding, and eventually records an explicit move failure instead of
   growing requests forever.
 - While following a long path, unit-line validation can trigger a short-path
-  request before the unit hits a dynamic blocker. Multi-waypoint long paths pop
-  the current waypoint and short-path toward the next waypoint neighborhood.
+  request before the unit hits a dynamic blocker. 0 A.D. normally pops the
+  current waypoint and short-paths toward the next waypoint neighborhood; the
+  lab currently keeps the immediate waypoint for one logged detour case while
+  the parity mismatch is audited.
 - Known-imperfect paths are followed for a short countdown before another
   update is allowed.
 - Push adjustment is applied only when the pushed segment is movement-line
@@ -51,6 +53,7 @@ gates:
 
 ```text
 docs/steady-state-frame-performance-plan.md
+docs/0ad-unit-motion-policy-parity-audit.md
 docs/archive/2026-05-09-short-path-visibility-optimization.md
 logic/zero_ad_rts_lab_world.gd
 logic/zero_ad_rts_lab_motion_controller.gd
