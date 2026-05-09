@@ -100,6 +100,10 @@ func _test_frontend_ui_ops() -> void:
 				_failures.append("ui-ops: export log is not a JSON dictionary")
 			elif not (parsed as Dictionary).has("recent_events"):
 				_failures.append("ui-ops: export log missing recent_events")
+			elif not (parsed as Dictionary).has("recent_path_decisions"):
+				_failures.append("ui-ops: export log missing recent_path_decisions")
+			elif not (parsed as Dictionary).has("recent_pair_contacts"):
+				_failures.append("ui-ops: export log missing recent_pair_contacts")
 
 	instance_node.queue_free()
 

@@ -10,6 +10,10 @@ func _ready() -> void:
 	_test_same_team_units_block_movement_line()
 	_test_moving_units_are_soft_obstructions()
 	_test_push_rules_match_0ad_moving_state()
+	_test_crossing_push_applies_perpendicular_nudge()
+	_test_pair_push_uses_goal_agnostic_pressure()
+	_test_same_control_group_ignores_and_pushes_members()
+	_test_logged_same_control_group_arrival_does_not_tunnel()
 	_test_unit_line_blockage_requests_short_path()
 	_test_push_adjust_does_not_cross_static_wall()
 	_test_user_reported_repath_loop_converges()
@@ -17,10 +21,15 @@ func _ready() -> void:
 	_test_user_reported_short_recovery_stays_bounded()
 	_test_default_corridor_allows_group_move()
 	_test_static_corner_replay_keeps_executable_long_path()
+	_test_logged_static_blocked_recovery_uses_long_subgoal()
+	_test_logged_corridor_push_replay_avoids_corner_repath()
 	_test_logged_narrow_passage_replay_stays_static_clear()
 	_test_opposing_same_team_units_do_not_cross_in_narrow_passage()
+	_test_logged_offset_opposing_units_build_push_pressure()
 	_test_logged_overlap_can_move_away_from_trailing_unit()
 	_test_unit_actor_tracks_move_order()
+	_test_path_decision_log_tracks_order_flow()
+	_test_pair_contact_log_tracks_pass_through_risk()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - 0ad rts lab motion")
@@ -158,6 +167,134 @@ func _test_push_rules_match_0ad_moving_state() -> void:
 		_failures.append("push-rules: idle-idle pair should separate, before=%.2f after=%.2f" % [
 			idle_distance_before,
 			idle_distance_after,
+		])
+
+
+func _test_crossing_push_applies_perpendicular_nudge() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(120.0, 100.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_1", "blue", Vector2(80.0, 100.0), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var blue_0 := world.get_unit("blue_0")
+	var blue_1 := world.get_unit("blue_1")
+	if blue_0 == null or blue_1 == null:
+		_failures.append("crossing-push: missing mobile units")
+		return
+	blue_0.begin_move_order(Vector2(140.0, 100.0), 0)
+	blue_1.begin_move_order(Vector2(60.0, 100.0), 0)
+	var previous_positions := {
+		"blue_0": Vector2(80.0, 100.0),
+		"blue_1": Vector2(120.0, 100.0),
+	}
+	world.pathfinder.refresh_dynamic_units(world.units)
+	world.motion.apply_push_adjust(world.units, world.pathfinder, previous_positions)
+	if world.motion.crossing_nudges <= 0:
+		_failures.append("crossing-push: expected a crossing nudge")
+	if absf(blue_0.position.y - blue_1.position.y) <= 0.1:
+		_failures.append("crossing-push: expected perpendicular separation, positions=%s/%s" % [
+			str(blue_0.position),
+			str(blue_1.position),
+		])
+
+
+func _test_pair_push_uses_goal_agnostic_pressure() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(391.4744, 115.2039), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(412.2361, 120.9128), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var blue_2 := world.get_unit("blue_2")
+	var blue_0 := world.get_unit("blue_0")
+	if blue_0 == null or blue_2 == null:
+		_failures.append("goal-opposing-push: missing mobile units")
+		return
+	blue_2.begin_move_order(Vector2(531.0, 115.0), 604)
+	blue_0.begin_move_order(Vector2(161.0, 125.0), 604)
+	var previous_positions := {
+		"blue_2": Vector2(389.8774, 115.1054),
+		"blue_0": Vector2(412.3229, 120.5653),
+	}
+	var previous_move_orders := {
+		"blue_2": true,
+		"blue_0": true,
+	}
+	var distance_before := blue_0.position.distance_to(blue_2.position)
+	world.pathfinder.refresh_dynamic_units(world.units)
+	world.motion.apply_push_adjust(world.units, world.pathfinder, previous_positions, previous_move_orders)
+	var distance_after := blue_0.position.distance_to(blue_2.position)
+	if world.motion.goal_opposing_push_dampens != 0:
+		_failures.append("pair-pressure: expected 0AD-style pair push to stay goal-agnostic")
+	if blue_0.pushing_pressure <= 0 or blue_2.pushing_pressure <= 0:
+		_failures.append("pair-pressure: expected moving-moving pair to accumulate pressure")
+	if distance_after <= distance_before:
+		_failures.append("pair-pressure: expected pair push to separate units, before=%.2f after=%.2f metrics=%s" % [
+			distance_before,
+			distance_after,
+			str(world.get_metrics()),
+		])
+
+
+func _test_same_control_group_ignores_and_pushes_members() -> void:
+	var world := _overlap_push_world()
+	var blue_0 := world.get_unit("blue_0")
+	var blue_1 := world.get_unit("blue_1")
+	if blue_0 == null or blue_1 == null:
+		_failures.append("same-control: missing mobile units")
+		return
+	blue_0.control_group_id = "formation_test"
+	blue_1.control_group_id = "formation_test"
+	blue_0.has_move_order = true
+	blue_1.has_move_order = false
+	world.pathfinder.refresh_dynamic_units(world.units)
+	var line_result := world.pathfinder.validate_unit_line(
+		blue_0,
+		blue_0.position,
+		Vector2(160.0, 80.0),
+		world.units,
+		false
+	)
+	if not line_result.is_success():
+		_failures.append("same-control: expected member obstruction to be ignored, got %s/%s" % [
+			line_result.status,
+			line_result.failure_reason,
+		])
+	var distance_before := _unit_distance(world, "blue_0", "blue_1")
+	world.motion.apply_push_adjust(world.units, world.pathfinder)
+	var distance_after := _unit_distance(world, "blue_0", "blue_1")
+	if distance_after <= distance_before:
+		_failures.append("same-control: expected moving-idle formation pair to push, before=%.2f after=%.2f" % [
+			distance_before,
+			distance_after,
+		])
+
+
+func _test_logged_same_control_group_arrival_does_not_tunnel() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	var blue_0 := world.get_unit("blue_0")
+	var blue_2 := world.get_unit("blue_2")
+	if blue_0 == null or blue_2 == null:
+		_failures.append("logged-formation-tunnel: missing logged units")
+		return
+	blue_0.position = Vector2(399.848052978516, 120.0)
+	blue_2.position = Vector2(360.653503417969, 120.0)
+	world.clear_traces()
+	world.pathfinder.refresh_dynamic_units(world.units)
+	world.set_units_target(["blue_2", "blue_0"], Vector2(360.0, 124.0))
+	var min_pair_distance := INF
+	for _i in range(80):
+		world.step(1.0 / 60.0)
+		var pair_distance := blue_0.position.distance_to(blue_2.position)
+		min_pair_distance = minf(min_pair_distance, pair_distance)
+	if min_pair_distance < 10.0:
+		_failures.append("logged-formation-tunnel: expected same-control push to avoid severe overlap, min=%.2f metrics=%s contacts=%s" % [
+			min_pair_distance,
+			str(world.get_metrics()),
+			str(world.recent_pair_contacts),
 		])
 
 
@@ -390,6 +527,114 @@ func _test_static_corner_replay_keeps_executable_long_path() -> void:
 		])
 
 
+func _test_logged_static_blocked_recovery_uses_long_subgoal() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	var blue_0 := world.get_unit("blue_0")
+	if blue_0 == null:
+		_failures.append("logged-static-recovery: missing blue_0")
+		return
+	blue_0.position = Vector2(401.238952636719, 130.056213378906)
+	blue_0.begin_move_order(Vector2(161.0, 125.0), 630)
+	blue_0.long_path = SimNavWaypointPath.new()
+	for point in [
+		Vector2(161.0, 125.0),
+		Vector2(217.0, 123.6),
+		Vector2(273.0, 122.2),
+		Vector2(329.0, 120.8),
+		Vector2(385.0, 119.4),
+	]:
+		blue_0.long_path.push_back(point)
+	world.pathfinder.refresh_dynamic_units(world.units)
+	world.motion._handle_blocked_move(
+		blue_0,
+		world.pathfinder,
+		world.units,
+		true,
+		630,
+		SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED
+	)
+	var requested_subgoal := false
+	var requested_final_goal := false
+	for decision in world.motion.recent_path_decisions():
+		if String(decision.get("unit_id", "")) != "blue_0":
+			continue
+		if String(decision.get("kind", "")) != "short_path_requested":
+			continue
+		var reason := String(decision.get("reason", ""))
+		requested_subgoal = requested_subgoal or reason == "blocked_recovery_subgoal"
+		requested_final_goal = requested_final_goal or reason == "path_to_goal"
+	if not requested_subgoal or requested_final_goal:
+		_failures.append("logged-static-recovery: expected static drift to keep long-route subgoal, decisions=%s" % [
+			str(world.motion.recent_path_decisions()),
+		])
+		return
+	world.pathfinder.process_path_budget(world.units, 4)
+	world.motion.apply_path_results(world.units, world.pathfinder, 631)
+	if blue_0.short_path == null or blue_0.short_path.is_empty():
+		_failures.append("logged-static-recovery: expected short subgoal path, decisions=%s" % [
+			str(world.motion.recent_path_decisions()),
+		])
+
+
+func _test_logged_corridor_push_replay_avoids_corner_repath() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(391.4744, 115.2039), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(412.2361, 120.9128), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	world.clear_traces()
+	var blue_2 := world.get_unit("blue_2")
+	var blue_0 := world.get_unit("blue_0")
+	if blue_0 == null or blue_2 == null:
+		_failures.append("logged-corridor-push: missing mobile units")
+		return
+	blue_2.begin_move_order(Vector2(531.0, 115.0), 604)
+	blue_2.long_path = SimNavWaypointPath.new()
+	for point in [
+		Vector2(531.0, 115.0),
+		Vector2(471.75, 115.75),
+		Vector2(412.5, 116.5),
+	]:
+		blue_2.long_path.push_back(point)
+	blue_0.begin_move_order(Vector2(161.0, 125.0), 604)
+	blue_0.long_path = SimNavWaypointPath.new()
+	for point in [
+		Vector2(161.0, 125.0),
+		Vector2(217.0, 123.6),
+		Vector2(273.0, 122.2),
+		Vector2(329.0, 120.8),
+		Vector2(385.0, 119.4),
+	]:
+		blue_0.long_path.push_back(point)
+	world.pathfinder.refresh_dynamic_units(world.units)
+	var max_blue_0_y := blue_0.position.y
+	var path_to_goal_corner_recovery := false
+	for _i in range(80):
+		world.step(1.0 / 60.0)
+		max_blue_0_y = maxf(max_blue_0_y, blue_0.position.y)
+		for decision in world.motion.recent_path_decisions():
+			if String(decision.get("unit_id", "")) != "blue_0":
+				continue
+			if String(decision.get("kind", "")) != "short_path_requested":
+				continue
+			if String(decision.get("reason", "")) != "path_to_goal":
+				continue
+			var pos: Vector2 = decision.get("position", Vector2.ZERO) as Vector2
+			if pos.x > 390.0:
+				path_to_goal_corner_recovery = true
+	if path_to_goal_corner_recovery:
+		_failures.append("logged-corridor-push: expected pressure damping to avoid corner path_to_goal recovery, metrics=%s decisions=%s" % [
+			str(world.get_metrics()),
+			str(world.motion.recent_path_decisions()),
+		])
+	if max_blue_0_y > 138.0:
+		_failures.append("logged-corridor-push: expected blue_0 push drift to stay below the logged corner excursion, max_y=%.2f metrics=%s" % [
+			max_blue_0_y,
+			str(world.get_metrics()),
+		])
+
+
 func _test_logged_narrow_passage_replay_stays_static_clear() -> void:
 	var world := ZeroAdRtsLabWorld.new()
 	var blue_0 := world.get_unit("blue_0")
@@ -520,6 +765,59 @@ func _test_opposing_same_team_units_do_not_cross_in_narrow_passage() -> void:
 		])
 
 
+func _test_logged_offset_opposing_units_build_push_pressure() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(347.7861, 117.6917), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(369.3112, 125.5196), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	world.clear_traces()
+	var blue_2 := world.get_unit("blue_2")
+	var blue_0 := world.get_unit("blue_0")
+	if blue_0 == null or blue_2 == null:
+		_failures.append("logged-offset-opposing: missing mobile units")
+		return
+	blue_2.begin_move_order(Vector2(685.0, 116.0), 1939)
+	blue_2.long_path = SimNavWaypointPath.new()
+	for point in [
+		Vector2(685.0, 116.0),
+		Vector2(625.2, 116.3),
+		Vector2(565.4, 116.6),
+		Vector2(505.6, 116.9),
+		Vector2(445.8, 117.2),
+		Vector2(386.0, 117.5),
+	]:
+		blue_2.long_path.push_back(point)
+	blue_0.begin_move_order(Vector2(131.0, 114.0), 1939)
+	blue_0.long_path = SimNavWaypointPath.new()
+	for point in [
+		Vector2(131.0, 114.0),
+		Vector2(186.1667, 116.6667),
+		Vector2(241.3333, 119.3333),
+		Vector2(296.5, 122.0),
+		Vector2(351.6667, 124.6667),
+	]:
+		blue_0.long_path.push_back(point)
+	world.pathfinder.refresh_dynamic_units(world.units)
+	var min_pair_distance := INF
+	for _i in range(80):
+		world.step(1.0 / 60.0)
+		min_pair_distance = minf(min_pair_distance, blue_2.position.distance_to(blue_0.position))
+	var metrics := world.get_metrics()
+	if int(metrics.get("push_pressure_obstructions", 0)) <= 0 and int(metrics.get("rejected_pushes", 0)) <= 0:
+		_failures.append("logged-offset-opposing: expected push obstruction feedback, metrics=%s contacts=%s" % [
+			str(metrics),
+			str(world.recent_pair_contacts),
+		])
+	if min_pair_distance < 14.0:
+		_failures.append("logged-offset-opposing: expected pressure policy to avoid severe overlap, min=%.2f metrics=%s contacts=%s" % [
+			min_pair_distance,
+			str(metrics),
+			str(world.recent_pair_contacts),
+		])
+
+
 func _test_logged_overlap_can_move_away_from_trailing_unit() -> void:
 	var world := ZeroAdRtsLabWorld.new()
 	var blue_0 := world.get_unit("blue_0")
@@ -601,6 +899,50 @@ func _test_unit_actor_tracks_move_order() -> void:
 		])
 
 
+func _test_path_decision_log_tracks_order_flow() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.issue_move("blue_0", Vector2(180.0, 190.0))
+	for _i in range(4):
+		world.step(1.0 / 60.0)
+	var decisions := world.motion.recent_path_decisions()
+	if decisions.is_empty():
+		_failures.append("path-log: expected path decision diagnostics")
+		return
+	if not _has_decision_kind(decisions, "order_started"):
+		_failures.append("path-log: expected order_started decision, got %s" % str(decisions))
+	if not _has_decision_kind(decisions, "long_path_requested"):
+		_failures.append("path-log: expected long_path_requested decision, got %s" % str(decisions))
+	if not _has_decision_kind(decisions, "long_path_result"):
+		_failures.append("path-log: expected long_path_result decision, got %s" % str(decisions))
+
+
+func _test_pair_contact_log_tracks_pass_through_risk() -> void:
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(80.0, 100.0), 11.0, 960.0, true),
+		ZeroAdRtsLabUnit.new("blue_1", "blue", Vector2(120.0, 100.0), 11.0, 960.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	world.clear_traces()
+	var blue_0 := world.get_unit("blue_0")
+	var blue_1 := world.get_unit("blue_1")
+	if blue_0 == null or blue_1 == null:
+		_failures.append("pair-contact-log: missing mobile units")
+		return
+	blue_0.begin_move_order(Vector2(140.0, 100.0), 0)
+	blue_0.short_path.push_back(Vector2(140.0, 100.0))
+	blue_1.begin_move_order(Vector2(60.0, 100.0), 0)
+	blue_1.short_path.push_back(Vector2(60.0, 100.0))
+	world.step(1.0 / 30.0)
+	if world.recent_pair_contacts.is_empty():
+		_failures.append("pair-contact-log: expected pair contact diagnostics")
+		return
+	var contact: Dictionary = world.recent_pair_contacts.back()
+	if String(contact.get("kind", "")) != "unit_pass_through_risk":
+		_failures.append("pair-contact-log: expected pass-through risk, got %s" % str(contact))
+
+
 func _run_world_steps(world: ZeroAdRtsLabWorld, count: int) -> void:
 	for _i in range(count):
 		world.step(0.1)
@@ -647,6 +989,13 @@ func _unit_distance(world: ZeroAdRtsLabWorld, a_id: String, b_id: String) -> flo
 	if unit_a == null or unit_b == null:
 		return -1.0
 	return unit_a.position.distance_to(unit_b.position)
+
+
+func _has_decision_kind(decisions: Array[Dictionary], kind: String) -> bool:
+	for decision in decisions:
+		if String(decision.get("kind", "")) == kind:
+			return true
+	return false
 
 
 func _inside_default_top_passage(point: Vector2) -> bool:

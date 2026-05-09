@@ -389,7 +389,7 @@ func _default_export_path() -> String:
 func _build_export_snapshot() -> Dictionary:
 	var avg_step_usec := float(_total_step_usec) / float(maxi(_measured_step_count, 1))
 	return {
-		"schema": "zero_ad_rts_pathfinding_lab_debug_log_v1",
+		"schema": "zero_ad_rts_pathfinding_lab_debug_log_v2",
 		"exported_at": Time.get_datetime_string_from_system(false, false),
 		"scene": "addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/frontend/zero_ad_rts_pathfinding_lab.tscn",
 		"mode": _mode_name(),
@@ -413,6 +413,8 @@ func _build_export_snapshot() -> Dictionary:
 		},
 		"obstacles": _snapshot_obstacles(),
 		"units": _snapshot_units(),
+		"recent_path_decisions": _world.motion.recent_path_decisions(),
+		"recent_pair_contacts": _world.recent_pair_contacts.duplicate(true),
 		"recent_motion_updates": _world.recent_motion_updates.duplicate(true),
 		"recent_events": _event_log.duplicate(true),
 	}
@@ -437,6 +439,7 @@ func _snapshot_units() -> Array[Dictionary]:
 		result.append({
 			"id": unit.id,
 			"group_id": unit.group_id,
+			"control_group_id": unit.control_group_id,
 			"mobile": unit.mobile,
 			"blocks_pathfinding": unit.blocks_pathfinding,
 			"position": _vector_snapshot(unit.position),
@@ -452,6 +455,7 @@ func _snapshot_units() -> Array[Dictionary]:
 			"last_order": unit.last_order_snapshot(),
 			"obstruction_state": unit.obstruction_state,
 			"failed_movements": unit.failed_movements,
+			"pushing_pressure": unit.pushing_pressure,
 			"follow_known_imperfect_path_countdown": unit.follow_known_imperfect_path_countdown,
 			"pending_long_ticket": unit.pending_long_ticket,
 			"pending_short_ticket": unit.pending_short_ticket,
