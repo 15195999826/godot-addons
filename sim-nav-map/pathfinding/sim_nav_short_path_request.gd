@@ -10,6 +10,7 @@ var pass_mask: int = 0
 var avoid_moving_units: bool = true
 var control_group: String = ""
 var obstruction_filter: SimNavObstructionFilter = null
+var static_vertex_extra_outset: float = 0.0
 
 
 func get_obstruction_filter() -> SimNavObstructionFilter:
@@ -28,4 +29,5 @@ func clone() -> SimNavShortPathRequest:
 	cloned_request.avoid_moving_units = avoid_moving_units
 	cloned_request.control_group = control_group
 	cloned_request.obstruction_filter = obstruction_filter.clone() if obstruction_filter != null else null
+	cloned_request.static_vertex_extra_outset = static_vertex_extra_outset
 	return cloned_request

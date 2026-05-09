@@ -29,6 +29,8 @@ func _init(
 
 
 func rebuild_context(static_obstacles: Array[ZeroAdRtsLabObstacle]) -> void:
+	if path_queue != null:
+		path_queue.clear()
 	var width := int(ceil(map_size.x / cell_size))
 	var height := int(ceil(map_size.y / cell_size))
 	nav_map = SimNavMap.new(width, height, cell_size, Vector2.ZERO, 1)
@@ -105,6 +107,7 @@ func build_short_path_request(
 	request.avoid_moving_units = false
 	request.control_group = unit.control_group_id
 	request.obstruction_filter = movement_filter_for_unit(unit)
+	request.static_vertex_extra_outset = cell_size * 0.5
 	return request
 
 
@@ -281,6 +284,7 @@ func _short_result_to_report(result: SimNavShortPathResult) -> Dictionary:
 		"failure_reason": result.failure_reason,
 		"path_size": result.path.size(),
 		"path_length": result.path_length,
+		"graph": result.graph_diagnostics(),
 	}
 
 
