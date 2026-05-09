@@ -23,6 +23,7 @@ func _run() -> void:
 	_test_static_raster_passability_blocks_tangent_short_edge()
 	_test_circle_goal_lands_on_nearest_goal_point()
 	_test_circle_goal_uses_alternate_boundary_candidate()
+	_test_circle_goal_at_unit_corner_does_not_duplicate_waypoint()
 	_test_avoid_moving_units_false_allows_direct_path()
 	_test_group_filter_allows_direct_path()
 	_test_custom_filter_ignores_tag()
@@ -144,6 +145,35 @@ func _test_circle_goal_uses_alternate_boundary_candidate() -> void:
 	_assert_false(path.is_empty(), "blocked nearest circle boundary should still find alternate goal candidate")
 	_assert_true(req.goal.contains_point(path.waypoints[0]), "alternate final waypoint should be on circle goal")
 	_assert_true(path.waypoints[0].distance_to(Vector2(78.0, 50.0)) > 1.0, "alternate final waypoint should not use blocked nearest boundary")
+
+
+func _test_circle_goal_at_unit_corner_does_not_duplicate_waypoint() -> void:
+	var nav_map := SimNavMap.new(80, 60, 8.0, Vector2.ZERO, 4)
+	for data in [
+		["right_blocker", Vector2(603.0, 190.0)],
+		["upper_gap_blocker", Vector2(558.0, 199.0)],
+		["lower_gap_blocker", Vector2(558.0, 229.0)],
+	]:
+		var blocker := SimNavObstructionShapeUnit.new()
+		blocker.entity_id = data[0] as String
+		blocker.center = data[1] as Vector2
+		blocker.clearance = 11.0
+		blocker.flags = SimNavObstructionFlags.BLOCK_MOVEMENT
+		nav_map.add_dynamic_obstruction(blocker)
+
+	var req := SimNavShortPathRequest.new()
+	req.start = Vector2(621.481567382813, 230.865951538086)
+	req.goal = SimNavPathGoal.circle(Vector2(561.0, 165.0), 32.0)
+	req.clearance = 11.0
+	req.range_px = 192.0
+	req.pass_mask = 0
+	req.avoid_moving_units = true
+
+	var result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(req)
+	_assert_true(result.is_success(), "circle goal at unit corner should find short path")
+	_assert_false(result.path.is_empty(), "circle goal at unit corner should produce waypoints")
+	_assert_true(req.goal.contains_point(result.path.waypoints[0]), "final waypoint should be inside circle goal")
+	_assert_no_adjacent_duplicate_waypoints(result.path, 0.01, "circle goal at unit corner")
 
 
 func _test_avoid_moving_units_false_allows_direct_path() -> void:
@@ -272,6 +302,17 @@ func _assert_movement_segments_clear(
 			])
 			return
 		prev = point
+
+
+func _assert_no_adjacent_duplicate_waypoints(
+	path: SimNavWaypointPath,
+	epsilon: float,
+	label: String
+) -> void:
+	for i in range(path.waypoints.size() - 1):
+		if path.waypoints[i].distance_to(path.waypoints[i + 1]) <= epsilon:
+			_failures.append("%s has adjacent duplicate waypoints at %d: %s" % [label, i, str(path.waypoints[i])])
+			return
 
 
 func _assert_true(value: bool, message: String) -> void:

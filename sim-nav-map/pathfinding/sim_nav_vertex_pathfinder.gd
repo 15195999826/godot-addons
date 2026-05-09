@@ -369,6 +369,8 @@ func _astar_visibility(
 		closed[current_idx] = true
 		if current_idx == goal_idx:
 			return _reconstruct(vertices, came_from, current_idx)
+		if current_idx != 0 and req.goal.contains_point(vertices[current_idx]):
+			return _reconstruct(vertices, came_from, current_idx)
 		diagnostics["astar_expansion_count"] = int(diagnostics.get("astar_expansion_count", 0)) + 1
 
 		var current_pos := vertices[current_idx]
