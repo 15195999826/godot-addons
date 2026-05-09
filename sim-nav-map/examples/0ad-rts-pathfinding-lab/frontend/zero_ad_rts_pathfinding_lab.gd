@@ -12,6 +12,8 @@ const DRAG_SELECT_THRESHOLD: float = 5.0
 const OBSTACLE_SIZE: Vector2 = Vector2(74.0, 74.0)
 const LOG_DIR: String = "user://zero_ad_rts_pathfinding_lab_logs"
 const MAX_EVENT_LOG_ENTRIES: int = 160
+const MAX_SLOW_FRAME_LOG_ENTRIES: int = 80
+const SLOW_FRAME_THRESHOLD_USEC: int = 8000
 const TRACE_EXPORT_LIMIT: int = 120
 
 var _world: ZeroAdRtsLabWorld = null
@@ -26,9 +28,11 @@ var _is_dragging: bool = false
 var _last_action: String = "ready"
 var _last_step_usec: int = 0
 var _max_step_usec: int = 0
+var _max_step_tick: int = 0
 var _total_step_usec: int = 0
 var _measured_step_count: int = 0
 var _event_log: Array[Dictionary] = []
+var _slow_frame_log: Array[Dictionary] = []
 var _last_export_path: String = ""
 
 
@@ -54,12 +58,17 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if not _paused:
+		var step_tick := _world.tick_count
 		var step_start_usec := Time.get_ticks_usec()
 		_world.step(minf(delta, 0.05))
 		_last_step_usec = Time.get_ticks_usec() - step_start_usec
-		_max_step_usec = maxi(_max_step_usec, _last_step_usec)
+		if _last_step_usec > _max_step_usec:
+			_max_step_usec = _last_step_usec
+			_max_step_tick = step_tick
 		_total_step_usec += _last_step_usec
 		_measured_step_count += 1
+		if _last_step_usec >= SLOW_FRAME_THRESHOLD_USEC:
+			_record_slow_frame(step_tick, _last_step_usec, minf(delta, 0.05))
 	_update_hud()
 	queue_redraw()
 
@@ -301,7 +310,7 @@ func _update_hud() -> void:
 		return
 	var metrics := _world.get_metrics()
 	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
-	_hud.text = "0AD RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space %s\narrived %d/%d active %d pathless %d  short %d  long %d  queue p/r/proc %d/%d/%d\nblocked %d  fail %d  obs/vobs %d/%d  suppress %d  stale %d  imperfect %d/%d\npush ok/reject %d/%d  pair checks %d  buckets %d  static %.0f\nworld.step %.2fms  avg %.2fms  max %.2fms%s" % [
+	_hud.text = "0AD RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space %s\narrived %d/%d active %d pathless %d  short %d  long %d  queue p/r/proc %d/%d/%d\nblocked %d  fail %d  obs/vobs %d/%d  suppress %d  stale %d  imperfect %d/%d\npush ok/reject %d/%d  pair checks %d  buckets %d  static %.0f\nworld.step %.2fms  avg %.2fms  max %.2fms@%d%s" % [
 		_mode_name(),
 		_selected_unit_ids.size(),
 		_last_action,
@@ -331,6 +340,7 @@ func _update_hud() -> void:
 		float(_last_step_usec) / 1000.0,
 		avg_step_msec,
 		float(_max_step_usec) / 1000.0,
+		_max_step_tick,
 		" | exported %s" % _last_export_path if _last_export_path != "" else "",
 	]
 
@@ -358,8 +368,10 @@ func _rect_from_points(a: Vector2, b: Vector2) -> Rect2:
 func _reset_perf_metrics() -> void:
 	_last_step_usec = 0
 	_max_step_usec = 0
+	_max_step_tick = 0
 	_total_step_usec = 0
 	_measured_step_count = 0
+	_slow_frame_log.clear()
 	_last_export_path = ""
 
 
@@ -401,12 +413,16 @@ func _build_export_snapshot() -> Dictionary:
 		"perf": {
 			"last_step_usec": _last_step_usec,
 			"max_step_usec": _max_step_usec,
+			"max_step_tick": _max_step_tick,
 			"avg_step_usec": avg_step_usec,
 			"measured_step_count": _measured_step_count,
+			"slow_frame_threshold_usec": SLOW_FRAME_THRESHOLD_USEC,
 		},
 		"world": {
 			"tick_count": _world.tick_count,
 			"metrics": _world.get_metrics(),
+			"last_step_profile": _world.last_step_profile,
+			"recent_step_profiles": _world.recent_step_profiles.duplicate(true),
 		},
 		"pathfinder": {
 			"last_report": _world.pathfinder.last_report,
@@ -417,6 +433,7 @@ func _build_export_snapshot() -> Dictionary:
 		"recent_pair_contacts": _world.recent_pair_contacts.duplicate(true),
 		"recent_motion_updates": _world.recent_motion_updates.duplicate(true),
 		"recent_events": _event_log.duplicate(true),
+		"slow_frames": _slow_frame_log.duplicate(true),
 	}
 
 
@@ -478,10 +495,40 @@ func _record_event(kind: String, data: Dictionary) -> void:
 		"last_action": _last_action,
 		"last_step_usec": _last_step_usec,
 		"max_step_usec": _max_step_usec,
+		"max_step_tick": _max_step_tick,
 		"data": _json_safe(data),
 	})
 	while _event_log.size() > MAX_EVENT_LOG_ENTRIES:
 		_event_log.pop_front()
+
+
+func _record_slow_frame(tick: int, step_usec: int, delta: float) -> void:
+	if _world == null:
+		return
+	_slow_frame_log.append({
+		"tick": tick,
+		"step_usec": step_usec,
+		"delta": delta,
+		"last_action": _last_action,
+		"selected_unit_ids": _selected_unit_ids.duplicate(),
+		"world_metrics": _world.get_metrics(),
+		"world_step_profile": _world.last_step_profile.duplicate(true),
+		"pathfinder_last_report": _world.pathfinder.last_report.duplicate(true),
+		"recent_path_decisions_tail": _tail_dictionaries(_world.motion.recent_path_decisions(), 24),
+		"recent_pair_contacts_tail": _tail_dictionaries(_world.recent_pair_contacts, 16),
+		"unit_snapshots": _snapshot_units(),
+	})
+	while _slow_frame_log.size() > MAX_SLOW_FRAME_LOG_ENTRIES:
+		_slow_frame_log.pop_front()
+
+
+func _tail_dictionaries(entries: Array, limit: int) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var start_index := maxi(entries.size() - limit, 0)
+	for i in range(start_index, entries.size()):
+		var entry: Dictionary = entries[i] as Dictionary
+		result.append(entry.duplicate(true))
+	return result
 
 
 func _waypoint_path_snapshot(path: SimNavWaypointPath) -> Array[Dictionary]:

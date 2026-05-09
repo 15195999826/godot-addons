@@ -8,6 +8,7 @@ const DEFAULT_BLOCKER_RADIUS: float = 14.0
 const PATH_REQUEST_BUDGET_PER_TICK: int = 2
 const MAX_RECENT_MOTION_UPDATES: int = 160
 const MAX_RECENT_PAIR_CONTACTS: int = 160
+const MAX_RECENT_STEP_PROFILES: int = 160
 const CONTACT_EPSILON: float = 0.05
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
@@ -17,6 +18,8 @@ var pathfinder: ZeroAdRtsLabPathfinder = null
 var motion: ZeroAdRtsLabMotionController = null
 var recent_motion_updates: Array[Dictionary] = []
 var recent_pair_contacts: Array[Dictionary] = []
+var recent_step_profiles: Array[Dictionary] = []
+var last_step_profile: Dictionary = {}
 var tick_count: int = 0
 var current_target: Vector2 = Vector2(610.0, 210.0)
 var _obstacle_seq: int = 0
@@ -53,6 +56,8 @@ func setup_default() -> void:
 	tick_count = 0
 	recent_motion_updates.clear()
 	recent_pair_contacts.clear()
+	recent_step_profiles.clear()
+	last_step_profile = {}
 	clear_traces()
 
 
@@ -103,22 +108,80 @@ func issue_move(unit_id: String, goal: Vector2) -> void:
 
 
 func step(delta: float) -> void:
+	var step_tick := tick_count
+	var step_start_usec := Time.get_ticks_usec()
+	var snapshot_start_usec := Time.get_ticks_usec()
 	var previous_positions := _unit_position_snapshot()
 	var previous_move_orders := _unit_move_order_snapshot()
-	pathfinder.process_path_budget(units, PATH_REQUEST_BUDGET_PER_TICK)
+	var snapshot_usec := Time.get_ticks_usec() - snapshot_start_usec
+	var path_budget_start_usec := Time.get_ticks_usec()
+	var processed_paths := pathfinder.process_path_budget(units, PATH_REQUEST_BUDGET_PER_TICK)
+	var queue_report: Dictionary = pathfinder.last_report.get("path_queue_processed", {}) as Dictionary
+	var queue_diagnostics: Dictionary = queue_report.get("diagnostics", {}) as Dictionary
+	var path_budget_usec := Time.get_ticks_usec() - path_budget_start_usec
+	var apply_results_start_usec := Time.get_ticks_usec()
 	motion.apply_path_results(units, pathfinder, tick_count)
+	var apply_results_usec := Time.get_ticks_usec() - apply_results_start_usec
+	var dispatch_pre_start_usec := Time.get_ticks_usec()
 	_dispatch_motion_updates()
+	var dispatch_pre_usec := Time.get_ticks_usec() - dispatch_pre_start_usec
+	var active_check_start_usec := Time.get_ticks_usec()
 	var has_active_mobile := _has_active_mobile()
+	var active_check_usec := Time.get_ticks_usec() - active_check_start_usec
+	var refresh_before_usec := 0
+	var step_units_usec := 0
+	var dispatch_post_usec := 0
+	var refresh_after_usec := 0
+	var push_adjust_usec := 0
+	var pair_contacts_usec := 0
 	if has_active_mobile:
+		var refresh_before_start_usec := Time.get_ticks_usec()
 		pathfinder.refresh_dynamic_units(units)
+		refresh_before_usec = Time.get_ticks_usec() - refresh_before_start_usec
+		var step_units_start_usec := Time.get_ticks_usec()
 		for unit in units:
 			if not unit.mobile:
 				continue
 			motion.step_unit(unit, delta, pathfinder, units, tick_count)
+		step_units_usec = Time.get_ticks_usec() - step_units_start_usec
+		var dispatch_post_start_usec := Time.get_ticks_usec()
 		_dispatch_motion_updates()
+		dispatch_post_usec = Time.get_ticks_usec() - dispatch_post_start_usec
+		var refresh_after_start_usec := Time.get_ticks_usec()
 		pathfinder.refresh_dynamic_units(units)
+		refresh_after_usec = Time.get_ticks_usec() - refresh_after_start_usec
+		var push_adjust_start_usec := Time.get_ticks_usec()
 		motion.apply_push_adjust(units, pathfinder, previous_positions, previous_move_orders, tick_count, delta)
+		push_adjust_usec = Time.get_ticks_usec() - push_adjust_start_usec
+		var pair_contacts_start_usec := Time.get_ticks_usec()
 		_record_pair_contact_diagnostics(previous_positions, previous_move_orders)
+		pair_contacts_usec = Time.get_ticks_usec() - pair_contacts_start_usec
+	_record_step_profile({
+		"tick": step_tick,
+		"delta": delta,
+		"total_usec": Time.get_ticks_usec() - step_start_usec,
+		"snapshot_usec": snapshot_usec,
+		"path_budget_usec": path_budget_usec,
+		"processed_paths": processed_paths,
+		"started_path_workers": int(queue_report.get("started_worker", 0)),
+		"collected_path_results": int(queue_report.get("collected", 0)),
+		"processed_sync_paths": int(queue_report.get("processed_sync", queue_report.get("processed", 0))),
+		"path_request_batch": queue_diagnostics.get("last_processed_requests", []),
+		"apply_results_usec": apply_results_usec,
+		"dispatch_pre_usec": dispatch_pre_usec,
+		"active_check_usec": active_check_usec,
+		"active_mobile": has_active_mobile,
+		"refresh_before_usec": refresh_before_usec,
+		"step_units_usec": step_units_usec,
+		"dispatch_post_usec": dispatch_post_usec,
+		"refresh_after_usec": refresh_after_usec,
+		"push_adjust_usec": push_adjust_usec,
+		"pair_contacts_usec": pair_contacts_usec,
+		"pending_path_requests": pathfinder.path_queue.pending_count() if pathfinder.path_queue != null else 0,
+		"pending_path_results": pathfinder.path_queue.result_count() if pathfinder.path_queue != null else 0,
+		"motion_updates_buffered": recent_motion_updates.size(),
+		"pair_contact_events": recent_pair_contacts.size(),
+	})
 	tick_count += 1
 
 
@@ -300,6 +363,13 @@ func _dispatch_motion_updates() -> void:
 		recent_motion_updates.append(update.to_snapshot())
 		while recent_motion_updates.size() > MAX_RECENT_MOTION_UPDATES:
 			recent_motion_updates.pop_front()
+
+
+func _record_step_profile(profile: Dictionary) -> void:
+	last_step_profile = profile.duplicate(true)
+	recent_step_profiles.append(last_step_profile)
+	while recent_step_profiles.size() > MAX_RECENT_STEP_PROFILES:
+		recent_step_profiles.pop_front()
 
 
 func _unit_position_snapshot() -> Dictionary:
