@@ -45,6 +45,15 @@ Current result after the 2026-05-09 optimization pass:
 | `partial_wall_with_gap` | 724.11 | 24641 | 936 | Arrives `6/6`; static short-path spike removed. |
 | `rapid_obstacle_thrash` | 4624.46 | 45484 | 27803 | Still a dynamic blocker thrash / runaway problem and not claimed solved here. |
 
+Follow-up source pass on 2026-05-09:
+
+| Scenario | `avg_step_usec` | `max_step_usec` | `max_short_compute_usec` | Notes |
+|---|---:|---:|---:|---|
+| `baseline_open_movement` | 710.57 | 9406 | 0 | Still flat against the previous headless baseline. |
+| `fully_blocked_path` | 777.84 | 22715 | 2109 | Static short path remains under target; slowest frame is long-path setup. |
+| `partial_wall_with_gap` | 725.77 | 24494 | 961 | Arrives `6/6`; static short path remains under target. |
+| `rapid_obstacle_thrash` | 3436.82 | 16636 | 13562 | Improved by virtual-goal search and no-op terrain fallback guard, but still a dense dynamic-unit no-path problem. |
+
 ## 0 A.D. Reference
 
 Re-check the local 0 A.D. source before changing algorithm shape:
@@ -109,9 +118,23 @@ The first-stage optimization now follows this shape:
   corner contract.
 - Lazy visibility A* now prunes expansion to the goal plus nearest candidate
   vertices instead of checking every vertex against every other vertex.
+- Non-point short goals now use one dynamic virtual goal vertex, following 0 A.D.
+  `VertexPathfinder::ComputeShortPath()` more closely. The goal point is
+  recomputed from the current vertex instead of trying several fixed goal
+  candidates and rerunning visibility search.
+- Terrain fallback now reruns search only when terrain extraction adds vertices.
+  This avoids repeating the identical explicit-obstruction graph for dynamic
+  unit no-path cases.
 - `SimNavShortPathResult` and path request batch diagnostics expose structural
   counters: explicit static/unit obstruction counts, terrain edge/vertex count,
   total vertex count, visibility check count, and A* expansion count.
+
+The remaining `rapid_obstacle_thrash` spike is now characterized by dense
+dynamic blockers, not static terrain. The latest worst request had
+`explicit_unit_obstruction_count=21`, `vertex_count=90`,
+`visibility_check_count=586`, and `astar_expansion_count=65`. This points to a
+second-stage dynamic-unit visibility pruning / movement policy problem rather
+than a return of the static short-path graph explosion.
 
 ## Scope
 
