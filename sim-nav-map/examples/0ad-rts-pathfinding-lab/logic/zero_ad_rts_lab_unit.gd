@@ -7,6 +7,7 @@ const MotionUpdateScript := preload("res://addons/sim-nav-map/examples/0ad-rts-p
 
 var id: String = ""
 var group_id: String = ""
+var control_group_id: String = ""
 var position: Vector2 = Vector2.ZERO
 var radius: float = 10.0
 var speed: float = 90.0
@@ -20,6 +21,7 @@ var move_failed: bool = false
 var was_obstructed: bool = false
 var obstruction_state: String = ""
 var failed_movements: int = 0
+var pushing_pressure: int = 0
 var follow_known_imperfect_path_countdown: int = 0
 var long_path: SimNavWaypointPath = SimNavWaypointPath.new()
 var short_path: SimNavWaypointPath = SimNavWaypointPath.new()

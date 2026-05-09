@@ -20,12 +20,7 @@ static func first_blocking_shape(a: Vector2, b: Vector2, shapes: Array, buffer: 
 static func shape_blocks_segment(a: Vector2, b: Vector2, shape: SimNavObstructionShape, buffer: float) -> bool:
 	if shape is SimNavObstructionShapeUnit:
 		var unit_shape := shape as SimNavObstructionShapeUnit
-		var threshold := unit_shape.clearance + buffer
-		if unit_shape.center.distance_to(a) <= threshold:
-			return false
-		if unit_shape.center.distance_to(b) <= threshold:
-			return true
-		return _segment_to_point_dist(a, b, unit_shape.center) < threshold
+		return _unit_shape_blocks_segment(a, b, unit_shape, buffer)
 	if shape is SimNavObstructionShapeStatic:
 		var static_shape := shape as SimNavObstructionShapeStatic
 		if static_shape.contains_point_with_clearance(a, buffer):
@@ -34,6 +29,24 @@ static func shape_blocks_segment(a: Vector2, b: Vector2, shape: SimNavObstructio
 			return true
 		return _segment_to_obb_dist(a, b, static_shape, buffer) < buffer
 	return false
+
+
+static func _unit_shape_blocks_segment(
+	a: Vector2,
+	b: Vector2,
+	unit_shape: SimNavObstructionShapeUnit,
+	buffer: float
+) -> bool:
+	var threshold := unit_shape.clearance + buffer
+	var start_dist := unit_shape.center.distance_to(a)
+	var target_dist := unit_shape.center.distance_to(b)
+	if start_dist <= threshold:
+		if target_dist <= start_dist + 0.0001:
+			return true
+		return _segment_to_point_dist(a, b, unit_shape.center) < start_dist - 0.0001
+	if target_dist <= threshold:
+		return true
+	return _segment_to_point_dist(a, b, unit_shape.center) < threshold
 
 
 static func _segment_to_point_dist(a: Vector2, b: Vector2, point: Vector2) -> float:

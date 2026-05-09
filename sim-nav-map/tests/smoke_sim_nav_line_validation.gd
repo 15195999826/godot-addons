@@ -157,6 +157,18 @@ func _test_unit_line_allows_overlap_escape() -> void:
 	var facade := SimNavPathfinderFacade.new(nav_map)
 	var escape := facade.validate_unit_line(Vector2(50.0, 48.0), Vector2(32.0, 48.0), 8.0)
 	_assert_true(escape.is_success(), "unit line should allow moving out of an existing overlap")
+	var deeper := facade.validate_unit_line(Vector2(50.0, 48.0), Vector2(58.0, 48.0), 8.0)
+	_assert_equal_str(
+		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,
+		deeper.failure_reason,
+		"unit line should block moving deeper into an existing unit overlap"
+	)
+	var pinned := facade.validate_unit_line(Vector2(50.0, 48.0), Vector2(50.0, 48.0), 8.0)
+	_assert_equal_str(
+		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,
+		pinned.failure_reason,
+		"unit line should block staying inside an existing unit overlap"
+	)
 	var enter := facade.validate_unit_line(Vector2(32.0, 48.0), Vector2(50.0, 48.0), 8.0)
 	_assert_equal_str(
 		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,

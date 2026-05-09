@@ -42,7 +42,8 @@ the core addon.
 | Short path | `source/simulation2/helpers/Pathfinding.h`, `source/simulation2/helpers/VertexPathfinder.h`, `source/simulation2/helpers/VertexPathfinder.cpp`, `source/simulation2/components/ICmpObstructionManager.h`, `source/simulation2/components/CCmpUnitMotion.h` | `ShortPathRequest`, visibility graph, range-limited short path, `avoidMovingUnits`, group filter, long-waypoint rejoin policy caller. |
 | Request queue | `source/simulation2/helpers/Pathfinding.h`, `source/simulation2/components/CCmpPathfinder.cpp`, `source/simulation2/components/CCmpPathfinder_Common.h`, `source/simulation2/components/CCmpUnitMotion.h` | `LongPathRequest` / `ShortPathRequest`, async ticket, `PathRequests`, `m_MaxSameTurnMoves`, expected ticket. |
 | Diagnostics exports | `source/simulation2/helpers/Grid.h`, `source/simulation2/components/ICmpPathfinder.h`, `source/simulation2/components/CCmpPathfinder.cpp`, `source/simulation2/components/CCmpPathfinder_Common.h`, `source/simulation2/helpers/HierarchicalPathfinder.h` | `GridUpdateInformation`, AI dirtiness information, passability grid, debug data, connectivity grid read-only export. |
-| Formation as example policy | `source/simulation2/components/CCmpUnitMotion.h`, `source/simulation2/components/CCmpUnitMotion_System.cpp` | formation controller runs before unit motion; useful validation idea, not a core plugin target. |
+| Unit pushing / crossing | `source/simulation2/components/CCmpUnitMotion_System.cpp`, `source/simulation2/components/CCmpUnitMotionManager.h` | `Push()`, moving-vs-stopped separation rule, initial/final position comparison, perpendicular nudge when moving units appear to cross. |
+| Formation as example policy | `source/simulation2/components/CCmpUnitMotion.h`, `source/simulation2/components/CCmpUnitMotion_System.cpp` | formation controller runs before unit motion; same-control-group members ignore each other in obstruction filters and are allowed to push idle members. Useful validation idea, not a core plugin target. |
 
 ## Long / Short Path Cooperation Source Audit
 
@@ -117,6 +118,19 @@ source/simulation2/helpers/VertexPathfinder.cpp
 - `ICmpObstructionManager::TestLine()` and `TestUnitLine()` are the runtime
   legality checks used by UnitMotion. This is where dynamic unit collisions are
   observed while executing or pre-checking a segment.
+- `CCmpUnitMotionManager::Push()` deliberately separates moving-moving and
+  stopped-stopped pairs, but returns for moving-vs-stopped pairs. For
+  moving-moving pairs it compares initial and final relative positions and
+  applies a perpendicular nudge when the units appear to have crossed paths.
+- `CCmpUnitMotionManager::Push()` has a same-control-group exception for
+  formations: same-group members are treated like a stopped-stopped pair for
+  push purposes, and same-group idle members may be pushed. The comment ties
+  this to formation-internal obstruction ignoring.
+- Pushing also maintains `pushingPressure`. `PerformMove()` slows a unit when
+  pressure is high, and `PushAdjust` marks a moving unit obstructed when a push
+  would drive it away from its attempted movement direction. This prevents
+  repeated crowd pressure from shoving a unit far off its own route before
+  blocked-move recovery has a chance to react.
 
 ### Sim Nav Map Implications
 
@@ -129,6 +143,15 @@ source/simulation2/helpers/VertexPathfinder.cpp
 - Dynamic-unit avoidance belongs in local policy: unit-line pre-checks,
   short-path requests to a nearby long-path rejoin goal, blocked-move recovery,
   request cooldowns, and per-tick request budgets.
+- Formation policy must assign slots before UnitMotion consumes paths. A
+  naive id-sorted slot assignment can create crossing paths inside the
+  formation; the lab should prefer a minimal-distance slot assignment before
+  relying on local push recovery.
+- If moving-moving push repeatedly moves a unit opposite its own target, the lab
+  should damp that push or raise an obstruction signal, mirroring 0 A.D.'s
+  pressure behavior. Otherwise the unit can be pushed into a static clearance
+  corner and the short pathfinder may legitimately choose a visually odd
+  retreat waypoint to get back out.
 - In the `0ad-rts-pathfinding-lab`, a dense moving crowd should therefore
   increase local short-path and blocked-move activity, not cause repeated global
   long-path rejection. If diagnostics show long-path churn under moving-unit
@@ -377,6 +400,17 @@ source/simulation2/components/CCmpUnitMotion.h
   stopped-stopped pairs, but returns immediately for moving-stopped pairs.
   Moving-stopped soft push only exists for the same formation control group,
   which the current 0AD lab does not model yet.
+- The core line-validation primitive should permit a unit to move out of an
+  existing unit overlap, but should not permit a segment that stays inside or
+  moves deeper into that overlap. This preserves 0 A.D.'s practical "escape
+  from overlap" behavior without letting an already-overlapped unit tunnel
+  farther through another unit.
+- The 0AD lab maps `Push()`/`PushAdjust` pressure into motion policy, not core
+  navigation policy. Once pushing pressure has marked a moving-moving contact
+  as obstructing, the lab may hold a step that would deepen overlap and let
+  push/blocked recovery separate the pair. This is a lab-side guard against
+  visible 60 Hz pass-through in one-unit corridors, while long path and short
+  path contracts remain unchanged.
 
 ## Feature 7 Request Queue Budget / Worker Contract Source Audit
 

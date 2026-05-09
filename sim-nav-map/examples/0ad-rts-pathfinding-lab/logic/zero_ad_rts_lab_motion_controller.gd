@@ -21,11 +21,34 @@ const ALTERNATE_PATH_TYPE_EVERY: int = 6
 const BACKUP_HACK_DELAY: int = 10
 const BACKUP_HACK_DISTANCE: float = 1.0
 const VERY_OBSTRUCTED_THRESHOLD: int = 10
-const PUSH_RADIUS_MULTIPLIER: float = 1.05
+const PUSHING_CORRECTION: float = 5.0 / 7.0
+const PUSHING_REDUCTION_FACTOR: float = 2.0
+const PUSHING_RADIUS_MULTIPLIER: float = 8.0 / 5.0
+const MOVING_PUSH_EXTENSION: float = 2.5
+const STATIC_PUSH_EXTENSION: float = 2.0
+const MAX_PUSHING_MULTIPLIER: float = 4.0
+const PUSH_REFERENCE_SPEED: float = NAVCELL_SIZE * 6.0
 const PUSH_MAX_PER_FRAME: float = 6.0
 const MIN_PUSH: float = 0.05
 const PUSH_BUCKET_SIZE: float = 48.0
+const GOAL_OPPOSING_PUSH_DAMPING: float = 0.35
+const MAX_PUSH_PRESSURE: int = 255
+const MAX_PUSH_DAMPING_PRESSURE: int = 160
+const PUSH_PRESSURE_DECAY: float = 0.60
+const PUSH_PRESSURE_DECAY_TURN_SEC: float = 0.20
+const PUSH_PRESSURE_OBSTRUCTED_THRESHOLD: int = 30
+const MIN_PRESSURE_IF_OBSTRUCTED: int = 80
+const PUSH_PRESSURE_SPEED_THRESHOLD: int = 10
+const PUSH_PRESSURE_SPEED_FLOOR_RATIO: float = 0.25
+const MOVING_PUSH_SPREAD: float = 0.625
+const STATIC_PUSH_SPREAD: float = 0.625
+const MAX_DISTANCE_FACTOR: float = 2.5
+const PRESSURE_STATIC_FACTOR: float = 2.0
+const PRESSURE_DISTANCE_FACTOR: float = 5.0
 const SHORT_REPATH_COOLDOWN_SEC: float = 0.22
+const MAX_PATH_DECISION_LOG_ENTRIES: int = 240
+const CROSSING_NUDGE_DOT_THRESHOLD: float = -0.1
+const CROSSING_NUDGE_DISTANCE: float = 3.0
 
 var short_path_requests: int = 0
 var long_path_requests: int = 0
@@ -39,24 +62,31 @@ var known_imperfect_paths: int = 0
 var known_imperfect_suppressed: int = 0
 var rejected_pushes: int = 0
 var applied_pushes: int = 0
+var crossing_nudges: int = 0
+var goal_opposing_push_dampens: int = 0
+var push_pressure_obstructions: int = 0
 var path_results_applied: int = 0
 var path_result_failures: int = 0
 var push_pair_checks: int = 0
 var push_grid_cells: int = 0
 var _motion_updates: Array[RefCounted] = []
+var _path_decisions: Array[Dictionary] = []
 
 
 func start_move_order(
 	unit: ZeroAdRtsLabUnit,
-	pathfinder: ZeroAdRtsLabPathfinder
+	pathfinder: ZeroAdRtsLabPathfinder,
+	tick: int = 0
 ) -> void:
 	_cancel_pending_path_requests(unit, pathfinder)
-	_request_long_path(unit, unit.target, pathfinder)
+	_record_path_decision(unit, "order_started", tick)
+	_request_long_path(unit, unit.target, pathfinder, tick)
 
 
 func replan_active_order(
 	unit: ZeroAdRtsLabUnit,
-	pathfinder: ZeroAdRtsLabPathfinder
+	pathfinder: ZeroAdRtsLabPathfinder,
+	tick: int = 0
 ) -> void:
 	if not unit.has_move_order:
 		return
@@ -66,13 +96,18 @@ func replan_active_order(
 	unit.pending_long_ticket = 0
 	unit.pending_short_ticket = 0
 	unit.short_repath_cooldown = 0.0
-	_request_long_path(unit, unit.target, pathfinder)
+	_record_path_decision(unit, "order_replanned", tick)
+	_request_long_path(unit, unit.target, pathfinder, tick)
 
 
 func drain_motion_updates() -> Array[RefCounted]:
 	var result: Array[RefCounted] = _motion_updates.duplicate()
 	_motion_updates.clear()
 	return result
+
+
+func recent_path_decisions() -> Array[Dictionary]:
+	return _path_decisions.duplicate(true)
 
 
 func apply_path_results(
@@ -90,7 +125,7 @@ func apply_path_results(
 			var short_result := pathfinder.take_short_path_result(unit.pending_short_ticket)
 			if short_result != null:
 				unit.pending_short_ticket = 0
-				_apply_short_path_result(unit, short_result, tick)
+				_apply_short_path_result(unit, short_result, pathfinder, units, tick)
 
 
 func step_unit(
@@ -114,15 +149,25 @@ func step_unit(
 	if not unit.has_path():
 		went_straight = _try_going_straight_to_target(unit, pathfinder, units, true)
 	if not went_straight:
-		_maybe_request_short_path_for_long_segment(unit, pathfinder, units)
+		_maybe_request_short_path_for_long_segment(unit, pathfinder, units, tick)
 	if not unit.has_path():
 		if unit.pending_long_ticket == 0 and unit.pending_short_ticket == 0:
 			_handle_blocked_move(unit, pathfinder, units, false, tick)
 		return
 
-	var move_result := _perform_move(unit, delta, pathfinder, units)
+	var move_result := _perform_move(unit, delta, pathfinder, units, tick)
 	if bool(move_result.get("obstructed", false)):
-		_handle_blocked_move(unit, pathfinder, units, bool(move_result.get("moved", false)), tick)
+		if String(move_result.get("failure_reason", "")) == "push_pressure_pair_blocked":
+			unit.was_obstructed = true
+			return
+		_handle_blocked_move(
+			unit,
+			pathfinder,
+			units,
+			bool(move_result.get("moved", false)),
+			tick,
+			String(move_result.get("failure_reason", ""))
+		)
 		return
 	if bool(move_result.get("moved", false)):
 		unit.failed_movements = 0
@@ -137,11 +182,19 @@ func step_unit(
 
 func apply_push_adjust(
 	units: Array[ZeroAdRtsLabUnit],
-	pathfinder: ZeroAdRtsLabPathfinder
+	pathfinder: ZeroAdRtsLabPathfinder,
+	previous_positions: Dictionary = {},
+	previous_move_orders: Dictionary = {},
+	tick: int = 0,
+	delta: float = 1.0 / 60.0
 ) -> void:
 	var pushes: Dictionary = {}
 	for unit in units:
 		pushes[unit.id] = Vector2.ZERO
+	_decay_push_pressure(units, delta)
+	var pressure_deltas: Dictionary = {}
+	for unit in units:
+		pressure_deltas[unit.id] = 0
 	push_pair_checks = 0
 	var buckets := _build_push_buckets(units)
 	push_grid_cells = buckets.size()
@@ -150,9 +203,25 @@ func apply_push_adjust(
 			if unit.id >= other.id:
 				continue
 			push_pair_checks += 1
-			_accumulate_pair_push(unit, other, pushes)
+			_accumulate_pair_push(
+				unit,
+				other,
+				pushes,
+				pressure_deltas,
+				previous_positions,
+				previous_move_orders,
+				delta
+			)
+	_apply_push_pressure_deltas(units, pressure_deltas)
+	var pressure_obstructed_units: Array[ZeroAdRtsLabUnit] = []
+	var push_blocked_units: Array[ZeroAdRtsLabUnit] = []
 	for unit in units:
 		var push_vec: Vector2 = pushes.get(unit.id, Vector2.ZERO)
+		if push_vec.length() <= MIN_PUSH:
+			continue
+		if _push_opposes_attempted_motion(unit, push_vec, previous_positions):
+			_mark_push_pressure_obstructed(unit, pressure_obstructed_units)
+		push_vec = _dampen_pressure_push(unit, push_vec)
 		if push_vec.length() <= MIN_PUSH:
 			continue
 		if push_vec.length() > PUSH_MAX_PER_FRAME:
@@ -165,16 +234,42 @@ func apply_push_adjust(
 			applied_pushes += 1
 		else:
 			unit.was_obstructed = true
+			unit.pushing_pressure = maxi(MIN_PRESSURE_IF_OBSTRUCTED, unit.pushing_pressure)
 			rejected_pushes += 1
+			if unit.has_move_order and not push_blocked_units.has(unit):
+				push_blocked_units.append(unit)
+	for unit in push_blocked_units:
+		if pressure_obstructed_units.has(unit):
+			continue
+		var previous_position: Vector2 = previous_positions.get(unit.id, unit.position) as Vector2
+		_handle_blocked_move(
+			unit,
+			pathfinder,
+			units,
+			unit.position.distance_squared_to(previous_position) > 0.0001,
+			tick,
+			"push_static_blocked"
+		)
+	for unit in pressure_obstructed_units:
+		var previous_position: Vector2 = previous_positions.get(unit.id, unit.position) as Vector2
+		_handle_blocked_move(
+			unit,
+			pathfinder,
+			units,
+			unit.position.distance_squared_to(previous_position) > 0.0001,
+			tick,
+			"push_pressure_obstructed"
+		)
 
 
 func _perform_move(
 	unit: ZeroAdRtsLabUnit,
 	delta: float,
 	pathfinder: ZeroAdRtsLabPathfinder,
-	units: Array[ZeroAdRtsLabUnit]
+	units: Array[ZeroAdRtsLabUnit],
+	tick: int
 ) -> Dictionary:
-	var remaining_distance := unit.speed * delta
+	var remaining_distance := _effective_speed(unit) * delta
 	var moved := false
 	while remaining_distance > 0.0001 and unit.has_path():
 		var waypoint := unit.current_waypoint()
@@ -188,9 +283,32 @@ func _perform_move(
 		var candidate := waypoint if reaches_waypoint else unit.position + to_waypoint / waypoint_distance * move_distance
 		var line_result := pathfinder.validate_movement_line(unit, unit.position, candidate, units, false)
 		if not line_result.is_success():
+			_record_path_decision(unit, "movement_line_blocked", tick, {
+				"from": unit.position,
+				"candidate": candidate,
+				"waypoint": waypoint,
+				"line": _line_result_snapshot(line_result, units),
+			})
 			return {
 				"obstructed": true,
 				"moved": moved,
+				"failure_reason": line_result.failure_reason,
+			}
+		var pressure_blocker := _pressure_pair_blocker(unit, candidate, units)
+		if pressure_blocker != null:
+			_record_path_decision(unit, "movement_pressure_pair_blocked", tick, {
+				"from": unit.position,
+				"candidate": candidate,
+				"waypoint": waypoint,
+				"blocking_unit_id": pressure_blocker.id,
+				"blocking_unit_position": pressure_blocker.position,
+				"pushing_pressure": unit.pushing_pressure,
+				"blocking_unit_pushing_pressure": pressure_blocker.pushing_pressure,
+			})
+			return {
+				"obstructed": true,
+				"moved": moved,
+				"failure_reason": "push_pressure_pair_blocked",
 			}
 		unit.position = candidate
 		unit.remember_position()
@@ -204,10 +322,48 @@ func _perform_move(
 	}
 
 
+func _effective_speed(unit: ZeroAdRtsLabUnit) -> float:
+	if unit.pushing_pressure <= PUSH_PRESSURE_SPEED_THRESHOLD:
+		return unit.speed
+	var max_pressure := maxi(1, MAX_PUSH_PRESSURE - PUSH_PRESSURE_SPEED_THRESHOLD - MIN_PRESSURE_IF_OBSTRUCTED)
+	var pressure_over_threshold := maxi(0, unit.pushing_pressure - PUSH_PRESSURE_SPEED_THRESHOLD)
+	var slowdown := max_pressure - mini(max_pressure, pressure_over_threshold)
+	var pressure_factor := float(slowdown) / float(max_pressure)
+	return maxf(unit.speed * pressure_factor, unit.speed * PUSH_PRESSURE_SPEED_FLOOR_RATIO)
+
+
+func _pressure_pair_blocker(
+	unit: ZeroAdRtsLabUnit,
+	candidate: Vector2,
+	units: Array[ZeroAdRtsLabUnit]
+) -> ZeroAdRtsLabUnit:
+	if unit.control_group_id != "":
+		return null
+	for other in units:
+		if other == unit:
+			continue
+		if not other.mobile or not other.blocks_pathfinding:
+			continue
+		if not other.has_move_order:
+			continue
+		if _same_control_group(unit, other):
+			continue
+		if maxi(unit.pushing_pressure, other.pushing_pressure) < MIN_PRESSURE_IF_OBSTRUCTED:
+			continue
+		var current_distance := unit.position.distance_to(other.position)
+		var candidate_distance := candidate.distance_to(other.position)
+		var max_distance := _push_max_distance(unit, other, 2, false)
+		var pressure_distance := max_distance * MOVING_PUSH_SPREAD
+		if candidate_distance <= pressure_distance and candidate_distance < current_distance - 0.0001:
+			return other
+	return null
+
+
 func _request_long_path(
 	unit: ZeroAdRtsLabUnit,
 	goal: Vector2,
-	pathfinder: ZeroAdRtsLabPathfinder
+	pathfinder: ZeroAdRtsLabPathfinder,
+	tick: int
 ) -> void:
 	if unit.pending_short_ticket > 0:
 		pathfinder.cancel_path_request(unit.pending_short_ticket)
@@ -221,6 +377,10 @@ func _request_long_path(
 	long_path_requests += 1
 	unit.note_order_metric("long_path_requests")
 	unit.pending_long_ticket = pathfinder.enqueue_long_path(unit, goal)
+	_record_path_decision(unit, "long_path_requested", tick, {
+		"goal": goal,
+		"ticket": unit.pending_long_ticket,
+	})
 
 
 func _apply_long_path_result(unit: ZeroAdRtsLabUnit, result: SimNavLongPathResult, tick: int) -> void:
@@ -230,12 +390,27 @@ func _apply_long_path_result(unit: ZeroAdRtsLabUnit, result: SimNavLongPathResul
 		unit.long_path = result.path
 		unit.short_path = SimNavWaypointPath.new()
 		unit.path_target = result.canonical_goal.center if result.canonical_goal != null else unit.target
+		_record_path_decision(unit, "long_path_result", tick, {
+			"status": result.status,
+			"failure_reason": result.failure_reason,
+			"path_size": result.path.size(),
+			"canonicalized": result.canonicalized,
+			"canonical_goal": unit.path_target,
+			"path": _path_snapshot(result.path),
+		})
 		_note_known_imperfect_path_if_needed(unit, true, tick)
 	else:
 		path_result_failures += 1
 		unit.note_order_metric("path_result_failures")
 		unit.long_path = SimNavWaypointPath.new()
 		unit.path_target = unit.target
+		_record_path_decision(unit, "long_path_result", tick, {
+			"status": result.status,
+			"failure_reason": result.failure_reason,
+			"path_size": result.path.size(),
+			"canonicalized": result.canonicalized,
+			"canonical_goal": unit.path_target,
+		})
 
 
 func _request_short_path(
@@ -243,15 +418,25 @@ func _request_short_path(
 	goal: SimNavPathGoal,
 	pathfinder: ZeroAdRtsLabPathfinder,
 	units: Array[ZeroAdRtsLabUnit],
-	search_range: float = SHORT_PATH_MIN_SEARCH_RANGE
+	search_range: float = SHORT_PATH_MIN_SEARCH_RANGE,
+	tick: int = 0,
+	reason: String = ""
 ) -> bool:
 	if unit.pending_short_ticket > 0:
 		repath_suppressed += 1
 		unit.note_order_metric("repath_suppressed")
+		_record_path_decision(unit, "short_path_suppressed", tick, {
+			"reason": "pending_short_ticket",
+			"pending_short_ticket": unit.pending_short_ticket,
+		})
 		return false
 	if unit.short_repath_cooldown > 0.0:
 		repath_suppressed += 1
 		unit.note_order_metric("repath_suppressed")
+		_record_path_decision(unit, "short_path_suppressed", tick, {
+			"reason": "short_repath_cooldown",
+			"cooldown": unit.short_repath_cooldown,
+		})
 		return false
 	if unit.pending_long_ticket > 0:
 		pathfinder.cancel_path_request(unit.pending_long_ticket)
@@ -262,24 +447,83 @@ func _request_short_path(
 	unit.note_order_metric("short_path_requests")
 	unit.pending_short_ticket = pathfinder.enqueue_short_path(unit, goal, units, search_range)
 	unit.short_repath_cooldown = SHORT_REPATH_COOLDOWN_SEC
+	_record_path_decision(unit, "short_path_requested", tick, {
+		"reason": reason,
+		"goal": goal.center if goal != null else Vector2.ZERO,
+		"search_range": search_range,
+		"ticket": unit.pending_short_ticket,
+	})
 	return true
 
 
-func _apply_short_path_result(unit: ZeroAdRtsLabUnit, result: SimNavShortPathResult, tick: int) -> void:
+func _apply_short_path_result(
+	unit: ZeroAdRtsLabUnit,
+	result: SimNavShortPathResult,
+	pathfinder: ZeroAdRtsLabPathfinder,
+	units: Array[ZeroAdRtsLabUnit],
+	tick: int
+) -> void:
 	path_results_applied += 1
 	unit.note_order_metric("path_results_applied")
 	if result.is_success():
 		unit.short_path = result.path
+		_trim_regressive_short_waypoint(unit, pathfinder, units, tick)
+		_record_path_decision(unit, "short_path_result", tick, {
+			"status": result.status,
+			"failure_reason": result.failure_reason,
+			"path_size": result.path.size(),
+			"path_length": result.path_length,
+			"path": _path_snapshot(result.path),
+		})
 		_note_known_imperfect_path_if_needed(unit, unit.long_path == null or unit.long_path.is_empty(), tick)
 	else:
 		path_result_failures += 1
 		unit.note_order_metric("path_result_failures")
+		_record_path_decision(unit, "short_path_result", tick, {
+			"status": result.status,
+			"failure_reason": result.failure_reason,
+			"path_size": result.path.size(),
+			"path_length": result.path_length,
+		})
+
+
+func _trim_regressive_short_waypoint(
+	unit: ZeroAdRtsLabUnit,
+	pathfinder: ZeroAdRtsLabPathfinder,
+	units: Array[ZeroAdRtsLabUnit],
+	tick: int
+) -> void:
+	if unit.short_path == null or unit.short_path.size() < 2:
+		return
+	var current_waypoint := unit.short_path.back()
+	var next_index := unit.short_path.size() - 2
+	var next_waypoint := unit.short_path.waypoints[next_index]
+	var goal := SimNavPathGoal.point(unit.path_target)
+	var current_goal_distance := goal.distance_to_point(unit.position)
+	var first_goal_distance := goal.distance_to_point(current_waypoint)
+	var second_goal_distance := goal.distance_to_point(next_waypoint)
+	if first_goal_distance <= current_goal_distance + unit.radius:
+		return
+	if second_goal_distance >= first_goal_distance:
+		return
+	var line_result := pathfinder.validate_movement_line(unit, unit.position, next_waypoint, units, false)
+	if not line_result.is_success():
+		return
+	unit.short_path.pop_back()
+	_record_path_decision(unit, "skip_short_waypoint", tick, {
+		"skipped_waypoint": current_waypoint,
+		"next_waypoint": next_waypoint,
+		"current_goal_distance": current_goal_distance,
+		"skipped_goal_distance": first_goal_distance,
+		"next_goal_distance": second_goal_distance,
+	})
 
 
 func _maybe_request_short_path_for_long_segment(
 	unit: ZeroAdRtsLabUnit,
 	pathfinder: ZeroAdRtsLabPathfinder,
-	units: Array[ZeroAdRtsLabUnit]
+	units: Array[ZeroAdRtsLabUnit],
+	tick: int
 ) -> void:
 	if unit.short_path != null and not unit.short_path.is_empty():
 		return
@@ -295,11 +539,24 @@ func _maybe_request_short_path_for_long_segment(
 	var unit_line := pathfinder.validate_unit_line(unit, unit.position, next_long, units, false)
 	if unit_line.is_success():
 		return
+	_record_path_decision(unit, "long_segment_unit_line_blocked", tick, {
+		"from": unit.position,
+		"next_long": next_long,
+		"line": _line_result_snapshot(unit_line, units),
+	})
 	if unit.long_path.size() > 1:
 		unit.long_path.pop_back()
 		next_long = unit.long_path.back()
 	var goal := SimNavPathGoal.circle(next_long, LONG_PATH_UNIT_LINE_SUBGOAL_RADIUS)
-	_request_short_path(unit, goal, pathfinder, units, _short_path_search_range(unit, false))
+	_request_short_path(
+		unit,
+		goal,
+		pathfinder,
+		units,
+		_short_path_search_range(unit, false),
+		tick,
+		"long_segment_unit_line_blocked"
+	)
 
 
 func _handle_blocked_move(
@@ -307,7 +564,8 @@ func _handle_blocked_move(
 	pathfinder: ZeroAdRtsLabPathfinder,
 	units: Array[ZeroAdRtsLabUnit],
 	moved: bool,
-	tick: int
+	tick: int,
+	failure_reason: String = ""
 ) -> void:
 	blocked_moves += 1
 	unit.note_order_metric("blocked_moves")
@@ -316,9 +574,23 @@ func _handle_blocked_move(
 			return
 		_note_obstructed(unit, tick)
 
+	_record_path_decision(unit, "blocked_recovery", tick, {
+		"moved_before_block": moved,
+		"failed_movements": unit.failed_movements,
+		"failure_reason": failure_reason,
+	})
 	var goal := SimNavPathGoal.point(unit.path_target)
-	if _in_short_path_range(goal, unit.position):
-		_compute_path_to_goal(unit, pathfinder, units, goal)
+	var has_salvageable_long_path := unit.long_path != null and not unit.long_path.is_empty()
+	var route_drift := (
+		has_salvageable_long_path
+		and (
+			failure_reason == SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED
+			or failure_reason == "push_pressure_obstructed"
+			or failure_reason == "push_static_blocked"
+		)
+	)
+	if _in_short_path_range(goal, unit.position) and not route_drift:
+		_compute_path_to_goal(unit, pathfinder, units, goal, tick)
 		return
 	if unit.short_path != null and not unit.short_path.is_empty() and unit.failed_movements == BACKUP_HACK_DELAY:
 		var next := unit.short_path.back()
@@ -329,45 +601,70 @@ func _handle_blocked_move(
 
 	var skip_beyond := maxf(_short_path_search_range(unit, false) / 3.0, NAVCELL_SIZE * 8.0)
 	if unit.long_path != null and unit.long_path.size() > 1 and unit.position.distance_to(unit.long_path.back()) < skip_beyond:
+		_record_path_decision(unit, "skip_long_waypoint", tick, {
+			"skip_distance": skip_beyond,
+			"skipped_waypoint": unit.long_path.back(),
+		})
 		unit.long_path.pop_back()
 	elif _should_alternate_pathfinder(unit):
-		_request_long_path(unit, unit.path_target, pathfinder)
+		_request_long_path(unit, unit.path_target, pathfinder, tick)
 		return
 
 	if unit.long_path == null or unit.long_path.is_empty():
-		_compute_path_to_goal(unit, pathfinder, units, goal)
+		_compute_path_to_goal(unit, pathfinder, units, goal, tick)
 		return
 
 	var radius := clampf(skip_beyond / 3.0, NAVCELL_SIZE * 4.0, NAVCELL_SIZE * 12.0)
 	var subgoal := SimNavPathGoal.circle(unit.long_path.back(), radius)
-	_request_short_path(unit, subgoal, pathfinder, units, _short_path_search_range(unit, false))
+	_request_short_path(
+		unit,
+		subgoal,
+		pathfinder,
+		units,
+		_short_path_search_range(unit, false),
+		tick,
+		"blocked_recovery_subgoal"
+	)
 
 
 func _compute_path_to_goal(
 	unit: ZeroAdRtsLabUnit,
 	pathfinder: ZeroAdRtsLabPathfinder,
 	units: Array[ZeroAdRtsLabUnit],
-	goal: SimNavPathGoal
+	goal: SimNavPathGoal,
+	tick: int
 ) -> void:
 	if goal == null:
 		return
 	if unit.follow_known_imperfect_path_countdown > 0 and unit.has_path():
 		known_imperfect_suppressed += 1
 		unit.note_order_metric("known_imperfect_suppressed")
+		_record_path_decision(unit, "path_to_goal_suppressed", tick, {
+			"reason": "known_imperfect_path_countdown",
+			"countdown": unit.follow_known_imperfect_path_countdown,
+		})
 		return
 	if not _should_alternate_pathfinder(unit) and _try_going_straight_to_target(unit, pathfinder, units, false):
 		unit.short_path = SimNavWaypointPath.new()
-		_request_long_path(unit, goal.center, pathfinder)
+		_request_long_path(unit, goal.center, pathfinder, tick)
 		return
 	var use_short_path := _in_short_path_range(goal, unit.position)
 	if _should_alternate_pathfinder(unit):
 		use_short_path = not use_short_path
 	if use_short_path:
 		unit.long_path = SimNavWaypointPath.new()
-		_request_short_path(unit, goal, pathfinder, units, _short_path_search_range(unit, true, goal))
+		_request_short_path(
+			unit,
+			goal,
+			pathfinder,
+			units,
+			_short_path_search_range(unit, true, goal),
+			tick,
+			"path_to_goal"
+		)
 	else:
 		unit.short_path = SimNavWaypointPath.new()
-		_request_long_path(unit, goal.center, pathfinder)
+		_request_long_path(unit, goal.center, pathfinder, tick)
 
 
 func _increment_failed_movements_and_maybe_fail(
@@ -381,6 +678,10 @@ func _increment_failed_movements_and_maybe_fail(
 	_cancel_pending_path_requests(unit, pathfinder)
 	move_failures += 1
 	unit.note_order_metric("move_failures")
+	_record_path_decision(unit, "move_failed", tick, {
+		"reason": "max_failed_movements",
+		"max_failed_movements": MAX_FAILED_MOVEMENTS,
+	})
 	_emit_motion_update(unit, MotionUpdateScript.TYPE_LIKELY_FAILURE, "max_failed_movements", tick)
 	return true
 
@@ -537,6 +838,79 @@ func _emit_obstruction_update_if_needed(
 	_emit_motion_update(unit, update_type, "", tick)
 
 
+func _record_path_decision(
+	unit: ZeroAdRtsLabUnit,
+	kind: String,
+	tick: int,
+	details: Dictionary = {}
+) -> void:
+	var active_path := unit.active_path()
+	var entry := {
+		"tick": tick,
+		"kind": kind,
+		"unit_id": unit.id,
+		"order_id": unit.active_order_id(),
+		"control_group_id": unit.control_group_id,
+		"position": unit.position,
+		"target": unit.target,
+		"path_target": unit.path_target,
+		"has_move_order": unit.has_move_order,
+		"failed_movements": unit.failed_movements,
+		"pushing_pressure": unit.pushing_pressure,
+		"pending_long_ticket": unit.pending_long_ticket,
+		"pending_short_ticket": unit.pending_short_ticket,
+		"long_path_size": unit.long_path.size() if unit.long_path != null else 0,
+		"short_path_size": unit.short_path.size() if unit.short_path != null else 0,
+		"active_path_size": active_path.size() if active_path != null else 0,
+	}
+	for key in details.keys():
+		entry[key] = details[key]
+	_path_decisions.append(entry)
+	while _path_decisions.size() > MAX_PATH_DECISION_LOG_ENTRIES:
+		_path_decisions.pop_front()
+
+
+func _line_result_snapshot(result: SimNavMovementLineResult, units: Array[ZeroAdRtsLabUnit]) -> Dictionary:
+	if result == null:
+		return {}
+	var snapshot := {
+		"status": result.status,
+		"failure_reason": result.failure_reason,
+		"blocked_obstruction_entity_id": result.blocked_obstruction_entity_id,
+		"blocked_navcell": result.blocked_navcell,
+	}
+	var blocker := _find_unit(units, result.blocked_obstruction_entity_id)
+	if blocker != null:
+		snapshot["blocking_unit"] = {
+			"id": blocker.id,
+			"position": blocker.position,
+			"radius": blocker.radius,
+			"mobile": blocker.mobile,
+			"has_move_order": blocker.has_move_order,
+			"blocks_pathfinding": blocker.blocks_pathfinding,
+			"obstruction_state": blocker.obstruction_state,
+		}
+	return snapshot
+
+
+func _path_snapshot(path: SimNavWaypointPath) -> Array[Vector2]:
+	var points: Array[Vector2] = []
+	if path == null:
+		return points
+	for point in path.waypoints:
+		points.append(point)
+	return points
+
+
+func _find_unit(units: Array[ZeroAdRtsLabUnit], unit_id: String) -> ZeroAdRtsLabUnit:
+	if unit_id == "":
+		return null
+	for unit in units:
+		if unit.id == unit_id:
+			return unit
+	return null
+
+
 func _cancel_pending_path_requests(unit: ZeroAdRtsLabUnit, pathfinder: ZeroAdRtsLabPathfinder) -> void:
 	if unit.pending_long_ticket > 0:
 		pathfinder.cancel_path_request(unit.pending_long_ticket)
@@ -549,27 +923,176 @@ func _cancel_pending_path_requests(unit: ZeroAdRtsLabUnit, pathfinder: ZeroAdRts
 func _accumulate_pair_push(
 	a: ZeroAdRtsLabUnit,
 	b: ZeroAdRtsLabUnit,
-	pushes: Dictionary
+	pushes: Dictionary,
+	pressure_deltas: Dictionary,
+	previous_positions: Dictionary,
+	previous_move_orders: Dictionary,
+	delta: float
 ) -> void:
 	if not a.blocks_pathfinding or not b.blocks_pathfinding:
 		return
 	if not a.mobile or not b.mobile:
 		return
-	var delta: Vector2 = a.position - b.position
-	var distance: float = delta.length()
-	var min_distance: float = (a.radius + b.radius) * PUSH_RADIUS_MULTIPLIER
-	if distance >= min_distance:
-		return
-	var direction := Vector2.RIGHT
-	if distance > 0.001:
-		direction = delta / distance
-	var overlap: float = min_distance - distance
-	var moving_count := (1 if a.has_move_order else 0) + (1 if b.has_move_order else 0)
+	var a_was_moving := bool(previous_move_orders.get(a.id, a.has_move_order))
+	var b_was_moving := bool(previous_move_orders.get(b.id, b.has_move_order))
+	var moving_count := (1 if a_was_moving else 0) + (1 if b_was_moving else 0)
+	var same_control_group := _same_control_group(a, b)
+	if same_control_group:
+		moving_count = 0
 	if moving_count == 1:
 		return
-	var amount: float = overlap * 0.5
-	pushes[a.id] = (pushes.get(a.id, Vector2.ZERO) as Vector2) + direction * amount
-	pushes[b.id] = (pushes.get(b.id, Vector2.ZERO) as Vector2) - direction * amount
+	var previous_a: Vector2 = previous_positions.get(a.id, a.position) as Vector2
+	var previous_b: Vector2 = previous_positions.get(b.id, b.position) as Vector2
+	var current_delta := a.position - b.position
+	var previous_delta := previous_a - previous_b
+	var average_delta := ((a.position + previous_a) - (b.position + previous_b)) * 0.5
+	var distance := current_delta.length()
+	var average_distance := average_delta.length()
+	var max_distance := _push_max_distance(a, b, moving_count, same_control_group)
+	var crossed_paths := (
+		not same_control_group and
+		moving_count == 2
+		and previous_delta.dot(current_delta) < CROSSING_NUDGE_DOT_THRESHOLD
+		and average_distance < max_distance
+	)
+	if average_distance >= max_distance and not crossed_paths:
+		return
+	var direction := Vector2.RIGHT
+	if crossed_paths:
+		var position_delta := current_delta - previous_delta
+		var perpendicular := Vector2(-position_delta.y, position_delta.x)
+		if perpendicular.length_squared() > 0.000001:
+			direction = perpendicular.normalized()
+			if average_delta.length_squared() > 0.000001 and average_delta.dot(direction) < 0.0:
+				direction = -direction
+		else:
+			direction = _stable_pair_direction(a, b)
+		crossing_nudges += 1
+	elif average_distance > 0.001:
+		direction = average_delta / average_distance
+	elif distance > 0.001:
+		direction = current_delta / distance
+	else:
+		direction = _stable_pair_direction(a, b)
+	var push_strength := _push_distance_factor(average_distance, max_distance, moving_count)
+	if crossed_paths:
+		push_strength = maxf(push_strength, CROSSING_NUDGE_DISTANCE * MAX_DISTANCE_FACTOR)
+	var time_factor := _push_time_factor(a, b, delta)
+	var amount := minf(push_strength * time_factor, time_factor * MAX_PUSHING_MULTIPLIER)
+	if amount > 0.0:
+		pushes[a.id] = (pushes.get(a.id, Vector2.ZERO) as Vector2) + direction * amount
+		pushes[b.id] = (pushes.get(b.id, Vector2.ZERO) as Vector2) - direction * amount
+	var pressure_delta := _push_pressure_delta(average_distance, max_distance, moving_count)
+	pressure_deltas[a.id] = int(pressure_deltas.get(a.id, 0)) + pressure_delta
+	pressure_deltas[b.id] = int(pressure_deltas.get(b.id, 0)) + pressure_delta
+
+
+func _push_max_distance(
+	a: ZeroAdRtsLabUnit,
+	b: ZeroAdRtsLabUnit,
+	moving_count: int,
+	same_control_group: bool
+) -> float:
+	var combined_radius := a.radius + b.radius
+	if same_control_group:
+		return combined_radius
+	var combined_clearance := combined_radius * PUSHING_CORRECTION
+	var extension := MOVING_PUSH_EXTENSION if moving_count > 0 else STATIC_PUSH_EXTENSION
+	return combined_clearance * PUSHING_RADIUS_MULTIPLIER + extension
+
+
+func _decay_push_pressure(units: Array[ZeroAdRtsLabUnit], delta: float) -> void:
+	var decay := pow(PUSH_PRESSURE_DECAY, delta / PUSH_PRESSURE_DECAY_TURN_SEC)
+	for unit in units:
+		unit.pushing_pressure = int(floor(float(unit.pushing_pressure) * decay))
+
+
+func _apply_push_pressure_deltas(units: Array[ZeroAdRtsLabUnit], pressure_deltas: Dictionary) -> void:
+	for unit in units:
+		var pressure_delta := int(pressure_deltas.get(unit.id, 0))
+		if pressure_delta <= 0:
+			continue
+		unit.pushing_pressure = mini(MAX_PUSH_PRESSURE, unit.pushing_pressure + pressure_delta)
+
+
+func _push_pressure_delta(distance: float, max_distance: float, moving_count: int) -> int:
+	var distance_factor := _push_distance_factor(distance, max_distance, moving_count)
+	var added_pressure := PRESSURE_STATIC_FACTOR + (distance_factor - (2.0 / 3.0)) * PRESSURE_DISTANCE_FACTOR
+	return maxi(0, int(round(added_pressure)))
+
+
+func _push_distance_factor(distance: float, max_distance: float, moving_count: int) -> float:
+	var spread := MOVING_PUSH_SPREAD if moving_count > 0 else STATIC_PUSH_SPREAD
+	var full_pressure_distance := max_distance * spread
+	var distance_factor := max_distance - full_pressure_distance
+	if distance_factor <= 0.0001 or distance < full_pressure_distance * 0.5:
+		return MAX_DISTANCE_FACTOR
+	return clampf((max_distance - distance) / distance_factor, 0.0, MAX_DISTANCE_FACTOR)
+
+
+func _push_time_factor(a: ZeroAdRtsLabUnit, b: ZeroAdRtsLabUnit, delta: float) -> float:
+	var reference_speed := maxf(maxf(a.speed, b.speed), PUSH_REFERENCE_SPEED)
+	return reference_speed * delta / PUSHING_REDUCTION_FACTOR
+
+
+func _push_opposes_attempted_motion(
+	unit: ZeroAdRtsLabUnit,
+	push_vec: Vector2,
+	previous_positions: Dictionary
+) -> bool:
+	if not unit.has_move_order:
+		return false
+	var previous_position: Vector2 = previous_positions.get(unit.id, unit.position) as Vector2
+	var attempted_move := unit.position - previous_position
+	if attempted_move.length_squared() <= 0.0001:
+		return false
+	return attempted_move.dot(attempted_move + push_vec) < 0.5
+
+
+func _mark_push_pressure_obstructed(
+	unit: ZeroAdRtsLabUnit,
+	pressure_obstructed_units: Array[ZeroAdRtsLabUnit]
+) -> void:
+	if unit.pushing_pressure <= PUSH_PRESSURE_OBSTRUCTED_THRESHOLD:
+		return
+	if pressure_obstructed_units.has(unit):
+		return
+	unit.was_obstructed = true
+	unit.pushing_pressure = maxi(MIN_PRESSURE_IF_OBSTRUCTED, unit.pushing_pressure)
+	push_pressure_obstructions += 1
+	pressure_obstructed_units.append(unit)
+
+
+func _dampen_pressure_push(unit: ZeroAdRtsLabUnit, push_vec: Vector2) -> Vector2:
+	if unit.pushing_pressure <= 0:
+		return push_vec
+	var damped_pressure := mini(MAX_PUSH_DAMPING_PRESSURE, unit.pushing_pressure)
+	var pressure_factor := float(MAX_PUSH_PRESSURE - damped_pressure) / float(MAX_PUSH_PRESSURE)
+	return push_vec * pressure_factor
+
+
+func _dampen_goal_opposing_push(unit: ZeroAdRtsLabUnit, push_vec: Vector2) -> Vector2:
+	if not unit.has_move_order:
+		return push_vec
+	if unit.control_group_id != "":
+		return push_vec
+	var desired := unit.path_target - unit.position
+	if desired.length_squared() <= 0.0001:
+		return push_vec
+	if desired.dot(push_vec) >= 0.0:
+		return push_vec
+	goal_opposing_push_dampens += 1
+	return push_vec * GOAL_OPPOSING_PUSH_DAMPING
+
+
+func _stable_pair_direction(a: ZeroAdRtsLabUnit, b: ZeroAdRtsLabUnit) -> Vector2:
+	if a.id < b.id:
+		return Vector2.RIGHT
+	return Vector2.LEFT
+
+
+func _same_control_group(a: ZeroAdRtsLabUnit, b: ZeroAdRtsLabUnit) -> bool:
+	return a.control_group_id != "" and a.control_group_id == b.control_group_id
 
 
 func _build_push_buckets(units: Array[ZeroAdRtsLabUnit]) -> Dictionary:
