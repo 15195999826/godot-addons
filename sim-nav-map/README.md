@@ -94,12 +94,12 @@ adapter input 仍应使用 `SimNavObstructionShapeStatic` 或
 ## Example Lab
 
 插件内的 playable usage sample 位于
-[`examples/rts-pathfinding-lab/`](examples/rts-pathfinding-lab/)。它负责 adapter、
-movement policy、selection、replan budget、push behavior、HUD 和 smoke regression；
-这些都不是 core addon public API。
+[`examples/0ad-rts-pathfinding-lab/`](examples/0ad-rts-pathfinding-lab/)。它负责
+adapter、movement policy、selection、replan budget、push behavior、HUD 和 smoke
+regression；这些都不是 core addon public API。
 
 ```powershell
-./tools/run_tests.ps1 rtslab/smoke
+./tools/run_tests.ps1 zeroadlab/smoke
 ```
 
 ## Docs And References

@@ -45,7 +45,7 @@ const STATIC_PUSH_SPREAD: float = 0.625
 const MAX_DISTANCE_FACTOR: float = 2.5
 const PRESSURE_STATIC_FACTOR: float = 2.0
 const PRESSURE_DISTANCE_FACTOR: float = 5.0
-const SHORT_REPATH_COOLDOWN_SEC: float = 0.22
+const SHORT_REPATH_COOLDOWN_SEC: float = 0.0
 const MAX_PATH_DECISION_LOG_ENTRIES: int = 240
 const CROSSING_NUDGE_DOT_THRESHOLD: float = -0.1
 const CROSSING_NUDGE_DISTANCE: float = 3.0
@@ -194,6 +194,20 @@ func step_unit(
 		if String(move_result.get("failure_reason", "")) == "push_pressure_pair_blocked":
 			unit.was_obstructed = true
 			return
+		# If we're physically close to the move-order target and the only
+		# thing stopping us is a static/idle unit at the goal (or a goal that
+		# fell inside an obstruction's collision ring), treat the order as
+		# fulfilled. Mirrors 0 A.D. CCmpUnitMotion::PossiblyAtDestination's
+		# tolerance — without this the unit spins blocked_recovery forever
+		# at distance < ARRIVE_EPSILON because the long-path final waypoint
+		# remains technically unreachable.
+		if unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON:
+			unit.long_path = SimNavWaypointPath.new()
+			unit.short_path = SimNavWaypointPath.new()
+			unit.failed_movements = 0
+			_emit_clear_update_if_needed(unit, tick)
+			_emit_motion_update(unit, MotionUpdateScript.TYPE_REACHED_GOAL, "", tick)
+			return
 		_handle_blocked_move(
 			unit,
 			pathfinder,
@@ -315,7 +329,17 @@ func _perform_move(
 		var reaches_waypoint := waypoint_distance <= remaining_distance
 		var move_distance := waypoint_distance if reaches_waypoint else remaining_distance
 		var candidate := waypoint if reaches_waypoint else unit.position + to_waypoint / waypoint_distance * move_distance
-		var line_result := pathfinder.validate_movement_line(unit, unit.position, candidate, units, false)
+		# Validate the FULL segment to the waypoint, not the per-frame candidate.
+		# Mirrors 0 A.D. CCmpUnitMotion::PerformMove (CCmpUnitMotion.h:1334) which
+		# CheckMovement(pos, target=waypoint). With per-candidate validation only,
+		# a segment heading toward a waypoint that lies inside an obstacle's
+		# collision ring slips past the EDGE_EXPAND_DELTA tolerance every frame
+		# (0.4 px advance < 0.5 px tolerance) and accumulates into a full
+		# pass-through over multiple ticks. Validating against the waypoint
+		# anchors the LOS target to the path's intended end point so a
+		# fundamentally bad target gets caught immediately.
+		var validation_target := waypoint
+		var line_result := pathfinder.validate_movement_line(unit, unit.position, validation_target, units, false)
 		if not line_result.is_success():
 			_record_path_decision(unit, "movement_line_blocked", tick, {
 				"from": unit.position,

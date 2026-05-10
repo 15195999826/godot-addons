@@ -27,7 +27,17 @@
         "repro/repro_core_007_static_rasterize_aabb.tscn",
         "repro/repro_core_003_hierarchical_far_goal.tscn",
         "repro/repro_core_004_set_bounds.tscn",
-        "repro/repro_core_002_long_path_los_sampling.tscn"
+        "repro/repro_core_002_long_path_los_sampling.tscn",
+        "repro/repro_core_008_covered_vertex_first_waypoint_regression.tscn",
+        "repro/repro_core_009_directional_must_not_pierce_other_unit.tscn",
+        "repro/repro_core_010_boundary_tangent_no_detour.tscn",
+        "repro/repro_core_011_short_path_best_vertex_fallback.tscn",
+        "repro/repro_core_012_boundary_motion_step_not_stay.tscn",
+        "repro/repro_core_013_boundary_step_b_inside_no_early_block.tscn",
+        "repro/repro_core_014_overlap_escape_must_be_strict_binary.tscn",
+        "repro/repro_core_015_motion_validates_full_segment_to_waypoint.tscn",
+        "repro/repro_core_016_arrive_when_blocked_close_to_target.tscn",
+        "repro/repro_core_017_dense_cluster_perimeter_detour_known_limit.tscn"
       ]
     }
   }

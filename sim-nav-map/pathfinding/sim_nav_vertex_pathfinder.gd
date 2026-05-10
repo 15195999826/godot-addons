@@ -98,6 +98,8 @@ func _compute_to_goal(
 	var vertices: Array[Vector2] = [start, initial_goal]
 	var obstacle_vertices: Array = visibility_inputs.get("vertices", [])
 	for vertex in obstacle_vertices:
+		if _vertex_covered_by_obstacles(vertex as Vector2, obstacles, req):
+			continue
 		vertices.append(vertex as Vector2)
 	diagnostics["vertex_count"] = maxi(int(diagnostics.get("vertex_count", 0)), vertices.size())
 
@@ -360,6 +362,14 @@ func _astar_visibility(
 	open_keys.append([h0, h0, _coord_int(vertices[0].x), _coord_int(vertices[0].y), insertion_seq, 0])
 	insertion_seq += 1
 
+	# Mirror 0 A.D. VertexPathfinder.cpp:868-900 — track the heuristically best
+	# reachable vertex and reconstruct the path to it when the actual goal is
+	# unreachable. Without this, A* returning empty causes motion to spin in
+	# blocked_recovery → short path no_route → max_failed_movements forever
+	# (e.g. when goal sits inside a static obstacle's swept clearance ring).
+	var idx_best := 0
+	var h_best := h0
+
 	while not open_keys.is_empty():
 		var key: Array = open_keys[0]
 		open_keys.remove_at(0)
@@ -392,6 +402,15 @@ func _astar_visibility(
 			var f := next_g + next_h
 			SimNavPathfinderHeap.insert(open_keys, [f, next_h, _coord_int(next_pos.x), _coord_int(next_pos.y), insertion_seq, next_idx])
 			insertion_seq += 1
+			if next_h < h_best:
+				h_best = next_h
+				idx_best = next_idx
+	# Goal unreachable. If we reached anywhere closer to the goal than the start,
+	# emit a partial path to that best vertex (lets motion make progress and
+	# replan next tick). Otherwise the goal was unreachable from start, return
+	# empty so the caller surfaces no_route.
+	if idx_best != 0:
+		return _reconstruct(vertices, came_from, idx_best)
 	return SimNavWaypointPath.new()
 
 
@@ -420,6 +439,26 @@ func _visibility_neighbor_indices(
 	for i in range(limit):
 		result.append(int(keys[i][1]))
 	return result
+
+
+# Mirror 0 A.D. VertexPathfinder.cpp:727-734 — vertices that fall inside another
+# obstacle's dilated outline are unreachable, A* must not consider them.
+# Without this an obstacle corner can be covered by a neighbor's collision ring
+# and force A* to detour to a far, uncovered corner (regressive first waypoint).
+func _vertex_covered_by_obstacles(vertex: Vector2, obstacles: Array, req: SimNavShortPathRequest) -> bool:
+	var buffer := req.clearance
+	for shape in obstacles:
+		if shape is SimNavObstructionShapeUnit:
+			var unit_shape := shape as SimNavObstructionShapeUnit
+			var threshold := unit_shape.clearance + buffer + EDGE_EXPAND_DELTA
+			if unit_shape.center.distance_to(vertex) < threshold - 0.001:
+				return true
+		elif shape is SimNavObstructionShapeStatic:
+			var static_shape := shape as SimNavObstructionShapeStatic
+			var extra := buffer + req.static_vertex_extra_outset + EDGE_EXPAND_DELTA - 0.001
+			if static_shape.contains_point_with_clearance(vertex, extra):
+				return true
+	return false
 
 
 func _segment_clear_for_request(

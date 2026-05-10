@@ -22,13 +22,11 @@ request cloning. Feature-specific coverage includes
 clearance rasterization, `smoke_sim_nav_dirty_lifecycle.tscn` for dirty
 edit/cache lifecycle, and `smoke_sim_nav_reachability_query.tscn` for explicit
 reachability and canonical goal metadata. Feature 5 long-path result coverage is
-in `smoke_sim_nav_long_pathfinder.tscn`,
-`smoke_sim_nav_path_request_queue.tscn`, and
-`examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_long_path_result_adapter.tscn`.
-Feature 6-8 coverage adds `smoke_sim_nav_line_validation.tscn`,
-`smoke_sim_nav_diagnostics_exports.tscn`, expanded queue/vertex/public API smoke,
-and
-`examples/rts-pathfinding-lab/tests/smoke/smoke_rts_pathfinding_lab_core_primitive_adapter.tscn`.
+in `smoke_sim_nav_long_pathfinder.tscn` and
+`smoke_sim_nav_path_request_queue.tscn`. Feature 6-8 coverage adds
+`smoke_sim_nav_line_validation.tscn`, `smoke_sim_nav_diagnostics_exports.tscn`,
+and expanded queue/vertex/public API smoke. Lab-side regression coverage lives
+under `examples/0ad-rts-pathfinding-lab/tests/`.
 
 ## Stable Entry Points
 
@@ -371,7 +369,7 @@ The core addon intentionally does not implement:
 - deadlock resolution
 - combat, command, selection, HUD, rendering, or editor tools
 
-`examples/rts-pathfinding-lab` may experiment with those behaviors as
+`examples/0ad-rts-pathfinding-lab` may experiment with those behaviors as
 application policy, but that does not make them reusable `sim-nav-map` API.
 
 ## Compatibility Note

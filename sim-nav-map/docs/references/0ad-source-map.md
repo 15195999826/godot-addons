@@ -273,7 +273,7 @@ source/simulation2/components/CCmpUnitMotion.h
 - `post_process` supports `raw`, `line_of_sight`, and `max_spacing`. Spacing is
   a navigation output preference (`waypoint_spacing` or `PathGoal.maxdist`),
   not movement policy.
-- `rts-pathfinding-lab` consumes result metadata through adapter reports only.
+- `0ad-rts-pathfinding-lab` consumes result metadata through adapter reports only.
   Feature 5 did not move `CCmpUnitMotion`-style short-path fallback, retry
   cadence, push/yield, stuck/deadlock, formation, or movement controller policy
   into core.

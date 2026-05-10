@@ -15,7 +15,7 @@ git config --global core.longpaths true
 
 # 2. Partial clone(只拉 commit/tree 元数据,blob 按需)
 git clone --depth=1 --filter=blob:none --sparse --no-checkout \
-  https://github.com/0ad/0ad \
+  https://gitea.wildfiregames.com/0ad/0ad.git \
   addons/sim-nav-map/docs/references/0ad-source
 
 # 3. 配 sparse-checkout 只取 source/simulation2/ 子树
@@ -50,10 +50,14 @@ git checkout
 ```bash
 cd addons/sim-nav-map/docs/references/0ad-source
 git fetch --depth=1
-git reset --hard origin/master
+git reset --hard origin/main
 ```
 
-注: GitHub 上 0ad master 分支已 archived(2024 起官方迁到 https://gitea.wildfiregames.com/0ad/0ad)。我们用 GitHub 镜像是因为 Epic 文档里所有源码 URL 引用都用 github.com — 行号能精确对上。
+## 来源说明 & 行号对齐注意
+
+**官方源**: https://gitea.wildfiregames.com/0ad/0ad(默认分支 `main`)。GitHub 上的 `0ad/0ad` 仓库自 2024 起已 archived,我们直接用 gitea 官方源。
+
+**⚠️ 与 Epic 文档里 github.com URL 的行号差异**: 部分老 Epic 文档里源码引用走的是 `github.com/0ad/0ad/blob/master/...` + 精确行号。GitHub mirror 的 `master` 是 archive 时刻的快照,行号固定;gitea `main` 是活分支,会持续推进。**对照源码时以"文件 + 函数/类名"定位,不要硬信 Epic 文档里的具体行号** — 行号只在 GitHub archive 那个 commit 上准。如果非要 byte-exact 对齐,改用 `git checkout <archive 时期的 commit>`。
 
 ## 删除(不再需要时)
 

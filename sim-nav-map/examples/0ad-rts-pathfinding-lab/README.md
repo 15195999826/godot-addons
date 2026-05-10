@@ -1,7 +1,6 @@
 # 0AD RTS Pathfinding Lab
 
-This lab is a clean 0 A.D.-style movement-policy example for `sim-nav-map`.
-It does not reuse the older `rts-pathfinding-lab` movement loop.
+This lab is the active 0 A.D.-style movement-policy example for `sim-nav-map`.
 
 The boundary is intentional:
 
@@ -71,7 +70,7 @@ tests/exploration/exploration_playthrough.tscn
 
 ## Controls
 
-The frontend mirrors the existing `rts-pathfinding-lab` interaction model:
+The frontend interaction model:
 
 - `1`: command mode. Left-click selects, drag selects, right-click moves the
   current selection. If nothing is selected, right-click moves all mobile units.

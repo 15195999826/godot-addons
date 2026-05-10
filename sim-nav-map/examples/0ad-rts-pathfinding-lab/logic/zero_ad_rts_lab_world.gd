@@ -35,7 +35,7 @@ func setup_default() -> void:
 	_obstacle_seq = 0
 	_blocker_seq = 0
 	_control_group_seq = 0
-	pathfinder = ZeroAdRtsLabPathfinder.new(map_size, 16.0, 11.0)
+	pathfinder = ZeroAdRtsLabPathfinder.new(map_size, 16.0, 12.0)
 	motion = ZeroAdRtsLabMotionController.new()
 	current_target = Vector2(610.0, 210.0)
 	obstacles = [
