@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/repro/repro_core_020_motion_brushes_clearance_under_push_known_limit.gd" id="1"]
+
+[node name="ReproCore020MotionBrushesClearance" type="Node"]
+script = ExtResource("1")

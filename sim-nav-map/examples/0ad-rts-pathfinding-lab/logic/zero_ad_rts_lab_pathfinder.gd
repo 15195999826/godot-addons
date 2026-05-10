@@ -3,7 +3,21 @@ extends RefCounted
 
 
 const PASSABILITY_CLASS_NAME: String = "ground"
-const DEFAULT_SYNC_PATH_BUDGET_USEC: int = 3500
+# Wall-clock per-tick budget for sync path request processing.
+#
+# 0 (default) = no time cap. Only the per-tick request count
+# (PATH_REQUEST_BUDGET_PER_TICK in ZeroAdRtsLabWorld) gates how many requests
+# get processed each tick.
+#
+# Set > 0 to also stop processing once that many microseconds have elapsed in
+# the current tick. WARNING: a wall-clock cap makes simulation outcome depend
+# on OS scheduling — different CPU load, different background processes, or
+# different machines can produce divergent unit trajectories from the same
+# seed and same setup. See docs/issues/core-019-path-queue-wall-clock-nondeterminism.md.
+#
+# 0 A.D.'s `m_MaxSameTurnMoves` (CCmpPathfinder_Common.h) is a pure request
+# count cap with no wall-clock component, which keeps simulation deterministic.
+const DEFAULT_SYNC_PATH_BUDGET_USEC: int = 0
 
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var cell_size: float = 16.0
