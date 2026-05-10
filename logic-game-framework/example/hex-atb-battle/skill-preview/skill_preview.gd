@@ -64,6 +64,7 @@ const WORKSPACE_GAP := 12.0
 const DRAWER_COLLAPSED_HEIGHT := 44.0
 const DRAWER_EXPANDED_HEIGHT := 360.0
 const CONTROL_DOCK_COLLAPSED_WIDTH := 0.0
+const STAGE_CAMERA_WORLD_OFFSET := Vector3(4.25, 0.0, 1.15)
 const WORKSPACE_MODE_SETUP := "setup"
 const WORKSPACE_MODE_TIMELINE := "timeline"
 const WORKSPACE_MODE_PLAYBACK := "playback"
@@ -1144,7 +1145,7 @@ func _stage_camera_focus() -> Vector3:
 	if cam == null:
 		return Vector3.ZERO
 	var stage_ground := _ground_point_at_screen(cam, stage_center)
-	return _camera_rig.global_position - stage_ground
+	return _camera_rig.global_position - stage_ground + STAGE_CAMERA_WORLD_OFFSET
 
 
 func _ground_point_at_screen(cam: Camera3D, screen_pos: Vector2) -> Vector3:
