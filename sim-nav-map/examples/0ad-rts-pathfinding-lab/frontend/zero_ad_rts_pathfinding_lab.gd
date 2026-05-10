@@ -271,10 +271,15 @@ func _draw() -> void:
 		var fill := Color(0.18, 0.55, 0.95) if unit.group_id == "blue" else Color(0.90, 0.26, 0.22)
 		if not unit.mobile:
 			fill = Color(0.90, 0.45, 0.25)
+		if unit.move_failed:
+			fill = fill.darkened(0.35)
 		draw_circle(unit.position, unit.radius, fill)
 		draw_arc(unit.position, unit.radius, 0.0, TAU, 24, Color(0.95, 0.95, 0.92), 1.5)
 		if unit.was_obstructed:
 			draw_arc(unit.position, unit.radius + 2.5, 0.0, TAU, 24, Color(1.0, 0.2, 0.15), 2.0)
+		if unit.move_failed:
+			draw_arc(unit.position, unit.radius + 4.5, 0.0, TAU, 32, Color(1.0, 0.18, 0.15, 0.9), 2.5)
+			_draw_failed_glyph(unit.position - Vector2(0.0, unit.radius + 9.0))
 		if _selected_unit_ids.has(unit.id):
 			draw_arc(unit.position, unit.radius + 5.0, 0.0, TAU, 32, Color(0.25, 1.0, 0.70), 2.5)
 
@@ -302,6 +307,14 @@ func _draw_unit_trace(unit: ZeroAdRtsLabUnit) -> void:
 		draw_line(unit.trace[i - 1], unit.trace[i], Color(0.45, 0.75, 1.0, 0.24), 1.0)
 
 
+func _draw_failed_glyph(center: Vector2) -> void:
+	var arm := 4.0
+	var color := Color(1.0, 0.25, 0.18)
+	var width := 2.0
+	draw_line(center + Vector2(-arm, -arm), center + Vector2(arm, arm), color, width)
+	draw_line(center + Vector2(-arm, arm), center + Vector2(arm, -arm), color, width)
+
+
 func _draw_waypoint_path(path: SimNavWaypointPath, start: Vector2, color: Color) -> void:
 	if path == null or path.waypoints.is_empty():
 		return
@@ -318,7 +331,8 @@ func _update_hud() -> void:
 		return
 	var metrics := _world.get_metrics()
 	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
-	_hud.text = "0AD RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space %s\narrived %d/%d active %d pathless %d  short %d  long %d  queue p/r/proc %d/%d/%d\nblocked %d  fail %d  obs/vobs %d/%d  suppress %d  stale %d  imperfect %d/%d\npush ok/reject %d/%d  pair checks %d  buckets %d  static %.0f\nworld.step %.2fms  avg %.2fms  max %.2fms@%d%s" % [
+	var failed_line := _format_failed_line()
+	_hud.text = "0AD RTS pathfinding lab | mode %s | 1 move/select  2 obstacle  3 blocker  4 erase  A all  C clear traces\nselected %d | last: %s | R reset | Space %s\narrived %d/%d active %d pathless %d  short %d  long %d  queue p/r/proc %d/%d/%d\nblocked %d  fail %d  obs/vobs %d/%d  suppress %d  stale %d  imperfect %d/%d\npush ok/reject %d/%d  pair checks %d  buckets %d  static %.0f\nworld.step %.2fms  avg %.2fms  max %.2fms@%d%s%s" % [
 		_mode_name(),
 		_selected_unit_ids.size(),
 		_last_action,
@@ -350,7 +364,25 @@ func _update_hud() -> void:
 		float(_max_step_usec) / 1000.0,
 		_max_step_tick,
 		" | exported %s" % _last_export_path if _last_export_path != "" else "",
+		failed_line,
 	]
+
+
+func _format_failed_line() -> String:
+	if _world == null:
+		return ""
+	var failed_ids: Array[String] = []
+	for unit in _world.units:
+		if unit.move_failed:
+			failed_ids.append(unit.id)
+	if failed_ids.is_empty():
+		return ""
+	var labels: Array[String] = failed_ids.duplicate()
+	var suffix := ""
+	if labels.size() > 5:
+		suffix = " +%d more" % (labels.size() - 5)
+		labels = labels.slice(0, 5)
+	return "\nfailed (%d): %s%s" % [failed_ids.size(), ", ".join(labels), suffix]
 
 
 func _mode_name() -> String:
