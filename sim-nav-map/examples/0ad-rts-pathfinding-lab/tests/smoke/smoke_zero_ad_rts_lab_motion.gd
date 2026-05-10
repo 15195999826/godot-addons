@@ -30,6 +30,16 @@ func _ready() -> void:
 	_test_opposing_same_team_units_do_not_cross_in_narrow_passage()
 	_test_logged_offset_opposing_units_build_push_pressure()
 	_test_logged_overlap_can_move_away_from_trailing_unit()
+	_test_logged_push_pressure_obstructed_does_not_self_subgoal()
+	_test_arrive_when_within_epsilon_even_with_pending_path()
+	_test_asymmetric_push_leader_stays_at_full_pressure()
+	_test_asymmetric_push_head_on_both_pressured()
+	_test_asymmetric_push_side_by_side_neither_pressured()
+	_test_asymmetric_push_moving_into_stopped_only_mover_pressured()
+	_test_asymmetric_push_same_control_group_leader_unhindered()
+	_test_asymmetric_push_no_self_pressure_from_arrive_clear()
+	_test_asymmetric_push_leader_not_force_elevated_under_short_attempted_move()
+	_test_arrived_same_formation_separation_push_rate()
 	_test_unit_actor_tracks_move_order()
 	_test_path_decision_log_tracks_order_flow()
 	_test_pair_contact_log_tracks_pass_through_risk()
@@ -204,7 +214,12 @@ func _test_crossing_push_applies_perpendicular_nudge() -> void:
 
 
 func _test_pair_push_uses_goal_agnostic_pressure() -> void:
+	# Intent: validate 0 A.D.'s symmetric, goal-agnostic pair pressure rule
+	# (CCmpUnitMotion_System.cpp:794-796). Pin to baseline via toggle so this
+	# parity check remains valid even though the lab default uses the
+	# asymmetric rule (docs/custom-features/asymmetric-push-pressure.md).
 	var world := ZeroAdRtsLabWorld.new()
+	world.motion.asymmetric_push_pressure_enabled = false
 	world.obstacles = []
 	world.units = [
 		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(391.4744, 115.2039), 11.0, 96.0, true),
@@ -1089,6 +1104,534 @@ func _test_pair_contact_log_tracks_pass_through_risk() -> void:
 	var contact: Dictionary = world.recent_pair_contacts.back()
 	if String(contact.get("kind", "")) != "unit_pass_through_risk":
 		_failures.append("pair-contact-log: expected pass-through risk, got %s" % str(contact))
+
+
+func _test_logged_push_pressure_obstructed_does_not_self_subgoal() -> void:
+	# Source: log zero_ad_rts_lab_2026-05-10T23-35-41_tick_2816.json.
+	# blue_0 at (391.587, 115.014) and blue_4 at (392.727, 115.005) shared
+	# control_group "formation_6" with dist=1.14 (combined_radius=22) for
+	# 30+ ticks, both fm=1, oscillating 0.145 px between two positions —
+	# net displacement zero. Cause: when push_pressure_obstructed triggered
+	# _handle_blocked_move, lab's `route_drift` magic forced the recovery
+	# path to a circle subgoal centered on long_path.back() with radius 64.
+	# blue_0's distance to long_path.back()=(328,120) was 63.78 (< 64), so
+	# vertex_pathfinder's contains_point(start) fast-path returned [start].
+	# Motion executed [start] (zero progress), push pushed back, repeat.
+	#
+	# Expected: 0 A.D. CCmpUnitMotion.h:1429-1430 falls through to
+	# ComputePathToGoal(POINT goal) when InShortPathRange. POINT goal
+	# never contains_point(start) (unless arrived), so A* finds real
+	# progress. push_pressure_obstructed must follow this same path —
+	# only static `passability_blocked` legitimately keeps the
+	# long-route circle subgoal (a static obstacle on the direct line
+	# requires routing around it, where push pressure does not).
+	var world := ZeroAdRtsLabWorld.new()
+	var blue_0 := world.get_unit("blue_0")
+	var blue_4 := world.get_unit("blue_4")
+	if blue_0 == null or blue_4 == null:
+		_failures.append("push-pressure-self-subgoal: missing mobile units")
+		return
+	blue_0.position = Vector2(391.587, 115.014)
+	blue_4.position = Vector2(392.727, 115.005)
+	blue_0.control_group_id = "formation_test"
+	blue_4.control_group_id = "formation_test"
+	blue_0.has_move_order = true
+	blue_0.target = Vector2(328.0, 120.0)
+	blue_0.path_target = Vector2(328.0, 120.0)
+	blue_0.long_path = SimNavWaypointPath.new()
+	blue_0.long_path.push_back(Vector2(328.0, 120.0))
+	blue_0.short_path = SimNavWaypointPath.new()
+	blue_0.failed_movements = 1
+	blue_0.pushing_pressure = 255
+	world.pathfinder.refresh_dynamic_units(world.units)
+
+	# Verify the setup actually puts blue_0 INSIDE the would-be circle subgoal.
+	# Short-path search range starts at 192 (12*navcell), skip_beyond=64,
+	# subgoal radius = clamp(skip_beyond/3, 64, 192) = 64.
+	var dist_to_long_end := blue_0.position.distance_to(blue_0.long_path.back())
+	if dist_to_long_end >= 64.0 or dist_to_long_end < 60.0:
+		_failures.append("push-pressure-self-subgoal: bad setup, dist_to_long_end=%.2f, expected 60..63 (must be <64)" % dist_to_long_end)
+		return
+
+	# Trigger the recovery path directly so we observe the subgoal choice
+	# without depending on push-cycle convergence.
+	world.motion._handle_blocked_move(blue_0, world.pathfinder, world.units, true, 0, "push_pressure_obstructed")
+
+	# Contract: blocked_recovery for push_pressure_obstructed must NOT request
+	# a short path against a circle subgoal that contains the unit's current
+	# position. A fix-side `path_to_goal`/`long_path_requested` is fine
+	# (mirrors 0 A.D.'s `if (InShortPathRange(goal, pos)) return false;`
+	# fall-through to ComputePathToGoal). What's not fine is reason=
+	# "blocked_recovery_subgoal" with a goal-center inside the unit's clearance
+	# of long_path.back() — that triggers vertex_pathfinder's
+	# contains_point(start) fast-path → path = [start] → 0-progress motion.
+	var decisions := world.motion.recent_path_decisions()
+	var bad_short_request: Dictionary = {}
+	for entry in decisions:
+		if String(entry.get("kind", "")) != "short_path_requested":
+			continue
+		if String(entry.get("reason", "")) != "blocked_recovery_subgoal":
+			continue
+		var goal_center: Vector2 = entry.get("requested_short_path_goal", Vector2.ZERO)
+		if goal_center.distance_to(blue_0.position) < 64.0:
+			bad_short_request = entry
+			break
+	if not bad_short_request.is_empty():
+		_failures.append(
+			"push-pressure-self-subgoal: lab routed push_pressure_obstructed to "
+			+ "blocked_recovery_subgoal centered on (%.1f,%.1f), only %.2f px from start — "
+			% [
+				bad_short_request["requested_short_path_goal"].x,
+				bad_short_request["requested_short_path_goal"].y,
+				bad_short_request["requested_short_path_goal"].distance_to(blue_0.position),
+			]
+			+ "vertex_pathfinder contains_point(start) fast-path will return [start] "
+			+ "(zero-progress, 60 Hz oscillation with push). Mirror 0 A.D. "
+			+ "CCmpUnitMotion.h:1429-1430: InShortPathRange short-circuit must NOT be "
+			+ "bypassed for push pressure. decisions=%s" % str(decisions)
+		)
+
+
+func _test_arrive_when_within_epsilon_even_with_pending_path() -> void:
+	# Source: log zero_ad_rts_lab_2026-05-11T00-17-56_tick_1465.json.
+	# When a formation user goal lands inside an obstacle's inflated rect,
+	# the long pathfinder canonicalizes it to a nearby passable cell. Two
+	# formation members (blue_2 unit_goal=(386,109) inside north_block,
+	# blue_3 unit_goal=(386,139) inside center_block) both got
+	# canonicalized to path_target=(376,120). Each unit settled within
+	# ARRIVE_EPSILON (8 px) of (376,120) but never arrived because the
+	# blocked_recovery loop kept re-issuing long path requests, so
+	# `unit.has_path()` was always true and the entry-point arrive check
+	# `dist <= ARRIVE_EPSILON and not has_path()` never fired. Motion
+	# advanced ~0.005 px/tick under push pressure for 30+ ticks, with no
+	# convergence in sight.
+	#
+	# Expected: 0 A.D. CCmpUnitMotion::OnTurnStart calls
+	# PossiblyAtDestination first thing every turn (CCmpUnitMotion.h:1050-
+	# 1053), and that check is independent of the path queue. Once the
+	# unit is within tolerance of its canonical goal, it arrives, period.
+	#
+	# Fix: drop the `not unit.has_path()` clause from the entry-point
+	# arrive check in step_unit so a stale path queue cannot keep an
+	# already-arrived unit "moving".
+	var world := ZeroAdRtsLabWorld.new()
+	var blue_3 := world.get_unit("blue_3")
+	if blue_3 == null:
+		_failures.append("arrive-with-pending-path: missing blue_3")
+		return
+	# Park the rest of the blues so they don't push.
+	for unit in world.units:
+		if unit.id == "blue_3" or unit.group_id != "blue":
+			continue
+		unit.position = Vector2(50.0, 380.0 + float(int(unit.id[-1]) * 24))
+
+	blue_3.position = Vector2(380.0, 118.0)
+	blue_3.target = Vector2(386.0, 139.0)
+	blue_3.path_target = Vector2(376.0, 120.0)
+	blue_3.has_move_order = true
+	blue_3.long_path = SimNavWaypointPath.new()
+	blue_3.long_path.push_back(Vector2(376.0, 120.0))
+	blue_3.short_path = SimNavWaypointPath.new()
+	blue_3.failed_movements = 1
+	blue_3.pushing_pressure = 200
+	world.pathfinder.refresh_dynamic_units(world.units)
+
+	var dist := blue_3.position.distance_to(blue_3.path_target)
+	if dist >= 8.0 or dist < 4.0:
+		_failures.append("arrive-with-pending-path: bad setup, dist=%.2f, expected 4..8" % dist)
+		return
+
+	world.motion.step_unit(blue_3, 1.0 / 60.0, world.pathfinder, world.units, 0)
+
+	# After step_unit, the unit must have arrived (long_path cleared,
+	# REACHED_GOAL emitted). Without the fix, step_unit would have called
+	# _maybe_request_short_path_for_long_segment / _perform_move and never
+	# triggered the arrive check.
+	if not blue_3.long_path.is_empty():
+		_failures.append(
+			"arrive-with-pending-path: expected long_path cleared after arrive, "
+			+ "got %d waypoints (unit at %s, %.2f px from path_target). "
+			% [blue_3.long_path.size(), str(blue_3.position), dist]
+			+ "Mirror 0 A.D. CCmpUnitMotion.h:1050-1053 (OnTurnStart -> "
+			+ "PossiblyAtDestination), which arrives independent of path queue."
+		)
+		return
+	var found_reached := false
+	for snap in world.motion.drain_motion_updates():
+		if snap.update_type == ZeroAdRtsLabMotionUpdate.TYPE_REACHED_GOAL:
+			found_reached = true
+			break
+	if not found_reached:
+		_failures.append("arrive-with-pending-path: expected REACHED_GOAL motion update, none emitted")
+
+
+func _test_asymmetric_push_leader_stays_at_full_pressure() -> void:
+	# Custom feature (lab-only deviation from 0 A.D. symmetric pressure).
+	# Spec: docs/custom-features/asymmetric-push-pressure.md
+	# Tracer bullet: two units, same direction, B in front, A chasing.
+	# Expected: B stays at zero pressure (leader, nothing in front), A
+	# accumulates pressure (B is in its way).
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(100.0, 100.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(120.0, 100.0), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+
+	# Both heading +x toward (300, 100). B is geometrically in front.
+	for unit in [a, b]:
+		unit.has_move_order = true
+		unit.target = Vector2(300.0, 100.0)
+		unit.path_target = Vector2(300.0, 100.0)
+		unit.short_path = SimNavWaypointPath.new()
+		unit.short_path.push_back(Vector2(300.0, 100.0))
+		unit.control_group_id = ""
+
+	var prev_positions := {a.id: a.position, b.id: b.position}
+	var prev_move_orders := {a.id: true, b.id: true}
+
+	for _i in range(5):
+		world.motion.apply_push_adjust(
+			world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+		)
+
+	# Sanity: positions are still in push range so the pair check does fire.
+	if a.position.distance_to(b.position) > 27.6:
+		_failures.append("asymmetric-push-leader: setup drift, pair no longer in push range, dist=%.2f" % a.position.distance_to(b.position))
+		return
+
+	if b.pushing_pressure > 0:
+		_failures.append(
+			"asymmetric-push-leader: leader B accumulated pressure=%d but should stay 0 (A behind, both heading +x). a.pressure=%d"
+			% [b.pushing_pressure, a.pushing_pressure]
+		)
+	if a.pushing_pressure <= 0:
+		_failures.append(
+			"asymmetric-push-leader: chasing A did not accumulate any pressure (got %d) — push pair check may not be firing. b.pressure=%d dist=%.2f"
+			% [a.pushing_pressure, b.pushing_pressure, a.position.distance_to(b.position)]
+		)
+
+
+func _test_asymmetric_push_head_on_both_pressured() -> void:
+	# Spec scenario 2: head-on collision — both face each other → both pay.
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(100.0, 100.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(120.0, 100.0), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+
+	a.has_move_order = true
+	a.target = Vector2(300.0, 100.0)
+	a.path_target = Vector2(300.0, 100.0)
+	a.short_path = SimNavWaypointPath.new()
+	a.short_path.push_back(Vector2(300.0, 100.0))
+	a.control_group_id = ""
+
+	b.has_move_order = true
+	b.target = Vector2(-100.0, 100.0)
+	b.path_target = Vector2(-100.0, 100.0)
+	b.short_path = SimNavWaypointPath.new()
+	b.short_path.push_back(Vector2(-100.0, 100.0))
+	b.control_group_id = ""
+
+	var prev_positions := {a.id: a.position, b.id: b.position}
+	var prev_move_orders := {a.id: true, b.id: true}
+
+	for _i in range(5):
+		world.motion.apply_push_adjust(
+			world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+		)
+
+	if a.pushing_pressure <= 0:
+		_failures.append("asymmetric-push-head-on: A.pressure=%d should be > 0 (head-on collision)" % a.pushing_pressure)
+	if b.pushing_pressure <= 0:
+		_failures.append("asymmetric-push-head-on: B.pressure=%d should be > 0 (head-on collision)" % b.pushing_pressure)
+
+
+func _test_asymmetric_push_side_by_side_neither_pressured() -> void:
+	# Spec scenario 3: parallel motion, motion vectors perpendicular to AB
+	# direction. Neither faces the other → neither pays pressure.
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(100.0, 100.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(100.0, 110.0), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+
+	a.has_move_order = true
+	a.target = Vector2(300.0, 100.0)
+	a.path_target = Vector2(300.0, 100.0)
+	a.short_path = SimNavWaypointPath.new()
+	a.short_path.push_back(Vector2(300.0, 100.0))
+	a.control_group_id = ""
+
+	b.has_move_order = true
+	b.target = Vector2(300.0, 110.0)
+	b.path_target = Vector2(300.0, 110.0)
+	b.short_path = SimNavWaypointPath.new()
+	b.short_path.push_back(Vector2(300.0, 110.0))
+	b.control_group_id = ""
+
+	var prev_positions := {a.id: a.position, b.id: b.position}
+	var prev_move_orders := {a.id: true, b.id: true}
+
+	for _i in range(5):
+		world.motion.apply_push_adjust(
+			world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+		)
+
+	if a.pushing_pressure > 0:
+		_failures.append("asymmetric-push-side-by-side: A.pressure=%d should be 0 (parallel motion, B not in A's path)" % a.pushing_pressure)
+	if b.pushing_pressure > 0:
+		_failures.append("asymmetric-push-side-by-side: B.pressure=%d should be 0 (parallel motion, A not in B's path)" % b.pushing_pressure)
+
+
+func _test_asymmetric_push_moving_into_stopped_only_mover_pressured() -> void:
+	# Spec scenario 4: same-control-group moving+stopped pair (out-of-group
+	# moving+stopped is filtered earlier by movingPush == 1 return). The
+	# moving unit faces the stopped one → it pays pressure. The stopped
+	# unit's motion is zero (no path, prev==current) → it does NOT pay.
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	# Same control group → max push range = combined_radius = 22 (no extension).
+	# Distance 15 gives a clearly positive pressure_delta per tick.
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(100.0, 100.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(115.0, 100.0), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+
+	a.has_move_order = true
+	a.target = Vector2(300.0, 100.0)
+	a.path_target = Vector2(300.0, 100.0)
+	a.short_path = SimNavWaypointPath.new()
+	a.short_path.push_back(Vector2(300.0, 100.0))
+	a.control_group_id = "test_grp"
+
+	b.has_move_order = false
+	b.target = b.position
+	b.path_target = b.position
+	b.short_path = SimNavWaypointPath.new()
+	b.long_path = SimNavWaypointPath.new()
+	b.control_group_id = "test_grp"
+
+	var prev_positions := {a.id: a.position, b.id: b.position}
+	var prev_move_orders := {a.id: true, b.id: false}
+
+	for _i in range(5):
+		world.motion.apply_push_adjust(
+			world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+		)
+
+	if a.pushing_pressure <= 0:
+		_failures.append("asymmetric-push-moving-into-stopped: A.pressure=%d should be > 0 (A moving into stopped B)" % a.pushing_pressure)
+	if b.pushing_pressure > 0:
+		_failures.append("asymmetric-push-moving-into-stopped: stopped B.pressure=%d should be 0" % b.pushing_pressure)
+
+
+func _test_asymmetric_push_same_control_group_leader_unhindered() -> void:
+	# Spec scenario 5: three same-formation units in a line all moving +x.
+	# Front one (C) has nothing in front → zero pressure → full speed.
+	# Middle (B) faces C → pressure. Tail (A) faces B → pressure.
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(100.0, 100.0), 11.0, 96.0, true),  # tail
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(115.0, 100.0), 11.0, 96.0, true),  # middle
+		ZeroAdRtsLabUnit.new("blue_c", "blue", Vector2(130.0, 100.0), 11.0, 96.0, true),  # leader
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+
+	var prev_positions := {}
+	var prev_move_orders := {}
+	for unit in world.units:
+		unit.has_move_order = true
+		unit.target = Vector2(300.0, 100.0)
+		unit.path_target = Vector2(300.0, 100.0)
+		unit.short_path = SimNavWaypointPath.new()
+		unit.short_path.push_back(Vector2(300.0, 100.0))
+		unit.control_group_id = "test_grp"
+		prev_positions[unit.id] = unit.position
+		prev_move_orders[unit.id] = true
+
+	for _i in range(5):
+		world.motion.apply_push_adjust(
+			world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+		)
+
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+	var c := world.get_unit("blue_c")
+
+	if c.pushing_pressure > 0:
+		_failures.append("asymmetric-push-formation-leader: leader C.pressure=%d should be 0 (nothing in front). a=%d b=%d" % [c.pushing_pressure, a.pushing_pressure, b.pushing_pressure])
+	if a.pushing_pressure <= 0:
+		_failures.append("asymmetric-push-formation-leader: tail A.pressure=%d should be > 0 (B in front)" % a.pushing_pressure)
+	if b.pushing_pressure <= 0:
+		_failures.append("asymmetric-push-formation-leader: middle B.pressure=%d should be > 0 (C in front)" % b.pushing_pressure)
+
+
+func _test_asymmetric_push_no_self_pressure_from_arrive_clear() -> void:
+	# Spec scenario 6 (regression): unit just arrived this tick — path is
+	# empty AND prev_position == current_position (no actual motion). Motion
+	# fallback yields (0, 0), MOTION_DEAD_ZONE_SQ guard fires, and the unit
+	# does not pay pressure for being passively pushed by a moving neighbor.
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(100.0, 100.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(115.0, 100.0), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+
+	# A: just arrived. No move order, no path, prev_position == current.
+	a.has_move_order = false
+	a.target = a.position
+	a.path_target = a.position
+	a.short_path = SimNavWaypointPath.new()
+	a.long_path = SimNavWaypointPath.new()
+	a.control_group_id = "test_grp"
+
+	# B: moving — heading toward A.
+	b.has_move_order = true
+	b.target = Vector2(50.0, 100.0)
+	b.path_target = Vector2(50.0, 100.0)
+	b.short_path = SimNavWaypointPath.new()
+	b.short_path.push_back(Vector2(50.0, 100.0))
+	b.control_group_id = "test_grp"
+
+	var prev_positions := {a.id: a.position, b.id: b.position}
+	var prev_move_orders := {a.id: false, b.id: true}
+
+	for _i in range(5):
+		world.motion.apply_push_adjust(
+			world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+		)
+
+	if a.pushing_pressure > 0:
+		_failures.append("asymmetric-push-arrive-clear: just-arrived A.pressure=%d should be 0" % a.pushing_pressure)
+	if b.pushing_pressure <= 0:
+		_failures.append("asymmetric-push-arrive-clear: B.pressure=%d should be > 0 (B moving toward A)" % b.pushing_pressure)
+
+
+func _test_asymmetric_push_leader_not_force_elevated_under_short_attempted_move() -> void:
+	# Spec follow-up: even when pressure_delta accumulation is correctly zero
+	# for a leader, the lab's _push_opposes_attempted_motion check based on
+	# attempted_move length re-elevates the leader's pressure to 80 via
+	# _mark_push_pressure_obstructed once speed dampening has shortened
+	# attempted_move. Geometric "opposes" should be motion·push < 0.
+	#
+	# Setup: blue_a leads (in front, +x), blue_b chases (behind, +x). Both
+	# moving toward (300, 100). a.pressure starts at 60 (above the 30
+	# threshold), simulating earlier crowding. previous_positions chosen so
+	# attempted_move = (0.4, 0): tight enough that |attempted|² (0.16) plus
+	# any small push·attempted projection still falls under 0.5.
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(130.0, 100.0), 11.0, 96.0, true),  # leader
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(115.0, 100.0), 11.0, 96.0, true),  # chaser
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+
+	for unit in [a, b]:
+		unit.has_move_order = true
+		unit.target = Vector2(300.0, 100.0)
+		unit.path_target = Vector2(300.0, 100.0)
+		unit.short_path = SimNavWaypointPath.new()
+		unit.short_path.push_back(Vector2(300.0, 100.0))
+		unit.control_group_id = "test_grp"
+		unit.pushing_pressure = 60
+
+	var prev_positions := {a.id: Vector2(129.6, 100.0), b.id: Vector2(114.6, 100.0)}
+	var prev_move_orders := {a.id: true, b.id: true}
+
+	world.motion.apply_push_adjust(
+		world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+	)
+
+	# Leader A: motion (+x) and push (+x, away from B which is on the left)
+	# are co-directional. Geometric opposes is false. Pressure should only
+	# decay (60 × 0.958 ≈ 57), NOT be force-elevated to 80.
+	if a.pushing_pressure >= 80:
+		_failures.append(
+			"asymmetric-push-leader-not-elevated: A.pressure=%d should NOT be force-elevated to 80; "
+			% a.pushing_pressure
+			+ "A is the leader (motion+x, push+x), motion·push > 0. "
+			+ "Lab's attempted_move-based opposes check has a length-dependent false-positive when "
+			+ "speed is already dampened — fix should switch to motion·push < 0 under asymmetric mode."
+		)
+
+
+func _test_arrived_same_formation_separation_push_rate() -> void:
+	# 0 A.D. parity fix (audit entry 2026-05-11).
+	# Single-tick push rate measurement. Two stopped same-formation units
+	# overlapping by 3 px. The lab's _push_max_distance same_control_group
+	# short-circuit gives max=22, distance_factor=(22-19)/8.25 ≈ 0.36 →
+	# push amount ≈ 0.29 px/tick on each side, ≈ 0.58 px/tick combined
+	# separation. Standard 0 A.D. formula gives max ≈ 27.6,
+	# distance_factor ≈ (27.6-19)/(27.6*0.375) ≈ 0.83 → push amount
+	# ≈ 0.66 px/tick on each side, ≈ 1.32 px/tick combined.
+	#
+	# Threshold 1.0 px/tick clearly separates the two: baseline ≈ 0.58
+	# fails, fix ≈ 1.32 passes. (Multi-neighbour cancellation in real
+	# clusters is what amplifies this gap into "stuck for seconds vs.
+	# resolved in 2-3 ticks", but isolated pair is enough to lock in the
+	# per-pair contract change.)
+	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
+	world.units = [
+		ZeroAdRtsLabUnit.new("blue_a", "blue", Vector2(100.0, 100.0), 11.0, 96.0, true),
+		ZeroAdRtsLabUnit.new("blue_b", "blue", Vector2(119.0, 100.0), 11.0, 96.0, true),
+	]
+	world.pathfinder.rebuild_context(world.obstacles)
+	var a := world.get_unit("blue_a")
+	var b := world.get_unit("blue_b")
+
+	for unit in [a, b]:
+		unit.has_move_order = false
+		unit.target = unit.position
+		unit.path_target = unit.position
+		unit.short_path = SimNavWaypointPath.new()
+		unit.long_path = SimNavWaypointPath.new()
+		unit.control_group_id = "formation_test"
+		unit.pushing_pressure = 0
+
+	var prev_positions := {a.id: a.position, b.id: b.position}
+	var prev_move_orders := {a.id: false, b.id: false}
+
+	var initial_d := a.position.distance_to(b.position)
+	world.motion.apply_push_adjust(
+		world.units, world.pathfinder, prev_positions, prev_move_orders, 0, 1.0 / 60.0
+	)
+	var final_d := a.position.distance_to(b.position)
+	var separation_rate := final_d - initial_d
+
+	# 1.0 px/tick threshold: baseline (0.58) fails, fix (1.32) passes.
+	if separation_rate < 1.0:
+		_failures.append(
+			"arrived-same-formation-push-rate: dist 19→%.2f (Δ=%.3f) in 1 tick. "
+			% [final_d, separation_rate]
+			+ "Expected ≥ 1.0 px/tick combined separation rate, indicating "
+			+ "_push_max_distance uses standard formula (~27.6) instead of "
+			+ "same-control-group short-circuit (combined_radius = 22)."
+		)
 
 
 func _run_world_steps(world: ZeroAdRtsLabWorld, count: int) -> void:
