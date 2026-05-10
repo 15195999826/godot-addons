@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource type="Script" path="res://addons/sim-nav-map/examples/rts-pathfinding-lab/tests/repro/repro_lab_004_overlap_policy.gd" id="1"]
-
-[node name="ReproLab004OverlapPolicy" type="Node"]
-script = ExtResource("1")

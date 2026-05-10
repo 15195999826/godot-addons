@@ -157,18 +157,16 @@ func _test_unit_line_allows_overlap_escape() -> void:
 	var facade := SimNavPathfinderFacade.new(nav_map)
 	var escape := facade.validate_unit_line(Vector2(50.0, 48.0), Vector2(32.0, 48.0), 8.0)
 	_assert_true(escape.is_success(), "unit line should allow moving out of an existing overlap")
+	# 0 A.D. Geometry.cpp:280-281 TestRaySquare: `a inside → return false`
+	# regardless of where 'b' lies. lab previously blocked deeper/stay segments
+	# as a self-invented guard, but that strands a unit in real overlap because
+	# any per-frame motion candidate whose tangent geometry briefly heads inward
+	# gets rejected. Trust the push system and reactive recovery to separate
+	# overlapping units across multiple frames.
 	var deeper := facade.validate_unit_line(Vector2(50.0, 48.0), Vector2(58.0, 48.0), 8.0)
-	_assert_equal_str(
-		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,
-		deeper.failure_reason,
-		"unit line should block moving deeper into an existing unit overlap"
-	)
+	_assert_true(deeper.is_success(), "unit line should NOT block moving deeper from inside an overlap (0 A.D. binary inside rule)")
 	var pinned := facade.validate_unit_line(Vector2(50.0, 48.0), Vector2(50.0, 48.0), 8.0)
-	_assert_equal_str(
-		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,
-		pinned.failure_reason,
-		"unit line should block staying inside an existing unit overlap"
-	)
+	_assert_true(pinned.is_success(), "unit line should NOT block staying inside an existing overlap (0 A.D. binary inside rule)")
 	var enter := facade.validate_unit_line(Vector2(32.0, 48.0), Vector2(50.0, 48.0), 8.0)
 	_assert_equal_str(
 		SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED,

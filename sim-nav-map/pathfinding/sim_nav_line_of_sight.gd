@@ -1,6 +1,15 @@
 class_name SimNavLineOfSight
 
 
+# Mirror SimNavVertexPathfinder.EDGE_EXPAND_DELTA so the LOS "inside" boundary
+# matches the vertex-graph obstacle radius. Without this a unit whose center
+# lies in (clearance, clearance + EDGE_EXPAND_DELTA) of another unit's center
+# is treated as outside by LOS but inside by the vertex graph -> all outgoing
+# edges get rejected and short_path returns no_route (escape-overlap deadlock,
+# 0 A.D. CCmpObstructionManager TestUnitLine directional ray rule).
+const EDGE_EXPAND_DELTA: float = 0.5
+
+
 static func segment_clear(a: Vector2, b: Vector2, shapes: Array, buffer: float) -> bool:
 	for shape in shapes:
 		var obstruction_shape := shape as SimNavObstructionShape
@@ -37,16 +46,34 @@ static func _unit_shape_blocks_segment(
 	unit_shape: SimNavObstructionShapeUnit,
 	buffer: float
 ) -> bool:
-	var threshold := unit_shape.clearance + buffer
+	var collision_threshold := unit_shape.clearance + buffer
+	var inside_threshold := collision_threshold + EDGE_EXPAND_DELTA
 	var start_dist := unit_shape.center.distance_to(a)
 	var target_dist := unit_shape.center.distance_to(b)
-	if start_dist <= threshold:
-		if target_dist <= start_dist + 0.0001:
-			return true
-		return _segment_to_point_dist(a, b, unit_shape.center) < start_dist - 0.0001
-	if target_dist <= threshold:
+	if start_dist < collision_threshold:
+		# 'a' is genuinely overlapping the obstacle. 0 A.D. Geometry.cpp:280-281
+		# TestRaySquare is strict binary: `a inside → return false` regardless
+		# of where 'b' lies (stay-inside or deeper both unblock). This trusts
+		# the push system + reactive blocked_recovery to keep units from
+		# drifting toward obstacle center over multiple frames. A lab-side
+		# stay-or-deeper guard violates this — it appears to "protect" against
+		# overlap drift but actually blocks the per-frame motion candidate
+		# whenever the segment's tangent geometry briefly heads inward, leaving
+		# the unit stuck in a real overlap with no escape.
+		return false
+	if start_dist <= inside_threshold:
+		# Boundary band (between real collision ring and vertex-graph outset).
+		# The single segment-to-point check below also covers the "b deep
+		# inside collision ring" case (t clamps to 1, sep collapses to
+		# target_dist). Do NOT add a separate `target_dist <= collision_threshold`
+		# early-return here — that wrongly blocks a per-frame motion candidate
+		# whose tail is 21.84 (just inside) when start is 22.03 (just outside),
+		# even though the segment overall is heading away from the obstacle.
+		return _segment_to_point_dist(a, b, unit_shape.center) < collision_threshold - EDGE_EXPAND_DELTA
+	# 'a' fully outside the outset ring. Standard collision check.
+	if target_dist <= collision_threshold:
 		return true
-	return _segment_to_point_dist(a, b, unit_shape.center) < threshold
+	return _segment_to_point_dist(a, b, unit_shape.center) < collision_threshold
 
 
 static func _segment_to_point_dist(a: Vector2, b: Vector2, point: Vector2) -> float:

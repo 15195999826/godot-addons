@@ -153,7 +153,7 @@ adapter 也是放项目侧 query policy 的地方：
 - 目标不可达时，是否 canonicalize 到最近可达 navcell
 - path 失败时是否 retry、fallback、停止、或进入 stuck handling
 
-`rts-pathfinding-lab` 里的 `RtsPathfindingLabPathfinder` 就是这个模型。
+`0ad-rts-pathfinding-lab` 里的 `ZeroAdRtsLabPathfinder` 就是这个模型。
 
 ## 典型 Path Query
 
@@ -186,15 +186,15 @@ if path.is_empty():
 
 ## 当前真实样例
 
-`addons/sim-nav-map/examples/rts-pathfinding-lab` 是一个 playable usage sample，不是 reusable addon API 的一部分。
+`addons/sim-nav-map/examples/0ad-rts-pathfinding-lab` 是一个 playable usage sample，不是 reusable addon API 的一部分。
 
 它添加了：
 
-- `RtsPathfindingLabPathfinder`：把 lab object 转成 `sim-nav-map` shape 的 adapter
-- `RtsPathfindingLabWorld`：simulation loop、replan queue、movement、overlap resolution、obstacle editing、metrics
-- `RtsPathfindingLabUnit`：简单的 lab unit state
-- `RtsPathfindingLabObstacle`：简单的 lab rectangle obstacle state
-- `frontend/rts_pathfinding_lab.gd`：drawing、input、HUD、tool modes
+- `ZeroAdRtsLabPathfinder`：把 lab object 转成 `sim-nav-map` shape 的 adapter
+- `ZeroAdRtsLabWorld`：simulation loop、replan queue、movement、overlap resolution、obstacle editing、metrics
+- `ZeroAdRtsLabMotionController`：0 A.D.-style motion + push policy
+- `ZeroAdRtsLabUnit` / `ZeroAdRtsLabObstacle`：lab state types
+- `frontend/zero_ad_rts_pathfinding_lab.gd`：drawing、input、HUD、tool modes
 
 这个 lab 可以用来验证行为，但里面的 movement / crowd policy 不应该被当成 addon API。
 

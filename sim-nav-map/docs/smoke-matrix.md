@@ -8,18 +8,18 @@ It should stay small enough to answer "what must stay green now?"
 Run both groups before merging any issue fix:
 
 ```powershell
-./tools/run_tests.ps1 simnav/smoke rtslab/smoke
+./tools/run_tests.ps1 simnav/smoke zeroadlab/smoke
 ```
 
 | Group | Manifest | Responsibility |
 |---|---|---|
 | `simnav/smoke` | `addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: public API defaults, map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, line validation, cache, request queue, and diagnostics exports. |
-| `rtslab/smoke` | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: lab path planning, metadata consumption, movement-loop integration, metrics contract, and scene load. |
+| `zeroadlab/smoke` | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: lab path planning, metadata consumption, movement-loop integration, metrics contract, and scene load. |
 
 Baseline gate:
 
 ```powershell
-./tools/run_tests.ps1 simnav/smoke rtslab/smoke
+./tools/run_tests.ps1 simnav/smoke zeroadlab/smoke
 git -C addons diff --check
 ```
 
@@ -32,8 +32,8 @@ until the matching issue is fixed.
 | Kind | Location | Rule |
 |---|---|---|
 | Core repro | `addons/sim-nav-map/tests/repro/` | Add a focused scene for one core issue. Register it into `simnav/smoke` only after the fix turns it green. |
-| Lab repro | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/repro/` | Add a focused scene for one lab issue. Register it into `rtslab/smoke` only after the fix turns it green or when it is a PASS lock-in guard. |
-| Exploration | `addons/sim-nav-map/examples/rts-pathfinding-lab/tests/exploration/` | Observation-only scripts. They always exit 0 and must not be added to smoke manifests. |
+| Lab repro | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/repro/` | Add a focused scene for one lab issue. Register it into `zeroadlab/smoke` only after the fix turns it green or when it is a PASS lock-in guard. |
+| Exploration | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/exploration/` | Observation-only scripts. They always exit 0 and must not be added to smoke manifests. |
 
 ## Current Coverage
 

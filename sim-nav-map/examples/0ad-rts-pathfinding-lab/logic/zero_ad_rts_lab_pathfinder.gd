@@ -66,7 +66,7 @@ func compute_long_path(unit: ZeroAdRtsLabUnit, goal: Vector2) -> SimNavLongPathR
 func build_long_path_query(unit: ZeroAdRtsLabUnit, goal: Vector2) -> SimNavLongPathQuery:
 	var query := SimNavLongPathQuery.from_values(unit.position, SimNavPathGoal.point(goal), pass_mask, PASSABILITY_CLASS_NAME)
 	query.post_process = SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT
-	query.waypoint_spacing = cell_size * 4.0
+	query.waypoint_spacing = cell_size * 12.0 - 1.0
 	return query
 
 
