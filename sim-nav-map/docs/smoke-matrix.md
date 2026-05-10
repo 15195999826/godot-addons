@@ -3,6 +3,18 @@
 This file defines the stable regression gates for `sim-nav-map` issue work.
 It should stay small enough to answer "what must stay green now?"
 
+## Test Categories
+
+Three buckets, kept apart on purpose:
+
+| Bucket | What it asserts | Where it lives | Gate |
+|---|---|---|---|
+| **Smoke** | Product contract — thresholds reflect what the system *should* do and should not drift with implementation tweaks. | `tests/smoke/` | In `test_groups.json`, must stay green to merge |
+| **Repro** | A specific user report or logged scenario. Thresholds may track implementation changes (note in code why). | `tests/repro/` (or alongside smoke if already PASS-locked) | In `test_groups.json` once the underlying issue is fixed |
+| **Stress** | Beat the system into corners. **Only** hard safety invariants assert (NaN / inf / out-of-map / illegal teleport). No business outcome assertions. | `tests/stress/` (fuzz mode lives in the same scene) | Out of `test_groups.json` — observation only, but exits non-zero on invariant violation |
+
+Why the three are separate: **smoke** locks in correctness, **repro** locks in known fixes (and is allowed to evolve), **stress** discovers what neither smoke nor repro thought to ask. Promoting a stress phase into smoke means writing the binary contract the phase should have asserted from day one.
+
 ## Stable Gates
 
 Run both groups before merging any issue fix:
@@ -33,7 +45,12 @@ until the matching issue is fixed.
 |---|---|---|
 | Core repro | `addons/sim-nav-map/tests/repro/` | Add a focused scene for one core issue. Register it into `simnav/smoke` only after the fix turns it green. |
 | Lab repro | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/repro/` | Add a focused scene for one lab issue. Register it into `zeroadlab/smoke` only after the fix turns it green or when it is a PASS lock-in guard. |
-| Exploration | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/exploration/` | Observation-only scripts. They always exit 0 and must not be added to smoke manifests. |
+
+## Stress
+
+| Kind | Location | Rule |
+|---|---|---|
+| Lab stress | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/stress/` | Torture phases + fuzz mode share one file (`stress_playthrough.tscn`). Soft observations (path-request counts, slow frames, formation overlap) print into `STRESS_OBSERVATION` lines and a summary table for human inspection only. The only fail path is a hard invariant violation: NaN / inf / out-of-map / illegal teleport. **Do not add business outcome assertions here** — promote the phase into a smoke under `tests/smoke/` instead (see `smoke_zero_ad_rts_lab_edge_cases.gd` for the promotion template). Not registered in `test_groups.json`. |
 
 ## Current Coverage
 
@@ -57,7 +74,7 @@ until the matching issue is fixed.
 - path request queue, queued request cloning, and queue diagnostics
 - map dirtiness diagnostics and connectivity exports
 
-`rtslab/smoke` covers:
+`zeroadlab/smoke` covers:
 
 - the headless lab movement/pathfinding contract
 - repeated static obstacle add/remove stress while six units move between building sides
@@ -66,6 +83,9 @@ until the matching issue is fixed.
 - long-path result metadata adapter behavior
 - short-result, movement-line, and unit-line metadata adapter behavior
 - real lab scene loading
+- failed-units HUD panel surfacing
+- frontend UI tool ops + debug log export
+- world edge cases: unreachable goal, off-map command, formation packing, drop-on-unit, sealed corridors, goal blocked at arrival
 
 ## Discovery Contract
 
@@ -79,8 +99,8 @@ addons/sim-nav-map/examples/*/tests/test_groups.json
 Paths inside each manifest are relative to that manifest directory. New core
 addon smoke scenes belong under `addons/sim-nav-map/tests/` and should be added
 to `simnav/smoke` after they are expected to pass. New lab behavior smoke scenes
-belong under `examples/rts-pathfinding-lab/tests/` and should be added to
-`rtslab/smoke` after they are expected to pass.
+belong under `examples/0ad-rts-pathfinding-lab/tests/smoke/` and should be added
+to `zeroadlab/smoke` after they are expected to pass.
 
 ## Legacy RTS Fixture Boundary
 
@@ -95,8 +115,9 @@ New `sim-nav-map` core coverage should not be added to `rts/pathfinding`.
 
 - `README.md`, `docs/mental-model.md`, `docs/public-api.md`,
   and this file still agree on the same boundary.
-- `simnav/smoke` and `rtslab/smoke` are discoverable by `./tools/run_tests.ps1 -List`.
+- `simnav/smoke` and `zeroadlab/smoke` are discoverable by `./tools/run_tests.ps1 -List`.
 - Fixed issue repros are promoted into the correct smoke manifest.
 - Red repros stay in `tests/repro/` or lab `tests/repro/`, not in the stable manifest.
+- Stress/fuzz lives in `tests/stress/`, never in the smoke manifest, and only ever asserts hard safety invariants.
 - Old RTS private pathfinder wording points to archived compatibility, not a future implementation path.
 - `addons/sim-nav-map/docs/references/0ad-source/` remains ignored/untracked.
