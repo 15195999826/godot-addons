@@ -97,11 +97,14 @@ func _compute_to_goal(
 
 	var vertices: Array[Vector2] = [start, initial_goal]
 	var obstacle_vertices: Array = visibility_inputs.get("vertices", [])
+	var covered := 0
 	for vertex in obstacle_vertices:
 		if _vertex_covered_by_obstacles(vertex as Vector2, obstacles, req):
+			covered += 1
 			continue
 		vertices.append(vertex as Vector2)
 	diagnostics["vertex_count"] = maxi(int(diagnostics.get("vertex_count", 0)), vertices.size())
+	diagnostics["covered_vertex_count"] = int(diagnostics.get("covered_vertex_count", 0)) + covered
 
 	return _astar_visibility(vertices, obstacles, req, diagnostics)
 
@@ -137,6 +140,8 @@ func _new_graph_diagnostics() -> Dictionary:
 		"vertex_count": 0,
 		"visibility_check_count": 0,
 		"astar_expansion_count": 0,
+		"covered_vertex_count": 0,
+		"used_best_vertex_fallback": false,
 	}
 
 
@@ -149,6 +154,8 @@ func _apply_graph_diagnostics(result: SimNavShortPathResult, diagnostics: Dictio
 	result.vertex_count = int(diagnostics.get("vertex_count", 0))
 	result.visibility_check_count = int(diagnostics.get("visibility_check_count", 0))
 	result.astar_expansion_count = int(diagnostics.get("astar_expansion_count", 0))
+	result.covered_vertex_count = int(diagnostics.get("covered_vertex_count", 0))
+	result.used_best_vertex_fallback = bool(diagnostics.get("used_best_vertex_fallback", false))
 
 
 func _collect_visibility_inputs(req: SimNavShortPathRequest, diagnostics: Dictionary, include_terrain: bool) -> Dictionary:
@@ -410,6 +417,7 @@ func _astar_visibility(
 	# replan next tick). Otherwise the goal was unreachable from start, return
 	# empty so the caller surfaces no_route.
 	if idx_best != 0:
+		diagnostics["used_best_vertex_fallback"] = true
 		return _reconstruct(vertices, came_from, idx_best)
 	return SimNavWaypointPath.new()
 

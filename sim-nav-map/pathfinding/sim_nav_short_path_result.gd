@@ -34,6 +34,11 @@ var terrain_vertex_count: int = 0
 var vertex_count: int = 0
 var visibility_check_count: int = 0
 var astar_expansion_count: int = 0
+# Graph filtering / fallback diagnostics — set by _vertex_covered_by_obstacles
+# and the A* best-vertex fallback. Useful for debugging dense unit clusters
+# where many candidate corners are filtered out and A* falls back.
+var covered_vertex_count: int = 0
+var used_best_vertex_fallback: bool = false
 
 
 func configure_query(request: SimNavShortPathRequest) -> void:
@@ -80,6 +85,8 @@ func graph_diagnostics() -> Dictionary:
 		"vertex_count": vertex_count,
 		"visibility_check_count": visibility_check_count,
 		"astar_expansion_count": astar_expansion_count,
+		"covered_vertex_count": covered_vertex_count,
+		"used_best_vertex_fallback": used_best_vertex_fallback,
 	}
 
 

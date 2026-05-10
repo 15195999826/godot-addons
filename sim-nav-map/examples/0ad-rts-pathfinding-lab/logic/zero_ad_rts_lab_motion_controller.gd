@@ -341,11 +341,16 @@ func _perform_move(
 		var validation_target := waypoint
 		var line_result := pathfinder.validate_movement_line(unit, unit.position, validation_target, units, false)
 		if not line_result.is_success():
+			var snap := _line_result_snapshot(line_result, units)
+			# Geometry diagnostics: how far is candidate / waypoint / start from
+			# the blocker? Lets log readers immediately see "off by 0.5 px /
+			# blocker is genuinely in the way / blocker is far but along path".
+			_annotate_distance_to_blocker(snap, unit.position, candidate, waypoint, line_result.blocked_obstruction_entity_id, units)
 			_record_path_decision(unit, "movement_line_blocked", tick, {
 				"from": unit.position,
 				"candidate": candidate,
 				"waypoint": waypoint,
-				"line": _line_result_snapshot(line_result, units),
+				"line": snap,
 			})
 			return {
 				"obstructed": true,
@@ -545,6 +550,11 @@ func _apply_short_path_result(
 			"path_length": result.path_length,
 			"short_path_length": result.path_length,
 			"path": _path_snapshot(result.path),
+			# Surface vertex graph health so log readers can spot dense-cluster
+			# scenarios (high covered_vertex_count) and best-effort fallback
+			# paths (used_best_vertex_fallback=true → goal was unreachable).
+			"covered_vertex_count": result.covered_vertex_count,
+			"used_best_vertex_fallback": result.used_best_vertex_fallback,
 		}
 		_add_short_path_result_diagnostics(details, unit, request_context)
 		_record_path_decision(unit, "short_path_result", tick, details)
@@ -1026,6 +1036,25 @@ func _line_result_snapshot(result: SimNavMovementLineResult, units: Array[ZeroAd
 			"obstruction_state": blocker.obstruction_state,
 		}
 	return snapshot
+
+
+func _annotate_distance_to_blocker(
+	snapshot: Dictionary,
+	from: Vector2,
+	candidate: Vector2,
+	waypoint: Vector2,
+	blocker_id: String,
+	units: Array[ZeroAdRtsLabUnit]
+) -> void:
+	if blocker_id == "":
+		return
+	var blocker := _find_unit(units, blocker_id)
+	if blocker == null:
+		return
+	var center := blocker.position
+	snapshot["start_dist_to_blocker"] = from.distance_to(center)
+	snapshot["candidate_dist_to_blocker"] = candidate.distance_to(center)
+	snapshot["waypoint_dist_to_blocker"] = waypoint.distance_to(center)
 
 
 func _path_snapshot(path: SimNavWaypointPath) -> Array[Vector2]:
