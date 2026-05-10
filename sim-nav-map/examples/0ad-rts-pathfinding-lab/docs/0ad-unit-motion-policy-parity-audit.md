@@ -33,6 +33,50 @@ inside `PostMove()`.
 Treat the current lab behavior as a guard while the parity mismatch is audited,
 not as the final policy.
 
+### 2026-05-11: `_push_max_distance` same-control-group short-circuit (RESOLVED)
+
+Resolved 2026-05-11 by removing the lab-only short-circuit. Locked in by
+`_test_arrived_same_formation_separation_push_rate` in
+`tests/smoke/smoke_zero_ad_rts_lab_motion.gd`. Full smoke 40/40.
+
+Source observation. lab `zero_ad_rts_lab_motion_controller.gd:_push_max_distance`
+short-circuits to `combined_radius` when both pair members share a
+control group:
+
+```gdscript
+if same_control_group:
+    return combined_radius   # 22 for two unit-radius-11 entities
+```
+
+This is a deviation from 0 A.D. `CCmpUnitMotionManager::Push()`, which
+computes `maxDist = combinedClearance * PUSHING_RADIUS_MULTIPLIER +
+extension` independent of control group. The 0 A.D. same-control-group
+exception only changes `movingPush` (forces it to 0 so moving + idle
+formation members still push). This audit's own notes already say
+"same-group members are treated like a stopped-stopped pair for push
+purposes" — but a stopped-stopped pair still uses the standard
+`max_distance ≈ 27.6`, not `combined_radius = 22`.
+
+Visible failure (log
+`zero_ad_rts_lab_2026-05-11T01-48-26_tick_4234.json`): six formation
+members all arrive, settle in pairs at distance 19-22 px (overlap
+0-3 px), and the same-control-group `max_distance = 22` rule yields
+`distance_factor ≈ 0.31` and a per-tick push amount `~0.25 px`. With
+multiple neighbors pushing in different directions the vector sum
+falls near zero, so units stay in the overlapping configuration.
+
+Removing the short-circuit makes the same scenario use
+`max_distance ≈ 27.6` and `distance_factor ≈ 0.76` → push amount
+`~0.61 px/tick` → 2-3 ticks separates a 2-3 px overlap.
+
+The same fix also resolves the related "stopped formation member
+silently dampens a still-moving teammate" pattern: the moving unit was
+within same-group `max_distance = 22` of a stopped teammate, push
+pressure built up, speed got dampened. With `max_distance ≈ 27.6`
+push range is wider, but pressure direction is symmetric so the
+asymmetric-pressure rule (`docs/custom-features/asymmetric-push-pressure.md`)
+already covers leader-vs-chaser pressure routing.
+
 ## 0 A.D. Baseline
 
 ### Path Selection

@@ -52,7 +52,22 @@ const CROSSING_NUDGE_DISTANCE: float = 3.0
 const LONG_SEGMENT_TAKEOVER_POLICY_0AD_SKIP_BLOCKED_WAYPOINT: String = "0ad_skip_blocked_waypoint"
 const LONG_SEGMENT_TAKEOVER_POLICY_LAB_KEEP_BLOCKED_WAYPOINT: String = "lab_keep_blocked_waypoint"
 
+const MOTION_DEAD_ZONE_SQ: float = 1.0e-4
+# Cosine threshold for "motion is facing the other unit". 0.05 ≈ angle <87°,
+# i.e. roughly anything other than near-perpendicular counts as facing. Used to
+# filter out the push-displacement-induced perpendicular jitter that would
+# otherwise make side-by-side parallel-moving units register as facing each
+# other from tick 2 onward (push pushes them apart, then their motion intent
+# back toward their goal has a tiny component pointing at the partner).
+const MOTION_FACING_COSINE_MIN: float = 0.05
+
 var long_segment_takeover_policy: String = LONG_SEGMENT_TAKEOVER_POLICY_LAB_KEEP_BLOCKED_WAYPOINT
+# Lab-only deviation from 0 A.D. (CCmpUnitMotion_System.cpp:794-796 adds
+# pressure to both members of every push pair). When true, only the unit
+# whose motion intent is heading toward the other one accumulates pressure;
+# the "leader" stays at zero pressure and runs at full speed. See
+# docs/custom-features/asymmetric-push-pressure.md.
+var asymmetric_push_pressure_enabled: bool = true
 var short_path_requests: int = 0
 var long_path_requests: int = 0
 var blocked_moves: int = 0
@@ -164,7 +179,23 @@ func step_unit(
 		return
 	unit.short_repath_cooldown = maxf(0.0, unit.short_repath_cooldown - delta)
 	unit.follow_known_imperfect_path_countdown = maxi(0, unit.follow_known_imperfect_path_countdown - 1)
-	if unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON and not unit.has_path():
+	# Mirror 0 A.D. CCmpUnitMotion::OnTurnStart -> PossiblyAtDestination
+	# (CCmpUnitMotion.h:1050-1053). Arrive must not depend on the path queue
+	# being empty: when long pathfinder canonicalizes two formation members'
+	# user goals into the same nearby passable cell (e.g. both formation
+	# slots fall inside an obstacle's inflated rect), every blocked_recovery
+	# tick re-requests a long path that lands on the same canonical goal.
+	# `unit.has_path()` therefore never empties, and motion+push oscillate
+	# around the canonical goal at ~0.005 px/tick without ever crossing
+	# ARRIVE_EPSILON of the path queue's terminal waypoint. Detect arrival
+	# directly from position vs path_target, mirroring the obstructed-branch
+	# check below (line ~204).
+	if unit.position.distance_to(unit.path_target) <= ARRIVE_EPSILON:
+		unit.long_path = SimNavWaypointPath.new()
+		unit.short_path = SimNavWaypointPath.new()
+		unit.failed_movements = 0
+		_cancel_pending_path_requests(unit, pathfinder)
+		_emit_clear_update_if_needed(unit, tick)
 		_emit_motion_update(unit, MotionUpdateScript.TYPE_REACHED_GOAL, "", tick)
 		return
 
@@ -725,14 +756,20 @@ func _handle_blocked_move(
 		"failure_reason": failure_reason,
 	})
 	var goal := SimNavPathGoal.point(unit.path_target)
+	# Mirror 0 A.D. CCmpUnitMotion.h:1429-1430 — when the goal is in short
+	# path range, fall through to ComputePathToGoal(POINT goal). Push-pressure
+	# blockages must NOT divert into a circle subgoal around long_path.back():
+	# the unit is typically already inside that radius, which makes
+	# vertex_pathfinder's contains_point(start) fast-path return [start].
+	# Motion then executes a 0-progress step while push pushes the unit back,
+	# producing a 60 Hz oscillation and permanent overlap (log
+	# zero_ad_rts_lab_2026-05-10T23-35-41). Static drift
+	# (`passability_blocked`) keeps the long-route subgoal because a static
+	# obstacle on the direct line still requires routing around it.
 	var has_salvageable_long_path := unit.long_path != null and not unit.long_path.is_empty()
 	var route_drift := (
 		has_salvageable_long_path
-		and (
-			failure_reason == SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED
-			or failure_reason == "push_pressure_obstructed"
-			or failure_reason == "push_static_blocked"
-		)
+		and failure_reason == SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED
 	)
 	if _in_short_path_range(goal, unit.position) and not route_drift:
 		_compute_path_to_goal(unit, pathfinder, units, goal, tick)
@@ -1148,19 +1185,31 @@ func _accumulate_pair_push(
 		pushes[a.id] = (pushes.get(a.id, Vector2.ZERO) as Vector2) + direction * amount
 		pushes[b.id] = (pushes.get(b.id, Vector2.ZERO) as Vector2) - direction * amount
 	var pressure_delta := _push_pressure_delta(average_distance, max_distance, moving_count)
-	pressure_deltas[a.id] = int(pressure_deltas.get(a.id, 0)) + pressure_delta
-	pressure_deltas[b.id] = int(pressure_deltas.get(b.id, 0)) + pressure_delta
+	if asymmetric_push_pressure_enabled:
+		if _unit_motion_faces(a, b, previous_positions):
+			pressure_deltas[a.id] = int(pressure_deltas.get(a.id, 0)) + pressure_delta
+		if _unit_motion_faces(b, a, previous_positions):
+			pressure_deltas[b.id] = int(pressure_deltas.get(b.id, 0)) + pressure_delta
+	else:
+		pressure_deltas[a.id] = int(pressure_deltas.get(a.id, 0)) + pressure_delta
+		pressure_deltas[b.id] = int(pressure_deltas.get(b.id, 0)) + pressure_delta
 
 
 func _push_max_distance(
 	a: ZeroAdRtsLabUnit,
 	b: ZeroAdRtsLabUnit,
 	moving_count: int,
-	same_control_group: bool
+	_same_control_group: bool
 ) -> float:
+	# Mirror 0 A.D. CCmpUnitMotionManager::Push() max_dist formula. The
+	# same-control-group exception is enforced upstream by zeroing
+	# `moving_count` (see _accumulate_pair_push line ~1105), which routes
+	# same-group pairs through the stopped-stopped extension. Returning
+	# combined_radius here was a lab-only short-circuit that produced
+	# weak push amounts (~0.29 px/tick at dist=19) and let arrived
+	# formation members stay overlapping indefinitely. See
+	# docs/0ad-unit-motion-policy-parity-audit.md "2026-05-11" entry.
 	var combined_radius := a.radius + b.radius
-	if same_control_group:
-		return combined_radius
 	var combined_clearance := combined_radius * PUSHING_CORRECTION
 	var extension := MOVING_PUSH_EXTENSION if moving_count > 0 else STATIC_PUSH_EXTENSION
 	return combined_clearance * PUSHING_RADIUS_MULTIPLIER + extension
@@ -1200,6 +1249,37 @@ func _push_time_factor(a: ZeroAdRtsLabUnit, b: ZeroAdRtsLabUnit, delta: float) -
 	return reference_speed * delta / PUSHING_REDUCTION_FACTOR
 
 
+func _unit_motion_faces(
+	unit: ZeroAdRtsLabUnit,
+	other: ZeroAdRtsLabUnit,
+	previous_positions: Dictionary
+) -> bool:
+	var motion := _unit_motion_intent(unit, previous_positions)
+	var motion_len_sq := motion.length_squared()
+	if motion_len_sq <= MOTION_DEAD_ZONE_SQ:
+		return false
+	var to_other := other.position - unit.position
+	var to_other_len_sq := to_other.length_squared()
+	if to_other_len_sq <= MOTION_DEAD_ZONE_SQ:
+		return false
+	var dot := motion.dot(to_other)
+	if dot <= 0.0:
+		return false
+	# cos(angle) = dot / (|motion| * |to_other|). Compare squared to avoid sqrt.
+	return dot * dot > MOTION_FACING_COSINE_MIN * MOTION_FACING_COSINE_MIN * motion_len_sq * to_other_len_sq
+
+
+func _unit_motion_intent(
+	unit: ZeroAdRtsLabUnit,
+	previous_positions: Dictionary
+) -> Vector2:
+	if unit.has_path():
+		var wp := unit.current_waypoint()
+		return wp - unit.position
+	var prev: Vector2 = previous_positions.get(unit.id, unit.position) as Vector2
+	return unit.position - prev
+
+
 func _push_opposes_attempted_motion(
 	unit: ZeroAdRtsLabUnit,
 	push_vec: Vector2,
@@ -1207,11 +1287,30 @@ func _push_opposes_attempted_motion(
 ) -> bool:
 	if not unit.has_move_order:
 		return false
+	# 0 A.D. baseline check (CCmpUnitMotion_System.cpp:610-616): length-
+	# dependent threshold. Acts as an implicit speed gate — fast units have
+	# |attempted|² >> 0.5 and rarely trip; pressure-dampened slow units
+	# trip easily, becoming "obstructed" and getting force-elevated to
+	# pressure 80. See docs/custom-features/asymmetric-push-pressure.md
+	# "Follow-up" for the leader-self-reinforcement failure mode.
 	var previous_position: Vector2 = previous_positions.get(unit.id, unit.position) as Vector2
 	var attempted_move := unit.position - previous_position
 	if attempted_move.length_squared() <= 0.0001:
 		return false
-	return attempted_move.dot(attempted_move + push_vec) < 0.5
+	var attempted_threshold_met := attempted_move.dot(attempted_move + push_vec) < 0.5
+	if not asymmetric_push_pressure_enabled:
+		return attempted_threshold_met
+	# Asymmetric mode: keep the speed gate but additionally require
+	# geometric opposition (motion intent points opposite to net push).
+	# This filters out leaders whose attempted_move shrunk due to past
+	# pressure-damping but whose motion intent is co-directional with
+	# push (push pushing them forward, not blocking them).
+	if not attempted_threshold_met:
+		return false
+	var motion := _unit_motion_intent(unit, previous_positions)
+	if motion.length_squared() <= MOTION_DEAD_ZONE_SQ:
+		return false
+	return motion.dot(push_vec) < 0.0
 
 
 func _mark_push_pressure_obstructed(
