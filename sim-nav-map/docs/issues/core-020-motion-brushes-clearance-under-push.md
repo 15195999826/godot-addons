@@ -1,8 +1,25 @@
 # CORE-020: Push Brushes Unit Sub-Pixel Into Static Clearance Ring at High Pressure
 
-Status: **open / accepted limitation**. Lab repro test in
-`examples/0ad-rts-pathfinding-lab/tests/repro/repro_core_020_motion_brushes_clearance_under_push_known_limit.{gd,tscn}`
-asserts current behavior. No fix attempted yet — deferred.
+Status: **DORMANT (2026-05-11)**. Originally discovered by an AI-driven
+exploration script during stress-test instrumentation, not by anyone
+hand-testing the lab. The artifact is **sub-pixel** (0.77 px brush) with
+**5–8 tick self-recovery** under crowded conditions; no path corruption
+or permanent stuck. Severity is low and the surface is not visible during
+normal demo play.
+
+The CORE-018 fix (2026-05-11) changed short-path behavior in dense unit
+clusters, which altered the swarm stress test trajectory at seed=42 just
+enough that the deterministic violation at tick 362 no longer reproduces
+within the 380-tick budget. The root cause (LOS boundary handling under
+push at zero-path conditions) is unfixed; the trigger conditions just
+happen to not assemble under the new short-path dynamics for that seed.
+
+**Decision (2026-05-11)**: pull `repro_core_020_motion_brushes_clearance_under_push_known_limit`
+out of the `zeroadlab/smoke` group so it does not block daily regression.
+The repro file itself is retained in
+`examples/0ad-rts-pathfinding-lab/tests/repro/` for future use; if anyone
+sees the sub-pixel brush artifact during real play, re-enable the test
+(or adjust the seed/budget) and proceed with the original fix options.
 
 ## Symptom
 
