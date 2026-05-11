@@ -1,9 +1,16 @@
 # CORE-018: Visibility-Graph Pathfinder Cannot Thread Obstacle Gaps
 
-Status: **open / accepted limitation**. Repro test in
-`tests/repro/repro_core_018_visibility_graph_gap_detour_known_limit.{gd,tscn}`
-asserts the current behavior. No fix attempted yet — deferred to a later
-core optimization milestone.
+Status: **RESOLVED (2026-05-11).** Fixed by adding pair-wise gap-midpoint
+vertices to the visibility graph in `sim_nav_vertex_pathfinder.gd`. Repro
+test renamed to `tests/repro/repro_core_018_visibility_graph_gap_threading.{gd,tscn}`
+and flipped to assert the new positive behavior (path length < 130 px, path
+passes near the gap midpoint).
+
+**Side effect to investigate separately**: `repro_core_020_motion_brushes_clearance_under_push_known_limit`
+no longer reproduces within its 380-tick budget — the short path behavior
+change indirectly altered the push interaction sequence at the seed used
+by CORE-020. CORE-020 may have been silently fixed, or simply moved to a
+later tick. Track in a follow-up rather than in this issue.
 
 ## Symptom
 
@@ -112,9 +119,41 @@ adding back one of those systems.
 A and B affect the core navigation algorithm and would benefit any
 example that uses sim-nav-map. C and D are scoped to specific use cases.
 
-No fix is shipped in this round. The repro test pins the current
-behavior so a future fix attempt will produce a clear failure and force
-the docs to be updated.
+## Fix shipped (2026-05-11)
+
+**Variant of Option B was selected**: rather than adding gap-midpoint vertices
+based on `> 2 * combined_clearance` of static-obstacle pairs, the fix adds
+midpoints between **unit-obstacle pairs** specifically. Reason: the daily
+manual friction was triggered by dense unit clusters (5 units around the
+moving unit's destination), not static gaps. Static obstacle gaps in lab
+demos are wide enough that visibility-graph corners suffice.
+
+Implementation in `sim_nav_vertex_pathfinder.gd:_append_unit_pair_gap_midpoint_vertices`:
+
+- For each pair `(a, b)` of unit obstacles in the short-path query range,
+  if `center_distance > a_ring + b_ring` (where `ring = unit.clearance +
+  req.clearance + EDGE_EXPAND_DELTA`), compute `midpoint = (a.center + b.center) / 2`.
+- Verify midpoint is outside every **other** unit's inflated ring (not just
+  the pair), to avoid placing the midpoint inside a third unit's clearance.
+- Register midpoint as an additional visibility-graph vertex.
+
+This is a **positive lab-only deviation from 0 A.D. parity**: 0 A.D.'s
+`VertexPathfinder` does not have such gap-midpoint vertices, but 0 A.D.
+masks the visible symptom via three layers (formation slot selection,
+less-aggressive long-path simplification, run multiplier) that the lab
+does not replicate. Adding gap-midpoint vertices is a pure geometric
+construction — no magic number, no policy.
+
+Verification (CORE-018 user scenario):
+
+- Before fix: `short_path = [(530.69, 150.16), (559.1, 230.3), (604.1, 230.3)]`,
+  unit walks SSE then W then N around the cluster perimeter (~278 px detour).
+- After fix: `short_path = [(543.94, 141.23), (597.65, 188.85)]` with
+  (597.65, 188.85) = midpoint of (blue_0, blue_2). Unit walks NW directly
+  through the gap (~103.77 px, geometric optimum).
+
+Regression: full `simnav/smoke` + `zeroadlab/smoke` pass except
+`repro_core_020` (side effect, see Status above).
 
 ## How to repro
 

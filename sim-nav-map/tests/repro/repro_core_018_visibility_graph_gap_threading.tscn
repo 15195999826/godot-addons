@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b0core018"]
+
+[ext_resource type="Script" path="res://addons/sim-nav-map/tests/repro/repro_core_018_visibility_graph_gap_threading.gd" id="1"]
+
+[node name="ReproCore018" type="Node"]
+script = ExtResource("1")

@@ -1,46 +1,38 @@
 extends Node
 
-# CORE-018: KNOWN LIMITATION — visibility-graph short pathfinder cannot
-# thread a passable gap between two adjacent obstacles, because the gap's
-# midpoint is not a vertex in the search graph.
+# CORE-018: short path threads passable gap between two adjacent unit obstacles
 #
-# This is NOT a bug in lab — it mirrors 0 A.D. VertexPathfinder's behavior
-# and is inherent to visibility-graph algorithms whose vertex set is only
-# obstacle outset corners. Lock-in test so future tweaks to vertex
-# collection / covered-vertex filtering don't silently change the
-# observable behavior.
+# Bug reproduced here:
+#   - 现象：blue_1 at (171.7, 238.4) walks to (243, 164) through a goal-side
+#     cluster of 5 stationary blues. The geometrically shortest viable path
+#     `start → midpoint(blue_4, blue_0) (184.65, 217.4) → goal` is 103.77 px.
+#     Pre-fix, the short pathfinder returned a perimeter detour of ~278 px
+#     (~2.69× optimal) because the gap midpoint was not a vertex in its
+#     visibility graph; only 4 outset corners per obstacle were registered,
+#     and the goal-side outsets were either covered or required additional
+#     detour to reach.
+#   - 根因：`sim_nav_vertex_pathfinder.gd:_collect_visibility_inputs` produced
+#     only obstacle outset corners. Pair-wise gap midpoints between adjacent
+#     units were missing from the search graph.
 #
-# Bug reproduced here (from log
-# zero_ad_rts_lab_2026-05-11T02-33-22_tick_6144.json tick 5628):
-#   blue_1 at (171.7, 238.4) walks to (243, 164). Five stationary blues
-#   sit around the goal:
-#     blue_4 (201.4, 236.8)  ← directly on the line, blocks long segment
-#     blue_0 (167.9, 198.0)  ← north-west of blue_4
-#     blue_3 (150.5, 280.2)
-#     blue_2 (132.0, 236.5)
-#     blue_5 (193.5, 280.1)
-#   The geometrically shortest viable path is
-#     start → (184.65, 217.4) [blue_4 ↔ blue_0 gap midpoint] → goal
-#   total 103.77 px. Both segments clear all five blockers by ≥ 24 px
-#   (combined clearance threshold is 22).
-#   But (184.65, 217.4) is not a vertex in the visibility graph, and every
-#   blue_4 outset that could be a turning point is either on the wrong
-#   side of blue_4 or covered by blue_0's clearance ring (filtered by
-#   CORE-008's covered-vertex rule). A* can only assemble a perimeter
-#   detour, ~278 px, ~2.7× optimal.
+# 0 A.D. expected (`VertexPathfinder.cpp:626-665`, 727-734):
+#   Same vertex set scheme (4 outset corners per obstacle) and same
+#   covered-vertex filter. 0 A.D. has the **same algorithmic limitation** but
+#   masks the visible symptom via three layers that the lab does not have:
+#     1. `CCmpFormation` picks reachable formation slots.
+#     2. `LongPathfinder::ImprovePathWaypoints` keeps turning points whose
+#        non-adjacent waypoint chain remains static-blocked.
+#     3. Unit run multiplier compresses detour visuals.
+#   The lab lacks all three, so the limitation visibly bites every dense
+#   cluster manual test. Adding pair-wise gap midpoint vertices is a
+#   **positive lab-only deviation** that closes the visible symptom while
+#   remaining a clean geometric construction (no policy / no magic number).
 #
-# 0 A.D. expected (VertexPathfinder.cpp:626-665, 727-734):
-#   Same vertex set. Same covered-vertex filter. Same detour. 0 A.D.
-#   normally avoids the visible symptom via formation slot selection,
-#   less-aggressive long-path simplification, and run multipliers — all
-#   of which the lab does not currently have. See
-#   docs/issues/core-018-visibility-graph-gap-detour.md for the fix
-#   option discussion.
+# Before fix: short path length ≥ 270 px (perimeter detour). FAIL of the
+# `length < 130 px` bound below.
+# After fix: short path length ≈ 103.77 px (threads the gap midpoint). PASS.
 #
-# Fix attempted: NONE. Deferred to a later core optimization milestone.
-# This repro asserts the current limited behavior remains stable.
-#
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_018_visibility_graph_gap_detour_known_limit.tscn
+# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_018_visibility_graph_gap_threading.tscn
 
 
 var _failures: Array[String] = []
@@ -49,12 +41,12 @@ var _failures: Array[String] = []
 func _ready() -> void:
 	_run()
 	if _failures.is_empty():
-		print("SMOKE_TEST_RESULT: PASS - CORE-018 visibility-graph gap detour locked (known limitation)")
+		print("SMOKE_TEST_RESULT: PASS - CORE-018 short path threads inter-unit gap midpoint")
 		get_tree().quit(0)
 		return
 	for failure in _failures:
 		push_error(failure)
-	print("SMOKE_TEST_RESULT: FAIL - CORE-018 behavior changed: %s" % "; ".join(_failures))
+	print("SMOKE_TEST_RESULT: FAIL - CORE-018 gap threading regressed: %s" % "; ".join(_failures))
 	get_tree().quit(1)
 
 
@@ -104,29 +96,39 @@ func _run() -> void:
 		_failures.append("expected success, got %s/%s" % [str(result.status), str(result.failure_reason)])
 		return
 
-	# Path goes to the goal (waypoint[0]).
+	# Path ends at goal.
 	var final_wp: Vector2 = result.path.waypoints[0]
 	if final_wp.distance_to(goal) > 0.5:
 		_failures.append("path should end at goal; got %s" % str(final_wp))
 
-	# Path length is at least 200 px — i.e. it's clearly a perimeter detour,
-	# not anything near the geometrically optimal 103.77 px route through the
-	# blue_4 ↔ blue_0 gap.
+	# Post-fix: path threads the gap midpoint, so total length is near optimal
+	# (geometric optimum 103.77 px). Allow up to 130 px to absorb minor
+	# clearance-snap noise but reject any perimeter detour (~270 px+).
 	var path_length := start.distance_to(result.path.back())
 	for i in range(result.path.waypoints.size() - 1, 0, -1):
 		path_length += result.path.waypoints[i].distance_to(result.path.waypoints[i - 1])
-	if path_length < 200.0:
+	if path_length >= 130.0:
 		_failures.append(
-			"path is shorter than the documented 278 px detour (got %.2f); if a recent core change made A* find a shorter route, update CORE-018 docs and either tighten this bound or convert to a positive 'gap threading works' test"
+			"path length %.2f indicates a perimeter detour, expected gap-threading path < 130 px (geometric optimum ≈ 103.77)"
 			% path_length
 		)
 
-	# Sanity: the gap midpoint between blue_4 and blue_0 is genuinely passable.
-	# This guards against tests passing for the wrong reason (e.g. someone
-	# moved an obstacle and the midpoint is no longer mid-gap).
+	# Ensure the actual midpoint of the blue_4 ↔ blue_0 gap is in (or near to)
+	# the path. The midpoint is the turning point the fix is designed to
+	# expose, so the path must traverse close to it.
 	var blue_4_pos := Vector2(201.4, 236.8)
 	var blue_0_pos := Vector2(167.9, 198.0)
 	var midpoint := (blue_4_pos + blue_0_pos) * 0.5
+	var min_dist_to_midpoint := INF
+	for wp in result.path.waypoints:
+		min_dist_to_midpoint = minf(min_dist_to_midpoint, (wp as Vector2).distance_to(midpoint))
+	if min_dist_to_midpoint > 10.0:
+		_failures.append(
+			"path does not pass near gap midpoint (%.2f px away); pair-wise gap midpoint vertex generation regressed"
+			% min_dist_to_midpoint
+		)
+
+	# Sanity: the gap midpoint is genuinely passable.
 	var mid_to_blue_4 := midpoint.distance_to(blue_4_pos)
 	var mid_to_blue_0 := midpoint.distance_to(blue_0_pos)
 	if mid_to_blue_4 < 22.0 or mid_to_blue_0 < 22.0:
@@ -134,7 +136,6 @@ func _run() -> void:
 			"midpoint sanity broken — distance to blue_4=%.2f / blue_0=%.2f, both should be > 22"
 			% [mid_to_blue_4, mid_to_blue_0]
 		)
-	# And the segments through it should be clear of every blocker.
 	for shape in blockers:
 		var d_a := _segment_to_point_distance(start, midpoint, shape.center)
 		var d_b := _segment_to_point_distance(midpoint, goal, shape.center)

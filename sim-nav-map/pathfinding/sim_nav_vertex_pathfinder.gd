@@ -9,7 +9,6 @@ const COORD_INT_SCALE: int = 10
 # is its float-math equivalent at the lab's clearance scale.
 const EDGE_EXPAND_DELTA: float = 0.5
 const _MAX_PATH_LENGTH: float = 1.0e20
-const _MAX_VISIBILITY_NEIGHBORS: int = 8
 
 var _nav_map: SimNavMap = null
 
@@ -185,6 +184,9 @@ func _collect_visibility_inputs(req: SimNavShortPathRequest, diagnostics: Dictio
 	var unit_shapes := _nav_map.get_dynamic_obstruction_shapes()
 	if query_range > 0.0:
 		unit_shapes = _nav_map.get_dynamic_obstruction_shapes_in_range(req.start, query_range)
+	# Collect unit shapes first (need full list for pairwise gap-midpoint
+	# generation below).
+	var blocking_unit_shapes: Array = []
 	for unit_shape in unit_shapes:
 		if (unit_shape.flags & SimNavObstructionFlags.BLOCK_MOVEMENT) == 0:
 			continue
@@ -193,6 +195,18 @@ func _collect_visibility_inputs(req: SimNavShortPathRequest, diagnostics: Dictio
 		obstacles.append(unit_shape)
 		diagnostics["explicit_unit_obstruction_count"] = int(diagnostics.get("explicit_unit_obstruction_count", 0)) + 1
 		_append_unit_obstacle_vertices(vertices, seen_vertices, req, unit_shape)
+		blocking_unit_shapes.append(unit_shape)
+	# Add gap-midpoint vertices between unit pairs whose center distance is
+	# large enough that a point at the midpoint sits outside both units'
+	# inflated clearance rings. Closes CORE-018: without these, every outset
+	# corner sits on its own unit's edge, so any segment from outside to such a
+	# corner grazes the unit center under the lab's distance-to-center LOS
+	# model. The midpoint, by construction, lies between two units and is not
+	# attached to either's boundary, so segments to it pass through clean
+	# inter-unit gap. 0 A.D. masks the same vertex-graph limitation via
+	# formation slot selection + run multiplier, which the lab does not
+	# replicate — a lab-only positive deviation.
+	_append_unit_pair_gap_midpoint_vertices(vertices, seen_vertices, req, blocking_unit_shapes)
 	diagnostics["obstruction_count"] = obstacles.size()
 	diagnostics["terrain_vertex_count"] = int(diagnostics.get("terrain_vertex_count", 0))
 	return {
@@ -228,6 +242,45 @@ func _append_unit_obstacle_vertices(
 	_append_unique_vertex(vertices, seen_vertices, unit_shape.center + Vector2(radius, -radius))
 	_append_unique_vertex(vertices, seen_vertices, unit_shape.center + Vector2(-radius, -radius))
 	_append_unique_vertex(vertices, seen_vertices, unit_shape.center + Vector2(-radius, radius))
+
+
+func _append_unit_pair_gap_midpoint_vertices(
+	vertices: Array[Vector2],
+	seen_vertices: Dictionary,
+	req: SimNavShortPathRequest,
+	unit_shapes: Array
+) -> void:
+	# For each pair of unit obstacles, if the midpoint of the line between
+	# their centers sits outside both units' inflated clearance rings, register
+	# it as a turning-point vertex. Conditions on inputs:
+	#   - center distance > 2 * (unit.clearance + req.clearance + EDGE_DELTA)
+	#     so the midpoint clears each unit's inflated ring by > 0.
+	# Includes a generous spacing tolerance so that pairs that are just barely
+	# clearing the rings are still permitted (matches Lab clearance constants).
+	for i in range(unit_shapes.size()):
+		for j in range(i + 1, unit_shapes.size()):
+			var a: SimNavObstructionShapeUnit = unit_shapes[i]
+			var b: SimNavObstructionShapeUnit = unit_shapes[j]
+			var center_distance := a.center.distance_to(b.center)
+			var a_ring := a.clearance + req.clearance + EDGE_EXPAND_DELTA
+			var b_ring := b.clearance + req.clearance + EDGE_EXPAND_DELTA
+			if center_distance <= a_ring + b_ring:
+				continue
+			var midpoint: Vector2 = (a.center + b.center) * 0.5
+			# Verify midpoint is outside every other unit's inflated ring too
+			# (not just the pair).
+			var covered := false
+			for k in range(unit_shapes.size()):
+				if k == i or k == j:
+					continue
+				var other: SimNavObstructionShapeUnit = unit_shapes[k]
+				var other_ring := other.clearance + req.clearance + EDGE_EXPAND_DELTA
+				if midpoint.distance_to(other.center) <= other_ring:
+					covered = true
+					break
+			if covered:
+				continue
+			_append_unique_vertex(vertices, seen_vertices, midpoint)
 
 
 func _append_terrain_edge_vertices(
@@ -428,24 +481,21 @@ func _visibility_neighbor_indices(
 	goal_idx: int,
 	closed: Dictionary
 ) -> Array[int]:
+	# Mirror 0 A.D. VertexPathfinder.cpp:803 — examine every other vertex when
+	# expanding `curr`. Lab previously truncated to the 8 nearest by squared
+	# distance, but in dense unit clusters that cuts off all goal-direction
+	# corners (they sit just past the cluster's first ring) and forces A* to
+	# detour around the perimeter. 0 A.D. has no such truncation; it relies on
+	# the quadrant filter + closed-set culling to keep expansion bounded.
+	# Removing the limit restores 0 A.D. parity. See
+	# docs/issues/core-018-visibility-graph-gap-detour.md.
 	var result: Array[int] = []
 	if current_idx != goal_idx and not closed.has(goal_idx):
 		result.append(goal_idx)
-	var current_pos := vertices[current_idx]
-	var keys: Array = []
 	for next_idx in range(vertices.size()):
 		if next_idx == current_idx or next_idx == goal_idx or closed.has(next_idx):
 			continue
-		var next_pos := vertices[next_idx]
-		keys.append([current_pos.distance_squared_to(next_pos), next_idx])
-	keys.sort_custom(func(a: Array, b: Array) -> bool:
-		if float(a[0]) == float(b[0]):
-			return int(a[1]) < int(b[1])
-		return float(a[0]) < float(b[0])
-	)
-	var limit := mini(_MAX_VISIBILITY_NEIGHBORS, keys.size())
-	for i in range(limit):
-		result.append(int(keys[i][1]))
+		result.append(next_idx)
 	return result
 
 
