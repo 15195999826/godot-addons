@@ -38,7 +38,7 @@
         "repro/repro_core_015_motion_validates_full_segment_to_waypoint.tscn",
         "repro/repro_core_016_arrive_when_blocked_close_to_target.tscn",
         "repro/repro_core_017_dense_cluster_perimeter_detour_known_limit.tscn",
-        "repro/repro_core_018_visibility_graph_gap_detour_known_limit.tscn"
+        "repro/repro_core_018_visibility_graph_gap_threading.tscn"
       ]
     }
   }
