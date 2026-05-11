@@ -1,0 +1,11 @@
+{
+  "namespace": "dota2lab",
+  "default_timeout_ms": 45000,
+  "groups": {
+    "smoke": {
+      "scenes": [
+        "smoke/smoke_dota2_lab_state_machine.tscn"
+      ]
+    }
+  }
+}
