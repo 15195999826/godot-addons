@@ -20,14 +20,14 @@ const DEFAULT_OBSTACLE_SIZE := Vector2(64.0, 64.0)
 const DEFAULT_BLOCKER_RADIUS := 14.0
 
 
-var map_size: Vector2 = Vector2(720.0, 420.0)
+var map_size: Vector2 = Vector2(1320.0, 900.0)
 var obstacles: Array[Dota2LabObstacle] = []
 var units: Array[Dota2LabUnit] = []
 var pathfinder: Dota2LabPathfinderWrapper = null
 var motion: Dota2LabMotionController = null
 var tick_count: int = 0
 var recent_motion_updates: Array[Dictionary] = []
-var current_target: Vector2 = Vector2(610.0, 210.0)
+var current_target: Vector2 = Vector2(1160.0, 450.0)
 var _obstacle_seq: int = 0
 var _blocker_seq: int = 0
 
@@ -38,23 +38,29 @@ func _init() -> void:
 	setup_default()
 
 
-# Default scene: 4 mobile blue units on the west, 1 static red blocker mid-map,
-# 2 static obstacles forming a corridor. Mirrors 0AD lab's default density
-# (kept low — dota2 lab targets 10–40 units, not 100+).
+# Default scene: 8 mobile blue units on the west, 1 static red blocker mid-map,
+# and three static obstacles forming a more legible corridor. The composition
+# mirrors the 0AD lab's readable manual-test layout while keeping Dota2 motion
+# rules: hard block, no push, per-unit orders.
 func setup_default() -> void:
 	_obstacle_seq = 0
 	_blocker_seq = 0
-	current_target = Vector2(610.0, 210.0)
+	current_target = Vector2(1160.0, 450.0)
 	obstacles = [
-		Dota2LabObstacle.new("obstacle_north", Vector2(360.0, 100.0), Vector2(120.0, 64.0)),
-		Dota2LabObstacle.new("obstacle_south", Vector2(360.0, 320.0), Vector2(120.0, 64.0)),
+		Dota2LabObstacle.new("center_block", Vector2(690.0, 450.0), Vector2(76.0, 280.0)),
+		Dota2LabObstacle.new("north_block", Vector2(690.0, 190.0), Vector2(310.0, 100.0)),
+		Dota2LabObstacle.new("south_block", Vector2(690.0, 710.0), Vector2(310.0, 100.0)),
 	]
 	units = [
-		Dota2LabUnit.new("blue_0", "blue", Vector2(80.0, 170.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_1", "blue", Vector2(80.0, 210.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_2", "blue", Vector2(80.0, 250.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_3", "blue", Vector2(120.0, 210.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("red_blocker", "red", Vector2(280.0, 210.0), 13.0, 0.0, false),
+		Dota2LabUnit.new("blue_0", "blue", Vector2(110.0, 420.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blue_1", "blue", Vector2(110.0, 480.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blue_2", "blue", Vector2(160.0, 365.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blue_3", "blue", Vector2(160.0, 535.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blue_4", "blue", Vector2(210.0, 420.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blue_5", "blue", Vector2(210.0, 480.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blue_6", "blue", Vector2(260.0, 395.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blue_7", "blue", Vector2(260.0, 505.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("red_blocker", "red", Vector2(470.0, 450.0), 13.0, 0.0, false),
 	]
 	_rebuild_navigation()
 	tick_count = 0

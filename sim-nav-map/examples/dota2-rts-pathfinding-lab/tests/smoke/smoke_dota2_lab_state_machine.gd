@@ -54,12 +54,14 @@ func _test_start_move_order_transitions_to_waiting_long() -> void:
 
 
 func _test_simple_move_reaches_goal() -> void:
-	# blue_0 starts at (80, 170); target (200, 170) is in open corridor.
 	var world := Dota2LabWorld.new()
-	# Remove the static blocker red_blocker so the path is unambiguous.
-	world.remove_nearest_editable(Vector2(280.0, 210.0))
-	world.issue_move("blue_0", Vector2(200.0, 170.0))
-	var unit := world.get_unit("blue_0")
+	world.obstacles = []
+	world.units = [
+		Dota2LabUnit.new("mover", "blue", Vector2(100.0, 170.0), 11.0, 110.0, true),
+	]
+	world._rebuild_navigation()
+	world.issue_move("mover", Vector2(260.0, 170.0))
+	var unit := world.get_unit("mover")
 	var saw_following := false
 	for i in range(MAX_TICKS):
 		world.step(TICK_DELTA)
@@ -70,7 +72,7 @@ func _test_simple_move_reaches_goal() -> void:
 	if not saw_following:
 		_failures.append("simple-move: never observed FOLLOWING state")
 	_assert_eq(Dota2LabUnit.STATE_IDLE, unit.state, "simple-move: should reach IDLE within %d ticks" % MAX_TICKS)
-	var distance := unit.position.distance_to(Vector2(200.0, 170.0))
+	var distance := unit.position.distance_to(Vector2(260.0, 170.0))
 	_assert_true(distance <= 8.0, "simple-move: final distance %.2f > 8" % distance)
 
 

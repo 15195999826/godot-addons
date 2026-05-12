@@ -126,3 +126,9 @@ func current_order_snapshot() -> Dictionary:
 	if current_order == null:
 		return {}
 	return current_order.to_snapshot()
+
+
+func last_order_snapshot() -> Dictionary:
+	if last_order == null:
+		return {}
+	return last_order.to_snapshot()

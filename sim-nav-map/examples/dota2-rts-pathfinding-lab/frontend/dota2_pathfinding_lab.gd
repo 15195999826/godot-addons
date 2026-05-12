@@ -4,8 +4,8 @@ extends Node2D
 #
 # Layer 1 scope (per README): expose the motion controller to a human so edge
 # cases can be probed (narrow gaps, target spam, body-blocking own units).
-# Keeps perf tracing and log export deliberately out of scope — this is for
-# feel and visual validation, not benchmarking.
+# Mirrors the 0AD lab's operation/debug surface closely enough that manual
+# findings can be exported and turned into smoke tests.
 
 enum ToolMode {
 	COMMAND,
@@ -14,18 +14,30 @@ enum ToolMode {
 	ERASE,
 }
 
-const DRAG_SELECT_THRESHOLD := 5.0
-const OBSTACLE_SIZE := Vector2(64.0, 64.0)
+const DRAG_SELECT_THRESHOLD: float = 5.0
+const OBSTACLE_SIZE: Vector2 = Vector2(64.0, 64.0)
+const LOG_DIR: String = "user://dota2_rts_pathfinding_lab_logs"
+const MAX_EVENT_LOG_ENTRIES: int = 160
+const MAX_SLOW_FRAME_LOG_ENTRIES: int = 80
+const SLOW_FRAME_THRESHOLD_USEC: int = 8000
+const TRACE_EXPORT_LIMIT: int = 120
+const PANEL_GAP: float = 24.0
+const PANEL_WIDTH: float = 520.0
+const PANEL_PADDING: float = 20.0
 
-const UNIT_COLOR_BLUE := Color(0.35, 0.62, 1.0)
-const UNIT_COLOR_RED := Color(0.95, 0.40, 0.35)
-const UNIT_COLOR_SELECTED := Color(1.0, 0.95, 0.30)
-const OBSTACLE_COLOR := Color(0.50, 0.50, 0.55, 1.0)
-const PATH_COLOR := Color(0.55, 0.95, 0.55, 0.75)
-const TARGET_COLOR := Color(0.95, 0.80, 0.30, 0.75)
-const TRACE_COLOR := Color(0.25, 0.55, 0.95, 0.55)
-const DRAG_RECT_COLOR := Color(1.0, 0.95, 0.30, 0.18)
-const DRAG_RECT_OUTLINE := Color(1.0, 0.95, 0.30, 0.80)
+const UNIT_COLOR_BLUE := Color(0.18, 0.55, 0.95)
+const UNIT_COLOR_RED := Color(0.90, 0.26, 0.22)
+const UNIT_COLOR_BLOCKER := Color(0.90, 0.45, 0.25)
+const UNIT_COLOR_SELECTED := Color(0.25, 1.0, 0.70)
+const UNIT_OUTLINE_COLOR := Color(0.95, 0.95, 0.92)
+const OBSTACLE_COLOR := Color(0.38, 0.35, 0.30)
+const OBSTACLE_OUTLINE_COLOR := Color(0.78, 0.67, 0.45)
+const OBSTACLE_CLEARANCE_COLOR := Color(0.95, 0.70, 0.25, 0.16)
+const PATH_COLOR := Color(0.2, 1.0, 0.55, 0.75)
+const TARGET_COLOR := Color(0.2, 0.95, 0.65)
+const TRACE_COLOR := Color(0.45, 0.75, 1.0, 0.24)
+const DRAG_RECT_COLOR := Color(0.20, 0.70, 1.0, 0.15)
+const DRAG_RECT_OUTLINE := Color(0.35, 0.85, 1.0)
 
 const STATE_COLOR := {
 	"IDLE":          Color(0.65, 0.65, 0.65),
@@ -39,32 +51,60 @@ const STATE_COLOR := {
 var _world: Dota2LabWorld = null
 var _paused: bool = false
 var _hud: Label = null
+var _export_button: Button = null
 var _mode: int = ToolMode.COMMAND
 var _selected_unit_ids: Array[String] = []
 var _drag_start: Vector2 = Vector2.ZERO
 var _drag_current: Vector2 = Vector2.ZERO
 var _is_dragging: bool = false
 var _last_action: String = "ready"
+var _last_step_usec: int = 0
+var _max_step_usec: int = 0
+var _max_step_tick: int = 0
+var _total_step_usec: int = 0
+var _measured_step_count: int = 0
+var _event_log: Array[Dictionary] = []
+var _slow_frame_log: Array[Dictionary] = []
+var _last_export_path: String = ""
 
 
 func _ready() -> void:
 	_world = Dota2LabWorld.new()
 	_selected_unit_ids = _world.get_mobile_unit_ids()
 	_hud = Label.new()
-	_hud.position = Vector2(12.0, 10.0)
+	_hud.position = _debug_panel_origin() + Vector2(PANEL_PADDING, PANEL_PADDING)
 	_hud.z_index = 20
+	_hud.add_theme_font_size_override("font_size", 16)
 	_hud.add_theme_color_override("font_color", Color.WHITE)
 	_hud.add_theme_color_override("font_shadow_color", Color.BLACK)
 	_hud.add_theme_constant_override("shadow_offset_x", 1)
 	_hud.add_theme_constant_override("shadow_offset_y", 1)
 	add_child(_hud)
+	_export_button = Button.new()
+	_export_button.text = "Export log"
+	_export_button.position = _debug_panel_origin() + Vector2(PANEL_WIDTH - 132.0, PANEL_PADDING)
+	_export_button.custom_minimum_size = Vector2(112.0, 32.0)
+	_export_button.z_index = 20
+	_export_button.pressed.connect(_on_export_log_pressed)
+	add_child(_export_button)
+	_record_event("ready", {"selected_unit_ids": _selected_unit_ids})
 	_update_hud()
 	queue_redraw()
 
 
 func _process(delta: float) -> void:
 	if not _paused:
+		var step_tick := _world.tick_count
+		var step_start_usec := Time.get_ticks_usec()
 		_world.step(minf(delta, 0.05))
+		_last_step_usec = Time.get_ticks_usec() - step_start_usec
+		if _last_step_usec > _max_step_usec:
+			_max_step_usec = _last_step_usec
+			_max_step_tick = step_tick
+		_total_step_usec += _last_step_usec
+		_measured_step_count += 1
+		if _last_step_usec >= SLOW_FRAME_THRESHOLD_USEC:
+			_record_slow_frame(step_tick, _last_step_usec, minf(delta, 0.05))
 	_update_hud()
 	queue_redraw()
 
@@ -93,28 +133,39 @@ func _handle_key(keycode: int) -> void:
 		KEY_1:
 			_mode = ToolMode.COMMAND
 			_last_action = "mode COMMAND"
+			_record_event("mode", {"mode": _mode_name()})
 		KEY_2:
 			_mode = ToolMode.OBSTACLE
 			_last_action = "mode OBSTACLE"
+			_record_event("mode", {"mode": _mode_name()})
 		KEY_3:
 			_mode = ToolMode.BLOCKER
 			_last_action = "mode BLOCKER"
+			_record_event("mode", {"mode": _mode_name()})
 		KEY_4:
 			_mode = ToolMode.ERASE
 			_last_action = "mode ERASE"
+			_record_event("mode", {"mode": _mode_name()})
 		KEY_A:
 			_selected_unit_ids = _world.get_mobile_unit_ids()
 			_last_action = "selected all (%d)" % _selected_unit_ids.size()
+			_record_event("select_all", {"selected_unit_ids": _selected_unit_ids})
 		KEY_C:
 			_world.clear_traces()
 			_last_action = "cleared traces"
+			_record_event("clear_traces", {})
+		KEY_E:
+			export_debug_log()
 		KEY_R:
 			_world = Dota2LabWorld.new()
 			_selected_unit_ids = _world.get_mobile_unit_ids()
+			_reset_perf_metrics()
 			_last_action = "reset scene"
+			_record_event("reset", {"selected_unit_ids": _selected_unit_ids})
 		KEY_SPACE:
 			_paused = not _paused
 			_last_action = "paused" if _paused else "resumed"
+			_record_event("pause_toggle", {"paused": _paused})
 	_update_hud()
 	queue_redraw()
 
@@ -142,12 +193,24 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> void:
 		ToolMode.OBSTACLE:
 			var obstacle_id := _world.add_static_obstacle(mb.position, OBSTACLE_SIZE)
 			_last_action = "placed %s" % obstacle_id
+			_record_event("place_obstacle", {
+				"id": obstacle_id,
+				"position": mb.position,
+			})
 		ToolMode.BLOCKER:
 			var blocker_id := _world.add_blocker(mb.position)
 			_last_action = "placed %s" % blocker_id
+			_record_event("place_blocker", {
+				"id": blocker_id,
+				"position": mb.position,
+			})
 		ToolMode.ERASE:
 			var removed_id := _world.remove_nearest_editable(mb.position)
 			_last_action = "removed %s" % removed_id if removed_id != "" else "erase: nothing nearby"
+			_record_event("erase", {
+				"removed_id": removed_id,
+				"position": mb.position,
+			})
 	_update_hud()
 	queue_redraw()
 
@@ -163,6 +226,10 @@ func _finish_selection(end_pos: Vector2) -> void:
 	else:
 		_selected_unit_ids = _world.get_mobile_units_in_rect(_rect_from_points(_drag_start, end_pos))
 	_last_action = "selected %d" % _selected_unit_ids.size()
+	_record_event("select", {
+		"position": end_pos,
+		"selected_unit_ids": _selected_unit_ids,
+	})
 
 
 func _move_selection(target: Vector2) -> void:
@@ -170,22 +237,70 @@ func _move_selection(target: Vector2) -> void:
 		# No selection ⇒ command all mobile units (per README convention).
 		_world.issue_move_all_mobile(target)
 		_last_action = "move all → %s" % str(target)
+		_record_event("move_all", {"position": target})
 		return
 	_world.issue_move_ids(_selected_unit_ids, target)
 	_last_action = "move %d → %s" % [_selected_unit_ids.size(), str(target)]
+	_record_event("move", {
+		"position": target,
+		"selected_unit_ids": _selected_unit_ids,
+	})
+
+
+func export_debug_log(file_path: String = "") -> String:
+	if _world == null:
+		return ""
+	var target_path := file_path
+	if target_path == "":
+		if not _ensure_log_dir():
+			return ""
+		target_path = _default_export_path()
+	var global_path := ProjectSettings.globalize_path(target_path)
+	_record_event("export_log_requested", {"path": global_path})
+	var file := FileAccess.open(target_path, FileAccess.WRITE)
+	if file == null:
+		_last_action = "export failed"
+		printerr("DOTA2_RTS_LAB_EXPORT_LOG_FAIL: %s" % target_path)
+		return ""
+	file.store_string(JSON.stringify(_json_safe(_build_export_snapshot()), "\t"))
+	file.close()
+	_last_export_path = global_path
+	_last_action = "exported log"
+	print("DOTA2_RTS_LAB_EXPORT_LOG: %s" % _last_export_path)
+	_update_hud()
+	return _last_export_path
+
+
+func _on_export_log_pressed() -> void:
+	export_debug_log()
 
 
 # ─────────────────────────── Rendering ───────────────────────────────────────
 
 func _draw() -> void:
+	if _world == null:
+		return
 	# Map background (within playable bounds).
-	draw_rect(Rect2(Vector2.ZERO, _world.map_size), Color(0.10, 0.12, 0.16), true)
+	draw_rect(get_viewport_rect(), Color(0.045, 0.05, 0.055), true)
+	draw_rect(Rect2(Vector2.ZERO, _world.map_size), Color(0.08, 0.10, 0.11), true)
+	_draw_debug_panel_chrome()
+	_draw_grid()
 
 	# Static obstacles.
 	for obstacle in _world.obstacles:
 		var rect := Rect2(obstacle.center - obstacle.size * 0.5, obstacle.size)
+		draw_rect(rect.grow(_world.pathfinder.default_clearance), OBSTACLE_CLEARANCE_COLOR, true)
 		draw_rect(rect, OBSTACLE_COLOR, true)
-		draw_rect(rect, OBSTACLE_COLOR.darkened(0.4), false, 1.5)
+		draw_rect(rect, OBSTACLE_OUTLINE_COLOR, false, 2.0)
+	_draw_target_marker(_world.current_target)
+	if _mode == ToolMode.OBSTACLE:
+		var mouse_pos := get_local_mouse_position()
+		var preview_rect := Rect2(mouse_pos - OBSTACLE_SIZE * 0.5, OBSTACLE_SIZE)
+		draw_rect(preview_rect, Color(0.95, 0.70, 0.25, 0.20), true)
+		draw_rect(preview_rect, Color(0.95, 0.70, 0.25), false, 1.0)
+	elif _mode == ToolMode.BLOCKER:
+		draw_circle(get_local_mouse_position(), Dota2LabWorld.DEFAULT_BLOCKER_RADIUS, Color(0.95, 0.28, 0.22, 0.24))
+		draw_arc(get_local_mouse_position(), Dota2LabWorld.DEFAULT_BLOCKER_RADIUS, 0.0, TAU, 24, Color(0.95, 0.40, 0.25), 1.5)
 
 	# Unit traces.
 	for unit in _world.units:
@@ -199,23 +314,20 @@ func _draw() -> void:
 		var unit := _world.get_unit(unit_id)
 		if unit == null or not unit.has_path():
 			continue
-		var prev := unit.position
-		# Path waypoints are stored in reverse-consumption order; back() is next.
-		# Walk from back to front for visual order.
-		var path := unit.path
-		var pts: Array[Vector2] = []
-		for i in range(path.size() - 1, -1, -1):
-			pts.append(path.waypoints[i])
-		for p in pts:
-			draw_line(prev, p, PATH_COLOR, 2.0)
-			prev = p
+		_draw_waypoint_path(unit.path, unit.position, PATH_COLOR)
 
 	# Units.
 	for unit in _world.units:
 		var color := UNIT_COLOR_BLUE if unit.group_id == "blue" else UNIT_COLOR_RED
+		if not unit.mobile:
+			color = UNIT_COLOR_BLOCKER
 		draw_circle(unit.position, unit.radius, color)
+		draw_arc(unit.position, unit.radius, 0.0, TAU, 24, UNIT_OUTLINE_COLOR, 1.5)
 		if _selected_unit_ids.has(unit.id):
-			draw_arc(unit.position, unit.radius + 3.0, 0.0, TAU, 32, UNIT_COLOR_SELECTED, 2.0)
+			draw_arc(unit.position, unit.radius + 5.0, 0.0, TAU, 32, UNIT_COLOR_SELECTED, 2.5)
+		if unit.state == Dota2LabUnit.STATE_FAILED:
+			draw_arc(unit.position, unit.radius + 4.5, 0.0, TAU, 32, Color(1.0, 0.18, 0.15, 0.90), 2.5)
+			_draw_failed_glyph(unit.position - Vector2(0.0, unit.radius + 9.0))
 		# State indicator: a small ring at top-right of unit.
 		var state_color: Color = STATE_COLOR.get(unit.state, Color.WHITE)
 		draw_circle(unit.position + Vector2(unit.radius + 4.0, -unit.radius - 4.0), 3.0, state_color)
@@ -230,6 +342,66 @@ func _draw() -> void:
 		draw_rect(drag_rect, DRAG_RECT_OUTLINE, false, 1.0)
 
 
+func _draw_debug_panel_chrome() -> void:
+	var panel_origin := _debug_panel_origin()
+	var panel_size := Vector2(PANEL_WIDTH, _world.map_size.y)
+	draw_rect(Rect2(panel_origin, panel_size), Color(0.07, 0.08, 0.10), true)
+	draw_line(panel_origin, panel_origin + Vector2(0.0, panel_size.y), Color(0.18, 0.22, 0.26), 2.0)
+	for y in [76.0, 292.0, 470.0, 620.0]:
+		var start := panel_origin + Vector2(PANEL_PADDING, y)
+		var end := panel_origin + Vector2(PANEL_WIDTH - PANEL_PADDING, y)
+		draw_line(start, end, Color(0.18, 0.21, 0.24), 1.0)
+
+
+func _draw_target_marker(center: Vector2) -> void:
+	draw_circle(center, 7.0, TARGET_COLOR)
+	draw_arc(center, 17.0, 0.0, TAU, 40, Color(0.2, 0.95, 0.65, 0.58), 1.5)
+	draw_line(center + Vector2(-20.0, 0.0), center + Vector2(-10.0, 0.0), TARGET_COLOR, 1.5)
+	draw_line(center + Vector2(10.0, 0.0), center + Vector2(20.0, 0.0), TARGET_COLOR, 1.5)
+	draw_line(center + Vector2(0.0, -20.0), center + Vector2(0.0, -10.0), TARGET_COLOR, 1.5)
+	draw_line(center + Vector2(0.0, 10.0), center + Vector2(0.0, 20.0), TARGET_COLOR, 1.5)
+
+
+func _draw_grid() -> void:
+	var step: float = _world.pathfinder.cell_size
+	var major_step := step * 4.0
+	var minor_grid_color := Color(0.32, 0.36, 0.39, 0.28)
+	var major_grid_color := Color(0.42, 0.46, 0.48, 0.42)
+	var x := 0.0
+	while x <= _world.map_size.x:
+		var x_is_major := fmod(x, major_step) < 0.01
+		var x_color := major_grid_color if x_is_major else minor_grid_color
+		var x_width := 1.35 if x_is_major else 1.0
+		draw_line(Vector2(x, 0.0), Vector2(x, _world.map_size.y), x_color, x_width)
+		x += step
+	var y := 0.0
+	while y <= _world.map_size.y:
+		var y_is_major := fmod(y, major_step) < 0.01
+		var y_color := major_grid_color if y_is_major else minor_grid_color
+		var y_width := 1.35 if y_is_major else 1.0
+		draw_line(Vector2(0.0, y), Vector2(_world.map_size.x, y), y_color, y_width)
+		y += step
+
+
+func _draw_failed_glyph(center: Vector2) -> void:
+	var arm := 4.0
+	var color := Color(1.0, 0.25, 0.18)
+	var width := 2.0
+	draw_line(center + Vector2(-arm, -arm), center + Vector2(arm, arm), color, width)
+	draw_line(center + Vector2(-arm, arm), center + Vector2(arm, -arm), color, width)
+
+
+func _draw_waypoint_path(path: SimNavWaypointPath, start: Vector2, color: Color) -> void:
+	if path == null or path.waypoints.is_empty():
+		return
+	var previous := start
+	for i in range(path.waypoints.size() - 1, -1, -1):
+		var point := path.waypoints[i]
+		draw_line(previous, point, color, 2.0)
+		draw_circle(point, 3.0, color)
+		previous = point
+
+
 # ─────────────────────────── HUD ─────────────────────────────────────────────
 
 func _update_hud() -> void:
@@ -238,20 +410,36 @@ func _update_hud() -> void:
 	var metrics := _world.get_metrics()
 	var state_counts: Dictionary = metrics.get("state_counts", {})
 	var pf: Dictionary = metrics.get("pathfinder", {})
+	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
+	var failed_line := _format_failed_line()
 	var lines := [
 		"Dota2 RTS Pathfinding Lab (Layer 1)",
+		"Manual motion debug surface",
 		"Mode: %s   %s" % [_mode_name(), "[PAUSED]" if _paused else ""],
-		"Action: %s" % _last_action,
-		"Selected: %d   Tick: %d" % [_selected_unit_ids.size(), metrics.get("tick_count", 0)],
+		"Action: %s%s" % [
+			_last_action,
+			" | exported %s" % _last_export_path if _last_export_path != "" else "",
+		],
+		"Selected: %d   Tick: %d   Map: %dx%d" % [
+			_selected_unit_ids.size(),
+			metrics.get("tick_count", 0),
+			int(_world.map_size.x),
+			int(_world.map_size.y),
+		],
 		"",
-		"State counts:",
-		"  IDLE          %d" % int(state_counts.get("IDLE", 0)),
-		"  WAITING_LONG  %d" % int(state_counts.get("WAITING_LONG", 0)),
-		"  FOLLOWING     %d" % int(state_counts.get("FOLLOWING", 0)),
-		"  WAITING_SHORT %d" % int(state_counts.get("WAITING_SHORT", 0)),
-		"  FAILED        %d" % int(state_counts.get("FAILED", 0)),
+		"State",
+		"IDLE %d   WAIT_LONG %d   FOLLOW %d" % [
+			int(state_counts.get("IDLE", 0)),
+			int(state_counts.get("WAITING_LONG", 0)),
+			int(state_counts.get("FOLLOWING", 0)),
+		],
+		"WAIT_SHORT %d   FAILED %d" % [
+			int(state_counts.get("WAITING_SHORT", 0)),
+			int(state_counts.get("FAILED", 0)),
+		],
 		"",
-		"Path requests: L=%d S=%d   blocks: U=%d S=%d" % [
+		"Path / Block",
+		"Long %d   Short %d   UnitBlock %d   StaticBlock %d" % [
 			metrics.get("long_path_requests", 0),
 			metrics.get("short_path_requests", 0),
 			metrics.get("blocked_by_unit_count", 0),
@@ -262,19 +450,59 @@ func _update_hud() -> void:
 			metrics.get("move_failed_count", 0),
 			metrics.get("retry_count_max", 0),
 		],
-		"Queue: pending=%d result=%d processed=%d  PendingPeak=%d" % [
+		"Queue pending %d   result %d   processed %d   peak %d" % [
 			int(pf.get("pending_count", 0)),
 			int(pf.get("result_count", 0)),
 			int(pf.get("processed_count", 0)),
 			metrics.get("pending_count_peak", 0),
 		],
 		"",
-		"Keys: 1 cmd  2 obstacle  3 blocker  4 erase  A select-all  C clear-traces  R reset  Space pause",
+		"Performance",
+		"step %.2fms   avg %.2fms   max %.2fms @ tick %d" % [
+			float(_last_step_usec) / 1000.0,
+			avg_step_msec,
+			float(_max_step_usec) / 1000.0,
+			_max_step_tick,
+		],
+		"slow %d   events %d   motion updates %d" % [
+			_slow_frame_log.size(),
+			_event_log.size(),
+			_world.recent_motion_updates.size(),
+		],
+		failed_line,
+		"",
+		"Controls",
+		"1 command/select   Right click move",
+		"2 obstacle   3 blocker   4 erase",
+		"A all   C traces   E export   R reset   Space pause",
 	]
 	_hud.text = "\n".join(lines)
 
 
+func _format_failed_line() -> String:
+	if _world == null:
+		return ""
+	var failed_ids: Array[String] = []
+	for unit in _world.units:
+		if unit.state == Dota2LabUnit.STATE_FAILED:
+			failed_ids.append(unit.id)
+	if failed_ids.is_empty():
+		return ""
+	var labels: Array[String] = failed_ids.duplicate()
+	var suffix := ""
+	if labels.size() > 5:
+		suffix = " +%d more" % (labels.size() - 5)
+		labels = labels.slice(0, 5)
+	return "Failed (%d): %s%s" % [failed_ids.size(), ", ".join(labels), suffix]
+
+
 # ─────────────────────────── Helpers ─────────────────────────────────────────
+
+func _debug_panel_origin() -> Vector2:
+	if _world == null:
+		return Vector2.ZERO
+	return Vector2(_world.map_size.x + PANEL_GAP, 0.0)
+
 
 func _mode_name() -> String:
 	match _mode:
@@ -289,3 +517,221 @@ func _rect_from_points(a: Vector2, b: Vector2) -> Rect2:
 	var topleft := Vector2(minf(a.x, b.x), minf(a.y, b.y))
 	var size := Vector2(absf(b.x - a.x), absf(b.y - a.y))
 	return Rect2(topleft, size)
+
+
+func _reset_perf_metrics() -> void:
+	_last_step_usec = 0
+	_max_step_usec = 0
+	_max_step_tick = 0
+	_total_step_usec = 0
+	_measured_step_count = 0
+	_slow_frame_log.clear()
+	_last_export_path = ""
+
+
+func _ensure_log_dir() -> bool:
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		_last_action = "export failed"
+		printerr("DOTA2_RTS_LAB_EXPORT_LOG_FAIL: cannot open user://")
+		return false
+	var err := dir.make_dir_recursive("dota2_rts_pathfinding_lab_logs")
+	if err != OK:
+		_last_action = "export failed"
+		printerr("DOTA2_RTS_LAB_EXPORT_LOG_FAIL: mkdir error %d" % err)
+		return false
+	return true
+
+
+func _default_export_path() -> String:
+	var timestamp := Time.get_datetime_string_from_system(false, false).replace(":", "-")
+	return "%s/dota2_rts_lab_%s_tick_%d.json" % [
+		LOG_DIR,
+		timestamp,
+		_world.tick_count,
+	]
+
+
+func _build_export_snapshot() -> Dictionary:
+	var avg_step_usec := float(_total_step_usec) / float(maxi(_measured_step_count, 1))
+	return {
+		"schema": "dota2_rts_pathfinding_lab_debug_log_v1",
+		"exported_at": Time.get_datetime_string_from_system(false, false),
+		"scene": "addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn",
+		"mode": _mode_name(),
+		"paused": _paused,
+		"last_action": _last_action,
+		"selected_unit_ids": _selected_unit_ids.duplicate(),
+		"current_target": _vector_snapshot(_world.current_target),
+		"map_size": _vector_snapshot(_world.map_size),
+		"perf": {
+			"last_step_usec": _last_step_usec,
+			"max_step_usec": _max_step_usec,
+			"max_step_tick": _max_step_tick,
+			"avg_step_usec": avg_step_usec,
+			"measured_step_count": _measured_step_count,
+			"slow_frame_threshold_usec": SLOW_FRAME_THRESHOLD_USEC,
+		},
+		"world": {
+			"tick_count": _world.tick_count,
+			"metrics": _world.get_metrics(),
+			"recent_motion_updates": _world.recent_motion_updates.duplicate(true),
+		},
+		"pathfinder": _world.pathfinder.diagnostics(),
+		"obstacles": _snapshot_obstacles(),
+		"units": _snapshot_units(),
+		"recent_events": _event_log.duplicate(true),
+		"slow_frames": _slow_frame_log.duplicate(true),
+	}
+
+
+func _snapshot_obstacles() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for obstacle in _world.obstacles:
+		var rect := Rect2(obstacle.center - obstacle.size * 0.5, obstacle.size)
+		result.append({
+			"id": obstacle.id,
+			"center": _vector_snapshot(obstacle.center),
+			"size": _vector_snapshot(obstacle.size),
+			"rect": _rect_snapshot(rect),
+			"inflated_rect": _rect_snapshot(rect.grow(_world.pathfinder.default_clearance)),
+			"rotation_rad": obstacle.rotation_rad,
+		})
+	return result
+
+
+func _snapshot_units() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for unit in _world.units:
+		result.append({
+			"id": unit.id,
+			"group_id": unit.group_id,
+			"mobile": unit.mobile,
+			"blocks_pathfinding": unit.blocks_pathfinding,
+			"position": _vector_snapshot(unit.position),
+			"move_target": _vector_snapshot(unit.move_target),
+			"radius": unit.radius,
+			"speed": unit.speed,
+			"state": unit.state,
+			"retry_count": unit.retry_count,
+			"pending_long_ticket": unit.pending_long_ticket,
+			"pending_short_ticket": unit.pending_short_ticket,
+			"active_order_id": unit.active_order_id(),
+			"current_order": unit.current_order_snapshot(),
+			"last_order": unit.last_order_snapshot(),
+			"path_size": unit.path.waypoints.size() if unit.path != null else 0,
+			"path": _waypoint_path_snapshot(unit.path),
+			"trace_tail": _packed_vector_snapshot(unit.trace, TRACE_EXPORT_LIMIT),
+		})
+	return result
+
+
+func _record_event(kind: String, data: Dictionary) -> void:
+	var tick := 0
+	if _world != null:
+		tick = _world.tick_count
+	_event_log.append({
+		"kind": kind,
+		"tick": tick,
+		"last_action": _last_action,
+		"last_step_usec": _last_step_usec,
+		"max_step_usec": _max_step_usec,
+		"max_step_tick": _max_step_tick,
+		"data": _json_safe(data),
+	})
+	while _event_log.size() > MAX_EVENT_LOG_ENTRIES:
+		_event_log.pop_front()
+
+
+func _record_slow_frame(tick: int, step_usec: int, delta: float) -> void:
+	if _world == null:
+		return
+	_slow_frame_log.append({
+		"tick": tick,
+		"step_usec": step_usec,
+		"delta": delta,
+		"last_action": _last_action,
+		"selected_unit_ids": _selected_unit_ids.duplicate(),
+		"world_metrics": _world.get_metrics(),
+		"pathfinder": _world.pathfinder.diagnostics(),
+		"recent_motion_updates_tail": _tail_dictionaries(_world.recent_motion_updates, 24),
+		"unit_snapshots": _snapshot_units(),
+	})
+	while _slow_frame_log.size() > MAX_SLOW_FRAME_LOG_ENTRIES:
+		_slow_frame_log.pop_front()
+
+
+func _tail_dictionaries(entries: Array, limit: int) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var start_index := maxi(entries.size() - limit, 0)
+	for i in range(start_index, entries.size()):
+		var entry: Dictionary = entries[i] as Dictionary
+		result.append(entry.duplicate(true))
+	return result
+
+
+func _waypoint_path_snapshot(path: SimNavWaypointPath) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if path == null:
+		return result
+	for point in path.waypoints:
+		result.append(_vector_snapshot(point))
+	return result
+
+
+func _packed_vector_snapshot(points: PackedVector2Array, limit: int) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var start_index := maxi(points.size() - limit, 0)
+	for i in range(start_index, points.size()):
+		result.append(_vector_snapshot(points[i]))
+	return result
+
+
+func _vector_snapshot(point: Vector2) -> Dictionary:
+	return {
+		"x": point.x,
+		"y": point.y,
+	}
+
+
+func _rect_snapshot(rect: Rect2) -> Dictionary:
+	return {
+		"position": _vector_snapshot(rect.position),
+		"size": _vector_snapshot(rect.size),
+		"end": _vector_snapshot(rect.end),
+	}
+
+
+func _json_safe(value: Variant) -> Variant:
+	match typeof(value):
+		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+			return value
+		TYPE_VECTOR2:
+			var vector_value: Vector2 = value as Vector2
+			return _vector_snapshot(vector_value)
+		TYPE_VECTOR2I:
+			var vector_i_value: Vector2i = value as Vector2i
+			return {
+				"x": vector_i_value.x,
+				"y": vector_i_value.y,
+			}
+		TYPE_RECT2:
+			var rect_value: Rect2 = value as Rect2
+			return _rect_snapshot(rect_value)
+		TYPE_PACKED_VECTOR2_ARRAY:
+			var packed_points: PackedVector2Array = value as PackedVector2Array
+			return _packed_vector_snapshot(packed_points, packed_points.size())
+		TYPE_ARRAY:
+			var array_value: Array = value as Array
+			var safe_array: Array = []
+			for item in array_value:
+				safe_array.append(_json_safe(item))
+			return safe_array
+		TYPE_DICTIONARY:
+			var dict_value: Dictionary = value as Dictionary
+			var safe_dict: Dictionary = {}
+			for key in dict_value.keys():
+				safe_dict[str(key)] = _json_safe(dict_value[key])
+			return safe_dict
+		_:
+			return str(value)
