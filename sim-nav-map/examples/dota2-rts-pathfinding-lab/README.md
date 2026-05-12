@@ -1,8 +1,7 @@
 # Dota2 RTS Pathfinding Lab
 
-> **Status: PLANNING.** Code not yet started. This README captures the design
-> decisions reached during planning so future-Claude (or future-you) can resume
-> without re-deriving them.
+> **Status: LAYER 1 IMPLEMENTED.** The manual frontend, motion FSM, and smoke
+> tests exist. Layer 2 AI control is still frozen until Layer 1 is approved.
 
 This lab is the planned Dota2/LoL-style movement-policy example for
 `sim-nav-map`. Dota2 is strictly a MOBA, but its pathfinding problem belongs to
@@ -100,7 +99,7 @@ hold:
 converted to a scripted smoke in `tests/smoke/`. "I played it, looked fine" is
 not acceptable; the regression set must capture it.
 
-## Planned Directory Layout
+## Directory Layout
 
 ```text
 dota2-rts-pathfinding-lab/
@@ -124,7 +123,7 @@ dota2-rts-pathfinding-lab/
     └── ai_smoke/                      (empty until Layer 2)
 ```
 
-## Controls (planned, follows `0ad-rts-pathfinding-lab` conventions)
+## Controls (follows `0ad-rts-pathfinding-lab` conventions)
 
 - `1`: command mode. Left-click selects, drag selects, right-click moves the
   current selection. No selection ⇒ moves all mobile units.
@@ -133,15 +132,37 @@ dota2-rts-pathfinding-lab/
 - `4`: erase the nearest editable obstacle / blocker.
 - `A`: select all mobile units.
 - `C`: clear traces.
+- `E`: export a JSON debug snapshot.
 - `R`: reset scene.
 - `Space`: pause / resume simulation.
-- `Export log`: write a JSON debug snapshot.
+- `Export log` button: write a JSON debug snapshot to
+  `user://dota2_rts_pathfinding_lab_logs/`.
 
-## Smoke (planned)
+## Debug Surface
+
+The frontend HUD and export log intentionally mirror the 0AD lab where useful:
+
+- `world.step` last/avg/max timings and slow-frame count.
+- state counts, long/short path request counts, queue pending/result/processed,
+  retry max, reached/failed counters.
+- failed-unit line plus red ring / `X` glyph on failed units.
+- grid, obstacle clearance overlay, placement preview, current target marker,
+  movement traces, selected path waypoints, and drag-select rectangle.
+- 1320x900 manual-test map with a fixed right-side debug sidebar, sized for
+  the project's default 1920x1080 window.
+- JSON export snapshot with scene state, perf counters, world metrics,
+  pathfinder queue diagnostics, obstacles, units, recent frontend events,
+  recent motion updates, and slow frames.
+
+## Smoke
 
 ```powershell
 ./tools/run_tests.ps1 dota2lab/smoke
 ```
+
+The smoke group covers both motion state-machine contracts and frontend
+operations: obstacle/blocker/erase, select-all, drag-select, move command,
+clear traces, and export-log shape.
 
 ## Motion Rules Are Lab-Defined
 

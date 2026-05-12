@@ -4,7 +4,8 @@
   "groups": {
     "smoke": {
       "scenes": [
-        "smoke/smoke_dota2_lab_state_machine.tscn"
+        "smoke/smoke_dota2_lab_state_machine.tscn",
+        "smoke/smoke_dota2_lab_ui_ops.tscn"
       ]
     }
   }

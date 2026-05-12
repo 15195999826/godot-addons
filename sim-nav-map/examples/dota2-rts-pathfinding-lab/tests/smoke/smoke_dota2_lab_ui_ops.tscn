@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/tests/smoke/smoke_dota2_lab_ui_ops.gd" id="1"]
+
+[node name="SmokeDota2LabUiOps" type="Node"]
+script = ExtResource("1")
