@@ -147,6 +147,40 @@ func load_texture(wg: LomoWaitGroup) -> void:
 
 **示例场景：** `res://addons/lomolib/wait_group/wait_group_demo.tscn`
 
+### 4. DevAgent Debug Mode - 开发期场景调试桥
+
+面向 Codex / 开发者的 **development-only** 调试工具。它通过 JSONL 文件让外部助手在一个真实运行中的 Godot 场景里下发命令、注入真实输入、截图、检查 Control/Node 状态，并读取结构化 outbox 结果。
+
+**边界：**
+- ✅ 用于开发期手动/探索式调试、UI 真实输入验证、截图和 runtime dump 取证
+- ✅ 通用层只提供 bridge、input driver、screenshot、inspector、scene ops base
+- ❌ 不接入 CI / `tools/run_tests.ps1 -Required`
+- ❌ 不是回归测试框架，不提供稳定 PASS/FAIL 语义
+- ❌ 不是生产功能或玩家自动化能力
+- ❌ 通用 `dev_agent` 不承载具体游戏策略
+
+**核心命令：**
+```jsonl
+{"id":"cmd-001","op":"capture","label":"initial"}
+{"id":"cmd-002","op":"click_at","x":80,"y":100}
+{"id":"cmd-003","op":"tap_key","key":"Escape"}
+{"id":"cmd-004","op":"inspect_controls","label":"controls"}
+```
+
+**产物目录：**
+```text
+user://dev-agent/sessions/<session-id>/
+  inbox.jsonl
+  outbox.jsonl
+  screenshots/
+  node-dumps/
+  state-dumps/
+```
+
+**详细规范：** [docs/dev-agent-debug-mode-spec.md](docs/dev-agent-debug-mode-spec.md)
+
+**示例场景：** `res://addons/lomolib/dev_agent/example/dev_agent_demo.tscn`
+
 ## 安装
 
 1. 将 `addons/lomolib` 文件夹复制到项目中
@@ -179,6 +213,13 @@ addons/lomolib/
 │   ├── wait_group_demo.tscn        # 示例场景
 │   ├── wait_group_demo.gd          # 示例脚本
 │   └── WAIT_GROUP_USAGE.md         # WaitGroup 详细文档
+├── dev_agent/                      # DevAgent Debug Mode 开发期调试桥
+│   ├── dev_agent_bridge.gd         # JSONL session / command dispatch
+│   ├── dev_agent_input_driver.gd   # Viewport.push_input 输入注入
+│   ├── dev_agent_screenshot.gd     # viewport 截图
+│   ├── dev_agent_inspector.gd      # node/control dump
+│   ├── dev_agent_scene_ops.gd      # 场景 adapter base
+│   └── example/                    # 可运行 demo
 └── README.md                       # 本文件
 ```
 
@@ -201,9 +242,15 @@ addons/lomolib/
 | `LomoPlayerController` | 玩家控制器基类 |
 | `BaseContainer` | 库存容器基类 |
 | `LomoWaitGroup` | 多任务同步工具 |
+| `DevAgentBridge` | 开发期 JSONL 调试桥 |
+| `DevAgentSceneOps` | 场景专属 DevAgent adapter 基类 |
 
 ## 版本历史
 
+- **v0.4.0** - 新增 DevAgent Debug Mode
+  - JSONL inbox/outbox 开发期调试桥
+  - 真实输入注入、截图、Control/Node inspector
+  - 示例场景和 repo-local 接入 skill
 - **v0.3.0** - 新增 Camera & Player 模块
   - 从 UE SpringArmCameraActor 移植
   - 从 UE LomoGeneralPlayerController 移植
