@@ -24,6 +24,8 @@ const TRACE_EXPORT_LIMIT: int = 120
 const PANEL_GAP: float = 24.0
 const PANEL_WIDTH: float = 520.0
 const PANEL_PADDING: float = 20.0
+const Dota2LabSceneAgentOpsScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_lab_scene_agent_ops.gd")
+const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
 
 const UNIT_COLOR_BLUE := Color(0.18, 0.55, 0.95)
 const UNIT_COLOR_RED := Color(0.90, 0.26, 0.22)
@@ -66,6 +68,7 @@ var _measured_step_count: int = 0
 var _event_log: Array[Dictionary] = []
 var _slow_frame_log: Array[Dictionary] = []
 var _last_export_path: String = ""
+var _dev_agent_bridge = null
 
 
 func _ready() -> void:
@@ -88,6 +91,7 @@ func _ready() -> void:
 	_export_button.pressed.connect(_on_export_log_pressed)
 	add_child(_export_button)
 	_record_event("ready", {"selected_unit_ids": _selected_unit_ids})
+	_install_dev_agent()
 	_update_hud()
 	queue_redraw()
 
@@ -269,6 +273,56 @@ func export_debug_log(file_path: String = "") -> String:
 	print("DOTA2_RTS_LAB_EXPORT_LOG: %s" % _last_export_path)
 	_update_hud()
 	return _last_export_path
+
+
+func get_dev_agent_state() -> Dictionary:
+	if _world == null:
+		return {}
+
+	return {
+		"mode": _mode_name(),
+		"paused": _paused,
+		"last_action": _last_action,
+		"selected_unit_ids": _selected_unit_ids.duplicate(),
+		"current_target": _vector_snapshot(_world.current_target),
+		"tick_count": _world.tick_count,
+		"unit_count": _world.units.size(),
+		"obstacle_count": _world.obstacles.size(),
+		"failed_unit_ids": _failed_unit_ids(),
+		"last_export_path": _last_export_path,
+		"perf": {
+			"last_step_usec": _last_step_usec,
+			"max_step_usec": _max_step_usec,
+			"max_step_tick": _max_step_tick,
+			"measured_step_count": _measured_step_count,
+		},
+		"world_metrics": _world.get_metrics(),
+		"pathfinder": _world.pathfinder.diagnostics(),
+	}
+
+
+func _install_dev_agent() -> void:
+	var ops := Dota2LabSceneAgentOpsScript.new() as Node
+	ops.name = "Dota2LabSceneAgentOps"
+	add_child(ops)
+
+	_dev_agent_bridge = DevAgentBridgeScript.new()
+	_dev_agent_bridge.name = "DevAgentBridge"
+	_dev_agent_bridge.scene_ops_path = NodePath("../Dota2LabSceneAgentOps")
+	add_child(_dev_agent_bridge)
+	call_deferred("_print_dev_agent_paths")
+
+
+func _print_dev_agent_paths() -> void:
+	if _dev_agent_bridge == null:
+		return
+	var info: Dictionary = _dev_agent_bridge.get_session_info() as Dictionary
+	var inbox_path := str(info.get("inbox_global", ""))
+	if inbox_path.is_empty():
+		return
+	print("[Dota2PathfindingLab DevAgent] inbox: %s" % inbox_path)
+	print("[Dota2PathfindingLab DevAgent] outbox: %s" % str(info.get("outbox_global", "")))
+	print("[Dota2PathfindingLab DevAgent] session_dir: %s" % str(info.get("session_dir_global", "")))
 
 
 func _on_export_log_pressed() -> void:
@@ -482,10 +536,7 @@ func _update_hud() -> void:
 func _format_failed_line() -> String:
 	if _world == null:
 		return ""
-	var failed_ids: Array[String] = []
-	for unit in _world.units:
-		if unit.state == Dota2LabUnit.STATE_FAILED:
-			failed_ids.append(unit.id)
+	var failed_ids := _failed_unit_ids()
 	if failed_ids.is_empty():
 		return ""
 	var labels: Array[String] = failed_ids.duplicate()
@@ -494,6 +545,16 @@ func _format_failed_line() -> String:
 		suffix = " +%d more" % (labels.size() - 5)
 		labels = labels.slice(0, 5)
 	return "Failed (%d): %s%s" % [failed_ids.size(), ", ".join(labels), suffix]
+
+
+func _failed_unit_ids() -> Array[String]:
+	var result: Array[String] = []
+	if _world == null:
+		return result
+	for unit in _world.units:
+		if unit.state == Dota2LabUnit.STATE_FAILED:
+			result.append(unit.id)
+	return result
 
 
 # ─────────────────────────── Helpers ─────────────────────────────────────────
