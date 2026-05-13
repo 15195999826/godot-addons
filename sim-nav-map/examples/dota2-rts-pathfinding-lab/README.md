@@ -154,6 +154,44 @@ The frontend HUD and export log intentionally mirror the 0AD lab where useful:
   pathfinder queue diagnostics, obstacles, units, recent frontend events,
   recent motion updates, and slow frames.
 
+## DevAgent Debug Mode
+
+`frontend/dota2_pathfinding_lab.tscn` has an opt-in DevAgent adapter for live
+manual debugging. Normal scene behavior is unchanged unless DevAgent is enabled
+with `--dev-agent`, `--dev-agent-session=<id>`, or the
+`debug/dev_agent/enabled` project setting.
+
+Run the scene in editor/windowed Godot when visual evidence matters, then use
+the printed paths:
+
+```text
+[Dota2PathfindingLab DevAgent] inbox: C:\...\user_data\Inkmon\dev-agent\sessions\<session-id>\inbox.jsonl
+[Dota2PathfindingLab DevAgent] outbox: C:\...\user_data\Inkmon\dev-agent\sessions\<session-id>\outbox.jsonl
+```
+
+Append one JSON object per line to `inbox.jsonl`:
+
+```jsonl
+{"id":"dota2-001","op":"capture","label":"initial"}
+{"id":"dota2-002","op":"inspect_controls","label":"controls"}
+{"id":"dota2-003","op":"tap_key","key":"2"}
+{"id":"dota2-004","op":"click_at","x":1040,"y":450}
+{"id":"dota2-005","op":"tap_key","key":"1"}
+{"id":"dota2-006","op":"drag_at","from_x":90,"from_y":350,"to_x":285,"to_y":550,"steps":8}
+{"id":"dota2-007","op":"click_at","x":1160,"y":450,"button":"right"}
+{"id":"dota2-008","op":"scene","name":"dump_scene_state"}
+{"id":"dota2-009","op":"scene","name":"export_debug_log"}
+```
+
+Raw bridge operations remain available: `click_at`, `drag_at`, `tap_key`,
+`wait_frames`, `capture`, `inspect_tree`, `inspect_controls`, and `dump_node`.
+Scene-specific ops are intentionally small:
+
+- `dump_scene_state` — returns compact lab state, selected units, perf counters,
+  world metrics, and pathfinder diagnostics in `outbox.jsonl`.
+- `export_debug_log` — writes the existing full JSON debug export and returns
+  the global artifact path in `outbox.jsonl`.
+
 ## Smoke
 
 ```powershell
