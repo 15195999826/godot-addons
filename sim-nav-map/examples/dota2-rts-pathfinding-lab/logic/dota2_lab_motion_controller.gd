@@ -20,6 +20,7 @@ const ARRIVE_EPSILON := 4.0
 # Short-path search range. Conservative single value; 0AD scales by failure
 # count, dota2 lab does not (we instead grow retry_count → FAILED faster).
 const SHORT_PATH_SEARCH_RANGE := 12.0 * 16.0  # 12 navcells * 16 px
+const SHORT_PATH_SUBGOAL_RADIUS := 2.0 * 16.0
 
 # Counters surfaced via diagnostics(). Reset only by callers (typically once
 # per test); the controller does not reset on its own.
@@ -144,7 +145,7 @@ func step_unit(
 		# frames of per-candidate slippage.
 		var line_result := pathfinder.validate_movement_line(unit, unit.position, waypoint, units, false)
 		if not line_result.is_success():
-			_handle_step_block(unit, line_result, pathfinder, tick)
+			_handle_step_block(unit, line_result, waypoint, pathfinder, tick)
 			return
 
 		unit.position = candidate
@@ -189,8 +190,15 @@ func _handle_long_result(
 	)
 	if accepted and result.path != null and not result.path.is_empty():
 		unit.path = result.path
+		unit.path_source = Dota2LabUnit.PATH_SOURCE_LONG
+		unit.last_path_result_kind = Dota2LabUnit.PATH_SOURCE_LONG
+		unit.last_path_result_status = result.status
+		unit.last_path_failure_reason = ""
 		unit.state = Dota2LabUnit.STATE_FOLLOWING
 		return
+	unit.last_path_result_kind = Dota2LabUnit.PATH_SOURCE_LONG
+	unit.last_path_result_status = result.status
+	unit.last_path_failure_reason = str(result.status)
 	_terminal_failed(unit, "long_path_unreachable:" + str(result.status), tick)
 
 
@@ -202,8 +210,15 @@ func _handle_short_result(
 ) -> void:
 	if result.is_success() and result.path != null and not result.path.is_empty():
 		unit.path = result.path
+		unit.path_source = Dota2LabUnit.PATH_SOURCE_SHORT
+		unit.last_path_result_kind = Dota2LabUnit.PATH_SOURCE_SHORT
+		unit.last_path_result_status = result.status
+		unit.last_path_failure_reason = ""
 		unit.state = Dota2LabUnit.STATE_FOLLOWING
 		return
+	unit.last_path_result_kind = Dota2LabUnit.PATH_SOURCE_SHORT
+	unit.last_path_result_status = result.status
+	unit.last_path_failure_reason = result.failure_reason
 	# Short detour failed. Budget check, then either retry via long or fail.
 	unit.retry_count += 1
 	if unit.retry_count > MAX_RETRY:
@@ -215,6 +230,7 @@ func _handle_short_result(
 func _handle_step_block(
 	unit: Dota2LabUnit,
 	line_result: SimNavMovementLineResult,
+	blocked_waypoint: Vector2,
 	pathfinder: Dota2LabPathfinderWrapper,
 	tick: int
 ) -> void:
@@ -222,13 +238,23 @@ func _handle_step_block(
 	var reason := line_result.failure_reason
 	if reason == SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED:
 		blocked_by_unit_count += 1
-		_enqueue_short(unit, pathfinder, tick)
+		if unit.last_short_range > 0.0:
+			unit.retry_count += 1
+			if unit.retry_count > MAX_RETRY:
+				_terminal_failed(unit, "max_retry_exceeded", tick)
+				return
+		_enqueue_short(unit, blocked_waypoint, pathfinder, tick)
 		return
 	# All other failure reasons (PASSABILITY_BLOCKED, STATIC_OBSTRUCTION_BLOCKED,
 	# end_out_of_bounds, ...) → re-enqueue long. Static obstructions don't
-	# change between ticks so a long replan is the right move; out_of_bounds
-	# means goal is unreachable and the long pathfinder will surface that.
+	# change between ticks, so repeated static replans must also be bounded;
+	# out_of_bounds means goal is unreachable and the long pathfinder should
+	# surface that before the retry budget is exhausted.
 	blocked_by_static_count += 1
+	unit.retry_count += 1
+	if unit.retry_count > MAX_RETRY:
+		_terminal_failed(unit, "max_retry_exceeded", tick)
+		return
 	_enqueue_long(unit, pathfinder, tick)
 
 
@@ -239,6 +265,8 @@ func _enqueue_long(
 ) -> void:
 	_cancel_pending(unit, pathfinder)
 	unit.path = SimNavWaypointPath.new()
+	unit.path_source = Dota2LabUnit.PATH_SOURCE_NONE
+	unit.last_path_request_kind = Dota2LabUnit.PATH_SOURCE_LONG
 	unit.pending_long_ticket = pathfinder.enqueue_long_path(unit, unit.move_target)
 	unit.state = Dota2LabUnit.STATE_WAITING_LONG
 	long_path_requests += 1
@@ -250,8 +278,9 @@ func _enqueue_long(
 # block) returns immediately after calling this.
 func _enqueue_short(
 	unit: Dota2LabUnit,
+	blocked_waypoint: Vector2,
 	pathfinder: Dota2LabPathfinderWrapper,
-	_tick: int
+	tick: int
 ) -> void:
 	# Cancel any prior pending long (target switch case is handled by
 	# begin_new_move_order; this branch only fires from step_unit when a block
@@ -263,7 +292,11 @@ func _enqueue_short(
 	# may install a short detour that replaces it. If the short fails, the
 	# long re-enqueue clears it. Keeping it here is harmless because state
 	# is WAITING_SHORT, not FOLLOWING, and step_unit short-circuits.
-	var goal := SimNavPathGoal.point(unit.move_target)
+	var short_goal_center := _short_path_subgoal(unit, blocked_waypoint)
+	var goal := SimNavPathGoal.circle(short_goal_center, SHORT_PATH_SUBGOAL_RADIUS)
+	unit.last_path_request_kind = Dota2LabUnit.PATH_SOURCE_SHORT
+	unit.last_short_goal = short_goal_center
+	unit.last_short_range = SHORT_PATH_SEARCH_RANGE
 	unit.pending_short_ticket = pathfinder.enqueue_short_path(unit, goal, SHORT_PATH_SEARCH_RANGE)
 	unit.state = Dota2LabUnit.STATE_WAITING_SHORT
 	short_path_requests += 1
@@ -280,6 +313,17 @@ func _cancel_pending(
 	if unit.pending_short_ticket > 0:
 		pathfinder.cancel(unit.pending_short_ticket)
 		unit.pending_short_ticket = 0
+
+
+func _short_path_subgoal(unit: Dota2LabUnit, blocked_waypoint: Vector2) -> Vector2:
+	var to_waypoint := blocked_waypoint - unit.position
+	var waypoint_distance := to_waypoint.length()
+	if waypoint_distance <= 0.001:
+		return blocked_waypoint
+	var max_center_distance := maxf(SHORT_PATH_SEARCH_RANGE, unit.radius + 1.0)
+	if waypoint_distance <= max_center_distance:
+		return blocked_waypoint
+	return unit.position + to_waypoint / waypoint_distance * max_center_distance
 
 
 func _finish_arrived(unit: Dota2LabUnit, tick: int) -> void:

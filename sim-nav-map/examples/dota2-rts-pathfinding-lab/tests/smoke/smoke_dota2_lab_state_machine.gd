@@ -17,6 +17,7 @@ func _ready() -> void:
 	_test_start_move_order_transitions_to_waiting_long()
 	_test_simple_move_reaches_goal()
 	_test_no_same_tick_takeover_invariant()
+	_test_short_path_uses_local_subgoal_for_far_target()
 	_test_unreachable_goal_terminates_failed()
 	_test_target_switch_cancels_prior()
 	_test_rapid_target_switch_cleans_queue()
@@ -125,6 +126,53 @@ func _test_no_same_tick_takeover_invariant() -> void:
 	# Invariant: pending ticket > 0 immediately after the transition tick.
 	var has_pending := mover.pending_long_ticket > 0 or mover.pending_short_ticket > 0
 	_assert_true(has_pending, "no-same-tick: WAITING_* state must have a pending ticket")
+
+
+func _test_short_path_uses_local_subgoal_for_far_target() -> void:
+	var world := Dota2LabWorld.new()
+	world.obstacles = []
+	world.units = [
+		Dota2LabUnit.new("mover", "blue", Vector2(100.0, 200.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("blocker", "red", Vector2(180.0, 200.0), 13.0, 0.0, false),
+	]
+	world._rebuild_navigation()
+	world.issue_move("mover", Vector2(760.0, 200.0))
+	var mover := world.get_unit("mover")
+	var saw_short_request := false
+	var saw_short_result := false
+	var requested_goal := Vector2.ZERO
+	var request_position := Vector2.ZERO
+	for i in range(MAX_TICKS):
+		world.step(TICK_DELTA)
+		if mover.last_path_request_kind == Dota2LabUnit.PATH_SOURCE_SHORT and not saw_short_request:
+			saw_short_request = true
+			requested_goal = mover.last_short_goal
+			request_position = mover.position
+		if mover.last_path_result_kind == Dota2LabUnit.PATH_SOURCE_SHORT:
+			saw_short_result = true
+			break
+
+	_assert_true(saw_short_request, "short-subgoal: expected a short request")
+	if saw_short_request:
+		_assert_true(
+			request_position.distance_to(requested_goal) <= Dota2LabMotionController.SHORT_PATH_SEARCH_RANGE + 0.001,
+			"short-subgoal: requested goal should be local, got distance %.2f"
+				% request_position.distance_to(requested_goal)
+		)
+		_assert_true(
+			requested_goal.distance_to(mover.move_target) > 64.0,
+			"short-subgoal: requested goal should not be the far final target"
+		)
+	_assert_true(saw_short_result, "short-subgoal: expected a short result")
+	_assert_true(
+		mover.last_path_result_status != SimNavShortPathResult.STATUS_OUT_OF_RANGE,
+		"short-subgoal: short result should not be out_of_range"
+	)
+	_assert_eq(
+		Dota2LabUnit.PATH_SOURCE_SHORT,
+		mover.path_source,
+		"short-subgoal: successful short result should mark path_source"
+	)
 
 
 func _test_unreachable_goal_terminates_failed() -> void:

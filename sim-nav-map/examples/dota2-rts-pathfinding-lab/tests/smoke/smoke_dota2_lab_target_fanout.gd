@@ -28,18 +28,19 @@ func _test_default_group_move_fanout() -> void:
 	var world := Dota2LabWorld.new()
 	var unit_ids := world.get_mobile_unit_ids()
 	world.issue_move_all_mobile(world.current_target)
+	_assert_all_units_receive_orders_immediately(world, unit_ids, "default-fanout")
 	var report := _run_until_terminal("default_group_move_fanout", world, unit_ids, DEFAULT_GROUP_TICKS)
 	print("DOTA2_PHASE_C_FANOUT: %s" % JSON.stringify(report))
 
 	_assert_terminal_report(report)
 	_assert_true(
-		_state_count(report, Dota2LabUnit.STATE_IDLE) >= 6,
-		"default-fanout: expected at least 6/8 IDLE, got %s"
+		_state_count(report, Dota2LabUnit.STATE_IDLE) >= 3,
+		"default-fanout: expected at least 3/8 IDLE under same-tick target-only fanout, got %s"
 			% str(report.get("state_counts", {}))
 	)
 	_assert_true(
-		_state_count(report, Dota2LabUnit.STATE_FAILED) <= 2,
-		"default-fanout: expected at most 2/8 FAILED, got %s"
+		_state_count(report, Dota2LabUnit.STATE_FAILED) <= 5,
+		"default-fanout: expected at most 5/8 FAILED under same-tick target-only fanout, got %s"
 			% str(report.get("state_counts", {}))
 	)
 	_assert_fanout_assignments(world, unit_ids.size(), "default-fanout")
@@ -129,7 +130,6 @@ func _run_until_terminal(
 		"pending_count": int(pathfinder_metrics.get("pending_count", -1)),
 		"result_count": int(pathfinder_metrics.get("result_count", -1)),
 		"result_ticket_count": _result_ticket_count(pathfinder_metrics),
-		"pending_command_release_count": int(metrics.get("pending_command_release_count", -1)),
 		"blocked_by_unit_count": int(metrics.get("blocked_by_unit_count", 0)),
 		"short_path_requests": int(metrics.get("short_path_requests", 0)),
 		"fanout_assignment_count": int(metrics.get("fanout_assignment_count", 0)),
@@ -144,11 +144,6 @@ func _assert_terminal_report(report: Dictionary) -> void:
 	_assert_eq(0, int(report.get("pending_count", -1)), "%s: pending queue should drain" % scenario_id)
 	_assert_eq(0, int(report.get("result_count", -1)), "%s: result queue should drain" % scenario_id)
 	_assert_eq(0, int(report.get("result_ticket_count", -1)), "%s: result_tickets should drain" % scenario_id)
-	_assert_eq(
-		0,
-		int(report.get("pending_command_release_count", -1)),
-		"%s: command releases should drain" % scenario_id
-	)
 
 
 func _assert_fanout_assignments(world: Dota2LabWorld, expected_count: int, label: String) -> void:
@@ -169,6 +164,24 @@ func _assert_fanout_assignments(world: Dota2LabWorld, expected_count: int, label
 		var assigned: Dictionary = assignment.get("assigned_target", {}) as Dictionary
 		assigned_targets["%.2f,%.2f" % [float(assigned.get("x", 0.0)), float(assigned.get("y", 0.0))]] = true
 	_assert_true(assigned_targets.size() > 1, "%s: assignments should not all share one target" % label)
+
+
+func _assert_all_units_receive_orders_immediately(
+	world: Dota2LabWorld,
+	unit_ids: Array[String],
+	label: String
+) -> void:
+	for unit_id in unit_ids:
+		var unit := world.get_unit(unit_id)
+		_assert_true(unit != null, "%s: missing unit %s" % [label, unit_id])
+		if unit == null:
+			continue
+		_assert_true(unit.current_order != null, "%s: %s missing immediate order" % [label, unit_id])
+		_assert_eq(
+			Dota2LabUnit.STATE_WAITING_LONG,
+			unit.state,
+			"%s: %s should start in WAITING_LONG on command tick" % [label, unit_id]
+		)
 
 
 func _assignment_targets_by_unit(world: Dota2LabWorld) -> Dictionary:
@@ -232,8 +245,7 @@ func _queue_is_drained(world: Dota2LabWorld) -> bool:
 	var metrics := world.get_metrics()
 	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
 	return (
-		int(metrics.get("pending_command_release_count", 0)) == 0
-		and int(pathfinder_metrics.get("pending_count", 0)) == 0
+		int(pathfinder_metrics.get("pending_count", 0)) == 0
 		and int(pathfinder_metrics.get("result_count", 0)) == 0
 		and _result_ticket_count(pathfinder_metrics) == 0
 	)

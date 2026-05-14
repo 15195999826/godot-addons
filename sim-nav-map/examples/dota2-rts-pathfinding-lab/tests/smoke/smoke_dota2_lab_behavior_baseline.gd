@@ -154,6 +154,11 @@ func _run_until_terminal(
 		_record_positions(world, unit_ids, position_tail)
 		_record_waiting_counts(world, unit_ids, waiting_long_counts, waiting_short_counts)
 		if _units_are_terminal(world, unit_ids) and _queue_is_drained(world):
+			for stable_i in range(STABLE_TAIL_TICKS):
+				world.step(TICK_DELTA)
+				ticks_run += 1
+				_record_positions(world, unit_ids, position_tail)
+				_record_waiting_counts(world, unit_ids, waiting_long_counts, waiting_short_counts)
 			settled = true
 			break
 
@@ -329,8 +334,7 @@ func _queue_is_drained(world: Dota2LabWorld) -> bool:
 	var metrics := world.get_metrics()
 	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
 	return (
-		int(metrics.get("pending_command_release_count", 0)) == 0
-		and int(pathfinder_metrics.get("pending_count", 0)) == 0
+		int(pathfinder_metrics.get("pending_count", 0)) == 0
 		and int(pathfinder_metrics.get("result_count", 0)) == 0
 	)
 
