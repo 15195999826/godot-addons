@@ -328,7 +328,11 @@ func _units_are_terminal(world: Dota2LabWorld, unit_ids: Array[String]) -> bool:
 func _queue_is_drained(world: Dota2LabWorld) -> bool:
 	var metrics := world.get_metrics()
 	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
-	return int(pathfinder_metrics.get("pending_count", 0)) == 0 and int(pathfinder_metrics.get("result_count", 0)) == 0
+	return (
+		int(metrics.get("pending_command_release_count", 0)) == 0
+		and int(pathfinder_metrics.get("pending_count", 0)) == 0
+		and int(pathfinder_metrics.get("result_count", 0)) == 0
+	)
 
 
 func _has_allowed_prefix(reason: String, prefixes: PackedStringArray) -> bool:

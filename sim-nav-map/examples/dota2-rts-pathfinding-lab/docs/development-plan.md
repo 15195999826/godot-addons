@@ -6,10 +6,12 @@
 
 Current baseline:
 
-- Parent repo commit: `e64ba02`
-- `addons` submodule commit: `19daa9f`
+- Status: Phase C accepted baseline, 2026-05-14.
+- Baseline reference: the `addons` submodule commit containing this file,
+  tracked by the parent repo commit that points at it.
 - Scene: `frontend/dota2_pathfinding_lab.tscn`
 - Smoke entry: `./tools/run_tests.ps1 dota2lab/smoke`
+- Smoke result: `PASS 4 / FAIL 0 / TIMEOUT 0`
 
 What exists:
 
@@ -17,15 +19,23 @@ What exists:
   export.
 - Explicit five-state motion FSM: `IDLE`, `WAITING_LONG`, `FOLLOWING`,
   `WAITING_SHORT`, `FAILED`.
+- Controller-owned ticket lifecycle and queue diagnostics for stale/cancelled
+  path requests.
+- Command-layer target fanout plus deterministic command release scheduling for
+  multi-unit move commands.
 - DevAgent debug adapter for live capture, input, state dump, and export.
-- Basic smoke coverage for state-machine shape and frontend operations.
+- Smoke coverage for state-machine shape, frontend operations, behavior
+  baseline, and Phase C target fanout.
 
 Baseline verdict:
 
-- This is a useful investigation baseline, not an approved gameplay baseline.
+- This is the accepted Layer 1 baseline for continuing Dota2 lab work.
 - Layer 2 AI control remains frozen.
-- Current behavior can look bug-like under normal manual play, especially group
-  movement, rapid target switching, and dynamic blockers.
+- Single-unit movement remains strict hard-block behavior.
+- Multi-unit movement is still independent per-unit movement. Target fanout is
+  a command convenience, not formation, destination packing, or group pathing.
+- Remaining bounded `FAILED` outcomes in narrow-gap and mixed-obstacle cases
+  are accepted diagnostics, not a reason to tune retry counts or core policy.
 
 ## Evidence From Free Play
 
@@ -198,15 +208,42 @@ No such defect is present in the current Phase B smoke or DevAgent evidence.
 
 Only start this after Phase A and Phase B.
 
-Two possible directions:
+Status 2026-05-14:
 
-- **Strict policy lab:** keep hard block/no push/no destination packing. Improve
-  diagnostics and deterministic failure only.
-- **Playable-feel lab:** add a new explicit policy such as destination slots,
-  local reservation, or pair-aware yield. This requires a new design note before
-  code changes.
+- Implemented command-layer target fanout for multi-unit commands:
+  `issue_move_all_mobile()` and `issue_move_ids()`.
+- Added deterministic front-to-back command release scheduling. Each unit still
+  receives an independent move order; the lab no longer starts all selected
+  units on the same tick.
+- Single-unit `issue_move(unit_id, goal)` remains immediate and unchanged.
+- Added diagnostics for:
+  - `last_fanout_assignments`;
+  - `recent_fanout_assignments`;
+  - `pending_command_releases`;
+  - `recent_command_releases`.
+- Added `smoke_dota2_lab_target_fanout` to `dota2lab/smoke`.
+- Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
+  `PASS 4 / FAIL 0 / TIMEOUT 0`.
 
-Do not mix these directions in one patch.
+Phase C accepted result:
+
+- `default_group_move_fanout`: settled in `1149` ticks with `IDLE 6`,
+  `FAILED 2`.
+- Queue diagnostics at settle: `pending_count=0`, `result_count=0`,
+  `result_tickets=[]`, `pending_command_release_count=0`.
+- `narrow_gap_bounded_terminal` and `mixed_static_dynamic_obstacle` remain
+  bounded hard-block terminal scenarios.
+- No Layer 2 AI, UI work, `MAX_RETRY` tuning, push, phasing, formation,
+  reservation, cluster pathfinding, or `sim-nav-map` core policy changes were
+  introduced.
+
+Decision:
+
+- Use a narrow command-layer movement-feel policy: target fanout plus
+  deterministic command release scheduling.
+- Keep the strict Dota2 motion layer: hard block, no push, no destination
+  packing, no reservation, no pair-aware yield.
+- Do not mix this with SC2-style group movement or 0AD-style push dynamics.
 
 Phase C decision items now visible from Phase B:
 

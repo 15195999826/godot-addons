@@ -1,8 +1,9 @@
 # Dota2 RTS Pathfinding Lab
 
-> **Status: BASELINE CAPTURED (2026-05-13).**
-> Layer 1 manual frontend exists and is usable for investigation, but it is not
-> approved as good-feel behavior. Layer 2 AI control stays frozen.
+> **Status: PHASE C BASELINE (2026-05-14).**
+> Layer 1 manual frontend exists and is usable for investigation. Multi-unit
+> command feel now has a narrow command-layer fanout baseline. Layer 2 AI
+> control stays frozen.
 
 This lab is a Dota2/LoL-style movement-policy example for `sim-nav-map`:
 continuous-space movement on a navigation grid with static and dynamic
@@ -11,12 +12,18 @@ obstructions.
 ## Current Baseline
 
 - Manual scene: `frontend/dota2_pathfinding_lab.tscn`
-- Baseline commits: parent repo `2229aad`, `addons` submodule `7cc09df`
-- Implemented: manual controls, explicit motion FSM, debug HUD, JSON export,
-  DevAgent debug adapter, and `dota2lab/smoke`.
-- Known state: the current motion behavior can feel poor and can produce
-  bug-like failures during target switching or group movement. Treat that as
-  the baseline to stabilize, not as an approved final feel.
+- Baseline reference: the `addons` submodule commit containing this README,
+  tracked by the parent repo commit that points at it.
+- Implemented: manual controls, explicit motion FSM, ticket lifecycle
+  diagnostics, command-layer target fanout, deterministic command release
+  scheduling, debug HUD, JSON export, DevAgent debug adapter, and
+  `dota2lab/smoke`.
+- Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
+  `PASS 4 / FAIL 0 / TIMEOUT 0`.
+- Known state: single-unit movement remains a strict hard-block baseline.
+  Multi-unit commands are a lab convenience with target fanout, not formation
+  or group movement. Narrow-gap and mixed-obstacle scenarios can still end in
+  bounded `FAILED` states.
 
 ## Motion Contract
 
@@ -24,6 +31,8 @@ obstructions.
 - No push pressure, no friendly walk-through, no phasing.
 - Blocked movement stops and asks for a repath.
 - Commands are individual per unit.
+- Multi-unit commands may fan out one click target into deterministic nearby
+  per-unit targets and release those independent orders over a short cadence.
 - `sim-nav-map` core stays policy-free; retry, stop, repath, and failure policy
   live in this lab.
 
@@ -63,6 +72,7 @@ Supported raw DevAgent ops include `capture`, `click_at`, `drag_at`, `tap_key`,
 ## Development Docs
 
 - Active route: [docs/development-plan.md](docs/development-plan.md)
+- Phase C baseline: [docs/design-notes/phase-c-target-fanout.md](docs/design-notes/phase-c-target-fanout.md)
 - Historical motion design: [docs/design-notes/motion-controller-design.md](docs/design-notes/motion-controller-design.md)
 
 Keep this README short. Put new development decisions, evidence, and repair
