@@ -5472,3 +5472,419 @@ func _style_console() -> void:
 	_console_summary_label.add_theme_color_override("font_color", Color("CBD5E1"))
 	_console_summary_label.add_theme_font_size_override("font_size", 12)
 	_style_floating_toggle_button(_console_toggle_button)
+
+
+# ========== DevAgent Debug Mode API ==========
+##
+## 公共方法面向 SkillPreviewDevAgentOps 调用; 命名前缀 `dev_agent_` 避免与
+## 内部私有方法混淆。Adapter 通过 get_parent() 拿到本节点然后调用这些方法。
+##
+## 设计原则:
+## - **观察类**: 永不写场景, 返回简单数据 (Dictionary / Array / 基础类型)。
+## - **变更类**: 复用现有 _私有 mutation 路径 (走 increment world mutation 而非
+##   destructive reset), 战斗中 (_is_playing) 一律拒绝并返回 {"ok": false}。
+## - **UI locator**: 仅返回 Control rect, 不替 caller 派发输入 —— adapter 自己
+##   做 Viewport.push_input 才会经过完整 gui_input / focus / disabled 检测。
+
+
+func dev_agent_is_playing() -> bool:
+	return _is_playing
+
+
+func dev_agent_state() -> Dictionary:
+	var actors_snapshot: Array[Dictionary] = []
+	for i in _actors.size():
+		var a: Dictionary = _actors[i]
+		var track: Array = a.get("track", []) as Array
+		actors_snapshot.append({
+			"idx": i,
+			"role_id": _role_id_for(i),
+			"role": a.get("role", "dummy"),
+			"team": a.get("team", "B"),
+			"pos": [int((a.get("pos", [0, 0]) as Array)[0]), int((a.get("pos", [0, 0]) as Array)[1])],
+			"hp": float(a.get("hp", PREVIEW_DEFAULT_HP)),
+			"atk": float(a.get("atk", PREVIEW_DEFAULT_ATK)),
+			"passives": (a.get("passives", []) as Array).duplicate(),
+			"actor_id": _actor_ids[i] if i < _actor_ids.size() else "",
+			"track_size": track.size(),
+			"track": track.duplicate(true),
+		})
+	var environments_snapshot: Array[Dictionary] = []
+	for i in _environments.size():
+		var e: Dictionary = _environments[i]
+		var pos: Array = e.get("pos", [0, 0])
+		environments_snapshot.append({
+			"idx": i,
+			"type": str(e.get("type", ENV_STONE_WALL)),
+			"pos": [int(pos[0]), int(pos[1])],
+			"actor_id": _environment_ids[i] if i < _environment_ids.size() else "",
+		})
+	return {
+		"is_playing": _is_playing,
+		"playback_mode": _playback_mode,
+		"workspace_mode": _workspace_mode,
+		"status": _status_label.text if _status_label != null else "",
+		"map": {
+			"radius": int(_map_radius_input.value),
+			"orientation": "flat" if _map_orientation_option.selected == 1 else "pointy",
+			"hex_size": float(_map_hex_size_input.value),
+		},
+		"controls": {
+			"max_ticks": int(_max_ticks_input.value),
+			"speed": float(_speed_input.value),
+		},
+		"actors": actors_snapshot,
+		"environments": environments_snapshot,
+		"last_battle_frames": _last_battle_frames,
+		"has_replay_timeline": not _last_timeline.is_empty(),
+		"buttons": {
+			"start_disabled": _start_button.disabled,
+			"reset_disabled": _reset_button.disabled,
+			"replay_disabled": _replay_button.disabled,
+		},
+	}
+
+
+func dev_agent_world_state() -> Array:
+	var entries: Array[Dictionary] = []
+	if _world == null:
+		return entries
+	for actor in _world.get_actors():
+		var entry: Dictionary = {
+			"actor_id": actor.get_id(),
+			"display_name": actor.get_display_name(),
+			"class": actor.get_class(),
+		}
+		if actor is CharacterActor:
+			var c := actor as CharacterActor
+			entry["team"] = c.get_team_id()
+			if c.hex_position != null:
+				entry["pos"] = [c.hex_position.q, c.hex_position.r]
+			if c.attribute_set != null:
+				entry["hp"] = c.attribute_set.hp
+				entry["max_hp"] = c.attribute_set.max_hp
+				entry["atk"] = c.attribute_set.atk
+		entries.append(entry)
+	return entries
+
+
+func dev_agent_timeline_summary(max_events: int = 60) -> Dictionary:
+	if _last_timeline.is_empty():
+		return {"loaded": false, "events": [], "total_frames": 0}
+	# Timeline 结构: {meta:{totalFrames}, timeline:[{frame, events:[...]}]}
+	# 这里 flatten 成 (frame, event) 元组方便 AI 读, 截顶到 max_events。
+	var entries: Array = (_last_timeline.get("timeline", []) as Array)
+	var flat: Array[Dictionary] = []
+	var event_count := 0
+	for entry_v in entries:
+		var entry := entry_v as Dictionary
+		var frame := int(entry.get("frame", 0))
+		for ev_v in (entry.get("events", []) as Array):
+			event_count += 1
+			if flat.size() < max_events:
+				flat.append({"frame": frame, "event": ev_v as Dictionary})
+	return {
+		"loaded": true,
+		"total_frames": _last_battle_frames,
+		"event_count": event_count,
+		"events_truncated": event_count > flat.size(),
+		"events": flat,
+	}
+
+
+func dev_agent_console_text(max_chars: int = 8000) -> String:
+	if _console_log == null:
+		return ""
+	var text := _console_log.get_parsed_text()
+	if text.length() <= max_chars:
+		return text
+	return text.substr(text.length() - max_chars, max_chars)
+
+
+func dev_agent_setup_error() -> String:
+	return _find_preview_setup_error()
+
+
+func dev_agent_skill_ids() -> Dictionary:
+	var actives: Array[String] = []
+	for cfg in _get_active_skill_configs():
+		actives.append(cfg.config_id)
+	var passives: Array[String] = []
+	for cfg in _get_passive_skill_configs():
+		passives.append(cfg.config_id)
+	return {"active": actives, "passive": passives}
+
+
+func dev_agent_preset_options() -> Array:
+	var out: Array[Dictionary] = []
+	if _preset_load_option == null:
+		return out
+	for i in _preset_load_option.item_count:
+		var meta_v: Variant = _preset_load_option.get_item_metadata(i)
+		var path := ""
+		if meta_v is String:
+			path = meta_v as String
+		out.append({
+			"index": i,
+			"label": _preset_load_option.get_item_text(i),
+			"path": path,
+		})
+	return out
+
+
+func dev_agent_named_control_rect(unique_name: String) -> Rect2:
+	var control := dev_agent_resolve_unique_control(unique_name)
+	if control == null:
+		return Rect2()
+	return control.get_global_rect()
+
+
+## 通过 unique_name (% 节点) 或绝对路径找 Control; 找不到返回 null。
+## 公共以便 DevAgent adapter 做 hit-test 预检。
+func dev_agent_resolve_unique_control(unique_name: String) -> Control:
+	if unique_name.is_empty():
+		return null
+	var control: Control = null
+	if unique_name.begins_with("/"):
+		control = get_node_or_null(unique_name) as Control
+	else:
+		control = get_node_or_null("%" + unique_name) as Control
+	return control
+
+
+# ----- Action ops (直调 = SKILL Step 0 业务/表演分类) -----
+
+func dev_agent_start_battle() -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "battle already running"}
+	if _start_button.disabled:
+		return {"ok": false, "message": "start button disabled (need reset first?)"}
+	_on_start_pressed()
+	return {"ok": true, "message": "battle started", "data": {"is_playing": _is_playing}}
+
+
+func dev_agent_reset_battle() -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot reset while playing"}
+	_on_reset_pressed()
+	return {"ok": true, "message": "battle reset"}
+
+
+func dev_agent_replay_battle() -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot replay while playing"}
+	if _last_timeline.is_empty():
+		return {"ok": false, "message": "no timeline to replay"}
+	_on_replay_pressed()
+	return {"ok": true, "message": "replay started", "data": {"is_playing": _is_playing}}
+
+
+func dev_agent_enter_setup_mode() -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot enter setup mode while playing"}
+	_apply_setup_inspector_layout()
+	return {"ok": true, "message": "workspace mode = setup", "data": {"workspace_mode": _workspace_mode}}
+
+
+# ----- Preset / Map / Controls -----
+
+func dev_agent_load_preset_by_name(name: String) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot load preset while playing"}
+	if _preset_load_option == null:
+		return {"ok": false, "message": "preset option not ready"}
+	for i in _preset_load_option.item_count:
+		var label := _preset_load_option.get_item_text(i)
+		if label == name or label.trim_prefix("[builtin] ") == name:
+			_preset_load_option.select(i)
+			_on_preset_load_selected(i)
+			return {"ok": true, "message": "loaded preset: %s" % label, "data": {"index": i, "label": label}}
+	return {"ok": false, "message": "preset not found: %s" % name}
+
+
+func dev_agent_load_preset_by_index(index: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot load preset while playing"}
+	if _preset_load_option == null or index < 0 or index >= _preset_load_option.item_count:
+		return {"ok": false, "message": "preset index out of range: %d" % index}
+	_preset_load_option.select(index)
+	_on_preset_load_selected(index)
+	return {"ok": true, "message": "loaded preset index %d" % index, "data": {"index": index, "label": _preset_load_option.get_item_text(index)}}
+
+
+func dev_agent_save_preset(name: String) -> Dictionary:
+	var trimmed := name.strip_edges()
+	if trimmed.is_empty():
+		return {"ok": false, "message": "preset name is empty"}
+	_save_preset(trimmed)
+	return {"ok": true, "message": "saved preset: %s" % trimmed, "data": {"path": "%s/%s.json" % [PRESET_DIR, trimmed]}}
+
+
+func dev_agent_set_map(radius: int, orientation: String, hex_size: float) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot edit map while playing"}
+	if radius > 0:
+		_map_radius_input.value = radius
+	if orientation == "flat" or orientation == "pointy":
+		_map_orientation_option.selected = 1 if orientation == "flat" else 0
+	if hex_size > 0.0:
+		_map_hex_size_input.value = hex_size
+	_apply_grid_change()
+	return {"ok": true, "message": "map updated"}
+
+
+func dev_agent_set_controls(max_ticks: int, speed: float) -> Dictionary:
+	if max_ticks > 0:
+		_max_ticks_input.value = max_ticks
+	if speed > 0.0:
+		_speed_input.value = speed
+	return {"ok": true, "message": "controls updated"}
+
+
+# ----- Actor mutation -----
+
+func dev_agent_add_actor_team(team: String) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot add actor while playing"}
+	var normalized := team.to_upper()
+	if normalized != "A" and normalized != "B":
+		return {"ok": false, "message": "team must be A or B"}
+	var before_size := _actors.size()
+	_add_actor_at_next_free(normalized)
+	if _actors.size() == before_size:
+		return {"ok": false, "message": "no free hex available"}
+	return {"ok": true, "message": "added %s actor" % normalized, "data": {"idx": _actors.size() - 1}}
+
+
+func dev_agent_remove_actor(idx: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot remove actor while playing"}
+	if idx <= 0 or idx >= _actors.size():
+		return {"ok": false, "message": "idx out of range or caster (0): %d" % idx}
+	_remove_actor_at(idx)
+	return {"ok": true, "message": "removed actor idx=%d" % idx}
+
+
+func dev_agent_set_actor_pos(idx: int, q: int, r: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot move actor while playing"}
+	if idx < 0 or idx >= _actors.size():
+		return {"ok": false, "message": "idx out of range: %d" % idx}
+	var target := HexCoord.new(q, r)
+	if not _can_place_actor_at_for(target, idx):
+		return {"ok": false, "message": "hex blocked: (%d, %d)" % [q, r]}
+	if not _move_actor_to_coord(idx, target):
+		return {"ok": false, "message": "move_actor_to_coord failed for idx=%d" % idx}
+	return {"ok": true, "message": "actor %d moved to (%d, %d)" % [idx, q, r]}
+
+
+func dev_agent_set_actor_hp(idx: int, hp: float) -> Dictionary:
+	if idx < 0 or idx >= _actors.size():
+		return {"ok": false, "message": "idx out of range: %d" % idx}
+	if hp <= 0.0:
+		return {"ok": false, "message": "hp must be positive"}
+	(_actors[idx] as Dictionary)["hp"] = hp
+	if not _is_playing:
+		_apply_actor_hp_change(idx, hp)
+	return {"ok": true, "message": "actor %d hp set to %.1f" % [idx, hp]}
+
+
+func dev_agent_set_actor_atk(idx: int, atk: float) -> Dictionary:
+	if idx < 0 or idx >= _actors.size():
+		return {"ok": false, "message": "idx out of range: %d" % idx}
+	(_actors[idx] as Dictionary)["atk"] = atk
+	if not _is_playing:
+		_apply_actor_atk_change(idx, atk)
+	return {"ok": true, "message": "actor %d atk set to %.1f" % [idx, atk]}
+
+
+func dev_agent_set_actor_passives(idx: int, ids: Array) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot edit passives while playing"}
+	if idx < 0 or idx >= _actors.size():
+		return {"ok": false, "message": "idx out of range: %d" % idx}
+	var ids_str: Array[String] = []
+	for v in ids:
+		ids_str.append(str(v))
+	(_actors[idx] as Dictionary)["passives"] = ids_str
+	return {"ok": true, "message": "actor %d passives set" % idx, "data": {"passives": ids_str}}
+
+
+# ----- Environment -----
+
+func dev_agent_add_stone_wall(q: int, r: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot add wall while playing"}
+	var before := _environments.size()
+	_add_stone_wall(q, r)
+	if _environments.size() == before:
+		return {"ok": false, "message": "wall placement blocked at (%d, %d)" % [q, r]}
+	return {"ok": true, "message": "wall placed", "data": {"idx": _environments.size() - 1}}
+
+
+func dev_agent_remove_environment(idx: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot remove environment while playing"}
+	if idx < 0 or idx >= _environments.size():
+		return {"ok": false, "message": "idx out of range: %d" % idx}
+	_remove_environment_at(idx)
+	return {"ok": true, "message": "environment %d removed" % idx}
+
+
+# ----- Keyframe -----
+
+func dev_agent_add_keyframe(actor_idx: int, time_ms: int, skill_id: String, target: Dictionary) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot edit keyframes while playing"}
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return {"ok": false, "message": "actor_idx out of range: %d" % actor_idx}
+	var new_idx := _add_keyframe_at(actor_idx, max(0, time_ms))
+	if new_idx < 0:
+		return {"ok": false, "message": "failed to add keyframe (no default skill?)"}
+	if not skill_id.is_empty() and skill_id != _default_active_skill_id():
+		_on_keyframe_skill_changed(actor_idx, new_idx, skill_id)
+	if not target.is_empty():
+		for field in ["mode", "index", "q", "r"]:
+			if target.has(field):
+				_on_keyframe_target_field_changed(actor_idx, new_idx, field, target[field])
+	return {"ok": true, "message": "keyframe added", "data": {"actor_idx": actor_idx, "kf_idx": new_idx}}
+
+
+func dev_agent_remove_keyframe(actor_idx: int, kf_idx: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot edit keyframes while playing"}
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return {"ok": false, "message": "actor_idx out of range: %d" % actor_idx}
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return {"ok": false, "message": "kf_idx out of range: %d" % kf_idx}
+	_remove_keyframe(actor_idx, kf_idx)
+	return {"ok": true, "message": "keyframe removed", "data": {"actor_idx": actor_idx, "kf_idx": kf_idx}}
+
+
+func dev_agent_set_keyframe(actor_idx: int, kf_idx: int, fields: Dictionary) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot edit keyframes while playing"}
+	if actor_idx < 0 or actor_idx >= _actors.size():
+		return {"ok": false, "message": "actor_idx out of range: %d" % actor_idx}
+	var track: Array = (_actors[actor_idx] as Dictionary).get("track", []) as Array
+	if kf_idx < 0 or kf_idx >= track.size():
+		return {"ok": false, "message": "kf_idx out of range: %d" % kf_idx}
+	if fields.has("time_ms"):
+		_on_keyframe_time_changed(actor_idx, kf_idx, int(fields["time_ms"]))
+	if fields.has("skill"):
+		_on_keyframe_skill_changed(actor_idx, kf_idx, str(fields["skill"]))
+	var target_in: Variant = fields.get("target", {})
+	if target_in is Dictionary:
+		var target_dict := target_in as Dictionary
+		for tf in ["mode", "index", "q", "r"]:
+			if target_dict.has(tf):
+				_on_keyframe_target_field_changed(actor_idx, kf_idx, tf, target_dict[tf])
+	return {"ok": true, "message": "keyframe updated"}
+
+
+func dev_agent_reset_world_to_model() -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot reset while playing"}
+	_reset_world_to_model_unguarded()
+	return {"ok": true, "message": "world reset to model"}

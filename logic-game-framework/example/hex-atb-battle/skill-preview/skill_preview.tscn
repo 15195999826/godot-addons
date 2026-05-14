@@ -1,9 +1,19 @@
-[gd_scene load_steps=2 format=3 uid="uid://bskillpreview0001"]
+[gd_scene load_steps=4 format=3 uid="uid://bskillpreview0001"]
 
 [ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview.gd" id="1_skill_preview"]
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview_dev_agent_ops.gd" id="2_dev_agent_ops"]
+[ext_resource type="Script" path="res://addons/lomolib/dev_agent/dev_agent_bridge.gd" id="3_dev_agent_bridge"]
 
 [node name="SkillPreview" type="Node"]
 script = ExtResource("1_skill_preview")
+
+[node name="DevAgentSceneOps" type="Node" parent="."]
+script = ExtResource("2_dev_agent_ops")
+
+[node name="DevAgentBridge" type="Node" parent="."]
+script = ExtResource("3_dev_agent_bridge")
+enabled = false
+scene_ops_path = NodePath("../DevAgentSceneOps")
 
 [node name="ConfigUI" type="CanvasLayer" parent="."]
 layer = 2
