@@ -213,7 +213,7 @@ func _handle_command(command: Dictionary) -> Dictionary:
 		"dump_node":
 			result = _op_dump_node(command)
 		"scene":
-			result = _op_scene(command)
+			result = await _op_scene(command)
 		"session":
 			result = {
 				"ok": true,
@@ -342,7 +342,11 @@ func _op_scene(command: Dictionary) -> Dictionary:
 	if command.get("args", {}) is Dictionary:
 		args = command.get("args", {}) as Dictionary
 
-	var result: Dictionary = _scene_ops.run_scene_op(op_name, args) as Dictionary
+	# 等价于 sync return —— `await` 对非 coroutine 返回值是 no-op, 对 coroutine
+	# 返回值则等到 yield 完成。这样 adapter 可以按 op 自由选择 sync / async
+	# (例如 wait_for_idle 需要 await frame, scene_state 直接返回字典)。
+	var raw: Variant = await _scene_ops.run_scene_op(op_name, args)
+	var result: Dictionary = raw as Dictionary
 	if not result.has("data"):
 		result["data"] = {}
 	result["data"]["scene_op"] = String(op_name)
