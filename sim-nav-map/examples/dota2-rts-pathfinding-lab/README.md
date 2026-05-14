@@ -72,7 +72,6 @@ Supported raw DevAgent ops include `capture`, `click_at`, `drag_at`, `tap_key`,
 ## Development Docs
 
 - Active route: [docs/development-plan.md](docs/development-plan.md)
-- Phase C baseline: [docs/design-notes/phase-c-target-fanout.md](docs/design-notes/phase-c-target-fanout.md)
 - Historical motion design: [docs/design-notes/motion-controller-design.md](docs/design-notes/motion-controller-design.md)
 
 Keep this README short. Put new development decisions, evidence, and repair
