@@ -54,7 +54,8 @@ func _init(
 	mobile = p_mobile
 
 
-func begin_move_order(target: Vector2, tick: int) -> int:
+func apply_move_order_data(target: Vector2, tick: int) -> int:
+	_assert_no_pending_tickets("apply_move_order_data")
 	var order: RefCounted = MoveOrderScript.new(_next_order_id, target, tick)
 	_next_order_id += 1
 	current_order = order
@@ -62,12 +63,11 @@ func begin_move_order(target: Vector2, tick: int) -> int:
 	state = STATE_IDLE
 	path = SimNavWaypointPath.new()
 	retry_count = 0
-	pending_long_ticket = 0
-	pending_short_ticket = 0
 	return order.order_id
 
 
 func complete_order(tick: int) -> void:
+	_assert_no_pending_tickets("complete_order")
 	if current_order != null:
 		current_order.complete(tick)
 		last_order = current_order
@@ -75,19 +75,16 @@ func complete_order(tick: int) -> void:
 	state = STATE_IDLE
 	path = SimNavWaypointPath.new()
 	retry_count = 0
-	pending_long_ticket = 0
-	pending_short_ticket = 0
 
 
 func fail_order(tick: int, reason: String) -> void:
+	_assert_no_pending_tickets("fail_order")
 	if current_order != null:
 		current_order.fail(tick, reason)
 		last_order = current_order
 		current_order = null
 	state = STATE_FAILED
 	path = SimNavWaypointPath.new()
-	pending_long_ticket = 0
-	pending_short_ticket = 0
 
 
 func active_order_id() -> int:
@@ -132,3 +129,12 @@ func last_order_snapshot() -> Dictionary:
 	if last_order == null:
 		return {}
 	return last_order.to_snapshot()
+
+
+func _assert_no_pending_tickets(caller: String) -> void:
+	Log.assert_crash(
+		pending_long_ticket == 0 and pending_short_ticket == 0,
+		"Dota2LabUnit",
+		"%s must be called after controller cancels pending tickets (long=%d short=%d)"
+			% [caller, pending_long_ticket, pending_short_ticket]
+	)

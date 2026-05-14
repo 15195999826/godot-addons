@@ -19,6 +19,7 @@ func _ready() -> void:
 	_test_no_same_tick_takeover_invariant()
 	_test_unreachable_goal_terminates_failed()
 	_test_target_switch_cancels_prior()
+	_test_rapid_target_switch_cleans_queue()
 	_test_diagnostics_reflect_state()
 
 	if _failures.is_empty():
@@ -163,6 +164,58 @@ func _test_target_switch_cancels_prior() -> void:
 	_assert_eq(Vector2(300.0, 200.0), unit.move_target, "target-switch: move_target should reflect new order")
 
 
+func _test_rapid_target_switch_cleans_queue() -> void:
+	var world := Dota2LabWorld.new()
+	world.obstacles = []
+	world.units = [
+		Dota2LabUnit.new("lane_0", "blue", Vector2(100.0, 140.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("lane_1", "blue", Vector2(100.0, 220.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("lane_2", "blue", Vector2(100.0, 300.0), 11.0, 110.0, true),
+	]
+	world._rebuild_navigation()
+	var unit_ids: Array[String] = ["lane_0", "lane_1", "lane_2"]
+	var final_targets: Dictionary = {}
+	for switch_index in range(5):
+		for unit_index in range(unit_ids.size()):
+			var unit_id := unit_ids[unit_index]
+			var goal := Vector2(240.0 + float(switch_index % 3) * 40.0, 140.0 + float(unit_index) * 80.0)
+			final_targets[unit_id] = goal
+			world.issue_move(unit_id, goal)
+		_assert_ticket_mutex(world, unit_ids, "rapid-switch: after issue %d" % switch_index)
+		world.step(TICK_DELTA)
+		_assert_ticket_mutex(world, unit_ids, "rapid-switch: after step %d" % switch_index)
+
+	var settled := false
+	for i in range(MAX_TICKS):
+		world.step(TICK_DELTA)
+		_assert_ticket_mutex(world, unit_ids, "rapid-switch: settle tick %d" % i)
+		var pathfinder_metrics: Dictionary = world.get_metrics().get("pathfinder", {}) as Dictionary
+		if (
+			_units_are_terminal(world, unit_ids)
+			and int(pathfinder_metrics.get("pending_count", 0)) == 0
+			and int(pathfinder_metrics.get("result_count", 0)) == 0
+		):
+			settled = true
+			break
+
+	var metrics := world.get_metrics()
+	var queue_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
+	_assert_true(settled, "rapid-switch: units and queue should settle within %d ticks" % MAX_TICKS)
+	_assert_eq(0, int(queue_metrics.get("pending_count", -1)), "rapid-switch: pending_count should drain")
+	_assert_eq(0, int(queue_metrics.get("result_count", -1)), "rapid-switch: result_count should drain")
+	_assert_true(int(queue_metrics.get("cancelled_count", 0)) > 0, "rapid-switch: cancelled_count should increase")
+	for unit_id in unit_ids:
+		var unit := world.get_unit(unit_id)
+		_assert_true(unit != null, "rapid-switch: missing unit %s" % unit_id)
+		if unit == null:
+			continue
+		_assert_eq(final_targets[unit_id], unit.move_target, "rapid-switch: %s should keep latest target" % unit_id)
+		_assert_true(
+			unit.state != Dota2LabUnit.STATE_WAITING_LONG and unit.state != Dota2LabUnit.STATE_WAITING_SHORT,
+			"rapid-switch: %s should not remain in WAITING_*" % unit_id
+		)
+
+
 func _test_diagnostics_reflect_state() -> void:
 	var world := Dota2LabWorld.new()
 	world.issue_move("blue_0", Vector2(600.0, 200.0))
@@ -171,6 +224,11 @@ func _test_diagnostics_reflect_state() -> void:
 	_assert_true(metrics.has("state_counts"), "diagnostics: state_counts must be present")
 	_assert_true(metrics.has("long_path_requests"), "diagnostics: long_path_requests must be present")
 	_assert_true(metrics.has("pathfinder"), "diagnostics: pathfinder sub-dict must be present")
+	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
+	_assert_true(pathfinder_metrics.has("cancelled_count"), "diagnostics: cancelled_count must be present")
+	_assert_true(pathfinder_metrics.has("stale_result_count"), "diagnostics: stale_result_count must be present")
+	_assert_true(pathfinder_metrics.has("result_tickets"), "diagnostics: result_tickets must be present")
+	_assert_true(pathfinder_metrics.has("last_processed_requests"), "diagnostics: last_processed_requests must be present")
 
 
 # ─────────────────────────── Helpers ─────────────────────────────────────────
@@ -185,3 +243,26 @@ func _assert_true(condition: bool, label: String) -> void:
 	if condition:
 		return
 	_failures.append(label)
+
+
+func _assert_ticket_mutex(world: Dota2LabWorld, unit_ids: Array[String], label: String) -> void:
+	for unit_id in unit_ids:
+		var unit := world.get_unit(unit_id)
+		if unit == null:
+			_failures.append("%s: missing unit %s" % [label, unit_id])
+			continue
+		if unit.pending_long_ticket > 0 and unit.pending_short_ticket > 0:
+			_failures.append(
+				"%s: %s has both long=%d and short=%d"
+					% [label, unit_id, unit.pending_long_ticket, unit.pending_short_ticket]
+			)
+
+
+func _units_are_terminal(world: Dota2LabWorld, unit_ids: Array[String]) -> bool:
+	for unit_id in unit_ids:
+		var unit := world.get_unit(unit_id)
+		if unit == null:
+			return false
+		if unit.state != Dota2LabUnit.STATE_IDLE and unit.state != Dota2LabUnit.STATE_FAILED:
+			return false
+	return true
