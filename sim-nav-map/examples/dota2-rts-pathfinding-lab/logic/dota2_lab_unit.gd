@@ -11,6 +11,10 @@ const STATE_FOLLOWING := "FOLLOWING"
 const STATE_WAITING_SHORT := "WAITING_SHORT"
 const STATE_FAILED := "FAILED"
 
+const PATH_SOURCE_NONE := "none"
+const PATH_SOURCE_LONG := "long"
+const PATH_SOURCE_SHORT := "short"
+
 
 var id: String = ""
 var group_id: String = ""
@@ -27,6 +31,13 @@ var path: SimNavWaypointPath = SimNavWaypointPath.new()
 var retry_count: int = 0
 var pending_long_ticket: int = 0
 var pending_short_ticket: int = 0
+var path_source: String = PATH_SOURCE_NONE
+var last_path_request_kind: String = ""
+var last_path_result_kind: String = ""
+var last_path_result_status: String = ""
+var last_path_failure_reason: String = ""
+var last_short_goal: Vector2 = Vector2.ZERO
+var last_short_range: float = 0.0
 
 # Order tracking.
 var current_order: RefCounted = null
@@ -62,7 +73,14 @@ func apply_move_order_data(target: Vector2, tick: int) -> int:
 	move_target = target
 	state = STATE_IDLE
 	path = SimNavWaypointPath.new()
+	path_source = PATH_SOURCE_NONE
 	retry_count = 0
+	last_path_request_kind = ""
+	last_path_result_kind = ""
+	last_path_result_status = ""
+	last_path_failure_reason = ""
+	last_short_goal = Vector2.ZERO
+	last_short_range = 0.0
 	return order.order_id
 
 
@@ -74,6 +92,7 @@ func complete_order(tick: int) -> void:
 		current_order = null
 	state = STATE_IDLE
 	path = SimNavWaypointPath.new()
+	path_source = PATH_SOURCE_NONE
 	retry_count = 0
 
 
@@ -85,6 +104,7 @@ func fail_order(tick: int, reason: String) -> void:
 		current_order = null
 	state = STATE_FAILED
 	path = SimNavWaypointPath.new()
+	path_source = PATH_SOURCE_NONE
 
 
 func active_order_id() -> int:

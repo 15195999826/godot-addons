@@ -35,7 +35,10 @@ const UNIT_OUTLINE_COLOR := Color(0.95, 0.95, 0.92)
 const OBSTACLE_COLOR := Color(0.38, 0.35, 0.30)
 const OBSTACLE_OUTLINE_COLOR := Color(0.78, 0.67, 0.45)
 const OBSTACLE_CLEARANCE_COLOR := Color(0.95, 0.70, 0.25, 0.16)
-const PATH_COLOR := Color(0.2, 1.0, 0.55, 0.75)
+const PATH_COLOR_LONG := Color(0.20, 1.00, 0.55, 0.75)
+const PATH_COLOR_SHORT := Color(0.20, 0.78, 1.00, 0.88)
+const PATH_COLOR_UNKNOWN := Color(0.92, 0.92, 0.72, 0.70)
+const SHORT_GOAL_COLOR := Color(0.20, 0.78, 1.00, 0.55)
 const TARGET_COLOR := Color(0.2, 0.95, 0.65)
 const TRACE_COLOR := Color(0.45, 0.75, 1.0, 0.24)
 const DRAG_RECT_COLOR := Color(0.20, 0.70, 1.0, 0.15)
@@ -368,7 +371,9 @@ func _draw() -> void:
 		var unit := _world.get_unit(unit_id)
 		if unit == null or not unit.has_path():
 			continue
-		_draw_waypoint_path(unit.path, unit.position, PATH_COLOR)
+		_draw_waypoint_path(unit.path, unit.position, _path_color_for_unit(unit))
+		if unit.last_short_range > 0.0:
+			_draw_short_goal_marker(unit.last_short_goal)
 
 	# Units.
 	for unit in _world.units:
@@ -445,6 +450,13 @@ func _draw_failed_glyph(center: Vector2) -> void:
 	draw_line(center + Vector2(-arm, arm), center + Vector2(arm, -arm), color, width)
 
 
+func _draw_short_goal_marker(center: Vector2) -> void:
+	if center == Vector2.ZERO:
+		return
+	draw_circle(center, 5.0, SHORT_GOAL_COLOR)
+	draw_arc(center, 13.0, 0.0, TAU, 28, SHORT_GOAL_COLOR, 1.4)
+
+
 func _draw_waypoint_path(path: SimNavWaypointPath, start: Vector2, color: Color) -> void:
 	if path == null or path.waypoints.is_empty():
 		return
@@ -454,6 +466,14 @@ func _draw_waypoint_path(path: SimNavWaypointPath, start: Vector2, color: Color)
 		draw_line(previous, point, color, 2.0)
 		draw_circle(point, 3.0, color)
 		previous = point
+
+
+func _path_color_for_unit(unit: Dota2LabUnit) -> Color:
+	if unit.path_source == Dota2LabUnit.PATH_SOURCE_LONG:
+		return PATH_COLOR_LONG
+	if unit.path_source == Dota2LabUnit.PATH_SOURCE_SHORT:
+		return PATH_COLOR_SHORT
+	return PATH_COLOR_UNKNOWN
 
 
 # ─────────────────────────── HUD ─────────────────────────────────────────────
@@ -466,6 +486,8 @@ func _update_hud() -> void:
 	var pf: Dictionary = metrics.get("pathfinder", {})
 	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
 	var failed_line := _format_failed_line()
+	var selected_path_line := _format_selected_path_line()
+	var last_pathfinder_line := _format_last_pathfinder_line(pf)
 	var lines := [
 		"Dota2 RTS Pathfinding Lab (Layer 1)",
 		"Manual motion debug surface",
@@ -510,6 +532,9 @@ func _update_hud() -> void:
 			int(pf.get("processed_count", 0)),
 			metrics.get("pending_count_peak", 0),
 		],
+		"Path color: long green   short cyan   subgoal ring cyan",
+		selected_path_line,
+		last_pathfinder_line,
 		"",
 		"Performance",
 		"step %.2fms   avg %.2fms   max %.2fms @ tick %d" % [
@@ -545,6 +570,55 @@ func _format_failed_line() -> String:
 		suffix = " +%d more" % (labels.size() - 5)
 		labels = labels.slice(0, 5)
 	return "Failed (%d): %s%s" % [failed_ids.size(), ", ".join(labels), suffix]
+
+
+func _format_selected_path_line() -> String:
+	if _world == null or _selected_unit_ids.is_empty():
+		return "Selected path: none"
+	var unit := _world.get_unit(_selected_unit_ids[0])
+	if unit == null:
+		return "Selected path: missing"
+	var suffix := ""
+	if unit.last_path_failure_reason != "":
+		suffix = "/%s" % unit.last_path_failure_reason
+	return "Selected path: %s state=%s src=%s last=%s:%s%s" % [
+		unit.id,
+		unit.state,
+		unit.path_source,
+		unit.last_path_result_kind,
+		unit.last_path_result_status,
+		suffix,
+	]
+
+
+func _format_last_pathfinder_line(pf: Dictionary) -> String:
+	var last_processed := _last_processed_request_snapshot(pf)
+	if last_processed.is_empty():
+		return "Last pathfinder: none"
+	var suffix := ""
+	var failure_reason := str(last_processed.get("failure_reason", ""))
+	if failure_reason != "" and failure_reason != "none":
+		suffix = "/%s" % failure_reason
+	return "Last pathfinder: %s %s%s size=%d" % [
+		str(last_processed.get("kind", "")),
+		str(last_processed.get("status", "")),
+		suffix,
+		int(last_processed.get("path_size", 0)),
+	]
+
+
+func _last_processed_request_snapshot(pf: Dictionary) -> Dictionary:
+	var raw: Variant = pf.get("last_processed_requests", [])
+	if raw is Dictionary:
+		return (raw as Dictionary).duplicate(true)
+	if raw is Array:
+		var entries: Array = raw as Array
+		if entries.is_empty():
+			return {}
+		var last_entry: Variant = entries[entries.size() - 1]
+		if last_entry is Dictionary:
+			return (last_entry as Dictionary).duplicate(true)
+	return {}
 
 
 func _failed_unit_ids() -> Array[String]:
@@ -677,6 +751,13 @@ func _snapshot_units() -> Array[Dictionary]:
 			"retry_count": unit.retry_count,
 			"pending_long_ticket": unit.pending_long_ticket,
 			"pending_short_ticket": unit.pending_short_ticket,
+			"path_source": unit.path_source,
+			"last_path_request_kind": unit.last_path_request_kind,
+			"last_path_result_kind": unit.last_path_result_kind,
+			"last_path_result_status": unit.last_path_result_status,
+			"last_path_failure_reason": unit.last_path_failure_reason,
+			"last_short_goal": _vector_snapshot(unit.last_short_goal),
+			"last_short_range": unit.last_short_range,
 			"active_order_id": unit.active_order_id(),
 			"current_order": unit.current_order_snapshot(),
 			"last_order": unit.last_order_snapshot(),

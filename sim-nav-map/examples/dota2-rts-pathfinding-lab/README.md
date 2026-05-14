@@ -15,8 +15,8 @@ obstructions.
 - Baseline reference: the `addons` submodule commit containing this README,
   tracked by the parent repo commit that points at it.
 - Implemented: manual controls, explicit motion FSM, ticket lifecycle
-  diagnostics, command-layer target fanout, deterministic command release
-  scheduling, debug HUD, JSON export, DevAgent debug adapter, and
+  diagnostics, same-tick command-layer target fanout, local short-detour
+  subgoals, debug HUD, JSON export, DevAgent debug adapter, and
   `dota2lab/smoke`.
 - Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
   `PASS 4 / FAIL 0 / TIMEOUT 0`.
@@ -31,8 +31,10 @@ obstructions.
 - No push pressure, no friendly walk-through, no phasing.
 - Blocked movement stops and asks for a repath.
 - Commands are individual per unit.
+- Unit-blocked movement asks for a local short-detour subgoal, then returns to
+  long-path movement after the detour.
 - Multi-unit commands may fan out one click target into deterministic nearby
-  per-unit targets and release those independent orders over a short cadence.
+  per-unit targets. All independent move orders start on the command tick.
 - `sim-nav-map` core stays policy-free; retry, stop, repath, and failure policy
   live in this lab.
 
@@ -68,6 +70,9 @@ Supported raw DevAgent ops include `capture`, `click_at`, `drag_at`, `tap_key`,
 
 - `dump_scene_state`
 - `export_debug_log`
+
+The HUD distinguishes active path source: long paths are green, short paths are
+cyan, and the last short subgoal is shown as a cyan ring for selected units.
 
 ## Development Docs
 

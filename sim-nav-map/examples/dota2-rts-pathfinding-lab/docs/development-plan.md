@@ -21,8 +21,11 @@ What exists:
   `WAITING_SHORT`, `FAILED`.
 - Controller-owned ticket lifecycle and queue diagnostics for stale/cancelled
   path requests.
-- Command-layer target fanout plus deterministic command release scheduling for
-  multi-unit move commands.
+- Same-tick command-layer target fanout for multi-unit move commands.
+- Unit-blocked movement uses a local short-detour subgoal instead of sending
+  the far final click target to short path.
+- Debug HUD and export fields distinguish long vs short path source and last
+  short-path result.
 - DevAgent debug adapter for live capture, input, state dump, and export.
 - Smoke coverage for state-machine shape, frontend operations, behavior
   baseline, and Phase C target fanout.
@@ -32,6 +35,8 @@ Baseline verdict:
 - This is the accepted Layer 1 baseline for continuing Dota2 lab work.
 - Layer 2 AI control remains frozen.
 - Single-unit movement remains strict hard-block behavior.
+- Single-unit short detours are now observable and should not fail merely
+  because the final click target is outside the short search range.
 - Multi-unit movement is still independent per-unit movement. Target fanout is
   a command convenience, not formation, destination packing, or group pathing.
 - Remaining bounded `FAILED` outcomes in narrow-gap and mixed-obstacle cases
@@ -212,35 +217,43 @@ Status 2026-05-14:
 
 - Implemented command-layer target fanout for multi-unit commands:
   `issue_move_all_mobile()` and `issue_move_ids()`.
-- Added deterministic front-to-back command release scheduling. Each unit still
-  receives an independent move order; the lab no longer starts all selected
-  units on the same tick.
+- All selected units receive independent move orders on the command tick.
 - Single-unit `issue_move(unit_id, goal)` remains immediate and unchanged.
 - Added diagnostics for:
   - `last_fanout_assignments`;
-  - `recent_fanout_assignments`;
-  - `pending_command_releases`;
-  - `recent_command_releases`.
+  - `recent_fanout_assignments`.
+- Corrected short-path request semantics after manual testing:
+  - unit-blocked short requests target a local subgoal inside short range;
+  - repeated blocked recovery attempts remain bounded by `max_retry_exceeded`;
+  - debug HUD shows long paths in green, short paths in cyan, and the last
+    short subgoal as a cyan ring.
 - Added `smoke_dota2_lab_target_fanout` to `dota2lab/smoke`.
 - Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
   `PASS 4 / FAIL 0 / TIMEOUT 0`.
+- DevAgent real-input verification:
+  `codex-dota2-shortfix-20260514-174112` selected `blue_6`, issued a real
+  right-click move to `(73, 472)`, and observed
+  `kind=short`, `status=success`, `path_size=2`, with no stderr output.
 
 Phase C accepted result:
 
-- `default_group_move_fanout`: settled in `1149` ticks with `IDLE 6`,
-  `FAILED 2`.
+- `default_group_move_fanout`: same-tick target-only fanout settles with
+  `IDLE 3`, `FAILED 5` in the default hard-block layout.
 - Queue diagnostics at settle: `pending_count=0`, `result_count=0`,
-  `result_tickets=[]`, `pending_command_release_count=0`.
+  `result_tickets=[]`.
 - `narrow_gap_bounded_terminal` and `mixed_static_dynamic_obstacle` remain
   bounded hard-block terminal scenarios.
-- No Layer 2 AI, UI work, `MAX_RETRY` tuning, push, phasing, formation,
-  reservation, cluster pathfinding, or `sim-nav-map` core policy changes were
-  introduced.
+- No Layer 2 AI, `MAX_RETRY` tuning, push, phasing, formation, reservation,
+  cluster pathfinding, or `sim-nav-map` core policy changes were introduced.
+- UI work is limited to debug observability for long/short path source; it does
+  not change command semantics.
+- A delayed command-release experiment could reach `IDLE 6`, `FAILED 2`, but
+  it made units visibly move one by one and is not part of the accepted
+  baseline.
 
 Decision:
 
-- Use a narrow command-layer movement-feel policy: target fanout plus
-  deterministic command release scheduling.
+- Use a narrow command-layer movement-feel policy: same-tick target fanout.
 - Keep the strict Dota2 motion layer: hard block, no push, no destination
   packing, no reservation, no pair-aware yield.
 - Do not mix this with SC2-style group movement or 0AD-style push dynamics.
