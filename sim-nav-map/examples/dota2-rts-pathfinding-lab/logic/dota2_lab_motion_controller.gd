@@ -36,19 +36,33 @@ var _motion_updates: Array[Dota2LabMotionUpdate] = []
 
 # ─────────────────────────── External entry points ───────────────────────────
 
-# Called from world.issue_move(). Cancels any prior state and starts fresh.
-func start_move_order(
+# Called from world.issue_move(). Cancels any prior state, writes the new
+# order data, and starts fresh.
+func begin_new_move_order(
 	unit: Dota2LabUnit,
+	goal: Vector2,
 	pathfinder: Dota2LabPathfinderWrapper,
 	tick: int
 ) -> void:
 	_cancel_pending(unit, pathfinder)
-	unit.retry_count = 0
+	unit.apply_move_order_data(goal, tick)
 	_enqueue_long(unit, pathfinder, tick)
 
 
+func cancel_move_order(
+	unit: Dota2LabUnit,
+	pathfinder: Dota2LabPathfinderWrapper,
+	tick: int,
+	reason: String
+) -> void:
+	_cancel_pending(unit, pathfinder)
+	unit.fail_order(tick, reason)
+	unit.state = Dota2LabUnit.STATE_IDLE
+
+
 # Called when world deletes/edits obstacles and any active mover needs a new
-# long path. Equivalent to start_move_order with the existing move_target.
+# long path. Equivalent to begin_new_move_order with the existing move_target
+# but without replacing the current order.
 func replan_active(
 	unit: Dota2LabUnit,
 	pathfinder: Dota2LabPathfinderWrapper,
@@ -240,7 +254,7 @@ func _enqueue_short(
 	_tick: int
 ) -> void:
 	# Cancel any prior pending long (target switch case is handled by
-	# start_move_order; this branch only fires from step_unit when a block
+	# begin_new_move_order; this branch only fires from step_unit when a block
 	# is detected mid-FOLLOWING, in which case pending_long is 0).
 	if unit.pending_long_ticket > 0:
 		pathfinder.cancel(unit.pending_long_ticket)

@@ -130,12 +130,7 @@ func validate_movement_line(
 func diagnostics() -> Dictionary:
 	if path_queue == null:
 		return {}
-	var queue_diag := path_queue.get_diagnostics()
-	return {
-		"pending_count": int(queue_diag.get("pending_count", 0)),
-		"result_count": int(queue_diag.get("result_count", 0)),
-		"processed_count": int(queue_diag.get("processed_count", 0)),
-	}
+	return path_queue.get_diagnostics().duplicate(true)
 
 
 func _build_long_path_query(unit: Dota2LabUnit, goal: Vector2) -> SimNavLongPathQuery:

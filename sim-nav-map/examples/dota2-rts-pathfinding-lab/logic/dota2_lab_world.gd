@@ -98,15 +98,13 @@ func issue_move(unit_id: String, goal: Vector2) -> void:
 	var unit := get_unit(unit_id)
 	if unit == null or not unit.mobile:
 		return
-	unit.begin_move_order(goal, tick_count)
-	motion.start_move_order(unit, pathfinder, tick_count)
+	motion.begin_new_move_order(unit, goal, pathfinder, tick_count)
 
 
 func issue_move_all_mobile(goal: Vector2) -> void:
 	current_target = goal
 	for unit in get_mobile_units():
-		unit.begin_move_order(goal, tick_count)
-		motion.start_move_order(unit, pathfinder, tick_count)
+		motion.begin_new_move_order(unit, goal, pathfinder, tick_count)
 
 
 func issue_move_ids(unit_ids: Array[String], goal: Vector2) -> void:
@@ -119,8 +117,7 @@ func cancel_move(unit_id: String) -> void:
 	var unit := get_unit(unit_id)
 	if unit == null:
 		return
-	unit.fail_order(tick_count, "cancelled")
-	unit.state = Dota2LabUnit.STATE_IDLE
+	motion.cancel_move_order(unit, pathfinder, tick_count, "cancelled")
 
 
 # ───────────────── Scene editing (used by frontend keys 2/3/4) ──────────────
