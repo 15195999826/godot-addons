@@ -47,7 +47,7 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 
 | op | 关键字段 | 说明 |
 |---|---|---|
-| `capture` | `label` | 截图到 `screenshots/`, 写绝对路径到 outbox |
+| `capture` | `label`, `width?` (默认 960), `format?` (`jpeg`/`png` 默认 jpeg), `quality?` (默认 80) | 截图到 `screenshots/`, 写绝对路径 + 实际尺寸/字节数到 outbox。默认 960×540 JPEG q=80 ≈ 25–40 KB; `width:0` 保留原始 viewport 尺寸 |
 | `click_at` | `x`, `y`, `button?` | 真实 viewport 输入, 走完整 gui_input |
 | `drag_at` | `from_x`, `from_y`, `to_x`, `to_y`, `steps?` | 框选 / 拖动 |
 | `tap_key` | `key` | InputEventKey, 支持 "Escape" / "Enter" / 字符 |
