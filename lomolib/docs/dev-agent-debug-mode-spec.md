@@ -255,16 +255,39 @@ Screenshot capture should use the current viewport:
 ```gdscript
 await RenderingServer.frame_post_draw
 var image := node.get_viewport().get_texture().get_image()
-image.save_png(path)
+# optional downscale + format choice, then save
+image.resize(target_w, target_h, Image.INTERPOLATE_BILINEAR)
+image.save_jpg(path, quality / 100.0)   # or image.save_png(path)
 ```
+
+Command shape (all fields optional):
+
+```json
+{"id":"cmd-009","op":"capture","label":"after_battle","width":960,"format":"jpeg","quality":80}
+```
+
+Defaults (v1.1):
+
+- `width`: 960 px. `width: 0` keeps the raw viewport size; any positive value
+  scales the image down preserving aspect (no upscale).
+- `format`: `"jpeg"` (alias `"jpg"`). PNG is opt-in for lossless / pixel-precise
+  regression — file size jumps ~5× and Anthropic vision doesn't benefit.
+- `quality`: 80 (JPEG only, clamped 1–100).
+
+The result `data` carries `format`, `width`, `height`, `original_width`,
+`original_height`, `resized`, `quality`, and `bytes` so the agent can confirm
+what it actually got.
 
 Rules:
 
 - Save to the session `screenshots/` directory.
-- Include label and command id in the filename.
-- Print/globalize the path in outbox and Godot logs.
+- Include label and command id in the filename. Extension follows the format.
+- Print/globalize the path + size summary in outbox and Godot logs.
 - Do not capture every frame; capture only on command to avoid GPU readback
   overhead.
+- Prefer the default 960 px JPEG. Bigger ≠ more usable for the vision model
+  (server-side tiles a max of ~1568 px long edge regardless); raise only for
+  small-font readability or pixel-diff regression.
 
 ## 10. Inspector Contract
 

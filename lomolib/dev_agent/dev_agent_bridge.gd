@@ -249,7 +249,11 @@ func _op_capture(command: Dictionary) -> Dictionary:
 	var label := str(command.get("label", "capture"))
 	var command_id := str(command.get("id", "capture"))
 	var file_stem := "%s-%s" % [_safe_file_fragment(command_id), _safe_file_fragment(label)]
-	return await DevAgentScreenshotScript.capture_viewport(self, _screenshots_dir, file_stem)
+	var options: Dictionary = {}
+	for key in ["width", "format", "quality"]:
+		if command.has(key):
+			options[key] = command[key]
+	return await DevAgentScreenshotScript.capture_viewport(self, _screenshots_dir, file_stem, options)
 
 
 func _op_click_at(command: Dictionary) -> Dictionary:
