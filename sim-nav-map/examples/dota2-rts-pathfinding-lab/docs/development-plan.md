@@ -6,8 +6,8 @@
 
 Current baseline:
 
-- Parent repo commit: `2229aad`
-- `addons` submodule commit: `7cc09df`
+- Parent repo commit: `e64ba02`
+- `addons` submodule commit: `19daa9f`
 - Scene: `frontend/dota2_pathfinding_lab.tscn`
 - Smoke entry: `./tools/run_tests.ps1 dota2lab/smoke`
 
@@ -93,8 +93,17 @@ Status 2026-05-14:
   assertions for queue drain, ticket mutex, latest target, and cancellation
   counting.
 - Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes.
-- Remaining follow-up: rerun the DevAgent/free-play rapid-switch scenario and
-  compare failure counts against the 2026-05-13 baseline.
+- DevAgent/free-play rapid-switch verification:
+  `codex-dota2-phaseb-20260514-153930`.
+  - Final export:
+    `C:/Users/Administrator/AppData/Roaming/Godot/app_userdata/Inkmon/dota2_rts_pathfinding_lab_logs/codex_phaseb_devagent_final_20260514_153930.json`
+  - Final metrics at tick `2418`: `FAILED 7`, `IDLE 2`,
+    `FOLLOWING 0`, `WAITING_LONG 0`, `WAITING_SHORT 0`.
+  - Queue diagnostics: `pending_count=0`, `result_count=0`,
+    `result_tickets=[]`, `cancelled_count=12`, `stale_result_count=12`.
+  - Verdict: no orphan pending or result tickets reproduced. Stale results were
+    discarded after cancellation; remaining failures are tied to current
+    hard-block movement orders.
 
 Tasks:
 
@@ -112,27 +121,78 @@ Tasks:
 Acceptance:
 
 - Done: `dota2lab/smoke` passes.
-- Pending manual verification: DevAgent target-switch reproduction no longer
-  leaves orphan result tickets.
-- Pending manual verification: failures, if any, are tied to actual current
-  orders, not old queue results.
+- Done: DevAgent target-switch reproduction no longer leaves orphan result
+  tickets.
+- Done: failures are tied to actual current orders, not old queue results.
 
 ### Phase B: Make Baseline Failures Explicit
 
 Goal: separate acceptable hard-block terminal failure from real bugs.
 
+Status 2026-05-14:
+
+- Added `smoke_dota2_lab_behavior_baseline` to `dota2lab/smoke`.
+- The smoke covers:
+  - default group move baseline;
+  - narrow-gap bounded terminal behavior;
+  - mixed static + dynamic obstacle behavior.
+- Each `FAILED` unit is classified by `last_order.failure_reason`.
+  `max_retry_exceeded` is accepted only when the scenario also records hard
+  block evidence and reaches a drained terminal state.
+- Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
+  `PASS 3 / FAIL 0 / TIMEOUT 0`.
+
 Tasks:
 
-- Add a default group-move smoke that records current behavior.
-- Add narrow-gap bounded-terminal smoke.
-- Add mixed static + dynamic obstacle smoke.
-- Decide which failures are allowed baseline behavior and which are defects.
+- Done: add a default group-move smoke that records current behavior.
+- Done: add narrow-gap bounded-terminal smoke.
+- Done: add mixed static + dynamic obstacle smoke.
+- Done: decide which failures are allowed baseline behavior and which are
+  defects.
 
 Acceptance:
 
-- The docs and smoke agree on what `FAILED` means.
-- No non-terminal state can persist beyond the bounded budget.
-- The HUD/export gives enough data to explain each failed unit.
+- Done: the docs and smoke agree on what `FAILED` means.
+- Done: no non-terminal state can persist beyond the bounded budget.
+- Done: the HUD/export gives enough data to explain each failed unit.
+
+#### Phase B Accepted Baseline Failures
+
+The following are accepted only as the current baseline, not as final gameplay
+feel:
+
+- `default_group_move`: settled in 572 ticks; `IDLE 1`, `FAILED 7`;
+  all failed units have `failure_reason=max_retry_exceeded`;
+  `pending_count=0`, `result_count=0`, `blocked_by_unit_count=47`.
+- `narrow_gap_bounded_terminal`: settled in 89 ticks; `FAILED 2`;
+  both failures have `failure_reason=max_retry_exceeded`;
+  `pending_count=0`, `result_count=0`, `blocked_by_unit_count=12`.
+- `mixed_static_dynamic_obstacle`: settled in 115 ticks; `FAILED 4`;
+  all failures have `failure_reason=max_retry_exceeded`;
+  `pending_count=0`, `result_count=0`, `blocked_by_unit_count=24`, static
+  obstacle fixture count `2`.
+
+Interpretation:
+
+- These failures are allowed hard-block terminal behavior because they are
+  bounded, terminal, queue-drained, stable, and have explicit order failure
+  reasons.
+- They are still poor-feel outcomes under normal play. Improving them belongs
+  to Phase C policy work, not this baseline patch.
+
+#### Phase B Defect Boundary
+
+Treat any of the following as a defect:
+
+- a unit remains in `WAITING_LONG`, `WAITING_SHORT`, or `FOLLOWING` beyond the
+  bounded smoke budget;
+- `pending_count` or `result_count` does not drain after all target units are
+  terminal;
+- a `FAILED` unit has an empty or unexpected `last_order.failure_reason`;
+- a `FAILED` unit has an allowed reason but no hard-block evidence;
+- rapid target switching leaves live orphan `result_tickets` or pending tickets.
+
+No such defect is present in the current Phase B smoke or DevAgent evidence.
 
 ### Phase C: Decide Movement-Feel Policy
 
@@ -147,6 +207,14 @@ Two possible directions:
   code changes.
 
 Do not mix these directions in one patch.
+
+Phase C decision items now visible from Phase B:
+
+- Default group move currently leaves most units in accepted terminal failure
+  under strict hard-block policy.
+- Narrow gap currently resolves by bounded `FAILED`, not cooperative passage.
+- Mixed static + dynamic blockers currently resolve by bounded `FAILED`, not
+  local yielding or destination packing.
 
 ## Non-Goals For The Next Patch
 
