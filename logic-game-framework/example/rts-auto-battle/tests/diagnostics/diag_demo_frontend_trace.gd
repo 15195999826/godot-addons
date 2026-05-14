@@ -1,4 +1,4 @@
-## 诊断 smoke - headless 复刻 demo_rts_frontend setup, trace 所有单位寻找徘徊场景
+## 诊断 dump - headless 复刻 demo_rts_frontend setup, trace 所有单位寻找徘徊场景
 ##
 ## 完全镜像 demo_rts_frontend.gd 的起手:
 ##   - 双方各 5 worker + 1 crystal_tower + 4 中立 resource_node

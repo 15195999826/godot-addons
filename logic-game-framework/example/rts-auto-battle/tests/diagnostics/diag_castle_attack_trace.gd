@@ -1,4 +1,4 @@
-## 诊断 smoke - 单位攻击 building 场景, trace 看是否徘徊/死循环重新 set_target/能否到 attack_range
+## 诊断 dump - 单位攻击 building 场景, trace 看是否徘徊/死循环重新 set_target/能否到 attack_range
 ##
 ## 复现 castle_war 类场景: 4 melee 走向 enemy crystal_tower, 看:
 ##   1. 单位 dist_to_target 是否单调下降到 attack_range 内 (正常接战)

@@ -1,4 +1,4 @@
-## 诊断 smoke - 编队走向紧贴建筑后侧的目标, 逐 tick 录单位轨迹 / 路径状态 / 是否进 footprint。
+## 诊断 dump - 编队走向紧贴建筑后侧的目标, 逐 tick 录单位轨迹 / 路径状态 / 是否进 footprint。
 ##
 ## 不是 PASS/FAIL 测试 - 输出 trace CSV 给人分析, 用来定位:
 ##   1. 单位是否走进 building footprint (穿建筑)

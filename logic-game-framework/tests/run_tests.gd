@@ -16,8 +16,11 @@ extends Node
 const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/attributes/attribute_set_test.gd",
 	"res://addons/logic-game-framework/tests/core/attributes/define_attributes_test.gd",
+	"res://addons/logic-game-framework/tests/core/attributes/example_generated_attribute_set_test.gd",
 	"res://addons/logic-game-framework/tests/core/attributes/hex_battle_attribute_inheritance_test.gd",
+	"res://addons/logic-game-framework/tests/core/events/event_collector_test.gd",
 	"res://addons/logic-game-framework/tests/core/events/event_processor_test.gd",
+	"res://addons/logic-game-framework/tests/core/events/mutable_event_test.gd",
 	"res://addons/logic-game-framework/tests/core/events/pre_event_component_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_execution_instance_test.gd",
@@ -26,6 +29,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/resolvers/resolvers_test.gd",
 	"res://addons/logic-game-framework/tests/core/timeline/timeline_test.gd",
 	"res://addons/logic-game-framework/tests/core/timeline/timeline_loop_test.gd",
+	"res://addons/logic-game-framework/tests/core/world/world_test.gd",
 	"res://addons/logic-game-framework/tests/skill_preview_validation_test.gd",
 ]
 

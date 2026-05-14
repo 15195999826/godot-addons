@@ -15,6 +15,9 @@
 | 入口 | 测什么 | M5 baseline 数据 |
 |---|---|---|
 | `trace_pathfinding_8units.tscn` | 8 melee 走到 3 barracks 中央凹槽的视觉穿模 / 互推现象 | 389 overlap events, max=9.45 px (~39% diameter), 终点 0 events |
+| `diag_pathfinding_trace.tscn` | 编队走向紧贴建筑后侧目标时的路径 / footprint / blocking cell trace | 按需手跑 |
+| `diag_demo_frontend_trace.tscn` | 复刻 demo_rts_frontend AI vs AI,输出单位徘徊 / path change / cluster jam trace | 按需手跑 |
+| `diag_castle_attack_trace.tscn` | melee 攻击 crystal_tower 时的 distance / path / attack trace | 按需手跑 |
 | `perf_hierarchical_realistic.tscn` | HierarchicalPathfinder.recompute 在 96² + 16 building 块 demo 规模下 perf(从 smoke_hierarchical_perf 移过来,M4c gate 决策已 CANCEL 改 info-only) | M4 末态 single-run p99=28 ms;M5 末态 5x parallel p99=31 ms |
 | `perf_hierarchical_synthetic.tscn` | HierarchicalPathfinder.recompute 在 192/384/768² + 10% scattered obstacle 下 perf | 768² × 100 iter ≈ 24-47s GDScript 算法成本(单跑 30-90s);"未来预警面板" |
 
