@@ -6,6 +6,7 @@
       "scenes": [
         "smoke/smoke_dota2_lab_state_machine.tscn",
         "smoke/smoke_dota2_lab_behavior_baseline.tscn",
+        "smoke/smoke_dota2_lab_target_fanout.tscn",
         "smoke/smoke_dota2_lab_ui_ops.tscn"
       ]
     }

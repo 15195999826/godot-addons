@@ -70,11 +70,12 @@ func _test_frontend_ui_ops() -> void:
 	if world.current_target.distance_to(target) > 0.001:
 		_failures.append("ui-ops: move command did not update current target")
 	var selected_order_count := 0
+	var pending_release_ids := _pending_release_ids(world)
 	for unit_id in instance._selected_unit_ids:
 		var unit := world.get_unit(unit_id)
 		if unit == null:
 			continue
-		if unit.current_order != null:
+		if unit.current_order != null or pending_release_ids.has(unit_id):
 			selected_order_count += 1
 	if selected_order_count != instance._selected_unit_ids.size():
 		_failures.append("ui-ops: move command did not issue orders to selected units")
@@ -133,3 +134,13 @@ func _press_left(instance: Variant, position: Vector2) -> void:
 	event.pressed = true
 	event.position = position
 	instance._handle_mouse_button(event)
+
+
+func _pending_release_ids(world: Dota2LabWorld) -> Dictionary:
+	var result: Dictionary = {}
+	var metrics := world.get_metrics()
+	var pending: Array = metrics.get("pending_command_releases", []) as Array
+	for item in pending:
+		var release: Dictionary = item as Dictionary
+		result[str(release.get("unit_id", ""))] = true
+	return result
