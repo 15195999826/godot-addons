@@ -3,7 +3,8 @@
 > **Status: PHASE C BASELINE (2026-05-14).**
 > Layer 1 manual frontend exists and is usable for investigation. Multi-unit
 > command feel now has a narrow command-layer fanout baseline. Layer 2 AI
-> control stays frozen.
+> control stays frozen; the Layer 1.1 movement-feel contract now defines its
+> prerequisites.
 
 This lab is a Dota2/LoL-style movement-policy example for `sim-nav-map`:
 continuous-space movement on a navigation grid with static and dynamic
@@ -19,11 +20,13 @@ obstructions.
   subgoals, debug HUD, JSON export, DevAgent debug adapter, and
   `dota2lab/smoke`.
 - Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
-  `PASS 4 / FAIL 0 / TIMEOUT 0`.
+  `PASS 5 / FAIL 0 / TIMEOUT 0`.
 - Known state: single-unit movement remains a strict hard-block baseline.
   Multi-unit commands are a lab convenience with target fanout, not formation
   or group movement. Narrow-gap and mixed-obstacle scenarios can still end in
   bounded `FAILED` states.
+- Layer 1.1 movement-feel contract:
+  [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md)
 
 ## Motion Contract
 
@@ -77,6 +80,7 @@ cyan, and the last short subgoal is shown as a cyan ring for selected units.
 ## Development Docs
 
 - Active route: [docs/development-plan.md](docs/development-plan.md)
+- Movement-feel contract: [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md)
 - Historical motion design: [docs/design-notes/motion-controller-design.md](docs/design-notes/motion-controller-design.md)
 
 Keep this README short. Put new development decisions, evidence, and repair
