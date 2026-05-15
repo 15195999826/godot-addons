@@ -1,6 +1,6 @@
 # Dota2 Lab Development Plan
 
-> Active document. Updated 2026-05-14.
+> Active document. Updated 2026-05-15.
 
 ## Baseline
 
@@ -11,7 +11,7 @@ Current baseline:
   tracked by the parent repo commit that points at it.
 - Scene: `frontend/dota2_pathfinding_lab.tscn`
 - Smoke entry: `./tools/run_tests.ps1 dota2lab/smoke`
-- Smoke result: `PASS 4 / FAIL 0 / TIMEOUT 0`
+- Smoke result: `PASS 5 / FAIL 0 / TIMEOUT 0`
 
 What exists:
 
@@ -28,7 +28,7 @@ What exists:
   short-path result.
 - DevAgent debug adapter for live capture, input, state dump, and export.
 - Smoke coverage for state-machine shape, frontend operations, behavior
-  baseline, and Phase C target fanout.
+  baseline, Phase C target fanout, and Layer 1.1 movement-feel contract.
 
 Baseline verdict:
 
@@ -41,6 +41,9 @@ Baseline verdict:
   a command convenience, not formation, destination packing, or group pathing.
 - Remaining bounded `FAILED` outcomes in narrow-gap and mixed-obstacle cases
   are accepted diagnostics, not a reason to tune retry counts or core policy.
+- The Layer 1.1 movement-feel contract is now documented at
+  `docs/design-notes/movement-feel-policy.md`; Layer 2 AI control remains
+  frozen until the remaining prerequisites in that contract are closed.
 
 ## Evidence From Free Play
 
@@ -265,6 +268,33 @@ Phase C decision items now visible from Phase B:
 - Narrow gap currently resolves by bounded `FAILED`, not cooperative passage.
 - Mixed static + dynamic blockers currently resolve by bounded `FAILED`, not
   local yielding or destination packing.
+
+### Layer 1.1: Define Dota2 Movement-Feel Contract
+
+Status 2026-05-15:
+
+- Added `docs/design-notes/movement-feel-policy.md` as the Dota2-style movement
+  contract for this lab.
+- The contract keeps policy in the example layer, not in `sim-nav-map` core.
+- Added `smoke_dota2_lab_movement_feel_contract` to `dota2lab/smoke`.
+- Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
+  `PASS 5 / FAIL 0 / TIMEOUT 0`.
+
+Acceptance:
+
+- Done: click-to-move command latency is explicit and smoke-covered.
+- Done: reachable solo movement must not false-fail.
+- Done: mid-path static blocker edits must trigger bounded replan and queue
+  drain.
+- Done: Layer 2 AI is documented as an automated command source, not a
+  replacement for the motion controller.
+
+Open decisions before Layer 2:
+
+- Decide whether Phase C same-target self-jam is accepted final Dota2 feel or a
+  future improvement target.
+- Keep two-unit narrow-gap cooperative passage as a known gap unless a new
+  Dota2-style design note reopens it.
 
 ## Non-Goals For The Next Patch
 
