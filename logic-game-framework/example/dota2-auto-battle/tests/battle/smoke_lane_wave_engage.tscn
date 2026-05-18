@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dota2_smoke_lane_wave_engage"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/dota2-auto-battle/tests/battle/smoke_lane_wave_engage.gd" id="1_lane_wave"]
+
+[node name="Dota2SmokeLaneWaveEngage" type="Node"]
+script = ExtResource("1_lane_wave")

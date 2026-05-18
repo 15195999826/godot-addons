@@ -1,4 +1,8 @@
-# Core Skeleton
+# Core (M1 implemented)
+
+> M1 已落地：`dota2_world_gameplay_instance.gd` / `dota2_auto_battle_procedure.gd`
+> / `dota2_logic_frame.gd` / `events/dota2_battle_events.gd`。变更见
+> [../CHANGELOG.md](../CHANGELOG.md)。下列为原始规划，保留作设计追溯。
 
 Planned contents:
 

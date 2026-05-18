@@ -1,4 +1,8 @@
-# Logic Skeleton
+# Logic (M1 implemented)
+
+> M1 已落地：`actors/` `controllers/` `ability/` `actions/` `ai/` `config/`
+> `movement/` `systems/` `attributes/`。变更见 [../CHANGELOG.md](../CHANGELOG.md)。
+> 下列为原始规划，保留作设计追溯。
 
 Planned contents:
 

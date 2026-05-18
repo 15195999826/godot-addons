@@ -1,4 +1,9 @@
-# Controllers Skeleton
+# Controllers (M1 implemented)
+
+> M1 已落地：`dota2_unit_controller.gd` / `dota2_lane_creep_controller.gd` /
+> `dota2_decision_result.gd` / `dota2_intent.gd` / `dota2_intent_step_result.gd`
+> / `dota2_intent_status.gd`。变更见 [../../CHANGELOG.md](../../CHANGELOG.md)。
+> 下列为原始规划，保留作设计追溯。
 
 Planned contents:
 
