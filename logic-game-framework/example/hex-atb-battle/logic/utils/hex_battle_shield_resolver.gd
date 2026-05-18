@@ -76,6 +76,26 @@ static func resolve(actor: Object, incoming_damage: float, damage_type: String) 
 	return result
 
 
+## 累加 actor 身上「能吸收 damage_type」的护盾剩余容量。
+##
+## 复用 _collect_candidates 的硬过滤(damage_type / 过期 / current>0),
+## 与实际消耗逻辑同源 —— 只算真挡得住这次类型伤害的盾。
+## 用例:Execute 按「有效血量」判斩杀(PURE 只被 universal/["all"] 盾挡,
+## physical/magical 盾不计入)。不产生副作用,不改护盾状态。
+static func sum_absorbable_capacity(actor: Object, damage_type: String) -> float:
+	if actor == null:
+		return 0.0
+	var ability_set: AbilitySet = null
+	if "ability_set" in actor:
+		ability_set = actor.get("ability_set") as AbilitySet
+	if ability_set == null:
+		return 0.0
+	var total := 0.0
+	for entry in _collect_candidates(ability_set, damage_type):
+		total += (entry["shield"] as HexBattleShieldComponent).current
+	return total
+
+
 ## 找出所有可参与本次伤害结算的护盾候选。
 ## 返回每条 { ability, shield, grant_index } 的字典。
 static func _collect_candidates(ability_set: AbilitySet, damage_type: String) -> Array[Dictionary]:

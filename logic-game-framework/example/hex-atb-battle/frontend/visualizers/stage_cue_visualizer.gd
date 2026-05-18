@@ -23,6 +23,14 @@ const HEAL_CUES := [
 	"magic_heal",    # 圣光治愈
 ]
 
+# ========== 斩杀击杀醒目特效 cue_id ==========
+
+const EXECUTE_KILL_CUE := "execute_kill"  # Execute 命中击杀:猩红冲击波(放大)
+## 比普通 attack_vfx 明显更长,确保"斩杀"收尾醒目、肉眼可辨(也便于回放定格验证)。
+const EXECUTE_KILL_VFX_DURATION := 0.8
+## 略延迟:让起手 melee_heavy 挥击先淡出,斩杀爆作为独立收尾炸出来,不糊在一起。
+const EXECUTE_KILL_VFX_DELAY := 0.15
+
 
 func _init() -> void:
 	visualizer_name = "StageCueVisualizer"
@@ -48,6 +56,9 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	# 治疗类 cue → 治疗光束特效
 	elif cue_id in HEAL_CUES:
 		actions.append_array(_create_heal_vfx(source_id, target_ids, context))
+	# 斩杀击杀 → 猩红冲击波(放大)醒目特效,区别于普通近战挥击
+	elif cue_id == EXECUTE_KILL_CUE:
+		actions.append_array(_create_execute_kill_vfx(source_id, target_ids, context))
 	# 其他 cue_id（如 magic_fireball, ranged_arrow）不需要额外特效
 	# 因为它们有投射物飞行动画
 	
@@ -146,5 +157,50 @@ func _create_heal_vfx(
 			false
 		)
 		actions.append(heal_vfx)
-	
+
+	return actions
+
+
+## 创建斩杀击杀特效(猩红冲击波 + is_critical 放大 → 明显区别于普通近战挥击)
+func _create_execute_kill_vfx(
+	source_id: String,
+	target_ids: Array[String],
+	context: FrontendVisualizerContext
+) -> Array[FrontendVisualAction]:
+	var actions: Array[FrontendVisualAction] = []
+
+	if source_id.is_empty() or target_ids.is_empty():
+		return actions
+
+	var source_position := context.get_actor_position(source_id)
+
+	for target_id in target_ids:
+		var target_position := context.get_actor_position(target_id)
+
+		var kill_vfx := FrontendAttackVFXAction.new(
+			source_id,
+			target_id,
+			source_position,
+			target_position,
+			EXECUTE_KILL_VFX_DURATION,
+			FrontendAttackVFXAction.AttackVFXType.IMPACT,
+			Color(1.0, 0.12, 0.08),  # 猩红
+			true,  # is_critical → 放大
+			EXECUTE_KILL_VFX_DELAY  # 独立"斩杀"收尾,不与起手挥击糊在一起
+		)
+		actions.append(kill_vfx)
+
+		# 醒目"斩杀!"飘字 —— 复用已验证清晰可辨的飘字系统(CRITICAL 强调样式 +
+		# 大红),远相机下也一眼可读,IMPACT 当命中闪,文字当不可错认的击杀播报。
+		var callout := FrontendFloatingTextAction.new(
+			target_id,
+			"斩杀!",
+			Color(1.0, 0.15, 0.1),
+			target_position,
+			FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
+			context.get_animation_config().damage_floating_text_duration,
+			EXECUTE_KILL_VFX_DELAY
+		)
+		actions.append(callout)
+
 	return actions
