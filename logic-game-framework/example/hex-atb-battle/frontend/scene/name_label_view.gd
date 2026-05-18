@@ -6,7 +6,9 @@ class_name FrontendNameLabelView
 extends Node3D
 
 
-@export var name_label_offset: float = 1.5
+## 抬高到 1.92：护盾条按类型分条后最多 3 条(physical/magical/ward),
+## base 1.34 + 2*step(0.17) → 顶条约在 1.68(上沿 ~1.75),名字标签让位避免重叠。
+@export var name_label_offset: float = 1.92
 
 
 var _name_label: Label3D

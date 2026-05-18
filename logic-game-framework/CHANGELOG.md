@@ -12,6 +12,32 @@
 
 ---
 
+## [Unreleased] — 2026-05-18 hex-atb-battle — Typed shield skills + per-type shield bars
+
+为 codex 落地的 typed 护盾 buff(`PHYSICAL_SHIELD_BUFF` / `MAGICAL_SHIELD_BUFF`)补上 gameplay 投放途径与按类型分条的表演层 —— 此前它们只有数据 + 前端白名单 + scenario 测试,无授予技能、且 skill_preview 的 buff 过滤导致无法施放;护盾条多盾时聚合成单色单条,区分不出类型。
+
+### Added
+
+- **`example/hex-atb-battle/logic/skills/physical_shield.gd` / `magical_shield.gd`** — 自施 typed 护盾主动技能(`skill_physical_shield` / `skill_magical_shield`),镜像 `ward.gd`(RANGE 0 / 500ms cast、HIT@300 / 4000ms cooldown / `ApplyShieldAction` + `ability_owner` selector)。带 `["skill","active","self","shield"]` 标签(非 `buff`),可在 demo / skill_preview 真实施放。
+- **`example/hex-atb-battle/tests/frontend/smoke_shield_layout.{gd,tscn}`** — `FrontendShieldBarView` 多类型分条布局白盒回归:断言 3 个不同 `config_id` → 3 条可见、异色、Y 不重叠、按 `priority desc → config_id asc` 排序、填充比例正确、空态全隐藏。注册进 `hex/frontend` group。
+
+### Changed
+
+- **`example/hex-atb-battle/frontend/scene/shield_bar_view.gd`** — 从「sum/sum 单条 + `shields[0].color`」改为「按 `config_id` 分组、每类型一条竖直堆叠」的池化渲染,排序与 `ShieldResolver` 消耗序一致(`priority desc → config_id asc`)。条厚 0.09→0.13、step 0.17,远相机下可辨。
+- **`example/hex-atb-battle/frontend/scene/name_label_view.gd`** — `name_label_offset` 1.5→1.92,给最多 3 条护盾条让位避免重叠。
+- **`example/hex-atb-battle/logic/skills/all_skills.gd`** — manifest 注册两个新 typed 护盾技能 + 其 timeline。
+
+数据契约(`FrontendShieldSummary` / `ApplyShieldStateAction` / `ShieldBarVisualizer` 白名单)与 resolver 结算未改动,既有 16 scenario + `smoke_shield_ui` 不回归。
+
+| 测试 | 结果 |
+|---|---|
+| `hex/skills` + `hex/frontend` | 9 PASS / 0 FAIL (唯一 TIMEOUT = 既有无关 `smoke_surge_unit_view`) |
+| `-Required` | 14 PASS / 0 FAIL / 0 TIMEOUT |
+| `smoke_shield_layout` | PASS (6 步) |
+| dev scene 三盾实测 | 三技能施放 + 三色分条渲染确认 |
+
+---
+
 ## [Unreleased] — 2026-05-04 hex-atb-battle — Atomic displacement + ActionLockStatus
 
 Push / knockback remains a one-keyframe atomic logic operation, then grants a timed target-side action lock (`status_action_lock`) to prevent the pushed actor from starting its own next action while preserving passive triggers and in-flight timelines. See design note.

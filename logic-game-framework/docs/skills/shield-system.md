@@ -213,7 +213,7 @@ tests/skill_scenarios/
 
 - [ ] **Aphotic Ward**（破裂时 AoE 伤害）— 验证 `on_break` 回调机制
 - [ ] **Shield Rune**（按 max HP 计算 + `refresh` 叠加策略）
-- [x] **物理盾 / 魔法盾**（具体 buff 配置 + `damage_types` 过滤）
+- [x] **物理盾 / 魔法盾**（具体 buff 配置 + `damage_types` 过滤；2026-05-18 补 `skill_physical_shield` / `skill_magical_shield` 自施授予技能 + `ShieldBarView` 按 `config_id` 分类型独立条渲染）
 
 ### 🟡 P2 — 机制扩展
 

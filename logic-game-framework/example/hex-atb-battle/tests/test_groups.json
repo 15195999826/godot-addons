@@ -33,6 +33,7 @@
         "frontend/smoke_buff_pipeline.tscn",
         "frontend/smoke_buff_ui.tscn",
         "frontend/smoke_shield_ui.tscn",
+        "frontend/smoke_shield_layout.tscn",
         "frontend/smoke_surge_unit_view.tscn",
         "frontend/smoke_world_view.tscn"
       ]
