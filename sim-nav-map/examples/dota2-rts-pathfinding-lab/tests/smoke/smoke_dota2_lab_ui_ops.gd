@@ -2,12 +2,14 @@ extends Node
 
 
 const LAB_SCENE_PATH: String = "res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn"
+const AUTO_DEMO_SCENE_PATH: String = "res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_ai_command_demo.tscn"
 
 var _failures: Array[String] = []
 
 
 func _ready() -> void:
 	await _test_frontend_ui_ops()
+	await _test_auto_demo_scene_boots()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - dota2 lab ui ops")
@@ -100,6 +102,48 @@ func _test_frontend_ui_ops() -> void:
 				_failures.append("ui-ops: export log is not a JSON dictionary")
 			else:
 				_assert_export_shape(parsed as Dictionary)
+
+	instance_node.queue_free()
+
+
+func _test_auto_demo_scene_boots() -> void:
+	var packed_scene: PackedScene = load(AUTO_DEMO_SCENE_PATH) as PackedScene
+	if packed_scene == null:
+		_failures.append("auto-demo: failed to load scene")
+		return
+
+	var instance: Variant = packed_scene.instantiate()
+	var instance_node := instance as Node
+	if instance_node == null:
+		_failures.append("auto-demo: failed to instantiate scene")
+		return
+	add_child(instance_node)
+	await get_tree().process_frame
+
+	var world: Dota2LabWorld = instance._world as Dota2LabWorld
+	if world == null:
+		_failures.append("auto-demo: scene did not create world")
+		instance_node.queue_free()
+		return
+	if not bool(instance.auto_command_demo):
+		_failures.append("auto-demo: auto_command_demo flag is not enabled")
+	if world.get_unit("lane_0") == null or world.get_unit("chaser") == null:
+		_failures.append("auto-demo: expected demo units are missing")
+
+	for i in range(8):
+		await get_tree().process_frame
+
+	if instance._ai_command_source == null:
+		_failures.append("auto-demo: command source missing")
+	else:
+		var emitted_count := int(instance._ai_command_source.emitted_count())
+		if emitted_count < 1:
+			_failures.append("auto-demo: command source did not emit initial command")
+	if world.tick_count < 1:
+		_failures.append("auto-demo: world did not step")
+	var lane_0 := world.get_unit("lane_0")
+	if lane_0 == null or lane_0.current_order == null:
+		_failures.append("auto-demo: lane_0 did not receive an automatic order")
 
 	instance_node.queue_free()
 

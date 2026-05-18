@@ -43,14 +43,16 @@ They define the baseline required before Layer 2 can safely drive the lab.
 | A3 | Target-switch immediacy: repeated commands cancel prior tickets, keep only the newest target, and drain stale results. | Covered by `smoke_dota2_lab_state_machine` and `smoke_dota2_lab_target_fanout`. |
 | A4 | Solo no-false-failed: one mobile unit with no dynamic blocker and a reachable goal must not end in `FAILED`. | Covered by `smoke_dota2_lab_state_machine` and `smoke_dota2_lab_movement_feel_contract`. |
 | A5 | Static blocker mid-path response: adding a static blocker ahead of an active mover must trigger a bounded replan and drain the queue; if the route is still reachable, the unit should reach `IDLE`, not `FAILED`. | Covered by `smoke_dota2_lab_movement_feel_contract`. |
-| A6 | Same-target self-jam: many units ordered to the same target may leave some units in bounded `FAILED` under strict hard-block rules, but all failures must be terminal, drained, stable, and explainable. | Covered as Phase C baseline by `smoke_dota2_lab_target_fanout`; final slot-count policy is still deferred. |
+| A6 | Same-target self-jam: many units ordered to the same clicked point may leave some units in bounded `FAILED` under strict hard-block rules, but all failures must be terminal, drained, stable, and explainable. | Accepted current Dota2 hard-block feel by `smoke_dota2_lab_target_fanout`; not a Layer 2 blocker. |
 | A7 | Two-unit narrow-gap cross-pass: current Layer 1 accepts bounded `FAILED`; cooperative passage or yield is a known gap and requires a new design note before implementation. | Covered as bounded baseline by `smoke_dota2_lab_behavior_baseline`; not accepted as final feel. |
 
 ## Current Baseline Mapping
 
-- `default_group_move_fanout` is accepted as a hard-block command baseline:
-  units receive orders on the command tick, at least three units reach `IDLE`,
-  and all remaining failures are bounded and queue-drained.
+- `default_group_move_fanout` is accepted as current Dota2 hard-block feel:
+  the player issues one group right-click, the command layer fans that clicked
+  point into deterministic per-unit targets, three units reach `IDLE`, and the
+  remaining five units end in bounded `FAILED` with `max_retry_exceeded` and a
+  drained queue.
 - `narrow_gap_bounded_terminal` is a known gap. It is allowed to end in bounded
   `FAILED`, but that does not prove final Dota2 feel.
 - `mixed_static_dynamic_obstacle` is a known gap. It is allowed to end in
@@ -91,8 +93,8 @@ explicitly reopens them:
 Layer 2 AI control should not start until:
 
 - A1-A5 pass in `dota2lab/smoke`.
-- A6 is explicitly documented as either accepted current feel or a future
-  improvement target.
+- A6 is accepted as current Dota2 hard-block feel, not a required improvement
+  before automation.
 - A7 stays marked as a known gap or has a separate Dota2-style design note.
 - The active docs explain what Layer 2 means: automated command source, not a
   replacement for the motion controller.
