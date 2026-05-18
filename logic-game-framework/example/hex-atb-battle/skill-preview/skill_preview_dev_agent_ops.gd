@@ -25,6 +25,8 @@ func get_supported_ops() -> PackedStringArray:
 		"add_enemy", "add_ally",
 		"enter_setup_mode",
 		"wait_for_idle",
+		# Deterministic replay control (定格瞬时 VFX:暂停 + 精确步进 + 截图)
+		"pause_playback", "step_playback", "playback_state",
 		# Setup mutation (直调 dev_agent_* API)
 		"load_preset", "save_preset",
 		"set_map", "set_controls",
@@ -66,6 +68,19 @@ func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 			return preview.dev_agent_enter_setup_mode()
 		"wait_for_idle":
 			return await _op_wait_for_idle(preview, args)
+		# ----- Deterministic replay control -----
+		"pause_playback":
+			return preview.dev_agent_pause_playback()
+		"step_playback":
+			var frames := int(args.get("frames", 0))
+			var dms := float(args.get("delta_ms", 0.0))
+			if frames > 0:
+				dms = float(frames) * 100.0  # LOGIC_TICK_MS
+			if dms <= 0.0:
+				dms = 100.0  # 默认 1 逻辑帧
+			return preview.dev_agent_step_playback(dms)
+		"playback_state":
+			return preview.dev_agent_playback_state()
 		# ----- Raw real-input escape hatch -----
 		"click_control":
 			return await _click_unique_control(preview, str(args.get("name", "")))

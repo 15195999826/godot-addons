@@ -5679,6 +5679,41 @@ func dev_agent_replay_battle() -> Dictionary:
 	return {"ok": true, "message": "replay started", "data": {"is_playing": _is_playing}}
 
 
+## 暂停回放(供 DevAgent 定格瞬时 VFX:暂停后 step_playback 逐步进 + capture)。
+func dev_agent_pause_playback() -> Dictionary:
+	if _animator == null:
+		return {"ok": false, "message": "no animator"}
+	_animator.pause()
+	return {"ok": true, "message": "playback paused", "data": _playback_state_data()}
+
+
+## 确定性步进回放 delta_ms(暂停态)。每步后 capture 必落在该回放位置 ——
+## 这是验证一次性 VFX 的唯一可靠手段(wait_frames 是墙钟,与回放轴无关)。
+func dev_agent_step_playback(delta_ms: float) -> Dictionary:
+	if _animator == null:
+		return {"ok": false, "message": "no animator"}
+	if delta_ms <= 0.0:
+		return {"ok": false, "message": "delta_ms must be > 0"}
+	_animator.step(delta_ms)
+	return {"ok": true, "message": "stepped %.1f ms" % delta_ms, "data": _playback_state_data()}
+
+
+## 回放状态(current/total frame、is_playing、is_ended),供步进循环判停。
+func dev_agent_playback_state() -> Dictionary:
+	return {"ok": true, "message": "playback state", "data": _playback_state_data()}
+
+
+func _playback_state_data() -> Dictionary:
+	if _animator == null:
+		return {"current_frame": 0, "total_frames": 0, "is_playing": false, "is_ended": true}
+	return {
+		"current_frame": _animator.get_current_frame(),
+		"total_frames": _animator.get_total_frames(),
+		"is_playing": _animator.is_playing(),
+		"is_ended": _animator.is_ended(),
+	}
+
+
 func dev_agent_enter_setup_mode() -> Dictionary:
 	if _is_playing:
 		return {"ok": false, "message": "cannot enter setup mode while playing"}

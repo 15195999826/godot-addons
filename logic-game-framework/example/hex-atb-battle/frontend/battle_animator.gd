@@ -121,6 +121,18 @@ func set_speed(speed: float) -> void:
 		_director.set_speed(speed)
 
 
+## 暂停态确定性步进回放(供 DevAgent 定格截图)。手动步进时 _process 的位置
+## lerp 不跑,这里直接把 unit view 拉到 director 目标位,保证定格画面正确。
+func step(delta_ms: float) -> void:
+	if _director == null:
+		return
+	_director.step(delta_ms)
+	for actor_id in _unit_views:
+		var view: FrontendUnitView = _unit_views[actor_id]
+		if is_instance_valid(view):
+			view.set_world_position(_director.get_actor_world_position(actor_id))
+
+
 func is_playing() -> bool:
 	return _director != null and _director.is_playing()
 

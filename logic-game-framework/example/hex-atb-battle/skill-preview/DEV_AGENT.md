@@ -71,8 +71,30 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 | `add_ally` | — | 等价点 `%ActorAddAllyButton` 但直调 `_add_actor_at_next_free("A")` |
 | `enter_setup_mode` | — | 切回 setup workspace (战斗结束后 mode 滞留 playback 时用) |
 | `wait_for_idle` | `timeout_frames?` (默认 1800) | 轮询 `_is_playing`, 等战斗 + animator 跑完。比 `wait_frames` 可靠 |
+| `pause_playback` | — | 暂停回放(director)。配合 `step_playback` 做确定性定格 |
+| `step_playback` | `delta_ms?` 或 `frames?` (默认 1 逻辑帧=100ms) | 暂停态按精确量推进回放一步;返回 `current_frame/total_frames/is_playing/is_ended` |
+| `playback_state` | — | 只读回放状态 `{current_frame,total_frames,is_playing,is_ended}`,供步进循环判停 |
 
 > 每个 action op 内部都自带 guard (`_is_playing` / `disabled` / `_last_timeline.is_empty()`), 不合法调用直接返回 `ok=false`。无需 AI 先 check。
+
+#### 瞬时 VFX 定格验证回路(截一次性特效必用)
+
+`wait_frames` 是**墙钟**、与回放时间轴无固定换算、不可定格 —— 截不到超短战斗里的一次性 VFX(斩杀爆、命中闪、投射物消失帧)。验证瞬时特效**必须**用 `pause_playback` + `step_playback` 确定性步进,每步后 `capture` 必落在该回放位置:
+
+```jsonl
+{"id":"01","op":"scene","name":"start_battle"}
+{"id":"02","op":"scene","name":"wait_for_idle"}
+{"id":"03","op":"scene","name":"replay_battle"}
+{"id":"04","op":"scene","name":"pause_playback"}
+{"id":"05","op":"scene","name":"step_playback","args":{"delta_ms":40}}
+{"id":"06","op":"capture","label":"f1"}
+{"id":"07","op":"scene","name":"playback_state"}
+{"id":"08","op":"scene","name":"step_playback","args":{"delta_ms":40}}
+{"id":"09","op":"capture","label":"f2"}
+...循环 step_playback + capture + playback_state, 直到 playback_state.data.is_ended == true
+```
+
+逐步走过 VFX 触发帧时, 对应 `capture` 即定格到该特效。`delta_ms` 越小定格越细(子帧精度落在特效中段);1 逻辑帧 = 100ms。
 
 ### Setup mutation (直调 SkillPreview.dev_agent_* API, 战斗中拒绝)
 
