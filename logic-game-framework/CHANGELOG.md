@@ -12,6 +12,44 @@
 
 ---
 
+## [Unreleased] — 2026-05-18 devagent — 确定性回放定格(解锁瞬时 VFX 视觉验证)
+
+skill_preview 回放此前只有 `wait_for_idle`(等全完,太晚)/ `wait_frames`(墙钟,与回放轴无固定换算)→ 截不到超短战斗里的一次性 VFX(斩杀爆 / 命中闪 / 投射物消失帧)。新增确定性回放控制,**永久解开"表演层无法 dev 闭环"**。
+
+### Added
+
+- **`example/hex-atb-battle/frontend/core/battle_director.gd`** — `step(delta_ms)`:复用 `_tick`,暂停态按精确量推进一步(不经 `_process`/不看 `_is_playing`,与正常播放同一路径)。
+- **`example/hex-atb-battle/frontend/battle_animator.gd`** — `step(delta_ms)` 透传 + 对齐 unit view 位置(手动步进时 `_process` lerp 不跑)。
+- **`example/hex-atb-battle/skill-preview/`** — `dev_agent_pause_playback` / `dev_agent_step_playback` / `dev_agent_playback_state`;ops 注册 3 op;`DEV_AGENT.md` 加文档 + 「瞬时 VFX 定格验证回路」配方。
+
+不改 lomolib 通用层;`smoke_frontend_main` 等回放 smoke 覆盖,`-Required` 14/0/0 无回归。已用它定格验证 `execute_kill` 特效(frame-exact 步进:s8→frame3 精确)。
+
+---
+
+## [Unreleased] — 2026-05-18 hex-atb-battle — Execute (Tier 1 #6 收口) + 斩杀击杀特效
+
+斩杀技能:目标「有效血量」(hp + 能挡 PURE 的护盾)低于 max_hp 20% → 造成 effective_hp+1 PURE 伤害(实质斩杀),否则退化为 caster.atk 普攻。完成 Tier 1 MVP 6/6,填补 pattern 速查「条件分支伤害 / 斩杀」空格。**0 框架/逻辑新机制** —— 单个既有 `HexBattleDamageAction` + Resolver 内按 target 状态分支 damage 值(LGF 表达"条件伤害"的惯用法,resolver 与 `current_target` selector 同源经 `ctx.get_current_event()` 取 target)。
+
+### Added
+
+- **`example/hex-atb-battle/logic/skills/execute.gd`** — `HexBattleExecute`,自带 resolver 分支斩杀/普攻;`on_kill` 回调发 `execute_kill` StageCue。
+- **`example/hex-atb-battle/logic/utils/hex_battle_shield_resolver.gd`** — `sum_absorbable_capacity(actor, damage_type)` 公共静态,复用 `_collect_candidates` 硬过滤,累加「能吸该类型」护盾余量。斩杀判定据此把 universal/`["all"]` 盾计入有效血量、physical/magical 盾(挡不住 PURE)排除。
+- **`example/hex-atb-battle/tests/battle/skill_scenarios/execute_scenario.gd`** — 4 case:低血斩杀 / 高血普攻 / 严格 20% 临界不触发 / 带 ward 抗斩杀(护盾计入有效血量 = 核心判定修复)+ `execute_kill` cue 有无断言。
+
+### Changed
+
+- **`example/hex-atb-battle/frontend/visualizers/stage_cue_visualizer.gd`** — 新增 `execute_kill` cue 分支:① 猩红 `IMPACT` 冲击波(`is_critical` 放大、0.8s 时长 + 0.15s 延迟,作为独立"斩杀收尾"不与起手挥击糊在一起)② 醒目大红 **"斩杀!" 飘字**(`FrontendFloatingTextAction` CRITICAL 强调样式,复用已验证清晰可辨的飘字系统,远相机一眼可读 = genre 标准击杀播报)。均复用既有渲染管线,无新 VFX 类/资产。经 devagent 确定性步进定格截图肉眼确认"明显"。
+- **`example/hex-atb-battle/logic/skills/all_skills.gd`** — manifest 注册 Execute + EXECUTE_TIMELINE。
+- **`example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd`** — `_actor_src_to_preview_cfg` 支持显式 `max_hp`(此前 hp=max_hp 绑定,斩杀按比例判定需 hp≠max_hp)。
+
+| 测试 | 结果 |
+|---|---|
+| `smoke_skill_scenarios` | PASS 17/17(含 Execute 4 case) |
+| `hex/skills` + `hex/frontend` | 9 PASS / 0 FAIL(唯一 TIMEOUT = 既有无关 `smoke_surge_unit_view`) |
+| `-Required` | 14 PASS / 0 FAIL / 0 TIMEOUT |
+
+---
+
 ## [Unreleased] — 2026-05-18 hex-atb-battle — Typed shield skills + per-type shield bars
 
 为 codex 落地的 typed 护盾 buff(`PHYSICAL_SHIELD_BUFF` / `MAGICAL_SHIELD_BUFF`)补上 gameplay 投放途径与按类型分条的表演层 —— 此前它们只有数据 + 前端白名单 + scenario 测试,无授予技能、且 skill_preview 的 buff 过滤导致无法施放;护盾条多盾时聚合成单色单条,区分不出类型。

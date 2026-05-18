@@ -25,6 +25,7 @@ static func _build_manifest() -> Array[_Entry]:
 	# Active skills(timeline-driven)
 	arr.append(_Entry.new(HexBattleMove.ABILITY,         [HexBattleMove.MOVE_TIMELINE]))
 	arr.append(_Entry.new(HexBattleStrike.ABILITY,       [HexBattleStrike.STRIKE_TIMELINE]))
+	arr.append(_Entry.new(HexBattleExecute.ABILITY,      [HexBattleExecute.EXECUTE_TIMELINE]))
 	arr.append(_Entry.new(HexBattleCrushingBlow.ABILITY, [HexBattleCrushingBlow.CRUSHING_BLOW_TIMELINE]))
 	arr.append(_Entry.new(HexBattleSwiftStrike.ABILITY,  [HexBattleSwiftStrike.SWIFT_STRIKE_TIMELINE]))
 	arr.append(_Entry.new(HexBattlePreciseShot.ABILITY,  [HexBattlePreciseShot.PRECISE_SHOT_TIMELINE, HexBattlePreciseShot.PRECISE_SHOT_HIT_TIMELINE]))

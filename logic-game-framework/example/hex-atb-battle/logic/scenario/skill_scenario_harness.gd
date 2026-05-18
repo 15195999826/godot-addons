@@ -461,6 +461,8 @@ static func _actor_src_to_preview_cfg(src: Dictionary) -> Dictionary:
 	if src.has("hp"):
 		attrs["hp"] = src.get("hp")
 		attrs["max_hp"] = src.get("hp")
+	if src.has("max_hp"):
+		attrs["max_hp"] = src.get("max_hp")  # 显式 max_hp 覆盖 hp=max_hp 默认绑定(Execute scenario 需 hp≠max_hp)
 	if src.has("atk"):
 		attrs["atk"] = src.get("atk")
 	return {

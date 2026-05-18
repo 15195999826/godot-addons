@@ -11,13 +11,13 @@
 
 | Tier | 进度 | 说明 |
 |---|---|---|
-| Tier 1 — MVP | 🟡 5 / 6 | 核心 pattern 验证 |
+| Tier 1 — MVP | 🟢 6 / 6 | 核心 pattern 验证 |
 | Tier 2 — 中级 | 🟡 4 / 6 | 多原语组合 |
 | Tier 3 — 高级 | 🟡 1 / 4 | 跨系统 |
-| **合计** | **10 / 16** | |
+| **合计** | **11 / 16** | |
 
-**当前焦点** ：暂无；上一个落地的是 Expose (Tier 1 #5，PreEvent modify_intent 第一个生产用例 + buff tag positive/negative 二分迁移，2026-05-04)。
-**下一个建议**：Execute (Tier 1 #6) — 斩杀, HP% 阈值条件分支 Action, 完成 Tier 1 阶段 5/6→6/6。
+**当前焦点** ：暂无；上一个落地的是 Execute (Tier 1 #6，条件分支伤害/斩杀 —— 单 DamageAction + Resolver 内按 target 有效血量分支;Tier 1 收口 6/6，2026-05-18)。
+**下一个建议**：Chain Lightning (Tier 2 #9) — 链锁，动态目标 + visited 局部变量 pattern。
 
 ---
 
@@ -41,7 +41,7 @@
 | 3 | Ward | 🔵 V1 已落地 | ward | `skills/ward.gd` + `buffs/ward_buff.gd` + `buffs/shield_buffs.gd` + `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` + `actions/apply_shield_action.gd` | `shield_basic_absorb` / `shield_full_absorb_no_thorns` / `shield_priority_order` / `shield_damage_type_matrix` |
 | 4 | Knockback Punch | 🔵 已落地 | knockback_punch | `skills/knockback_punch.gd` + `actions/push_action.gd` + `events/battle_events.gd` (ActorDisplacedEvent + PushBlockedEvent) | `example/hex-atb-battle/tests/battle/smoke_knockback_punch.gd` (7 cases) |
 | 5 | Expose | 🔵 已落地 | expose | `skills/expose.gd` + `buffs/expose_buff.gd` (PreEventConfig + TimeDurationConfig) | `expose_scenario.gd` |
-| 6 | Execute | ⚫ 未做 | — | — | — |
+| 6 | Execute | 🔵 已落地 | execute | `skills/execute.gd` + `utils/hex_battle_shield_resolver.gd` (sum_absorbable_capacity) + `visualizers/stage_cue_visualizer.gd` (execute_kill 特效) | `execute_scenario.gd` |
 
 ### Tier 2 — 中级
 
@@ -110,7 +110,7 @@
 
 | 想做什么 | design 对应技能 | 备注 |
 |---|---|---|
-| 条件分支伤害 / 斩杀 | Execute (#6) | Condition + 分支 Action |
+| 条件分支伤害 / 斩杀 | Execute (#6) | 单既有 DamageAction + Resolver 内按 target 有效血量(hp + 能挡 PURE 的护盾)分支 damage 值;0 新 Action/Condition;on_kill 回调 → execute_kill StageCue 特效 |
 | 链锁 / 跳目标 | Chain Lightning (#9) | 动态目标选择 + visited 用 local var |
 | 瞬移突袭 | Shadow Step (#12) | 坐标计算 + 失败容错 |
 | 姿态切换 | Stance (#14) | Ability 动态 add/remove + AttributeModifier |
@@ -140,7 +140,7 @@ design 文档写的时候 LGF 框架还在演进，落地时部分 pattern 调�
 ## 📌 阶段标记（按 design 文档第八节 roadmap）
 
 - [x] **阶段 1** — 核心 pattern（Strike / Poison / Ward）✅
-- [ ] **阶段 2** — 机制词典扩展（Expose / Knockback / Execute / Fireball）—— Fireball + Knockback + Expose 已做，剩 Execute
+- [x] **阶段 2** — 机制词典扩展（Expose / Knockback / Execute / Fireball）—— 全部已做
 - [ ] **阶段 3** — 复杂组合（Decimating Smash / Thorns / Chain Lightning / Mend）—— Decimating ≈ Crushing Blow / Thorns / Mend ≈ Holy Heal 已做，剩 Chain Lightning
 - [ ] **阶段 4** — 框架深度（Shadow Step / Deathrattle / Stance / Demon Form / Summon Totem）—— Deathrattle 已做，剩 4 个
 
