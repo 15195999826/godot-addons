@@ -3,7 +3,7 @@
 > 实施 [`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md) 16 个示范技能的进度快照。
 > 每完成一个技能就更新本文档。配合 `lgf-new-logic-skill` skill 使用 —— 实现新技能前先读这里的「pattern 速查」找最近的参考实现。
 
-最后更新：2026-05-04
+最后更新：2026-05-18
 
 ---
 
@@ -25,7 +25,7 @@
 
 | 名称 | 状态 | 简述 | 主要文件 |
 |---|---|---|---|
-| 护盾系统 V1 | 🔵 已落地 | ShieldComponent + ShieldResolver, 不走 PreEventConfig | `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` |
+| 护盾系统 V1 | 🔵 已落地 | ShieldComponent + ShieldResolver + physical/magical/universal shield matrix, 不走 PreEventConfig | `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` + `buffs/shield_buffs.gd` |
 | EnvironmentActor 子系统 + AttributeSet 继承 (M1) | 🔵 已落地 | `HexBattleActor` 中间基类 / `Character` `Environment` 子类 / generator `_extends` 继承链 / StoneWall 起步 | `hex_battle_actor.gd` + `environment_actor.gd` + `environment/{stone_wall,collision_profile}.gd` + `attributes_config.gd` (含 `_extends`) + `attribute_set_generator_script.gd` |
 
 ---
@@ -38,7 +38,7 @@
 |---|---|---|---|---|---|
 | 1 | Strike | 🔵 已落地 | strike | `skills/strike.gd` | `strike_scenario.gd` |
 | 2 | Poison | 🔵 已落地 | poison | `skills/poison.gd` + `buffs/poison_buff.gd` + `actions/poison_tick_action.gd` | `poison_scenario.gd` |
-| 3 | Ward | 🔵 V1 已落地 | ward | `skills/ward.gd` + `buffs/ward_buff.gd` + `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` + `actions/apply_shield_action.gd` | `shield_basic_absorb` / `shield_full_absorb_no_thorns` / `shield_priority_order` |
+| 3 | Ward | 🔵 V1 已落地 | ward | `skills/ward.gd` + `buffs/ward_buff.gd` + `buffs/shield_buffs.gd` + `components/shield_component.gd` + `utils/hex_battle_shield_resolver.gd` + `actions/apply_shield_action.gd` | `shield_basic_absorb` / `shield_full_absorb_no_thorns` / `shield_priority_order` / `shield_damage_type_matrix` |
 | 4 | Knockback Punch | 🔵 已落地 | knockback_punch | `skills/knockback_punch.gd` + `actions/push_action.gd` + `events/battle_events.gd` (ActorDisplacedEvent + PushBlockedEvent) | `example/hex-atb-battle/tests/battle/smoke_knockback_punch.gd` (7 cases) |
 | 5 | Expose | 🔵 已落地 | expose | `skills/expose.gd` + `buffs/expose_buff.gd` (PreEventConfig + TimeDurationConfig) | `expose_scenario.gd` |
 | 6 | Execute | ⚫ 未做 | — | — | — |
@@ -97,7 +97,7 @@
 | AoE 魔法 | fireball | 投射物落点 + 多目标 push |
 | 蓄力 / 多阶段 | crushing_blow | Timeline START → WINDUP → HIT → END |
 | DOT（中毒/燃烧/流血） | poison | Timeline periodic + buff ability + tick action 状态走 buff |
-| 拦截伤害 / 减伤 | ward | **不走** PreEventConfig，走项目层 ShieldComponent + ShieldResolver；详见 [shield-system.md](shield-system.md) |
+| 拦截伤害 / 减伤 | ward | **不走** PreEventConfig，走项目层 ShieldComponent + ShieldResolver；physical/magical/universal shield 由 `damage_types` 硬过滤；详见 [shield-system.md](shield-system.md) |
 | 反伤被动 | thorn | PostEvent handler + actual_life_damage > 0 过滤 + 递归防护 |
 | 治疗友军 | holy_heal | HealAction + 友方 selector |
 | 增益 buff（攻击力 / 暴击等） | inspire_buff | apply_buff_action + AttributeModifierComponent |
