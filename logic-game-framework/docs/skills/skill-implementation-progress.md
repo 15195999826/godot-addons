@@ -166,6 +166,7 @@ design 文档写的时候 LGF 框架还在演进，落地时部分 pattern 调�
 ## 📚 相关文档
 
 - 设计输入：[`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md)
+- 剩余 5 技能可执行级实施方案：[remaining-skills-impl-plan.md](remaining-skills-impl-plan.md)（Chain/Shadow/Stance/Demon/Totem，逐个评审）
 - 护盾系统：[shield-system.md](shield-system.md)
 - 伤害管线：[damage-pipeline.md](damage-pipeline.md)
 - LGF 编码规范：`.claude/skills/enforcing-lgf/`

@@ -6,7 +6,7 @@ LGF（Logic Game Framework）目前提供三个示例项目，作为框架能力
 |---|---|---|---|---|
 | **hex-atb-battle** | [hex-atb-battle/](hex-atb-battle/) | 回合制 / ATB 累积 | 离散 HexCoord（UGridMap） | `tests/frontend/smoke_frontend_main.tscn`（demo + replay 链）<br>`tests/battle/smoke_skill_scenarios.tscn`（具体 skill 数值断言） |
 | **rts-auto-battle** | [rts-auto-battle/](rts-auto-battle/) | 实时连续 tick / `attack_cooldown` | 连续 `Vector2`（500×500 px + NavigationServer2D） | `tests/battle/smoke_rts_auto_battle.tscn`（4v4 自动战斗 + 兵种行为断言） |
-| **dota2-auto-battle** | [dota2-auto-battle/](dota2-auto-battle/) | 实时固定 tick / lane creep auto battle（规划中） | 连续 `Vector2` + DOTA2 movement adapter（规划中） | 暂未注册；见 `docs/development-plan.md` |
+| **dota2-auto-battle** | [dota2-auto-battle/](dota2-auto-battle/) | 实时固定 tick (30Hz) / ARAM lane creep auto battle | 连续 `Vector2` + DOTA2 movement adapter（sim-nav `dota2-rts-pathfinding-lab`） | `./tools/run_tests.ps1 dota2autobattle/smoke`（`tests/battle/smoke_lane_wave_engage.tscn` + `tests/frontend/smoke_frontend_main.tscn`）<br>F6: `frontend/scene/dota2_lane_battle.tscn`（M1 垂直切片） |
 
 这些示例都遵循:
 
