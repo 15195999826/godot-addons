@@ -6,17 +6,18 @@
 
 Current baseline:
 
-- Status: Phase C accepted baseline, 2026-05-14.
+- Status: Layer 2 command-source smoke, 2026-05-15.
 - Baseline reference: the `addons` submodule commit containing this file,
   tracked by the parent repo commit that points at it.
 - Scene: `frontend/dota2_pathfinding_lab.tscn`
 - Smoke entry: `./tools/run_tests.ps1 dota2lab/smoke`
-- Smoke result: `PASS 5 / FAIL 0 / TIMEOUT 0`
+- Smoke result: `PASS 6 / FAIL 0 / TIMEOUT 0`
 
 What exists:
 
 - Manual Layer 1 frontend with command/select, edit tools, debug HUD, and JSON
   export.
+- Visible Layer 2 demo scene at `frontend/dota2_ai_command_demo.tscn`.
 - Explicit five-state motion FSM: `IDLE`, `WAITING_LONG`, `FOLLOWING`,
   `WAITING_SHORT`, `FAILED`.
 - Controller-owned ticket lifecycle and queue diagnostics for stale/cancelled
@@ -28,12 +29,14 @@ What exists:
   short-path result.
 - DevAgent debug adapter for live capture, input, state dump, and export.
 - Smoke coverage for state-machine shape, frontend operations, behavior
-  baseline, Phase C target fanout, and Layer 1.1 movement-feel contract.
+  baseline, Phase C target fanout, Layer 1.1 movement-feel contract, and the
+  first Layer 2 automatic command-source driver.
 
 Baseline verdict:
 
 - This is the accepted Layer 1 baseline for continuing Dota2 lab work.
-- Layer 2 AI control remains frozen.
+- Layer 2 has a first deterministic command-source smoke driver. It emits
+  public world commands only and does not own movement policy.
 - Single-unit movement remains strict hard-block behavior.
 - Single-unit short detours are now observable and should not fail merely
   because the final click target is outside the short search range.
@@ -42,8 +45,8 @@ Baseline verdict:
 - Remaining bounded `FAILED` outcomes in narrow-gap and mixed-obstacle cases
   are accepted diagnostics, not a reason to tune retry counts or core policy.
 - The Layer 1.1 movement-feel contract is now documented at
-  `docs/design-notes/movement-feel-policy.md`; Layer 2 AI control remains
-  frozen until the remaining prerequisites in that contract are closed.
+  `docs/design-notes/movement-feel-policy.md`; the Layer 2 AI control plan is
+  documented at `docs/design-notes/layer-2-ai-control-plan.md`.
 
 ## Evidence From Free Play
 
@@ -286,19 +289,63 @@ Acceptance:
 - Done: reachable solo movement must not false-fail.
 - Done: mid-path static blocker edits must trigger bounded replan and queue
   drain.
+- Done: same-target group command self-jam is accepted as current Dota2
+  hard-block feel: one group right-click can end with `IDLE 3`, `FAILED 5`,
+  with failures explained by `max_retry_exceeded` and the queue drained.
 - Done: Layer 2 AI is documented as an automated command source, not a
   replacement for the motion controller.
 
-Open decisions before Layer 2:
+Layer 2 readiness before implementation:
 
-- Decide whether Phase C same-target self-jam is accepted final Dota2 feel or a
-  future improvement target.
 - Keep two-unit narrow-gap cooperative passage as a known gap unless a new
   Dota2-style design note reopens it.
+- The Layer 2 AI control plan is written. Layer 2 is an automated command
+  source that uses `issue_move*()` and `cancel_move()`, not a new movement
+  system.
+
+### Layer 2: Plan Automatic Command Source
+
+Status 2026-05-15:
+
+- Added `docs/design-notes/layer-2-ai-control-plan.md`.
+- The plan defines Layer 2 as a deterministic script layer that emits the same
+  move/cancel commands a player could issue through the manual frontend.
+- The plan keeps all movement side effects behind `Dota2LabWorld.issue_move()`,
+  `issue_move_all_mobile()`, `issue_move_ids()`, and `cancel_move()`.
+- Implemented `logic/dota2_lab_ai_command_source.gd`.
+- Added `tests/smoke/smoke_dota2_lab_ai_command_source.tscn` to
+  `dota2lab/smoke`.
+- Added `frontend/dota2_ai_command_demo.tscn`, which reuses the manual lab
+  renderer with `auto_command_demo=true`.
+- Updated `smoke_dota2_lab_ui_ops` to load the visible demo scene and prove the
+  command source emits an initial automatic order.
+- Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
+  `PASS 6 / FAIL 0 / TIMEOUT 0`.
+
+Acceptance for the first implementation:
+
+- Done: the automatic layer only produces commands; it does not mutate motion
+  state.
+- Done: all move commands go through `issue_move*()` and all cancels go through
+  `cancel_move()`.
+- Done: automated target-switch streams keep only the newest target
+  authoritative.
+- Done: after a command stream finishes, the bounded settle window drains the
+  path queue.
+- Done: group move may still end with bounded `FAILED` units under the current
+  Dota2 hard-block contract.
+- Done: narrow-gap cooperative passage remains a known gap and is not fixed by
+  the first Layer 2 version.
+
+Next implementation step, if continuing Layer 2:
+
+- Decide whether the visible demo should remain a standalone scene or grow a
+  frontend/dev toggle. Do not add motion-policy changes without a new task.
 
 ## Non-Goals For The Next Patch
 
-- Do not start Layer 2 AI.
+- Do not expand Layer 2 beyond the command-source driver unless the next task
+  explicitly asks for it.
 - Do not increase `MAX_RETRY` as the first fix.
 - Do not add fallback path acceptance to hide queue/ticket issues.
 - Do not add push pressure or phasing without a new design note.

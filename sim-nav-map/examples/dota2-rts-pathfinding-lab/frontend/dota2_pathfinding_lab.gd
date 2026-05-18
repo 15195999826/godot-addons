@@ -24,8 +24,10 @@ const TRACE_EXPORT_LIMIT: int = 120
 const PANEL_GAP: float = 24.0
 const PANEL_WIDTH: float = 520.0
 const PANEL_PADDING: float = 20.0
+const AUTO_DEMO_RESET_DELAY_TICKS: int = 120
 const Dota2LabSceneAgentOpsScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_lab_scene_agent_ops.gd")
 const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
+const AiCommandSourceScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_ai_command_source.gd")
 
 const UNIT_COLOR_BLUE := Color(0.18, 0.55, 0.95)
 const UNIT_COLOR_RED := Color(0.90, 0.26, 0.22)
@@ -52,6 +54,9 @@ const STATE_COLOR := {
 	"FAILED":        Color(0.95, 0.30, 0.30),
 }
 
+@export var auto_command_demo: bool = false
+@export var auto_demo_loop: bool = true
+
 
 var _world: Dota2LabWorld = null
 var _paused: bool = false
@@ -72,10 +77,16 @@ var _event_log: Array[Dictionary] = []
 var _slow_frame_log: Array[Dictionary] = []
 var _last_export_path: String = ""
 var _dev_agent_bridge = null
+var _ai_command_source = null
+var _auto_demo_run_index: int = 0
+var _auto_demo_reset_countdown: int = -1
 
 
 func _ready() -> void:
-	_world = Dota2LabWorld.new()
+	if auto_command_demo:
+		_reset_auto_demo()
+	else:
+		_world = Dota2LabWorld.new()
 	_selected_unit_ids = _world.get_mobile_unit_ids()
 	_hud = Label.new()
 	_hud.position = _debug_panel_origin() + Vector2(PANEL_PADDING, PANEL_PADDING)
@@ -101,6 +112,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if not _paused:
+		_tick_auto_demo()
 		var step_tick := _world.tick_count
 		var step_start_usec := Time.get_ticks_usec()
 		_world.step(minf(delta, 0.05))
@@ -112,6 +124,7 @@ func _process(delta: float) -> void:
 		_measured_step_count += 1
 		if _last_step_usec >= SLOW_FRAME_THRESHOLD_USEC:
 			_record_slow_frame(step_tick, _last_step_usec, minf(delta, 0.05))
+		_update_auto_demo_loop()
 	_update_hud()
 	queue_redraw()
 
@@ -164,11 +177,7 @@ func _handle_key(keycode: int) -> void:
 		KEY_E:
 			export_debug_log()
 		KEY_R:
-			_world = Dota2LabWorld.new()
-			_selected_unit_ids = _world.get_mobile_unit_ids()
-			_reset_perf_metrics()
-			_last_action = "reset scene"
-			_record_event("reset", {"selected_unit_ids": _selected_unit_ids})
+			_reset_scene()
 		KEY_SPACE:
 			_paused = not _paused
 			_last_action = "paused" if _paused else "resumed"
@@ -488,9 +497,12 @@ func _update_hud() -> void:
 	var failed_line := _format_failed_line()
 	var selected_path_line := _format_selected_path_line()
 	var last_pathfinder_line := _format_last_pathfinder_line(pf)
+	var title := "Dota2 RTS Pathfinding Lab (Layer 2 Demo)" if auto_command_demo else "Dota2 RTS Pathfinding Lab (Layer 1)"
+	var subtitle := "Automatic command-source demo" if auto_command_demo else "Manual motion debug surface"
+	var auto_line := _format_auto_demo_line()
 	var lines := [
-		"Dota2 RTS Pathfinding Lab (Layer 1)",
-		"Manual motion debug surface",
+		title,
+		subtitle,
 		"Mode: %s   %s" % [_mode_name(), "[PAUSED]" if _paused else ""],
 		"Action: %s%s" % [
 			_last_action,
@@ -502,6 +514,7 @@ func _update_hud() -> void:
 			int(_world.map_size.x),
 			int(_world.map_size.y),
 		],
+		auto_line,
 		"",
 		"State",
 		"IDLE %d   WAIT_LONG %d   FOLLOW %d" % [
@@ -555,6 +568,8 @@ func _update_hud() -> void:
 		"2 obstacle   3 blocker   4 erase",
 		"A all   C traces   E export   R reset   Space pause",
 	]
+	if auto_line == "":
+		lines.remove_at(5)
 	_hud.text = "\n".join(lines)
 
 
@@ -607,6 +622,23 @@ func _format_last_pathfinder_line(pf: Dictionary) -> String:
 	]
 
 
+func _format_auto_demo_line() -> String:
+	if not auto_command_demo:
+		return ""
+	if _ai_command_source == null:
+		return "Auto: not started"
+	var status := "running"
+	if _ai_command_source.is_finished():
+		status = "settling"
+	if _auto_demo_reset_countdown >= 0:
+		status = "reset in %d" % _auto_demo_reset_countdown
+	return "Auto: run %d   %s   emitted %d" % [
+		_auto_demo_run_index,
+		status,
+		int(_ai_command_source.emitted_count()),
+	]
+
+
 func _last_processed_request_snapshot(pf: Dictionary) -> Dictionary:
 	var raw: Variant = pf.get("last_processed_requests", [])
 	if raw is Dictionary:
@@ -632,6 +664,93 @@ func _failed_unit_ids() -> Array[String]:
 
 
 # ─────────────────────────── Helpers ─────────────────────────────────────────
+
+func _reset_scene() -> void:
+	if auto_command_demo:
+		_reset_auto_demo()
+	else:
+		_world = Dota2LabWorld.new()
+		_ai_command_source = null
+		_selected_unit_ids = _world.get_mobile_unit_ids()
+		_reset_perf_metrics()
+		_last_action = "reset scene"
+		_record_event("reset", {"selected_unit_ids": _selected_unit_ids})
+
+
+func _reset_auto_demo() -> void:
+	_world = _create_auto_demo_world()
+	_ai_command_source = AiCommandSourceScript.build_visual_demo_driver()
+	_selected_unit_ids = _world.get_mobile_unit_ids()
+	_auto_demo_run_index += 1
+	_auto_demo_reset_countdown = -1
+	_reset_perf_metrics()
+	_last_action = "auto demo run %d" % _auto_demo_run_index
+	_record_event("auto_demo_reset", {"selected_unit_ids": _selected_unit_ids})
+
+
+func _create_auto_demo_world() -> Dota2LabWorld:
+	var world := Dota2LabWorld.new()
+	world.obstacles = []
+	world.units = [
+		Dota2LabUnit.new("lane_0", "blue", Vector2(100.0, 160.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("lane_1", "blue", Vector2(100.0, 240.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("lane_2", "blue", Vector2(100.0, 320.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("chaser", "blue", Vector2(140.0, 450.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("cancelled", "blue", Vector2(140.0, 560.0), 11.0, 110.0, true),
+	]
+	world._rebuild_navigation()
+	world.clear_traces()
+	return world
+
+
+func _tick_auto_demo() -> void:
+	if not auto_command_demo or _ai_command_source == null:
+		return
+	var before_count := int(_ai_command_source.emitted_count())
+	_ai_command_source.tick(_world)
+	var after_count := int(_ai_command_source.emitted_count())
+	if after_count <= before_count:
+		return
+	var snapshots: Array = _ai_command_source.emitted_snapshots() as Array
+	if snapshots.is_empty():
+		return
+	var last_snapshot: Dictionary = snapshots[snapshots.size() - 1] as Dictionary
+	_last_action = "auto %s" % str(last_snapshot.get("label", "command"))
+	_record_event("auto_command", last_snapshot)
+
+
+func _update_auto_demo_loop() -> void:
+	if not auto_command_demo or not auto_demo_loop or _ai_command_source == null:
+		return
+	if not _ai_command_source.is_finished():
+		return
+	if not _auto_demo_units_are_terminal() or not _auto_demo_queue_is_drained():
+		return
+	if _auto_demo_reset_countdown < 0:
+		_auto_demo_reset_countdown = AUTO_DEMO_RESET_DELAY_TICKS
+		return
+	_auto_demo_reset_countdown -= 1
+	if _auto_demo_reset_countdown <= 0:
+		_reset_auto_demo()
+
+
+func _auto_demo_units_are_terminal() -> bool:
+	for unit in _world.get_mobile_units():
+		if unit.state != Dota2LabUnit.STATE_IDLE and unit.state != Dota2LabUnit.STATE_FAILED:
+			return false
+	return true
+
+
+func _auto_demo_queue_is_drained() -> bool:
+	var metrics := _world.get_metrics()
+	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
+	var result_tickets: Array = pathfinder_metrics.get("result_tickets", []) as Array
+	return (
+		int(pathfinder_metrics.get("pending_count", 0)) == 0
+		and int(pathfinder_metrics.get("result_count", 0)) == 0
+		and result_tickets.is_empty()
+	)
+
 
 func _debug_panel_origin() -> Vector2:
 	if _world == null:
@@ -692,7 +811,9 @@ func _build_export_snapshot() -> Dictionary:
 	return {
 		"schema": "dota2_rts_pathfinding_lab_debug_log_v1",
 		"exported_at": Time.get_datetime_string_from_system(false, false),
-		"scene": "addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn",
+		"scene": _scene_label(),
+		"auto_command_demo": auto_command_demo,
+		"auto_demo": _auto_demo_snapshot(),
 		"mode": _mode_name(),
 		"paused": _paused,
 		"last_action": _last_action,
@@ -717,6 +838,26 @@ func _build_export_snapshot() -> Dictionary:
 		"units": _snapshot_units(),
 		"recent_events": _event_log.duplicate(true),
 		"slow_frames": _slow_frame_log.duplicate(true),
+	}
+
+
+func _scene_label() -> String:
+	if auto_command_demo:
+		return "addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_ai_command_demo.tscn"
+	return "addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn"
+
+
+func _auto_demo_snapshot() -> Dictionary:
+	if not auto_command_demo or _ai_command_source == null:
+		return {}
+	return {
+		"run_index": _auto_demo_run_index,
+		"reset_countdown": _auto_demo_reset_countdown,
+		"source_finished": _ai_command_source.is_finished(),
+		"emitted_count": int(_ai_command_source.emitted_count()),
+		"emitted": _ai_command_source.emitted_snapshots(),
+		"commanded_unit_ids": _ai_command_source.commanded_unit_ids(),
+		"latest_targets_by_unit": _target_snapshots(_ai_command_source.latest_targets_by_unit() as Dictionary),
 	}
 
 
@@ -765,6 +906,14 @@ func _snapshot_units() -> Array[Dictionary]:
 			"path": _waypoint_path_snapshot(unit.path),
 			"trace_tail": _packed_vector_snapshot(unit.trace, TRACE_EXPORT_LIMIT),
 		})
+	return result
+
+
+func _target_snapshots(targets: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for unit_id in targets.keys():
+		var target: Vector2 = targets.get(unit_id, Vector2.ZERO) as Vector2
+		result[str(unit_id)] = _vector_snapshot(target)
 	return result
 
 

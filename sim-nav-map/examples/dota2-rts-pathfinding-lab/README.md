@@ -1,10 +1,10 @@
 # Dota2 RTS Pathfinding Lab
 
-> **Status: PHASE C BASELINE (2026-05-14).**
+> **Status: LAYER 2 COMMAND-SOURCE SMOKE (2026-05-15).**
 > Layer 1 manual frontend exists and is usable for investigation. Multi-unit
-> command feel now has a narrow command-layer fanout baseline. Layer 2 AI
-> control stays frozen; the Layer 1.1 movement-feel contract now defines its
-> prerequisites.
+> command feel has a narrow command-layer fanout baseline. Layer 2 now has a
+> deterministic automatic command-source smoke driver; it still does not own
+> movement policy.
 
 This lab is a Dota2/LoL-style movement-policy example for `sim-nav-map`:
 continuous-space movement on a navigation grid with static and dynamic
@@ -13,6 +13,7 @@ obstructions.
 ## Current Baseline
 
 - Manual scene: `frontend/dota2_pathfinding_lab.tscn`
+- Visible Layer 2 demo scene: `frontend/dota2_ai_command_demo.tscn`
 - Baseline reference: the `addons` submodule commit containing this README,
   tracked by the parent repo commit that points at it.
 - Implemented: manual controls, explicit motion FSM, ticket lifecycle
@@ -20,13 +21,22 @@ obstructions.
   subgoals, debug HUD, JSON export, DevAgent debug adapter, and
   `dota2lab/smoke`.
 - Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
-  `PASS 5 / FAIL 0 / TIMEOUT 0`.
+  `PASS 6 / FAIL 0 / TIMEOUT 0`.
 - Known state: single-unit movement remains a strict hard-block baseline.
   Multi-unit commands are a lab convenience with target fanout, not formation
   or group movement. Narrow-gap and mixed-obstacle scenarios can still end in
   bounded `FAILED` states.
 - Layer 1.1 movement-feel contract:
   [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md)
+- Layer 2 automatic command-source plan:
+  [docs/design-notes/layer-2-ai-control-plan.md](docs/design-notes/layer-2-ai-control-plan.md)
+
+## Visible Demo
+
+Open `frontend/dota2_ai_command_demo.tscn` in the Godot editor and press F6.
+It uses the same renderer as the manual lab scene, but starts an automatic
+Layer 2 command-source script on load. The script repeatedly demonstrates lane
+movement, target switching, chase/retreat, and cancel commands, then loops.
 
 ## Motion Contract
 
@@ -81,6 +91,7 @@ cyan, and the last short subgoal is shown as a cyan ring for selected units.
 
 - Active route: [docs/development-plan.md](docs/development-plan.md)
 - Movement-feel contract: [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md)
+- Layer 2 AI control plan: [docs/design-notes/layer-2-ai-control-plan.md](docs/design-notes/layer-2-ai-control-plan.md)
 - Historical motion design: [docs/design-notes/motion-controller-design.md](docs/design-notes/motion-controller-design.md)
 
 Keep this README short. Put new development decisions, evidence, and repair
