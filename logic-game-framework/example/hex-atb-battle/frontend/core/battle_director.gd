@@ -229,6 +229,14 @@ func reset() -> void:
 	frame_changed.emit(_current_frame, _total_frames)
 
 
+## 确定性手动推进:不经 _process / 不看 _is_playing,按精确 delta_ms 走一步。
+## 供 DevAgent 暂停后逐步进到目标帧,定格捕获瞬时 VFX。复用 _tick 全部逻辑
+## (帧推进 / scheduler / VFX / playback_ended),与正常播放同一路径。
+func step(delta_ms: float) -> void:
+	if delta_ms > 0.0:
+		_tick(delta_ms)
+
+
 ## 设置播放速度
 func set_speed(speed: float) -> void:
 	_speed = speed
