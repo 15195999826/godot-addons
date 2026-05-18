@@ -38,6 +38,7 @@ var _recent_events: Array[String] = []
 func _ready() -> void:
 	_create_world_and_procedure()
 	_setup_camera()
+	_install_dev_agent()
 
 
 ## GameWorld + world + procedure 装配 + 首帧（_ready 与 _restart 共用，避免 copy-paste）。
@@ -257,3 +258,132 @@ func _refresh_debug_panel() -> void:
 func _short_id(full: String) -> String:
 	var idx := full.rfind(":")
 	return full.substr(idx + 1) if idx >= 0 else full
+
+
+# ========== DevAgent debug hooks（development-only；F6 正常跑零影响）==========
+#
+# 仅在命令行带 --dev-agent 时装配 bridge + 适配器（DevAgentBridge 自身也 self-gate，
+# 此处再 gate 一层让普通 F6 连 dev 节点都不创建）。dev hooks 是 dev-only 受控
+# 读/步进入口：scene 的私有 logic clock block 拥有实时推进，dev 步进 op 先暂停实时
+# 时钟再直接 advance_tick（确定性快进，避免双驱动）—— 这是 presentation/data-flow
+# 类验证的 direct-call（见 dota2_lane_battle_agent_ops.gd 分类说明）。
+
+func _has_dev_agent_flag() -> bool:
+	var args := OS.get_cmdline_args()
+	args.append_array(OS.get_cmdline_user_args())
+	return "--dev-agent" in args
+
+
+func _install_dev_agent() -> void:
+	if not _has_dev_agent_flag():
+		return
+	var ops := (load("res://addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle_agent_ops.gd") as GDScript).new() as Node
+	ops.name = "Dota2LaneBattleAgentOps"
+	add_child(ops)
+	var bridge := (load("res://addons/lomolib/dev_agent/dev_agent_bridge.gd") as GDScript).new() as Node
+	bridge.name = "DevAgentBridge"
+	bridge.scene_ops_path = NodePath("../Dota2LaneBattleAgentOps")
+	add_child(bridge)
+
+
+## 完整只读快照（adapter `state` op 用）。stable id + 可观测字段 + recent events。
+func dev_agent_state() -> Dictionary:
+	var actors: Array[Dictionary] = []
+	var left_alive := 0
+	var right_alive := 0
+	if _latest_frame != null:
+		var ids := _latest_frame.actor_snapshots.keys()
+		ids.sort()
+		for aid in ids:
+			var s: Dictionary = _latest_frame.actor_snapshots[aid]
+			if bool(s.get("alive", false)):
+				if int(s.get("team_id", -1)) == Dota2LaneConfig.TEAM_LEFT:
+					left_alive += 1
+				else:
+					right_alive += 1
+			actors.append({
+				"id": _short_id(str(aid)), "team": s.get("team_id", -1),
+				"type": s.get("unit_type_id", ""), "hp": s.get("hp", 0.0),
+				"max_hp": s.get("max_hp", 0.0), "x": s.get("x", 0.0), "y": s.get("y", 0.0),
+				"alive": s.get("alive", false),
+				"intent": "%s/%s" % [s.get("intent_kind", ""), s.get("intent_status", "")],
+				"target": _short_id(str(s.get("attack_target_id", ""))),
+				"movement": s.get("movement_state", ""),
+				"on_cooldown": s.get("attack_on_cooldown", false),
+				"attacking": s.get("attack_executing", false),
+			})
+	return {
+		"tick": _procedure.get_tick_index() if _procedure != null else 0,
+		"logic_time_ms": _latest_frame.logic_time_ms if _latest_frame != null else 0.0,
+		"paused": _paused,
+		"ended": _procedure != null and _procedure.should_end(),
+		"result": _procedure.get_result() if _procedure != null else "",
+		"left_alive": left_alive,
+		"right_alive": right_alive,
+		"total_alive": left_alive + right_alive,
+		"catchup_frames": _catchup_frames,
+		"debt_drop_frames": _debt_drop_frames,
+		"recent_events": _recent_events.duplicate(),
+		"actors": actors,
+	}
+
+
+func dev_agent_set_paused(value: bool) -> void:
+	_paused = value
+
+
+## 暂停实时时钟，确定性步进 count 个 logic tick（快进到交战/出血等可视瞬间再 capture）。
+func dev_agent_step_ticks(count: int) -> Dictionary:
+	_paused = true
+	var stepped := 0
+	for _i in range(maxi(0, count)):
+		if _procedure == null or _procedure.should_end():
+			break
+		_dev_step_once()
+		stepped += 1
+	queue_redraw()
+	_refresh_debug_panel()
+	var st := dev_agent_state()
+	st["stepped"] = stepped
+	return st
+
+
+## 暂停实时时钟，步进直到本 tick events 出现 event_kind，或到 max_ticks 上限。
+func dev_agent_run_until(event_kind: String, max_ticks: int) -> Dictionary:
+	_paused = true
+	var stepped := 0
+	var reached := false
+	for _i in range(maxi(1, max_ticks)):
+		if _procedure == null or _procedure.should_end():
+			break
+		var frame: Dota2LogicFrame = _procedure.advance_tick(LOGIC_DT_MS)
+		_latest_frame = frame
+		_ingest_frame_events(frame)
+		stepped += 1
+		for evt in frame.events:
+			if str(evt.get("kind", "")) == event_kind:
+				reached = true
+				break
+		if reached:
+			break
+	queue_redraw()
+	_refresh_debug_panel()
+	var st := dev_agent_state()
+	st["stepped"] = stepped
+	st["reached"] = reached
+	st["waited_for"] = event_kind
+	return st
+
+
+func dev_agent_restart() -> void:
+	_restart()
+
+
+## 一个 dev 步进 = 一次 clock-block 步进体（advance + ingest），不含实时累加器。
+func _dev_step_once() -> void:
+	var frame: Dota2LogicFrame = _procedure.advance_tick(LOGIC_DT_MS)
+	_latest_frame = frame
+	_ingest_frame_events(frame)
+	if _procedure.should_end() and not _finished_once:
+		_procedure.finish()
+		_finished_once = true
