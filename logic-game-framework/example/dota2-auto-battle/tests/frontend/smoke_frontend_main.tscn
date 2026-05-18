@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dota2_smoke_frontend_main"]
+
+[ext_resource type="Script" path="res://addons/logic-game-framework/example/dota2-auto-battle/tests/frontend/smoke_frontend_main.gd" id="1_fe"]
+
+[node name="Dota2SmokeFrontendMain" type="Node"]
+script = ExtResource("1_fe")

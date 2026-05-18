@@ -1,4 +1,8 @@
-# Frontend Skeleton
+# Frontend (M1 implemented)
+
+> M1 已落地：`scene/dota2_lane_battle.tscn`（F6）+ 场景脚本私有 logic clock
+> block + 富 debug 面板。变更见 [../CHANGELOG.md](../CHANGELOG.md)。下列为原始
+> 规划，保留作设计追溯。
 
 Planned contents:
 

@@ -1,0 +1,19 @@
+{
+  "namespace": "dota2autobattle",
+  "default_timeout_ms": 45000,
+  "groups": {
+    "smoke": {
+      "scenes": [
+        "battle/smoke_lane_wave_engage.tscn",
+        "frontend/smoke_frontend_main.tscn"
+      ]
+    },
+    "regression": {
+      "required": true,
+      "scenes": [
+        "battle/smoke_lane_wave_engage.tscn",
+        "frontend/smoke_frontend_main.tscn"
+      ]
+    }
+  }
+}

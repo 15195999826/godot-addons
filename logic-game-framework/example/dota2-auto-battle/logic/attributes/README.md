@@ -1,34 +1,53 @@
-# Attributes Skeleton
+# Attributes — M1 implemented (shared generator + DOTA2 prefix, temporary debt)
 
-Planned contents:
+## Current M1 state
 
-- `Dota2BattleActorAttributeSet`: common battle actor stats such as `hp` and
-  `max_hp`, plus shared combat stats such as `armor` if the damage model uses it
-  across units, towers, and buildings.
-- `Dota2UnitAttributeSet`: unit stats such as `attack_damage`, `move_speed`,
-  `attack_range`, `attack_interval_ms`, and `aggro_range`; common `armor` is
-  inherited from `Dota2BattleActorAttributeSet` if the damage model uses it.
-- `Dota2TowerAttributeSet`: tower combat stats such as `attack_damage`,
-  `attack_range`, `attack_interval_ms`, `projectile_speed`, and `aggro_range`.
-- `Dota2BuildingAttributeSet`: non-unit attackable building stats; it should
-  inherit common HP/armor but should not inherit unit movement stats.
-- optional example-local `attributes_config.gd` and `generated/` directory when
-  the LGF AttributeSet generator supports per-example ownership.
+The AttributeSet family is live and used by `Dota2UnitActor`:
 
-This directory should model an AttributeSet family, not a unit-only attribute
-bag. Add a stat to the shared battle set only when every relevant battle actor
-can use that stat coherently. Otherwise add it to the concrete actor family's
-typed AttributeSet.
+- `Dota2BattleActorAttributeSet` — common battle-actor stats: `hp`, `max_hp`,
+  with `hp <= max_hp` cross-attribute clamp owned by the AttributeSet (not actor
+  setter code). Base of the family; future `Dota2TowerActor` /
+  `Dota2BuildingActor` extend the same base view.
+- `Dota2UnitAttributeSet` extends `Dota2BattleActorAttributeSet` — unit stats:
+  `move_speed`, `attack_damage`, `attack_range`, `attack_interval_ms`,
+  `aggro_range`.
 
-Preferred long-term ownership is example-local config/output under this
-directory. Until the generator boundary is fixed, M1 may use one of these
-temporary routes:
+`armor` is intentionally **not** generated yet: `actor-attributes.md` says keep
+it planned-but-unused rather than invent a fake formula before a damage model
+needs it. `Dota2TowerAttributeSet` / `Dota2BuildingAttributeSet` are not in M1
+but the base→unit family shape does not block adding them later.
 
-- example-local generated files if the generator is refactored first;
-- generated-compatible classes that directly extend `BaseGeneratedAttributeSet`;
-- clearly prefixed DOTA2 entries in the shared
-  `addons/logic-game-framework/example/attributes/attributes_config.gd` path if
-  that is the current practical route.
+Spawn order sets `max_hp` before `hp` (`Dota2UnitActor._init`) so the
+cross-clamp never clips a high-HP unit against the default max.
 
-If the shared path is used, it must be documented as temporary debt and must not
-change existing hex/rts generated names or semantics.
+## Generator route taken (route 3) — TEMPORARY TECHNICAL DEBT
+
+M1 uses **route 3** from `docs/design-notes/actor-attributes.md`: clearly
+DOTA2-prefixed definitions added to the shared example generator config, and
+generated into the shared example output directory:
+
+- config (single source of truth):
+  `addons/logic-game-framework/example/attributes/attributes_config.gd`
+  → `"Dota2BattleActor"` and `"Dota2Unit"` set entries (DOTA2-prefixed).
+- generated output:
+  `addons/logic-game-framework/example/attributes/generated/dota2_battle_actor_attribute_set.gd`
+  and `dota2_unit_attribute_set.gd`.
+
+The generated files follow `AttributeSetGeneratorScript`'s exact emit format and
+are reproducible by running that EditorScript in the editor against the shared
+config (it is an `EditorScript`, so it cannot run in a `--headless` game
+process; the editor's *File ▸ Run* / Tools menu regenerates byte-identical
+output).
+
+**Why this is debt:** the shared `example/attributes` config/output couples all
+examples (hex / rts / dota2) through one config and one generated folder. The
+long-term target is example-local ownership:
+
+```
+example/dota2-auto-battle/logic/attributes/attributes_config.gd
+example/dota2-auto-battle/logic/attributes/generated/
+```
+
+**Debt invariants honored:** names are DOTA2-prefixed; existing hex/rts
+generated names and semantics are unchanged; existing hex generated files are
+not migrated (that is a separate future task, not M1).
