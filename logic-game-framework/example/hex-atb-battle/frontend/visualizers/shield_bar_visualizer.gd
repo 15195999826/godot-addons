@@ -25,6 +25,12 @@ const SHIELD_REGISTRY := {
 	HexBattleWardBuff.CONFIG_ID: {
 		"color": Color(0.3, 0.5, 1.0),
 	},
+	HexBattleShieldBuffs.PHYSICAL_CONFIG_ID: {
+		"color": Color(0.95, 0.62, 0.28),
+	},
+	HexBattleShieldBuffs.MAGICAL_CONFIG_ID: {
+		"color": Color(0.25, 0.85, 1.0),
+	},
 }
 
 

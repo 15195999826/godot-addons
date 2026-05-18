@@ -43,6 +43,9 @@ static func _build_manifest() -> Array[_Entry]:
 	arr.append(_Entry.new(HexBattleVigor.ABILITY,           []))
 	# Buffs(non-skill ability,但其 tick timeline 也要注册)
 	arr.append(_Entry.new(HexBattlePoisonBuff.POISON_BUFF,  [HexBattlePoisonBuff.POISON_TICK_TIMELINE]))
+	arr.append(_Entry.new(HexBattleWardBuff.WARD_BUFF,      []))
+	arr.append(_Entry.new(HexBattleShieldBuffs.PHYSICAL_SHIELD_BUFF, []))
+	arr.append(_Entry.new(HexBattleShieldBuffs.MAGICAL_SHIELD_BUFF,  []))
 	arr.append(_Entry.new(HexBattleSurgeBuff.SURGE_BUFF,    [HexBattleSurgeBuff.SURGE_TICK_TIMELINE]))
 	arr.append(_Entry.new(HexBattleExposeBuff.EXPOSE_BUFF,  []))
 	return arr

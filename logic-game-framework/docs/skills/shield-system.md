@@ -94,6 +94,21 @@ ShieldResolver.resolve(actor, damage, damage_type):
 
 ---
 
+## 🧱 伤害类型矩阵
+
+当前标准 damage type 来自 `BattleEvents.DamageType`：
+
+| 护盾类型 | `damage_types` | 吸 physical | 吸 magical | 吸 pure |
+|---|---|---:|---:|---:|
+| Physical shield | `["physical"]` | ✅ | ❌ | ❌ |
+| Magical shield | `["magical"]` | ❌ | ✅ | ❌ |
+| Universal / all shield | `["all"]` | ✅ | ✅ | ✅ |
+
+`WardBuff` 是现有 universal shield 实例。Pure damage 不天然穿所有护盾；它只会绕过不声明
+`pure` / `all` 的护盾。
+
+---
+
 ## 🔒 4 条硬约束
 
 1. **`ShieldResolver` 无副作用事件** — 它会**提交 `ShieldComponent.current` 变更**（这是它的职责），但不 push 事件、不扣 `actor.hp`、不触发 `on_break`/`on_expire` 回调。这些副作用由调用方（`apply_damage`）按流程顺序触发
@@ -198,7 +213,7 @@ tests/skill_scenarios/
 
 - [ ] **Aphotic Ward**（破裂时 AoE 伤害）— 验证 `on_break` 回调机制
 - [ ] **Shield Rune**（按 max HP 计算 + `refresh` 叠加策略）
-- [ ] **物理盾 / 魔法盾**（具体技能配置 + `damage_types` 过滤）
+- [x] **物理盾 / 魔法盾**（具体 buff 配置 + `damage_types` 过滤）
 
 ### 🟡 P2 — 机制扩展
 
@@ -251,7 +266,7 @@ tests/skill_scenarios/
 | **actor 死亡导致 ability 移除时，护盾 `on_expire` 是否触发** | actor 死亡 → ability 整体清理 → 残余护盾的 `on_expire` 要不要走？这是 ability lifecycle 的通用问题，不是护盾特有 | V1 基础 Ward 没有 `on_expire`，不影响。做 Aphotic 或新增带 `on_expire` 的护盾时拍 |
 | **damage event `damage` 字段语义已变更** | 现在是「修正后但未扣护盾」的总伤害。**所有读 damage event 的消费者**（反伤/吸血/受击 buff filter、frontend visualizer、统计 helper、外部 replay 工具）都要意识到：HP 实际损失 = `actual_life_damage`。`thorn.gd` / `damage_visualizer.gd` / `ScenarioAssertContext.total_damage_to` 已就位，新增同类消费者要同步对齐 | 新增任何读 damage event 的代码时 |
 | **`stacking_policy` 仅占位** | V1 重复施放只能产生独立护盾实例（`independent`）。Refresher / Aphotic 风格的"刷新或替换"语义 V1 不支持 | 实现 Shield Rune / Aphotic 时 |
-| **`damage_types` 取值集合** | 当前未明确 `damage_type` 的标准取值（"physical" / "magical" / "pure" / "true"...）。需要在 `battle_events.gd` 里定义统一枚举 | 实现物理盾/魔法盾时 |
+| **`damage_types` 取值集合** | 已明确为 `"physical" / "magical" / "pure"`，`"all"` 仅作为 universal shield 通配符。不要新增 `"true"`；若未来需要无视护盾，单独加 `bypass_shield` 类字段 | 新增无视护盾机制时 |
 
 ---
 
