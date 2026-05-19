@@ -17,6 +17,8 @@ const MotionUpdateScript := preload("res://addons/sim-nav-map/examples/dota2-rts
 
 const MAX_RETRY := 5
 const ARRIVE_EPSILON := 4.0
+const DOTA2_MOVE_START_ANGLE_RAD := 0.200712864  # 11.5 degrees
+const FACING_DIRECTION_EPSILON_SQ := 0.000001
 # Short-path search range. Conservative single value; 0AD scales by failure
 # count, dota2 lab does not (we instead grow retry_count → FAILED faster).
 const SHORT_PATH_SEARCH_RANGE := 12.0 * 16.0  # 12 navcells * 16 px
@@ -134,6 +136,8 @@ func step_unit(
 		if waypoint_distance <= 0.0001:
 			unit.consume_current_waypoint()
 			continue
+		if not _face_unit_toward(unit, to_waypoint, delta):
+			return
 		var reaches_waypoint := waypoint_distance <= remaining_distance
 		var move_distance := waypoint_distance if reaches_waypoint else remaining_distance
 		var candidate := waypoint if reaches_waypoint else unit.position + to_waypoint / waypoint_distance * move_distance
@@ -150,6 +154,7 @@ func step_unit(
 
 		unit.position = candidate
 		unit.remember_position()
+		unit.waiting_for_facing = false
 		moved = true
 		remaining_distance -= move_distance
 		if reaches_waypoint:
@@ -362,6 +367,35 @@ func _track_pending_peak(pathfinder: Dota2LabPathfinderWrapper) -> void:
 		pending_count_peak = pending
 
 
+func _face_unit_toward(unit: Dota2LabUnit, direction: Vector2, delta: float) -> bool:
+	if direction.length_squared() <= FACING_DIRECTION_EPSILON_SQ:
+		unit.last_turn_delta_rad = 0.0
+		unit.waiting_for_facing = false
+		return true
+	var desired_angle := direction.angle()
+	unit.desired_facing_angle_rad = desired_angle
+	var max_turn := maxf(unit.turn_rate_rad_per_sec, 0.0) * maxf(delta, 0.0)
+	var turn_delta := _angle_delta(unit.facing_angle_rad, desired_angle)
+	if max_turn <= 0.0:
+		unit.last_turn_delta_rad = 0.0
+		unit.waiting_for_facing = absf(turn_delta) > DOTA2_MOVE_START_ANGLE_RAD
+		return not unit.waiting_for_facing
+	var applied_turn := clampf(turn_delta, -max_turn, max_turn)
+	unit.facing_angle_rad = _normalize_angle(unit.facing_angle_rad + applied_turn)
+	unit.last_turn_delta_rad = applied_turn
+	var remaining_delta := absf(_angle_delta(unit.facing_angle_rad, desired_angle))
+	unit.waiting_for_facing = remaining_delta > DOTA2_MOVE_START_ANGLE_RAD
+	return not unit.waiting_for_facing
+
+
+func _angle_delta(from_angle_rad: float, to_angle_rad: float) -> float:
+	return _normalize_angle(to_angle_rad - from_angle_rad)
+
+
+func _normalize_angle(angle_rad: float) -> float:
+	return fposmod(angle_rad + PI, TAU) - PI
+
+
 # ─────────────────────────── Diagnostics ─────────────────────────────────────
 
 func diagnostics(units: Array[Dota2LabUnit]) -> Dictionary:
@@ -373,10 +407,13 @@ func diagnostics(units: Array[Dota2LabUnit]) -> Dictionary:
 		Dota2LabUnit.STATE_FAILED: 0,
 	}
 	var retry_count_max := 0
+	var waiting_for_facing_count := 0
 	for unit in units:
 		state_counts[unit.state] = int(state_counts.get(unit.state, 0)) + 1
 		if unit.retry_count > retry_count_max:
 			retry_count_max = unit.retry_count
+		if unit.waiting_for_facing:
+			waiting_for_facing_count += 1
 	return {
 		"long_path_requests": long_path_requests,
 		"short_path_requests": short_path_requests,
@@ -387,6 +424,7 @@ func diagnostics(units: Array[Dota2LabUnit]) -> Dictionary:
 		"pending_count_peak": pending_count_peak,
 		"state_counts": state_counts,
 		"retry_count_max": retry_count_max,
+		"waiting_for_facing_count": waiting_for_facing_count,
 	}
 
 

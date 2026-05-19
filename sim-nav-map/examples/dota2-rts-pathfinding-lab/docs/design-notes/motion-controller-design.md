@@ -41,7 +41,7 @@ the per-tick execution order fixed**. The LOC budget is **200–300 lines**.
 |---|---|---|---|
 | `IDLE` | No move order. | No | No |
 | `WAITING_LONG` | Long path enqueued; waiting for result. | No (yet) | `pending_long_ticket > 0` |
-| `FOLLOWING` | Has a path (long or short). Walking it. | Yes | No |
+| `FOLLOWING` | Has a path (long or short). Turns toward the next waypoint, then walks once inside the Dota2 action cone. | Yes | No |
 | `WAITING_SHORT` | Short detour enqueued; **current path frozen**, no movement this tick. | Yes (frozen) | `pending_short_ticket > 0` |
 | `FAILED` | Retry budget exhausted. Emitted `MOVE_FAILED`. | No | No |
 
@@ -72,6 +72,8 @@ the per-tick execution order fixed**. The LOC budget is **200–300 lines**.
 | `start_move_order(target)` | * | cancel pending tickets; `move_target = target`; `retry_count = 0`; enqueue long | `WAITING_LONG` |
 | `long_result` status ∈ {`SUCCESS`, `DIRECT_GOAL`} | `WAITING_LONG` | `path = result.path` | `FOLLOWING` |
 | `long_result` status ∈ {`UNREACHABLE`, `NO_PATH`, `INVALID_START`, `INVALID_QUERY`, **`CANONICALIZED`**, **`START_RECOVERED`**} | `WAITING_LONG` | emit `MOVE_FAILED("long_path_unreachable:<status>")` | `FAILED` |
+| `step` is outside the Dota2 move-start cone for the next waypoint | `FOLLOWING` | rotate by `turn_rate_rad_per_sec * delta`; do not translate this tick | `FOLLOWING` |
+| `step` is inside the Dota2 move-start cone for the next waypoint | `FOLLOWING` | rotate by `turn_rate_rad_per_sec * delta`; translate along the path even if not perfectly aligned | `FOLLOWING` |
 | `step` reaches `move_target` (within `ARRIVE_EPSILON`) | `FOLLOWING` | clear `path`; emit `REACHED_GOAL` | `IDLE` |
 | `step` blocked by **unit** (`UNIT_OBSTRUCTION_BLOCKED`) | `FOLLOWING` | enqueue short toward `move_target`; **freeze current `path`** | `WAITING_SHORT` |
 | `step` blocked by **static** (`PASSABILITY_BLOCKED` / `STATIC_OBSTRUCTION_BLOCKED`) | `FOLLOWING` | enqueue long toward `move_target`; clear `path` | `WAITING_LONG` |
@@ -81,6 +83,26 @@ the per-tick execution order fixed**. The LOC budget is **200–300 lines**.
 
 **No other transitions exist.** If implementation seems to need one, redesign
 first; do not add a transient state silently.
+
+### 3.4 Facing and Turn Rate
+
+Facing is authoritative lab state on `Dota2LabUnit`, not a presentation-only
+line derived from last-frame velocity. The lab keeps the Dota2 reference turn
+rate `0.6` radians per `0.03s` (`20 rad/s`) in code, but the manual lab default
+uses a half-speed visual scale (`10 rad/s`) because small 2D arrows read as
+instant turns at raw Dota2 speed. The Dota2 `11.5°` move-start cone remains
+authoritative. Every mobile unit has:
+
+- `facing_angle_rad`
+- `desired_facing_angle_rad`
+- `turn_rate_rad_per_sec`
+- `waiting_for_facing`
+
+`step_unit()` may rotate while staying in `FOLLOWING`. Translation starts once
+the current facing is within `DOTA2_MOVE_START_ANGLE_RAD` of the direction to
+the next waypoint; exact alignment is not required, so the unit can keep
+rotating while movement begins. This keeps Dota2 turn feel local to the lab
+policy layer without expanding `sim-nav-map` core.
 
 ## 4. Per-Tick Execution Order
 
@@ -229,8 +251,8 @@ of them requires a fresh design note that justifies the LOC cost.
 - **Alternate-pathfinder rotation, backup hack, known-imperfect-path
   countdown.** All 0AD magic-number-driven implicit transitions. If a
   similar effect seems needed, redesign instead of adding a counter.
-- **Acceleration, facing rotation, turning radius.** Constant speed,
-  immediate direction change.
+- **Acceleration and turning radius.** Constant speed and point-turn movement.
+  Facing rotation is lab-owned Dota2 policy; curved-body kinematics are not.
 - **Hierarchical reachability pre-check** before enqueue long. Trust the
   long pathfinder's `unreachable` / `no_path` result to drive `FAILED`.
 - **`STATUS_CANONICALIZED` / `STATUS_START_RECOVERED` fallback handling.**

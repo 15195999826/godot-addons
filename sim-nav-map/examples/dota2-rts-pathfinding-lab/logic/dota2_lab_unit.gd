@@ -15,12 +15,24 @@ const PATH_SOURCE_NONE := "none"
 const PATH_SOURCE_LONG := "long"
 const PATH_SOURCE_SHORT := "short"
 
+# Dota2-style turn rate reference. Gameplay data is usually expressed as
+# radians per 0.03 seconds; 0.6 turns 180 degrees in about 0.157s. The lab uses
+# a slower visual default because small 2D arrows read as instant at raw Dota2
+# speed, while keeping the Dota2 action-cone rule in the motion controller.
+const DOTA2_TURN_RATE_INTERVAL_SEC := 0.03
+const DOTA2_DEFAULT_TURN_RATE := 0.6
+const DOTA2_REFERENCE_TURN_RATE_RAD_PER_SEC := DOTA2_DEFAULT_TURN_RATE / DOTA2_TURN_RATE_INTERVAL_SEC
+const LAB_TURN_RATE_FEEL_SCALE := 0.5
+const DEFAULT_TURN_RATE_RAD_PER_SEC := DOTA2_REFERENCE_TURN_RATE_RAD_PER_SEC * LAB_TURN_RATE_FEEL_SCALE
+
 
 var id: String = ""
 var group_id: String = ""
 var position: Vector2 = Vector2.ZERO
 var radius: float = 10.0
 var speed: float = 90.0
+var facing_angle_rad: float = 0.0
+var turn_rate_rad_per_sec: float = DEFAULT_TURN_RATE_RAD_PER_SEC
 var mobile: bool = true
 var blocks_pathfinding: bool = true
 
@@ -38,6 +50,9 @@ var last_path_result_status: String = ""
 var last_path_failure_reason: String = ""
 var last_short_goal: Vector2 = Vector2.ZERO
 var last_short_range: float = 0.0
+var desired_facing_angle_rad: float = 0.0
+var last_turn_delta_rad: float = 0.0
+var waiting_for_facing: bool = false
 
 # Order tracking.
 var current_order: RefCounted = null
@@ -54,7 +69,9 @@ func _init(
 	p_position: Vector2 = Vector2.ZERO,
 	p_radius: float = 10.0,
 	p_speed: float = 90.0,
-	p_mobile: bool = true
+	p_mobile: bool = true,
+	p_facing_angle_rad: float = 0.0,
+	p_turn_rate_rad_per_sec: float = DEFAULT_TURN_RATE_RAD_PER_SEC
 ) -> void:
 	id = p_id
 	group_id = p_group_id
@@ -63,6 +80,9 @@ func _init(
 	radius = p_radius
 	speed = p_speed
 	mobile = p_mobile
+	facing_angle_rad = p_facing_angle_rad
+	desired_facing_angle_rad = p_facing_angle_rad
+	turn_rate_rad_per_sec = p_turn_rate_rad_per_sec
 
 
 func apply_move_order_data(target: Vector2, tick: int) -> int:
@@ -81,6 +101,8 @@ func apply_move_order_data(target: Vector2, tick: int) -> int:
 	last_path_failure_reason = ""
 	last_short_goal = Vector2.ZERO
 	last_short_range = 0.0
+	last_turn_delta_rad = 0.0
+	waiting_for_facing = false
 	return order.order_id
 
 
@@ -94,6 +116,8 @@ func complete_order(tick: int) -> void:
 	path = SimNavWaypointPath.new()
 	path_source = PATH_SOURCE_NONE
 	retry_count = 0
+	last_turn_delta_rad = 0.0
+	waiting_for_facing = false
 
 
 func fail_order(tick: int, reason: String) -> void:
@@ -105,6 +129,8 @@ func fail_order(tick: int, reason: String) -> void:
 	state = STATE_FAILED
 	path = SimNavWaypointPath.new()
 	path_source = PATH_SOURCE_NONE
+	last_turn_delta_rad = 0.0
+	waiting_for_facing = false
 
 
 func active_order_id() -> int:
