@@ -34,6 +34,7 @@ const UNIT_COLOR_RED := Color(0.90, 0.26, 0.22)
 const UNIT_COLOR_BLOCKER := Color(0.90, 0.45, 0.25)
 const UNIT_COLOR_SELECTED := Color(0.25, 1.0, 0.70)
 const UNIT_OUTLINE_COLOR := Color(0.95, 0.95, 0.92)
+const FACING_ARROW_COLOR := Color(1.00, 0.94, 0.42)
 const OBSTACLE_COLOR := Color(0.38, 0.35, 0.30)
 const OBSTACLE_OUTLINE_COLOR := Color(0.78, 0.67, 0.45)
 const OBSTACLE_CLEARANCE_COLOR := Color(0.95, 0.70, 0.25, 0.16)
@@ -396,6 +397,7 @@ func _draw() -> void:
 		if unit.state == Dota2LabUnit.STATE_FAILED:
 			draw_arc(unit.position, unit.radius + 4.5, 0.0, TAU, 32, Color(1.0, 0.18, 0.15, 0.90), 2.5)
 			_draw_failed_glyph(unit.position - Vector2(0.0, unit.radius + 9.0))
+		_draw_facing_arrow(unit)
 		# State indicator: a small ring at top-right of unit.
 		var state_color: Color = STATE_COLOR.get(unit.state, Color.WHITE)
 		draw_circle(unit.position + Vector2(unit.radius + 4.0, -unit.radius - 4.0), 3.0, state_color)
@@ -466,6 +468,18 @@ func _draw_short_goal_marker(center: Vector2) -> void:
 	draw_arc(center, 13.0, 0.0, TAU, 28, SHORT_GOAL_COLOR, 1.4)
 
 
+func _draw_facing_arrow(unit: Dota2LabUnit) -> void:
+	var direction := Vector2(cos(unit.facing_angle_rad), sin(unit.facing_angle_rad))
+	var start := unit.position + direction * maxf(unit.radius * 0.15, 2.0)
+	var tip := unit.position + direction * (unit.radius + 9.0)
+	var head_left := tip - direction.rotated(0.65) * 6.0
+	var head_right := tip - direction.rotated(-0.65) * 6.0
+	var color := Color(1.0, 0.45, 0.18) if unit.waiting_for_facing else FACING_ARROW_COLOR
+	draw_line(start, tip, color, 2.0)
+	draw_line(tip, head_left, color, 2.0)
+	draw_line(tip, head_right, color, 2.0)
+
+
 func _draw_waypoint_path(path: SimNavWaypointPath, start: Vector2, color: Color) -> void:
 	if path == null or path.waypoints.is_empty():
 		return
@@ -526,6 +540,7 @@ func _update_hud() -> void:
 			int(state_counts.get("WAITING_SHORT", 0)),
 			int(state_counts.get("FAILED", 0)),
 		],
+		"Turning: %d" % int(metrics.get("waiting_for_facing_count", 0)),
 		"",
 		"Path / Block",
 		"Long %d   Short %d   UnitBlock %d   StaticBlock %d" % [
@@ -888,6 +903,11 @@ func _snapshot_units() -> Array[Dictionary]:
 			"move_target": _vector_snapshot(unit.move_target),
 			"radius": unit.radius,
 			"speed": unit.speed,
+			"facing_angle_rad": unit.facing_angle_rad,
+			"desired_facing_angle_rad": unit.desired_facing_angle_rad,
+			"turn_rate_rad_per_sec": unit.turn_rate_rad_per_sec,
+			"last_turn_delta_rad": unit.last_turn_delta_rad,
+			"waiting_for_facing": unit.waiting_for_facing,
 			"state": unit.state,
 			"retry_count": unit.retry_count,
 			"pending_long_ticket": unit.pending_long_ticket,

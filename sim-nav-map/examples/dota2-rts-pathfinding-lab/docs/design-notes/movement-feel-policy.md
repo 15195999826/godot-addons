@@ -26,6 +26,11 @@ The lab models a strict individual-unit command feel:
 - Commands are per-unit orders. Multi-unit commands are only a command-layer
   convenience that may fan out targets before issuing independent orders.
 - Target switches are immediate: the newest command owns the unit.
+- Units keep authoritative facing. Movement first turns toward the next
+  waypoint at `turn_rate_rad_per_sec`, then starts once inside the Dota2-style
+  `11.5°` action cone; exact alignment is not required. The raw Dota2
+  turn-rate reference is retained, but the manual lab default intentionally uses
+  a slower visual scale so turning is readable instead of appearing instant.
 - Blocked movement asks for a repath or a local short detour, then either
   resumes movement or terminates with an explicit failure reason.
 - `sim-nav-map` core remains policy-free. Retry, stop, repath, failure, and
@@ -45,6 +50,7 @@ They define the baseline required before Layer 2 can safely drive the lab.
 | A5 | Static blocker mid-path response: adding a static blocker ahead of an active mover must trigger a bounded replan and drain the queue; if the route is still reachable, the unit should reach `IDLE`, not `FAILED`. | Covered by `smoke_dota2_lab_movement_feel_contract`. |
 | A6 | Same-target self-jam: many units ordered to the same clicked point may leave some units in bounded `FAILED` under strict hard-block rules, but all failures must be terminal, drained, stable, and explainable. | Accepted current Dota2 hard-block feel by `smoke_dota2_lab_target_fanout`; not a Layer 2 blocker. |
 | A7 | Two-unit narrow-gap cross-pass: current Layer 1 accepts bounded `FAILED`; cooperative passage or yield is a known gap and requires a new design note before implementation. | Covered as bounded baseline by `smoke_dota2_lab_behavior_baseline`; not accepted as final feel. |
+| A8 | Facing gate: a unit starting far away from its move direction must rotate in place first, but a unit already inside the Dota2-style `11.5°` action cone may translate while continuing to turn. | Covered by `smoke_dota2_lab_state_machine`. |
 
 ## Current Baseline Mapping
 

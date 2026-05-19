@@ -46,6 +46,11 @@ movement, target switching, chase/retreat, and cancel commands, then loops.
 - Commands are individual per unit.
 - Unit-blocked movement asks for a local short-detour subgoal, then returns to
   long-path movement after the detour.
+- Units keep authoritative facing. They use the Dota2 `11.5°` action cone:
+  movement can start once the next waypoint is inside that front cone, then the
+  unit keeps rotating while moving. The raw Dota2 `0.6` per `0.03s` turn-rate
+  reference is kept in code, but the lab default runs at half-speed so the small
+  facing arrows do not look like instant turns.
 - Multi-unit commands may fan out one click target into deterministic nearby
   per-unit targets. All independent move orders start on the command tick.
 - `sim-nav-map` core stays policy-free; retry, stop, repath, and failure policy
@@ -86,6 +91,8 @@ Supported raw DevAgent ops include `capture`, `click_at`, `drag_at`, `tap_key`,
 
 The HUD distinguishes active path source: long paths are green, short paths are
 cyan, and the last short subgoal is shown as a cyan ring for selected units.
+Each unit also draws a facing arrow; orange means it is currently rotating
+before movement.
 
 ## Development Docs
 

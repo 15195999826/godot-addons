@@ -7,6 +7,7 @@ extends Node
 
 const TICK_DELTA := 1.0 / 60.0
 const MAX_TICKS := 400
+const MIN_VISIBLE_TURN_ONLY_TICKS := 12
 
 
 var _failures: Array[String] = []
@@ -16,6 +17,8 @@ func _ready() -> void:
 	_test_initial_state_is_idle()
 	_test_start_move_order_transitions_to_waiting_long()
 	_test_simple_move_reaches_goal()
+	_test_facing_turns_before_translation()
+	_test_dota2_action_cone_moves_while_turning()
 	_test_no_same_tick_takeover_invariant()
 	_test_short_path_uses_local_subgoal_for_far_target()
 	_test_unreachable_goal_terminates_failed()
@@ -76,6 +79,91 @@ func _test_simple_move_reaches_goal() -> void:
 	_assert_eq(Dota2LabUnit.STATE_IDLE, unit.state, "simple-move: should reach IDLE within %d ticks" % MAX_TICKS)
 	var distance := unit.position.distance_to(Vector2(260.0, 170.0))
 	_assert_true(distance <= 8.0, "simple-move: final distance %.2f > 8" % distance)
+
+
+func _test_facing_turns_before_translation() -> void:
+	var world := Dota2LabWorld.new()
+	world.obstacles = []
+	world.units = [
+		Dota2LabUnit.new("turner", "blue", Vector2(100.0, 170.0), 11.0, 110.0, true, PI),
+	]
+	world._rebuild_navigation()
+	var unit := world.get_unit("turner")
+	var start_position := unit.position
+	world.issue_move("turner", Vector2(260.0, 170.0))
+	var saw_turn_only_tick := false
+	var turn_only_ticks := 0
+	for i in range(MAX_TICKS):
+		world.step(TICK_DELTA)
+		if unit.waiting_for_facing:
+			saw_turn_only_tick = true
+			turn_only_ticks += 1
+			_assert_true(
+				unit.position.distance_to(start_position) <= 0.001,
+				"facing-turn: unit should rotate in place before translating"
+			)
+			_assert_true(
+				absf(_angle_delta(unit.facing_angle_rad, PI)) > 0.001,
+				"facing-turn: facing angle should change during turn-only tick"
+			)
+			continue
+		if saw_turn_only_tick:
+			break
+	_assert_true(saw_turn_only_tick, "facing-turn: expected at least one waiting_for_facing tick")
+	_assert_true(
+		turn_only_ticks >= MIN_VISIBLE_TURN_ONLY_TICKS,
+		"facing-turn: default 180-degree turn should be visible, got %d turn-only ticks"
+			% turn_only_ticks
+	)
+
+	var saw_translation_after_turn := false
+	for i in range(MAX_TICKS):
+		world.step(TICK_DELTA)
+		if unit.position.distance_to(start_position) > 0.5:
+			saw_translation_after_turn = true
+			_assert_true(
+				not unit.waiting_for_facing,
+				"facing-turn: first translated tick should be aligned enough"
+			)
+			break
+	_assert_true(saw_translation_after_turn, "facing-turn: expected translation after turning")
+
+
+func _test_dota2_action_cone_moves_while_turning() -> void:
+	var world := Dota2LabWorld.new()
+	world.obstacles = []
+	var start_angle := deg_to_rad(10.0)
+	world.units = [
+		Dota2LabUnit.new("cone", "blue", Vector2(100.0, 170.0), 11.0, 110.0, true, start_angle, 0.1),
+	]
+	world._rebuild_navigation()
+	var unit := world.get_unit("cone")
+	var start_position := unit.position
+	world.issue_move("cone", Vector2(260.0, 170.0))
+	var saw_move_while_still_turning := false
+	for i in range(MAX_TICKS):
+		world.step(TICK_DELTA)
+		if unit.position.distance_to(start_position) <= 0.5:
+			continue
+		var remaining_delta := absf(_angle_delta(unit.facing_angle_rad, 0.0))
+		saw_move_while_still_turning = true
+		_assert_true(
+			not unit.waiting_for_facing,
+			"dota2-cone: unit inside action cone should not wait for perfect facing"
+		)
+		_assert_true(
+			remaining_delta > 0.001,
+			"dota2-cone: first movement should be allowed before exact facing"
+		)
+		_assert_true(
+			remaining_delta < start_angle,
+			"dota2-cone: facing should continue rotating while movement starts"
+		)
+		break
+	_assert_true(
+		saw_move_while_still_turning,
+		"dota2-cone: expected movement inside 11.5-degree action cone"
+	)
 
 
 # After a unit detects a block (via step_unit), the NO_SAME_TICK_TAKEOVER
@@ -314,3 +402,7 @@ func _units_are_terminal(world: Dota2LabWorld, unit_ids: Array[String]) -> bool:
 		if unit.state != Dota2LabUnit.STATE_IDLE and unit.state != Dota2LabUnit.STATE_FAILED:
 			return false
 	return true
+
+
+func _angle_delta(from_angle_rad: float, to_angle_rad: float) -> float:
+	return fposmod(to_angle_rad - from_angle_rad + PI, TAU) - PI
