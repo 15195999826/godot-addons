@@ -347,6 +347,56 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		return d.get("kind") == "actor_displaced"
 
 
+# ========== ActorFacingChangedEvent ==========
+##
+## §0.3: 角色逻辑朝向变化事件。前端消费用于 visual-facing 平滑转向 (lerp/tween),
+## 不引入 turn speed / turn duration / facing lock。
+## old_direction / new_direction 0..5 对应 HexCoord.DIRECTIONS (E/NE/NW/W/SW/SE)。
+## reason 取自 HexFacing.REASON_* 常量 (init / move / active_use / shadow_step / ...)。
+##
+class ActorFacingChangedEvent extends GameEvent.Base:
+	var actor_id: String = ""
+	var old_direction: int = 0
+	var new_direction: int = 0
+	var reason: String = ""
+
+	func _init() -> void:
+		kind = "actor_facing_changed"
+
+	static func create(
+		p_actor_id: String,
+		p_old_direction: int,
+		p_new_direction: int,
+		p_reason: String
+	) -> ActorFacingChangedEvent:
+		var e := ActorFacingChangedEvent.new()
+		e.actor_id = p_actor_id
+		e.old_direction = p_old_direction
+		e.new_direction = p_new_direction
+		e.reason = p_reason
+		return e
+
+	func to_dict() -> Dictionary:
+		return {
+			"kind": kind,
+			"actor_id": actor_id,
+			"old_direction": old_direction,
+			"new_direction": new_direction,
+			"reason": reason,
+		}
+
+	static func from_dict(d: Dictionary) -> ActorFacingChangedEvent:
+		var e := ActorFacingChangedEvent.new()
+		e.actor_id = d.get("actor_id", "") as String
+		e.old_direction = d.get("old_direction", 0) as int
+		e.new_direction = d.get("new_direction", 0) as int
+		e.reason = d.get("reason", "") as String
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == "actor_facing_changed"
+
+
 # ========== PushBlockedEvent ==========
 ##
 ## 推 / 击退被阻挡 — target 沿 push 方向尝试位移, 但路径上撞到不可越过的物体或地图边界。
