@@ -55,3 +55,73 @@ spike/TDD 绿后再出**正式 impl align 方案**（补本节）。
 新 unit visualizer（图腾形态）可能需进 `default_registry`；`ActorSummonedEvent` 视觉。spike 不接表演层（纯框架探针）。
 
 > **评审意见**：已批准 spike/TDD 门。当前不继续细化最终图腾架构；先按 §5.2 写红测试验证中途 spawn、actor 驱动、replay/recording、remove/TTL 与图腾行为。测试结果出来后再决定路线 A（低 HP CharacterActor 复用 ATB/AI）或路线 B（SummonActor / periodic auto-attack）。禁止先写 `SummonTotemAction` 再靠手测补漏。
+
+---
+
+## 5.5 Spike 结论 (2026-05-20)
+
+跑 `tests/battle/smoke_summon_spike.tscn` 5 阶段 (含 placeholder)，最终输出
+`SMOKE_SPIKE_RESULT: PASS - 5/5 phases verified`。
+
+### 阶段验证记录
+
+| 阶段 | 验证内容 | 状态 | 关键发现 |
+|---|---|---|---|
+| 1 spawn | 中途 `GameplayInstance.add_actor` + `UGridMap.model.place_occupant` 后 actor 进 `get_alive_actor_ids` + grid 占位 | ✅ | 框架原语完全支持 mid-battle 加新 actor;不需要新 SpawnActor primitive。 |
+| 2 actor 驱动 | 中途加 CharacterActor 后, 由调用方手动驱动 `ability_set.tick + tick_executions`, periodic loop timeline (Demon Form 3s) 在 7s 内 tick 2 次 | ✅ | CharacterActor 一旦加进 instance, ATB/AI/ability tick 链路天然可走;关键是 caller 必须显式 tick (与 procedure / harness 一致)。 |
+| 3 replay/recording | 中途 grant 的 ability 产生的 `abilityGranted` + `abilityStacksChanged` event 进入 `BattleRecorder.timeline` | ✅ | 关键是 grant 后立即 `recorder.record_frame(-1, event_collector.flush())`, 然后每 tick `record_frame(i, flush())` — event-order consistent (per phase 文档放松到 "可观察顺序稳定"); 不要求 byte-level identical。 |
+| 4 TTL → remove | 模拟 TTL 到期后 `UGridMap.model.remove_occupant(coord) + instance.remove_actor(id)` 双步清理, actor / grid 都干净 | ✅ | 不需要新 RemoveActorAction primitive; 现有 GameplayInstance.remove_actor + grid.remove_occupant 双 API 串起来就可以。SkillLocalAction 内嵌一份 helper 即足。 |
+| 5 图腾行为 | placeholder, 留正式 impl | ⏭️ | spike 不实现 (auto-attack / TTL lifecycle / 死亡消失)。 |
+
+### 路线决定: **路线 A (低 HP CharacterActor)**
+
+依据:
+
+1. **阶段 2 已验证 CharacterActor 中途加入可被驱动**。图腾若是低 HP / 不主动移动的
+   CharacterActor 子类配置 (例新增 TOTEM character class + 简化 ai_strategy 永远 idle
+   或 attack_nearest), 复用整套 ATB / ability_set / DamageAction / DeathEvent 链路。
+   不需要为图腾新建一套 actor 子树。
+2. **阶段 3 证明 recording 完整**, CharacterActor 子类天然走 hex `positionFormats="hex"`
+   record, replay 不需要额外 schema。
+3. **阶段 4 证明 remove_actor 安全**: 死亡或 TTL 到期, 走 `UGridMap.model.remove_occupant +
+   GameplayInstance.remove_actor` 即可清理 grid + actor。死亡走现有 check_death 流程 (
+   HexBattleActor 已实现); TTL 通过 `TimeDurationConfig + on_remove_actions` (§0.6) 触发
+   显式 remove_actor 即可。
+4. **路线 B (SummonActor 子类 + periodic auto-attack timeline) 的额外成本不划算**:
+   - SummonActor 子类要重新挂 `ability_set` / `attribute_set` / collision_profile
+   - periodic auto-attack timeline 绕 ATB, 与现有"ATB 是攻击节拍统一入口"违和
+   - replay 子类 actor record 字段需要额外 schema migration
+   - 拒绝路线 B 也避免引入 framework 级 SpawnActorAction / RemoveActorAction primitive
+     (per phase 文档 §5.3, 这些 primitive 只在 "需要时" 才落码)
+
+### 正式 impl 待办 (留给后续 /goal)
+
+- 新增 `HexBattleClassConfig.CharacterClass.TOTEM` (低 hp / 0 speed / 0 atk)
+- 新增 `summon_totem.gd` (active skill): CAST 阶段计算 spawn coord (默认 caster 前一格),
+  HIT 阶段 `_SummonTotemSpawnAction` (SkillLocalAction):
+  - `instance.add_actor(totem_actor)`
+  - `instance.grid.place_occupant(spawn_coord, totem_actor)`
+  - 给 totem grant 一个 `totem_auto_attack` ability (active, periodic timeline tick auto-attack
+    最近敌人) + `TimeDurationConfig(15000)` + `NoInstanceConfig.on_remove_actions =
+    [_TotemTeardownAction]` (从 grid / instance 移除自身)
+- 新增 totem 视觉 (unit visualizer 注册 TOTEM class)
+- 正式 scenario: 召唤 + 攻击 + TTL 到期消失 + 死亡消失
+
+### 框架原语清单 (本 spike 不动)
+
+| 原语 | 状态 | 备注 |
+|---|---|---|
+| `instance.add_actor / remove_actor` | ✅ 现成 | 已用,无需新增 |
+| `grid.place_occupant / remove_occupant` | ✅ 现成 | 已用 |
+| `recorder.record_frame(frame, events)` | ✅ 现成 | 调用方手动驱动 |
+| `event_collector.flush()` | ✅ 现成 | flush after grant / tick |
+| `SpawnActorAction` primitive | ❌ 不引入 | spike 证明 SkillLocalAction 足够 |
+| `RemoveActorAction` primitive | ❌ 不引入 | 同上 |
+| `ActorSummonedEvent` | ❌ 不引入 | abilityGranted + actorSpawned 已足够 demo/replay 区分召唤 |
+
+### 待删除 / 后续清理
+
+- `smoke_summon_spike.tscn` 是一次性 spike, 保留作回归 (验证 mid-battle 原语); 正式
+  totem impl 完成后, 它仍有意义作 framework smoke。
+- BuffVisualizer / StageCueVisualizer 接入图腾相关的 cue (per phase 文档 §5.4) 留给
+  正式 impl PR。
