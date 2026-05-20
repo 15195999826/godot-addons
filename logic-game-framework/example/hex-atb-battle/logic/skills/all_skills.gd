@@ -33,6 +33,7 @@ static func _build_manifest() -> Array[_Entry]:
 	arr.append(_Entry.new(HexBattleChainLightning.ABILITY, [HexBattleChainLightning.CHAIN_LIGHTNING_CAST_TIMELINE, HexBattleChainLightning.CHAIN_LIGHTNING_HIT_TIMELINE]))
 	arr.append(_Entry.new(HexBattleShadowStep.ABILITY,    [HexBattleShadowStep.SHADOW_STEP_TIMELINE]))
 	arr.append(_Entry.new(HexBattleStance.ABILITY,        [HexBattleStance.STANCE_TIMELINE]))
+	arr.append(_Entry.new(HexBattleDemonForm.ABILITY,     [HexBattleDemonForm.DEMON_FORM_TICK_TIMELINE]))
 	arr.append(_Entry.new(HexBattleHolyHeal.ABILITY,     [HexBattleHolyHeal.HOLY_HEAL_TIMELINE]))
 	arr.append(_Entry.new(HexBattlePoison.ABILITY,       [HexBattlePoison.POISON_TIMELINE]))
 	arr.append(_Entry.new(HexBattleWard.ABILITY,         [HexBattleWard.WARD_TIMELINE]))

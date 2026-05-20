@@ -90,14 +90,19 @@ func _run_scenario(path: String) -> void:
 		scene_config, actions, scenario.get_max_ticks()
 	)
 
+	# Phase 04: passive periodic timeline (如 Demon Form) 永不自停, max_ticks 触发 timeout
+	# 但 replay 数据仍可消费; scenario 自行 assert 即可。其它 preview 失败 (early crash /
+	# missing replay) 仍 fail。
 	if not result.get("success", false):
 		var errors: Array = result.get("errors", [])
-		_results.append({
-			"name": scenario_name,
-			"pass": false,
-			"failures": ["preview failed: %s" % str(errors)],
-		})
-		return
+		var only_timeout := errors.size() == 1 and str(errors[0]).begins_with("Preview timed out")
+		if not only_timeout or result.get("replay", {}).is_empty():
+			_results.append({
+				"name": scenario_name,
+				"pass": false,
+				"failures": ["preview failed: %s" % str(errors)],
+			})
+			return
 
 	var ctx := ScenarioAssertContext.new(result)
 	scenario.assert_replay(ctx)
