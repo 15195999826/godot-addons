@@ -290,6 +290,10 @@ static func run_with_actions(
 ## Grant ability 给 action_caster + receive ABILITY_ACTIVATE_EVENT。
 ## logic_time 写 keyframe 自身的 time_ms (deterministic intent), 与
 ## SkillPreviewProcedure._fire_due_keyframes 对齐。
+##
+## Phase 03 Stance 兼容: 如果 caster 已持有同 config_id 的 ability (例如 caster_passives
+## 预 grant 了 Stance), 复用 existing ability instance 而非创建新 instance, 避免
+## PreEventComponent 重复 register 导致 outgoing/incoming handler 多次 fire。
 static func _fire_action(
 	battle: _PreviewInstance,
 	action_caster: CharacterActor,
@@ -297,8 +301,13 @@ static func _fire_action(
 	target_id: String,
 	keyframe_time_ms: float,
 ) -> void:
-	var ability := Ability.new(ability_config, action_caster.get_id())
-	action_caster.ability_set.grant_ability(ability, battle)
+	var existing := action_caster.ability_set.find_ability_by_config_id(ability_config.config_id)
+	var ability: Ability
+	if existing != null and not existing.is_expired():
+		ability = existing
+	else:
+		ability = Ability.new(ability_config, action_caster.get_id())
+		action_caster.ability_set.grant_ability(ability, battle)
 	var activate_event := {
 		"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
 		"abilityInstanceId": ability.id,
