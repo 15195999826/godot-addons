@@ -18,6 +18,21 @@ var _loops_completed: int = 0
 var _state: String = STATE_EXECUTING
 var _triggered_tags: Dictionary = {}
 
+## §0.4 execution-local state scratchpad
+##
+## 表达"同一次施法前段结果影响后段"的短生命周期状态 (例 Shadow Step 把
+## CAST 阶段瞬移结果 shadow_step.teleport_success 写进来, HIT 阶段读出来)。
+##
+## 合同:
+## - owner = AbilityExecutionInstance; ExecutionContext 只携带引用作访问入口。
+## - 同一次 execution 的所有 tag context / callback context 共享同一 Dictionary。
+## - 不同 execution 之间天然隔离 (每次施法新 instance 新字典)。
+## - key 必须带 namespace (e.g. "shadow_step.teleport_success"); 由
+##   ExecutionContext.set/get_execution_state assert.
+## - 写入 action 必须 deterministic; 不写 wall-clock / 随机 / mutable singleton。
+## - replay 路径 = 重 execute 推导 (event stream 不记录 execution_state)。
+var _execution_state: Dictionary = {}
+
 ## game_state_provider 不再作为字段缓存。
 ##
 ## 框架约定 provider 是"调用时参数流"（对齐 HandlerContext / ExecutionContext / Component.on_event 等），
@@ -171,7 +186,8 @@ func _build_execution_context(current_tag: String, game_state_provider: Variant)
 		game_state_provider,
 		GameWorld.event_collector,
 		_ability_ref,
-		exec_info
+		exec_info,
+		_execution_state  # §0.4: 引用共享; 同一 execution 跨 tag 可见
 	)
 
 func serialize() -> Dictionary:
