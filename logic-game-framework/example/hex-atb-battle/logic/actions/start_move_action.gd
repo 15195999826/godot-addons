@@ -69,5 +69,15 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		)
 		var move_event: Dictionary = ctx.event_collector.push(event.to_dict())
 		all_events.append(move_event)
-	
+
+		# §0.3: 主动移动 → face toward destination。push 类位移已在 push_action 里
+		# 跳过 facing 更新; 这里是主动 move action 的入口。
+		if actor is CharacterActor:
+			all_events.append_array(HexFacing.face_actor_toward(
+				actor as CharacterActor,
+				target_coord,
+				HexFacing.REASON_MOVE,
+				ctx.event_collector
+			))
+
 	return ActionResult.create_success_result(all_events, { "target_coord": target_coord_dict })

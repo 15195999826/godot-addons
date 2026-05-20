@@ -240,6 +240,8 @@ static func run_with_actions(
 	# §0.X: 全属性快照 { actor_id: { attr_name: current_value } } —
 	# 让 scenario 直接断言 atk / def / max_hp 等终值,不必从事件流反推。
 	var final_actor_attributes: Dictionary = {}
+	# §0.3: facing 快照 { actor_id: int 0..5 }, 只 CharacterActor 有 facing。
+	var final_facing_directions: Dictionary = {}
 	for actor in battle.get_all_actors():
 		if not (actor is CharacterActor):
 			continue
@@ -256,6 +258,7 @@ static func run_with_actions(
 		for attr_name in raw.get_attribute_names():
 			attr_snap[attr_name] = raw.get_current_value(attr_name)
 		final_actor_attributes[c_actor.get_id()] = attr_snap
+		final_facing_directions[c_actor.get_id()] = c_actor.get_facing_direction()
 
 	# 死者也加到 final_actor_hps(check_death 会 remove_actor,得从 ally/enemy_ids 补)
 	for aid in ally_ids + enemy_ids + [caster_id]:
@@ -279,6 +282,7 @@ static func run_with_actions(
 		"final_ability_states": final_ability_states,
 		"final_actor_hps": final_actor_hps,
 		"final_actor_attributes": final_actor_attributes,
+		"final_facing_directions": final_facing_directions,
 		"errors": errors,
 	}
 
@@ -325,6 +329,7 @@ static func _empty_result(errs: Array) -> Dictionary:
 		"final_ability_states": {},
 		"final_actor_hps": {},
 		"final_actor_attributes": {},
+		"final_facing_directions": {},
 		"errors": typed_errs,
 	}
 

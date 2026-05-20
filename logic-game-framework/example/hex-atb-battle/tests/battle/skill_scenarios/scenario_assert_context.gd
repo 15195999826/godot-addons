@@ -29,6 +29,8 @@ var final_ability_states: Dictionary = {}
 var final_actor_hps: Dictionary = {}
 ## §0.X actor_id → { attr_name: current_value }，战斗结束瞬间全属性快照
 var final_actor_attributes: Dictionary = {}
+## §0.3 actor_id → int 0..5, 战斗结束瞬间 CharacterActor 朝向
+var final_facing_directions: Dictionary = {}
 
 var _failures: Array[String] = []
 
@@ -41,6 +43,7 @@ func _init(preview_result: Dictionary) -> void:
 	final_ability_states = preview_result.get("final_ability_states", {}) as Dictionary
 	final_actor_hps = preview_result.get("final_actor_hps", {}) as Dictionary
 	final_actor_attributes = preview_result.get("final_actor_attributes", {}) as Dictionary
+	final_facing_directions = preview_result.get("final_facing_directions", {}) as Dictionary
 	events = _flatten_events(preview_result.get("replay", {}) as Dictionary)
 
 
@@ -157,6 +160,12 @@ func final_actor_attribute(target_id: String, attr_name: String, fallback: float
 	if not actor_attrs.has(attr_name):
 		return fallback
 	return actor_attrs[attr_name] as float
+
+
+## §0.3 战斗结束瞬间某 CharacterActor 的朝向 (HexFacing.DIR_* 0..5)。
+## 默认 -1 表示未抓到 (非 CharacterActor / 不存在)。
+func actor_final_facing(target_id: String) -> int:
+	return final_facing_directions.get(target_id, -1) as int
 
 
 # ========== 断言 ==========

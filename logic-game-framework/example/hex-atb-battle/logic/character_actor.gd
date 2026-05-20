@@ -34,6 +34,12 @@ var _team_id: int = -1
 ## ATB 行动条 (0-100)
 var _atb_gauge: float = 0.0
 
+## §0.3 角色逻辑朝向 (HexFacing.DIR_* 0..5)
+## - 初始: 由 set_team_id 决定 (A 队 EAST, B 队 WEST)
+## - 由 HexFacing.face_actor_toward 唯一更新入口同步
+## - EnvironmentActor 默认无 facing 语义,不放进 HexBattleActor 基类
+var _facing_direction: int = HexFacing.DIR_EAST
+
 
 # ========== 初始化 ==========
 
@@ -103,10 +109,25 @@ func get_attribute_set() -> HexBattleActorAttributeSet:
 func set_team_id(id: int) -> void:
 	_team_id = id
 	_team = str(id)
+	# §0.3: 队伍变化重设默认朝向 (A 队 EAST, B 队 WEST)。
+	_facing_direction = HexFacing.default_for_team(id)
 
 
 func get_team_id() -> int:
 	return _team_id
+
+
+# ========== Facing (§0.3) ==========
+
+## 当前逻辑朝向 (HexFacing.DIR_* 0..5)
+func get_facing_direction() -> int:
+	return _facing_direction
+
+
+## source-of-truth setter, 唯一入口是 HexFacing.face_actor_toward。
+## 直接调用本 setter 不会推 ActorFacingChangedEvent — 仅当需要绕过事件流时使用。
+func set_facing_direction(dir: int) -> void:
+	_facing_direction = posmod(dir, 6)
 
 
 # ========== Ability 访问 ==========
@@ -181,4 +202,5 @@ func serialize() -> Dictionary:
 	var base := super.serialize()
 	base["character_class"] = HexBattleClassConfig.class_to_string(character_class)
 	base["atb_gauge"] = _atb_gauge
+	base["facing_direction"] = _facing_direction
 	return base
