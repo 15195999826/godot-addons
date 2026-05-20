@@ -1,3 +1,14 @@
+## @deprecated 改用 LooseTagAction.Apply / LooseTagAction.Remove (§0.1)
+##
+## TagAction 名字过宽:
+## - ApplyTagAction / RemoveTagAction 只动 loose tag
+## - HasTagAction 又读聚合 tag
+## 三个 helper 混在同一文件造成语义不清。新代码使用 core/actions/loose_tag_action.gd
+## 的 LooseTagAction.Apply / LooseTagAction.Remove；HasTagAction 类逻辑改用
+## FlowAction.if_ predicate 或 Condition.HasTagCondition。
+##
+## 历史代码仍可继续使用本 facade (validator allowlist 已豁免此文件)，但应在
+## 后续 cleanup 中迁移到 LooseTagAction / FlowAction.if_。
 class_name TagAction
 extends RefCounted
 

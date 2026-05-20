@@ -45,6 +45,13 @@ const ALLOWLIST: Dictionary = {
 		"reason": "legacy TagAction facade (kept for back-compat)",
 		"migrate_by": "phase-00 §0.1 LooseTagAction supersedes",
 	},
+	# §0.1: LooseTagAction 是 namespace wrapper (extends RefCounted)，
+	# 内嵌 Apply / Remove 各自 extends Action.PrimitiveAction。class_name
+	# 以 Action 结尾仅作 API entry，不是 BaseAction 子类。
+	"res://addons/logic-game-framework/core/actions/loose_tag_action.gd": {
+		"reason": "§0.1 LooseTagAction namespace; inner classes are PrimitiveAction",
+		"migrate_by": "none",
+	},
 	"res://addons/logic-game-framework/stdlib/actions/launch_projectile_action.gd": {
 		"reason": "historical primitive (used by Fireball / PreciseShot / Chain Lightning)",
 		"migrate_by": "future cleanup: convert to extends Action.PrimitiveAction",
