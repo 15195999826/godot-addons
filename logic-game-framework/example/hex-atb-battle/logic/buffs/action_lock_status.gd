@@ -4,6 +4,8 @@
 ## - `cant_act` 只挡 actor 主动发起下一次行动
 ## - 不影响被动、受击、buff tick、post-damage handler
 ## - 不 cancel 已经 in-flight 的 ability timeline
+##
+## §0.1: 旧的 example-local StatusTagConfig 已被替换为 core 层的 TagComponentConfig。
 class_name HexBattleActionLockStatus
 
 
@@ -20,18 +22,6 @@ const PER_DISTANCE_DURATION_MS := 200.0
 const COLLISION_ACTION_LOCK_BONUS_MS := 0.0
 
 
-class StatusTagConfig:
-	extends AbilityComponentConfig
-
-	var _tags: Dictionary = {}
-
-	func _init(tags_value: Dictionary) -> void:
-		_tags = tags_value.duplicate(true)
-
-	func create_component() -> AbilityComponent:
-		return TagComponent.new({ "tags": _tags })
-
-
 static func compute_displacement_duration_ms(actual_distance: int, collision_bonus_ms: float = 0.0) -> float:
 	return BASE_DURATION_MS + PER_DISTANCE_DURATION_MS * float(maxi(1, actual_distance)) + collision_bonus_ms
 
@@ -41,13 +31,6 @@ static func create_config(duration_ms: float, reason: String = "", reason_tag: S
 	if not reason_tag.is_empty():
 		ability_tags.append(reason_tag)
 
-	var component_tags := {
-		TAG_ACTION_LOCKED: 1,
-		TAG_CANT_ACT: 1,
-	}
-	if not reason_tag.is_empty():
-		component_tags[reason_tag] = 1
-
 	return (
 		AbilityConfig.builder()
 		.config_id(CONFIG_ID)
@@ -56,7 +39,11 @@ static func create_config(duration_ms: float, reason: String = "", reason_tag: S
 		.ability_tags(ability_tags)
 		.meta("duration_ms", duration_ms)
 		.meta("reason", reason)
-		.component_config(StatusTagConfig.new(component_tags))
+		.component_config(TagComponentConfig.builder()
+			.tag(TAG_ACTION_LOCKED)
+			.tag(TAG_CANT_ACT)
+			.optional_tag(reason_tag)
+			.build())
 		.component_config(TimeDurationConfig.new(duration_ms))
 		.build()
 	)
