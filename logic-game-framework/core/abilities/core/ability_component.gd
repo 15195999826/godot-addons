@@ -53,6 +53,16 @@ func on_apply(_context: AbilityLifecycleContext) -> void:
 func on_remove(_context: AbilityLifecycleContext) -> void:
 	pass
 
+## §0.X: Ability stacks 变化时调用 (可选覆盖)
+##
+## 触发时机: Ability.add_stacks / remove_stacks / set_stacks 内 stacks 实际变化后。
+## 同一次调用如果 stacks 没真正变 (clamp 边界 / count<=0), hook 不触发。
+##
+## 不允许在 on_stacks_changed 内再调用 add_stacks/remove_stacks/set_stacks (递归更改)。
+## Ability 实现了 reentrance guard, 嵌套调用会 Log.assert_crash。
+func on_stacks_changed(_context: AbilityLifecycleContext, _old_stacks: int, _new_stacks: int) -> void:
+	pass
+
 ## 序列化组件状态（可选覆盖）
 func serialize() -> Dictionary:
 	return {}

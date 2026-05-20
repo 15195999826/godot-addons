@@ -213,10 +213,17 @@ func is_stacks_full() -> bool:
 	return stacks >= max_stacks
 
 
+## §0.X reentrance guard: 防止 on_stacks_changed hook 再次调用 add/remove/set_stacks
+## 导致嵌套修改死循环。嵌套调用会 Log.assert_crash。
+var _notifying_stacks_changed: bool = false
+
+
 ## 按溢出策略叠加层数，返回实际增加量。
 ##
 ## REFRESH 策略在叠层的同时顺手调用同 ability 上 TimeDurationComponent.refresh()，
 ## 让"刷新层数 + 刷新持续时间"成为原子语义。
+##
+## §0.X: stacks 实际变化后通过 _notify_stacks_changed 触发所有 component.on_stacks_changed。
 func add_stacks(count: int) -> int:
 	if count <= 0:
 		return 0
@@ -231,7 +238,10 @@ func add_stacks(count: int) -> int:
 		OVERFLOW_REJECT:
 			if new_value <= max_stacks:
 				stacks = new_value
-	return stacks - before
+	var delta := stacks - before
+	if delta != 0:
+		_notify_stacks_changed(before, stacks)
+	return delta
 
 
 ## 减少层数（不归零自动过期；归零后的清理由调用方决定），返回实际减少量。
@@ -240,12 +250,33 @@ func remove_stacks(count: int) -> int:
 		return 0
 	var before := stacks
 	stacks = maxi(0, stacks - count)
-	return before - stacks
+	var delta := before - stacks
+	if delta != 0:
+		_notify_stacks_changed(before, stacks)
+	return delta
 
 
 ## 强制设置层数（clamp 到 [0, max_stacks]；不自动过期）。
 func set_stacks(count: int) -> void:
+	var before := stacks
 	stacks = clampi(count, 0, max_stacks)
+	if stacks != before:
+		_notify_stacks_changed(before, stacks)
+
+
+## §0.X: 触发所有 component.on_stacks_changed 钩子。
+##
+## reentrance guard: hook 内不允许再调 add/remove/set_stacks 否则 assert。
+## 构造与 on_apply / on_remove 同款 lifecycle context (走 GameWorld 取 actor)。
+func _notify_stacks_changed(old_stacks: int, new_stacks: int) -> void:
+	Log.assert_crash(not _notifying_stacks_changed,
+		"Ability",
+		"on_stacks_changed re-entry detected; hook must not call add/remove/set_stacks")
+	_notifying_stacks_changed = true
+	var context := _build_remove_context()  # 复用同款 context build (走 GameWorld 取 actor)
+	for component in _components:
+		component.on_stacks_changed(context, old_stacks, new_stacks)
+	_notifying_stacks_changed = false
 
 
 func _refresh_time_duration_components() -> void:

@@ -237,6 +237,9 @@ static func run_with_actions(
 	# grant/revoke 不经 event_collector,在 destroy 前抓 ability 状态 + hp 快照
 	var final_ability_states: Dictionary = {}
 	var final_actor_hps: Dictionary = {}
+	# §0.X: 全属性快照 { actor_id: { attr_name: current_value } } —
+	# 让 scenario 直接断言 atk / def / max_hp 等终值,不必从事件流反推。
+	var final_actor_attributes: Dictionary = {}
 	for actor in battle.get_all_actors():
 		if not (actor is CharacterActor):
 			continue
@@ -247,11 +250,19 @@ static func run_with_actions(
 				config_ids.append(ability.config_id)
 		final_ability_states[c_actor.get_id()] = config_ids
 		final_actor_hps[c_actor.get_id()] = c_actor.attribute_set.hp
+		# 全属性快照
+		var attr_snap: Dictionary = {}
+		var raw := c_actor.attribute_set.get_raw()
+		for attr_name in raw.get_attribute_names():
+			attr_snap[attr_name] = raw.get_current_value(attr_name)
+		final_actor_attributes[c_actor.get_id()] = attr_snap
 
 	# 死者也加到 final_actor_hps(check_death 会 remove_actor,得从 ally/enemy_ids 补)
 	for aid in ally_ids + enemy_ids + [caster_id]:
 		if not final_actor_hps.has(aid):
 			final_actor_hps[aid] = 0.0
+		if not final_actor_attributes.has(aid):
+			final_actor_attributes[aid] = {}
 
 	GameWorld.destroy()
 
@@ -267,6 +278,7 @@ static func run_with_actions(
 		"environment_ids": environment_ids,
 		"final_ability_states": final_ability_states,
 		"final_actor_hps": final_actor_hps,
+		"final_actor_attributes": final_actor_attributes,
 		"errors": errors,
 	}
 
@@ -312,6 +324,7 @@ static func _empty_result(errs: Array) -> Dictionary:
 		"environment_ids": [] as Array[String],
 		"final_ability_states": {},
 		"final_actor_hps": {},
+		"final_actor_attributes": {},
 		"errors": typed_errs,
 	}
 
