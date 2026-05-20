@@ -45,6 +45,13 @@ const ALLOWLIST: Dictionary = {
 		"reason": "legacy TagAction facade (kept for back-compat)",
 		"migrate_by": "phase-00 §0.1 LooseTagAction supersedes",
 	},
+	# §0.2: FlowAction 是 namespace wrapper (extends RefCounted)，
+	# 内嵌 IfAction extends Action.FlowActionBase。class_name 以 Action 结尾仅作 API entry，
+	# 不是 BaseAction 子类。
+	"res://addons/logic-game-framework/core/actions/flow_action.gd": {
+		"reason": "§0.2 FlowAction namespace; inner IfAction is FlowActionBase",
+		"migrate_by": "none",
+	},
 	# §0.1: LooseTagAction 是 namespace wrapper (extends RefCounted)，
 	# 内嵌 Apply / Remove 各自 extends Action.PrimitiveAction。class_name
 	# 以 Action 结尾仅作 API entry，不是 BaseAction 子类。
