@@ -27,6 +27,8 @@ var environment_ids: Array[String] = []
 var final_ability_states: Dictionary = {}
 ## actor_id → hp，战斗结束瞬间各 actor 的血量
 var final_actor_hps: Dictionary = {}
+## §0.X actor_id → { attr_name: current_value }，战斗结束瞬间全属性快照
+var final_actor_attributes: Dictionary = {}
 
 var _failures: Array[String] = []
 
@@ -38,6 +40,7 @@ func _init(preview_result: Dictionary) -> void:
 	environment_ids = preview_result.get("environment_ids", []) as Array[String]
 	final_ability_states = preview_result.get("final_ability_states", {}) as Dictionary
 	final_actor_hps = preview_result.get("final_actor_hps", {}) as Dictionary
+	final_actor_attributes = preview_result.get("final_actor_attributes", {}) as Dictionary
 	events = _flatten_events(preview_result.get("replay", {}) as Dictionary)
 
 
@@ -141,6 +144,19 @@ func actor_has_ability_config(target_id: String, config_id: String) -> bool:
 ## 战斗结束瞬间某 actor 的 HP
 func actor_final_hp(target_id: String) -> float:
 	return final_actor_hps.get(target_id, 0.0) as float
+
+
+## §0.X 战斗结束瞬间某 actor 的指定属性 current value (含所有 modifier 累加结果)。
+## 找不到 actor / 属性时返回 fallback (默认 0.0)。
+##
+## 典型用法 (Demon Form scenario):
+##   var atk := ctx.final_actor_attribute(ctx.caster_id, "atk")
+##   ctx.assert_float_eq(atk, initial_atk + tick_count * 2.0, "atk 加成与 tick 数对齐")
+func final_actor_attribute(target_id: String, attr_name: String, fallback: float = 0.0) -> float:
+	var actor_attrs: Dictionary = final_actor_attributes.get(target_id, {}) as Dictionary
+	if not actor_attrs.has(attr_name):
+		return fallback
+	return actor_attrs[attr_name] as float
 
 
 # ========== 断言 ==========

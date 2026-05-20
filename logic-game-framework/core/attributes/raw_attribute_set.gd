@@ -149,6 +149,15 @@ func get_current_value(attr_name: String) -> float:
 	return get_breakdown(attr_name).current_value
 
 
+## §0.X scenario snapshot helper: 返回已 define 的所有 attribute name。
+## 用于 scenario harness 在 destroy 前批量 snapshot final attribute values。
+func get_attribute_names() -> Array[String]:
+	var names: Array[String] = []
+	for k in _base_values.keys():
+		names.append(k as String)
+	return names
+
+
 ## 获取属性的完整计算结果（含循环依赖检测）
 ##
 ## _computing_set 记录当前正在计算的属性。如果在计算 A 的过程中又要计算 A，说明形成了循环。

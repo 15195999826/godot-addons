@@ -12,6 +12,12 @@ extends AbilityComponentConfig
 ##     .modifier("atk", AttributeModifier.Type.MUL_BASE, 0.2) \
 ##     .build()
 ## [/codeblock]
+##
+## §0.X stack-scaled StatModifier (Phase 04 Demon Form 前置):
+## .scale_by_stacks() 启用后, 实际 modifier value = config.value * ability.stacks。
+## Ability.add_stacks/remove_stacks/set_stacks 在 stacks 变化后自动通过
+## AbilityComponent.on_stacks_changed 钩子原子更新所有 modifier value
+## (走 RawAttributeSet.update_modifier，不 remove+add，避免 breakdown 闪烁与 dirty 两次)。
 
 
 ## 单条修改器配置
@@ -31,14 +37,18 @@ class ModifierEntry:
 ## 修改器配置数组
 var modifier_configs: Array[ModifierEntry]
 
+## §0.X: 启用 stacks-based scaling
+var scales_by_stacks: bool = false
 
-func _init(configs: Array[ModifierEntry] = []) -> void:
+
+func _init(configs: Array[ModifierEntry] = [], p_scales_by_stacks: bool = false) -> void:
 	modifier_configs = configs
+	scales_by_stacks = p_scales_by_stacks
 
 
 ## 创建对应的 StatModifierComponent 实例
 func create_component() -> AbilityComponent:
-	return StatModifierComponent.new(modifier_configs)
+	return StatModifierComponent.new(modifier_configs, scales_by_stacks)
 
 
 ## 创建 Builder
@@ -54,6 +64,7 @@ class StatModifierConfigBuilder:
 	extends RefCounted
 
 	var _configs: Array[ModifierEntry] = []
+	var _scales_by_stacks: bool = false
 
 	## 添加属性修改器
 	## [br][param attribute_name] 属性名（如 "def", "atk", "hp"）
@@ -63,8 +74,15 @@ class StatModifierConfigBuilder:
 		_configs.append(ModifierEntry.new(attribute_name, modifier_type, value))
 		return self
 
+	## §0.X: 启用 stacks-based scaling
+	## 启用后 modifier 实际 value = config.value * ability.stacks; Ability stacks
+	## 变化时通过 on_stacks_changed 自动用 update_modifier 原子更新。
+	func scale_by_stacks() -> StatModifierConfigBuilder:
+		_scales_by_stacks = true
+		return self
+
 	## 构建 StatModifierConfig
 	## 验证至少有一个 modifier
 	func build() -> StatModifierConfig:
 		Log.assert_crash(not _configs.is_empty(), "StatModifierConfig", "at least one modifier is required")
-		return StatModifierConfig.new(_configs)
+		return StatModifierConfig.new(_configs, _scales_by_stacks)
