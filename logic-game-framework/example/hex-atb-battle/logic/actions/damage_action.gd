@@ -108,6 +108,13 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var base_damage := _damage_resolver.resolve(ctx)
 
 	for target_id in targets:
+		# §0.5: per-target dead/null guard.
+		# 死亡 actor 留在 world 用于死亡动画 / buff 对账,但 DamageAction 不应继续对其结算。
+		# skip 后：不进 PreDamageEvent / 不 apply_damage / 不触发 on_hit/on_critical/on_kill
+		# 回调 / 不 broadcast post damage,避免 shield/expose/lifesteal/thorns/counter 误触发。
+		var target_actor: HexBattleActor = battle.get_actor(target_id) if battle != null else null
+		if target_actor == null or target_actor.is_dead():
+			continue
 		# ========== Pre 阶段 ==========
 		var pre_event := HexBattlePreEvents.PreDamageEvent.create(
 			source_actor_id,
