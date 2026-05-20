@@ -95,6 +95,11 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	if visual_type != "":
 		launched_event["visualType"] = visual_type
 
+	# Phase 01 Chain Lightning: 把 customData 透传到 projectileLaunched event,
+	# 让 scenario / replay 可用 chain_id 关联发射与命中, 而不是从 hit 反推。
+	if custom_data_value is Dictionary and not (custom_data_value as Dictionary).is_empty():
+		launched_event["customData"] = (custom_data_value as Dictionary).duplicate(true)
+
 	ctx.event_collector.push(launched_event)
 
 	var result := ActionResult.create_success_result([launched_event])

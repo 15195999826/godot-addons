@@ -136,6 +136,16 @@ func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_p
 		return
 
 	var source_actor_id := _get_source_id(projectile)
+	var options: Dictionary = {
+		"damage": projectile.config.get(ProjectileActor.CFG_DAMAGE),
+		"damageType": projectile.config.get(ProjectileActor.CFG_DAMAGE_TYPE),
+	}
+	# Phase 01 Chain Lightning: 把 customData 透传到 projectileHit event payload,
+	# 与 projectileLaunched 对齐, 让 hit timeline 内的 DamageAction 通过
+	# ctx.get_original_event().customData 取到 chain_id / hit_index / damage / visited。
+	var custom_data := _projectile_custom_data(projectile)
+	if not custom_data.is_empty():
+		options["customData"] = custom_data
 	var event := ProjectileEvents.create_projectile_hit_event(
 		projectile.id,
 		source_actor_id,
@@ -144,10 +154,7 @@ func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_p
 		projectile.get_fly_time(),
 		projectile.get_fly_distance(),
 		projectile.get_ability_config_id(),
-		{
-			"damage": projectile.config.get(ProjectileActor.CFG_DAMAGE),
-			"damageType": projectile.config.get(ProjectileActor.CFG_DAMAGE_TYPE),
-		}
+		options
 	)
 
 	event_collector.push(event)
@@ -209,6 +216,16 @@ func _get_source_id(projectile: ProjectileActor) -> String:
 	if source_actor_id == "":
 		return "unknown"
 	return source_actor_id
+
+
+## Phase 01 Chain Lightning helper: 从 projectile.launch_params 提取 customData。
+## 不存在或非 Dictionary 返回空 dict; 拷贝避免外部修改原 launch_params。
+func _projectile_custom_data(projectile: ProjectileActor) -> Dictionary:
+	var params := projectile.get_launch_params()
+	var custom_data: Variant = params.get("customData", null)
+	if not (custom_data is Dictionary):
+		return {}
+	return (custom_data as Dictionary).duplicate(true)
 
 func get_active_projectiles(actors: Array[Actor]) -> Array[ProjectileActor]:
 	var projectiles: Array[ProjectileActor] = []
