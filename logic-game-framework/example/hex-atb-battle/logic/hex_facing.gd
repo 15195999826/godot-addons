@@ -53,19 +53,23 @@ static func direction_between(from: HexCoord, to: HexCoord) -> int:
 	var dr := to.r - from.r
 	if dq == 0 and dr == 0:
 		return DIR_EAST
-	# 投影到 cube 三轴差,找最大分量决定方向。
-	# cube: x=q, z=r, y=-q-r。alpha=dq, beta=dr, gamma=-dq-dr。
-	var alpha := dq          # E/W 轴 +q / -q
-	var beta := dr           # SE/NW 轴 +r / -r
-	var gamma := -dq - dr    # NE/SW 轴 +(-q-r) / -
-	var abs_alpha := absi(alpha)
-	var abs_beta := absi(beta)
-	var abs_gamma := absi(gamma)
-	if abs_alpha >= abs_beta and abs_alpha >= abs_gamma:
-		return DIR_EAST if alpha > 0 else DIR_WEST
-	if abs_gamma >= abs_alpha and abs_gamma >= abs_beta:
-		return DIR_NORTHEAST if gamma > 0 else DIR_SOUTHWEST
-	return DIR_SOUTHEAST if beta > 0 else DIR_NORTHWEST
+	# cube: x=q, z=r, y=-q-r。对 6 个单位方向做 dot product,
+	# 选夹角最小的方向；这能正确区分 EAST(1,0) 与 NORTHEAST(1,-1)。
+	var scores: Array[int] = [
+		2 * dq + dr,    # EAST  (1,-1,0)
+		dq - dr,        # NE    (1,0,-1)
+		-dq - 2 * dr,   # NW    (0,1,-1)
+		-2 * dq - dr,   # WEST  (-1,1,0)
+		-dq + dr,       # SW    (-1,0,1)
+		dq + 2 * dr,    # SE    (0,-1,1)
+	]
+	var best_dir := DIR_EAST
+	var best_score := scores[0]
+	for i in range(1, scores.size()):
+		if scores[i] > best_score:
+			best_score = scores[i]
+			best_dir = i
+	return best_dir
 
 
 ## 主动技能 face-target action (PrimitiveAction)。任意 active skill 可以在

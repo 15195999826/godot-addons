@@ -27,10 +27,10 @@ const POST_EXECUTION_TICKS := 10
 ## [codeblock]
 ## {
 ##   "map": { "rows": int, "cols": int } | { "radius": int },
-##   "caster": { "class": String, "pos": [q, r], "hp": float?, "atk": float? },
+##   "caster": { "class": String, "pos": [q, r], "hp": float?, "atk": float?, "passives": Array[AbilityConfig]? },
 ##   "caster_passives": Array[AbilityConfig],
-##   "allies":  [{ "class": ..., "pos": [q, r], "hp": float? }, ...],
-##   "enemies": [{ "class": ..., "pos": [q, r], "hp": float? }, ...],
+##   "allies":  [{ "class": ..., "pos": [q, r], "hp": float?, "passives": Array[AbilityConfig]? }, ...],
+##   "enemies": [{ "class": ..., "pos": [q, r], "hp": float?, "passives": Array[AbilityConfig]? }, ...],
 ##   "target":  { "mode": "auto"|"enemy_index"|"ally_index", "index": int? }
 ## }
 ## [/codeblock]
@@ -492,11 +492,14 @@ static func _actor_src_to_preview_cfg(src: Dictionary) -> Dictionary:
 		attrs["max_hp"] = src.get("max_hp")  # 显式 max_hp 覆盖 hp=max_hp 默认绑定(Execute scenario 需 hp≠max_hp)
 	if src.has("atk"):
 		attrs["atk"] = src.get("atk")
-	return {
+	var result := {
 		"class": src.get("class", "WARRIOR"),
 		"position": {"q": q, "r": r},
 		"attributes": attrs,
 	}
+	if src.has("passives"):
+		result["passives"] = src.get("passives", [])
+	return result
 
 
 # ========== 内部 Battle Instance ==========
@@ -626,6 +629,11 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		var coord := HexCoord.new(pos.get("q", 0) as int, pos.get("r", 0) as int)
 		UGridMap.model.place_occupant(coord, actor)
 		actor.hex_position = coord.duplicate()
+		var passives: Array = cfg.get("passives", [])
+		for passive_config in passives:
+			if passive_config is AbilityConfig:
+				var passive_ability := Ability.new(passive_config, actor.get_id())
+				actor.ability_set.grant_ability(passive_ability, self)
 		return actor
 
 	## projectile_hit 必须从 event_collector 广播出去, 否则 Fireball/PreciseShot

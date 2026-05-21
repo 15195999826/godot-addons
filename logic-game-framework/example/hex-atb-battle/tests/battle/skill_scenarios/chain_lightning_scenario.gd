@@ -124,13 +124,14 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var damage_frames: Array[int] = []
 	for e in ctx.events:
 		if str(e.get("kind", "")) == "damage" and str(e.get("source_actor_id", "")) == ctx.caster_id:
-			# 注意: damage event 不直接带 frame, 我们要从 events 数组的位置反推
-			# (ctx._flatten_events 把 timeline 展平后含 frame 字段,但 events[] 默认拍平
-			# 检查 _flatten_events 实现: 它把 frame_events 都 append, 没保留 frame...)
-			# 退而求其次: 直接比较事件在 events 数组内的 index 也是单调的
-			pass
-	# 改用 frame metadata 找 — 但 ScenarioAssertContext._flatten_events 没保留 frame。
-	# 退而验证 events 数组中 damage 顺序: enemy_0 → enemy_1 → enemy_2。
+			damage_frames.append(int(e.get("replay_frame", -1)))
+	ctx.assert_eq(damage_frames.size(), 3,
+		"chain lightning caster damage events 应为 3 个")
+	if damage_frames.size() == 3:
+		ctx.assert_true(damage_frames[0] < damage_frames[1] and damage_frames[1] < damage_frames[2],
+			"3 个 damage event 必须跨 replay frame 逐跳递增: %s" % str(damage_frames))
+
+	# 同时保留目标顺序断言: enemy_0 → enemy_1 → enemy_2。
 	var damage_targets_in_order: Array[String] = []
 	for e in ctx.events:
 		if str(e.get("kind", "")) == "damage" and str(e.get("source_actor_id", "")) == ctx.caster_id:

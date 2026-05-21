@@ -63,7 +63,6 @@ func on_stacks_changed(context: AbilityLifecycleContext, _old_stacks: int, new_s
 		var mod := applied_modifiers[i]
 		var cfg := configs[i]
 		var new_value := cfg.value * current_scale
-		mod.value = new_value
 		raw.update_modifier(mod.id, new_value)
 
 func _clear_modifiers_internal() -> void:

@@ -3,7 +3,7 @@
 > 实施 [`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md) 16 个示范技能的进度快照。
 > 每完成一个技能就更新本文档。配合 `lgf-new-logic-skill` skill 使用 —— 实现新技能前先读这里的「pattern 速查」找最近的参考实现。
 
-最后更新：2026-05-20
+最后更新：2026-05-21
 
 ---
 
@@ -13,10 +13,10 @@
 |---|---|---|
 | Tier 1 — MVP | 🟢 6 / 6 | 核心 pattern 验证 |
 | Tier 2 — 中级 | 🟢 6 / 6 | 多原语组合 |
-| Tier 3 — 高级 | 🟡 3 / 4 (+1 spike) | 跨系统; Summon Totem 走 spike + 路线 A 待正式 impl |
+| Tier 3 — 高级 | 🟡 3 / 4 (+1 spike) | 跨系统; Summon Totem spike closeout 完成, 路线 A 待正式 impl |
 | **合计** | **15 / 16 (+1 spike)** | |
 
-**当前焦点** ：暂无；上一轮 (Phase 00-05) 收口 Chain Lightning / Shadow Step / Stance / Demon Form 4 个数值技能 + Summon Totem TDD spike 结论 (路线 A 低 HP CharacterActor;正式 impl 待新 /goal)。
+**当前焦点** ：暂无；remaining skills review closeout 已补 Chain Lightning frame metadata / caster-death regression、HexFacing 6 向覆盖、stack modifier notification、Action validator guardrail 与 Summon Totem spike 真实口径。
 **下一个建议**：Summon Totem 正式 impl (per phase-05 §5.5 "待办") — 新 TOTEM character class + summon_totem.gd + _SummonTotemSpawnAction SkillLocalAction + TimeDurationConfig + NoInstance.on_remove。
 
 ---
@@ -61,7 +61,7 @@
 | 13 | Deathrattle: Explode | 🔵 已落地 | deathrattle_aoe | `skills/deathrattle_aoe.gd` | `deathrattle_aoe_scenario.gd` |
 | 14 | Stance: Wrath/Calm | 🔵 已落地 | skill_stance | `skills/stance.gd` (单 Ability + Wrath/Calm loose tag + 2 PreEventConfig + §0.6 NoInstance lifecycle) | `stance_scenario.gd` |
 | 15 | Demon Form | 🔵 已落地 | passive_demon_form | `skills/demon_form.gd` (passive + GRANTED_SELF periodic tick + 内嵌 `_DemonFormTickAction` SkillLocalAction) + §0.X `StatModifierConfig.scale_by_stacks()` | `demon_form_scenario.gd` |
-| 16 | Summon Totem | 🟠 spike 完成 / 路线 A 待 impl | (未) | (spike: `tests/battle/smoke_summon_spike.tscn` + `phase-05-summon-totem-spike.md` §5.5 结论) | — |
+| 16 | Summon Totem | 🟠 spike closeout 完成 / 路线 A 待 impl | (未) | (spike: `tests/battle/smoke_summon_spike.tscn` + `phase-05-summon-totem-spike.md` §5.5 结论) | — |
 
 状态 emoji：🔵 已落地 · 🟡 实现中 · 🟠 已设计未实现 · ⚫ 未做
 
@@ -114,7 +114,7 @@
 | 瞬移突袭 (前段状态影响后段) | shadow_step (#12) | §0.4 ExecutionContext.set/get_execution_state CAST 阶段写 → HIT 阶段读;§0.3 HexFacing.face_actor_toward 落地后 face target;落点优先级 [背→背左→背右→侧后左→侧后右→正面];6 邻格全失败 teleport_success=false 保持原位 |
 | 姿态切换 (单 Ability + loose tag) | stance (#14) | §0.6 NoInstanceConfig lifecycle (on_apply 默认 Wrath / on_remove 清两 tag);§0.2 FlowAction.if_(has_wrath, [W→C], [C→W]) 主动切换;2 PreEventConfig (incoming/outgoing) 读 stance tag → Modification.multiply。**V1 受控合同**:同 actor 不允许多实例 Stance;scenario_harness._fire_action 复用 existing ability (find_ability_by_config_id) |
 | 永久叠 modifier (无上限 passive periodic tick) | demon_form (#15) | §0.X StatModifierConfig.scale_by_stacks() + StatModifierComponent.on_stacks_changed 走 RawAttributeSet.update_modifier 原子更新;TriggerConfig.GRANTED_SELF + periodic loop timeline + 内嵌 SkillLocalAction 只递增 stacks。**scenario harness**: passive 永不自停, smoke runner timeout 仅警告不失败 |
-| 召唤 Actor (路线 A spike 验证) | summon_totem (#16) spike | `instance.add_actor + grid.place_occupant` + ability_set 手动 tick + `instance.remove_actor + grid.remove_occupant` 双步清理;recorder.record_frame(flush()) 让 mid-battle abilityGranted 进 replay。**正式 impl 待办**(per phase-05 §5.5):新 TOTEM character class + summon_totem.gd + _SummonTotemSpawnAction + TimeDurationConfig + NoInstance.on_remove。 |
+| 召唤 Actor (路线 A spike 验证) | summon_totem (#16) spike | `instance.add_actor + grid.place_occupant` + ability_set 手动 tick + `HexWorldGameplayInstance.remove_actor` 清 actor/grid + `TimeDurationConfig → NoInstance.on_remove` lifecycle 自清;recorder.record_frame(flush()) 让 mid-battle abilityGranted 进 replay。Phase 5 behavior placeholder 不计入完成。**正式 impl 待办**(per phase-05 §5.5):新 TOTEM character class + summon_totem.gd + _SummonTotemSpawnAction + TimeDurationConfig + NoInstance.on_remove。 |
 
 ### 还没有落地参考的 pattern (16 设计卡之外的)
 

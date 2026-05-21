@@ -29,6 +29,11 @@ const _EXAMPLE_LOGIC_ACTION_DIRS := [
 	"res://addons/logic-game-framework/example/dota2-auto-battle/logic/actions/",
 ]
 
+const _SKILL_FILE_DIRS := [
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/skills/",
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/buffs/",
+]
+
 ## allowlist: file path → { reason, migrate_by }
 ##
 ## 历史 Action 直接继承 Action.BaseAction，本次仅作硬化新代码，不要求统一迁移。
@@ -141,7 +146,7 @@ class Report:
 
 static func scan_repo() -> Report:
 	var report := Report.new()
-	for dir in _PUBLIC_ACTION_DIRS + _EXAMPLE_LOGIC_ACTION_DIRS:
+	for dir in _PUBLIC_ACTION_DIRS + _EXAMPLE_LOGIC_ACTION_DIRS + _SKILL_FILE_DIRS:
 		_scan_action_dir(dir, report)
 	return report
 
@@ -175,12 +180,27 @@ static func _scan_action_file(file_path: String, report: Report) -> void:
 	var public_class_name := ""
 	var public_class_line := -1
 	var direct_base_action_line := -1
+	var current_class_name := ""
+	var current_class_line := -1
+	var skip_execution_state_guard := file_path.ends_with("/execution_context.gd") \
+		or file_path.ends_with("/action_architecture_validator.gd")
 
 	for i in range(lines.size()):
 		var raw_line := lines[i]
 		var stripped := raw_line.strip_edges()
 		if stripped.is_empty() or stripped.begins_with("#"):
 			continue
+
+		if stripped.begins_with("class "):
+			var class_part := stripped.substr(len("class ")).strip_edges()
+			var token_end := class_part.find(":")
+			if token_end >= 0:
+				class_part = class_part.substr(0, token_end)
+			token_end = class_part.find(" ")
+			if token_end >= 0:
+				class_part = class_part.substr(0, token_end)
+			current_class_name = class_part
+			current_class_line = i + 1
 
 		# 1. class_name 在文件首层声明 (不缩进)
 		if not raw_line.begins_with("\t") and not raw_line.begins_with(" "):
@@ -200,6 +220,24 @@ static func _scan_action_file(file_path: String, report: Report) -> void:
 			# 顶层 (column 0) 或 缩进一级 (内嵌 class) 都要看
 			if direct_base_action_line < 0:
 				direct_base_action_line = i + 1
+
+		if stripped == "extends Action.SkillLocalAction":
+			if not current_class_name.begins_with("_"):
+				report.violations.append({
+					"file": file_path,
+					"line": current_class_line if current_class_line > 0 else i + 1,
+					"category": "skill_local_action_must_be_private",
+					"message": "SkillLocalAction 必须是技能/ buff 文件内的私有内嵌 class，命名需以 '_' 开头；got '%s'。" % current_class_name,
+				})
+
+		if not skip_execution_state_guard \
+				and (stripped.contains(".execution_state") or stripped.begins_with("execution_state[")):
+			report.violations.append({
+				"file": file_path,
+				"line": i + 1,
+				"category": "direct_execution_state_access_not_allowed",
+				"message": "禁止直接读写 execution_state；必须通过 ExecutionContext.set_execution_state/get_execution_state，以强制 namespaced key。",
+			})
 
 	# 顶层 class_name 必须在 allowlist 中（基础设施明确的入口）
 	if has_public_class_name and not allowlisted:

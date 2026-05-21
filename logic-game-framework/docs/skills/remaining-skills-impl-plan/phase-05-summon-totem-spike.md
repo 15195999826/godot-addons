@@ -60,8 +60,11 @@ spike/TDD 绿后再出**正式 impl align 方案**（补本节）。
 
 ## 5.5 Spike 结论 (2026-05-20)
 
-跑 `tests/battle/smoke_summon_spike.tscn` 5 阶段 (含 placeholder)，最终输出
-`SMOKE_SPIKE_RESULT: PASS - 5/5 phases verified`。
+跑 `tests/battle/smoke_summon_spike.tscn`，最终输出
+`SMOKE_SPIKE_RESULT: PASS - 5/5 verified phases passed; 1 placeholders skipped`。
+
+重要口径：Phase 5 behavior 仍是 placeholder，不计入完成；TTL 结论拆成 manual remove 与
+`TimeDurationConfig → NoInstance.on_remove` lifecycle 两条独立证据。
 
 ### 阶段验证记录
 
@@ -70,8 +73,9 @@ spike/TDD 绿后再出**正式 impl align 方案**（补本节）。
 | 1 spawn | 中途 `GameplayInstance.add_actor` + `UGridMap.model.place_occupant` 后 actor 进 `get_alive_actor_ids` + grid 占位 | ✅ | 框架原语完全支持 mid-battle 加新 actor;不需要新 SpawnActor primitive。 |
 | 2 actor 驱动 | 中途加 CharacterActor 后, 由调用方手动驱动 `ability_set.tick + tick_executions`, periodic loop timeline (Demon Form 3s) 在 7s 内 tick 2 次 | ✅ | CharacterActor 一旦加进 instance, ATB/AI/ability tick 链路天然可走;关键是 caller 必须显式 tick (与 procedure / harness 一致)。 |
 | 3 replay/recording | 中途 grant 的 ability 产生的 `abilityGranted` + `abilityStacksChanged` event 进入 `BattleRecorder.timeline` | ✅ | 关键是 grant 后立即 `recorder.record_frame(-1, event_collector.flush())`, 然后每 tick `record_frame(i, flush())` — event-order consistent (per phase 文档放松到 "可观察顺序稳定"); 不要求 byte-level identical。 |
-| 4 TTL → remove | 模拟 TTL 到期后 `UGridMap.model.remove_occupant(coord) + instance.remove_actor(id)` 双步清理, actor / grid 都干净 | ✅ | 不需要新 RemoveActorAction primitive; 现有 GameplayInstance.remove_actor + grid.remove_occupant 双 API 串起来就可以。SkillLocalAction 内嵌一份 helper 即足。 |
-| 5 图腾行为 | placeholder, 留正式 impl | ⏭️ | spike 不实现 (auto-attack / TTL lifecycle / 死亡消失)。 |
+| 4a manual remove | 模拟 TTL 到期后显式 `HexWorldGameplayInstance.remove_actor(id)`, actor / grid 都干净 | ✅ | hex world override 已集中清 grid occupancy / reservation；不需要调用方先手动 `grid.remove_occupant`。 |
+| 4b TTL lifecycle | `TimeDurationConfig` expire 后触发 `NoInstanceConfig.on_remove_actions` 内嵌 SkillLocalAction, 自清 actor / grid | ✅ | ability lifecycle 自删可行；正式图腾可用同 pattern 做 TTL 到期消失。 |
+| 5 图腾行为 | placeholder, 留正式 impl | ⏭️ | spike 不实现 auto-attack / 低 HP / 不移动 / 死亡消失，且 placeholder 不计入 PASS。 |
 
 ### 路线决定: **路线 A (低 HP CharacterActor)**
 
@@ -83,10 +87,10 @@ spike/TDD 绿后再出**正式 impl align 方案**（补本节）。
    不需要为图腾新建一套 actor 子树。
 2. **阶段 3 证明 recording 完整**, CharacterActor 子类天然走 hex `positionFormats="hex"`
    record, replay 不需要额外 schema。
-3. **阶段 4 证明 remove_actor 安全**: 死亡或 TTL 到期, 走 `UGridMap.model.remove_occupant +
-   GameplayInstance.remove_actor` 即可清理 grid + actor。死亡走现有 check_death 流程 (
-   HexBattleActor 已实现); TTL 通过 `TimeDurationConfig + on_remove_actions` (§0.6) 触发
-   显式 remove_actor 即可。
+3. **阶段 4a/4b 证明 remove_actor 与 TTL lifecycle 安全**: 显式 remove 走
+   `HexWorldGameplayInstance.remove_actor` 即可清 actor + grid；TTL 到期可由
+   `TimeDurationConfig + NoInstanceConfig.on_remove_actions` (§0.6) 触发内嵌
+   SkillLocalAction 自删。死亡走现有 `check_death` 流程；正式图腾仍需补死亡消失 scenario。
 4. **路线 B (SummonActor 子类 + periodic auto-attack timeline) 的额外成本不划算**:
    - SummonActor 子类要重新挂 `ability_set` / `attribute_set` / collision_profile
    - periodic auto-attack timeline 绕 ATB, 与现有"ATB 是攻击节拍统一入口"违和
@@ -112,9 +116,10 @@ spike/TDD 绿后再出**正式 impl align 方案**（补本节）。
 | 原语 | 状态 | 备注 |
 |---|---|---|
 | `instance.add_actor / remove_actor` | ✅ 现成 | 已用,无需新增 |
-| `grid.place_occupant / remove_occupant` | ✅ 现成 | 已用 |
+| `grid.place_occupant / remove_occupant` | ✅ 现成 | spawn 用 place; remove 由 `HexWorldGameplayInstance.remove_actor` 集中清 grid |
 | `recorder.record_frame(frame, events)` | ✅ 现成 | 调用方手动驱动 |
 | `event_collector.flush()` | ✅ 现成 | flush after grant / tick |
+| `TimeDurationConfig + NoInstance.on_remove` | ✅ 现成 | 已验证 TTL lifecycle 自清 actor/grid |
 | `SpawnActorAction` primitive | ❌ 不引入 | spike 证明 SkillLocalAction 足够 |
 | `RemoveActorAction` primitive | ❌ 不引入 | 同上 |
 | `ActorSummonedEvent` | ❌ 不引入 | abilityGranted + actorSpawned 已足够 demo/replay 区分召唤 |

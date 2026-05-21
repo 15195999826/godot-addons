@@ -40,6 +40,8 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
+	_assert_direction_between_six_dirs(ctx)
+
 	# Case 1: 初始默认 facing 与 team 对齐 (init 不产生 event,直接读 final state)。
 	# enemy_0 是 B 队 (team 1) → 应保持 WEST; 整场 scenario enemy_0 无 active skill 改 facing。
 	ctx.assert_eq(ctx.actor_final_facing(ctx.enemy_id(0)), HexFacing.DIR_WEST,
@@ -59,3 +61,18 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 			caster_facing_events.append(e)
 	ctx.assert_eq(caster_facing_events.size(), 0,
 		"Case3: caster 整场无 ActorFacingChangedEvent (forced displacement 与无主动施法时不应产生)")
+
+
+func _assert_direction_between_six_dirs(ctx: ScenarioAssertContext) -> void:
+	var origin := HexCoord.new(0, 0)
+	var cases: Array[Dictionary] = [
+		{"to": HexCoord.new(1, 0), "dir": HexFacing.DIR_EAST, "name": "EAST"},
+		{"to": HexCoord.new(1, -1), "dir": HexFacing.DIR_NORTHEAST, "name": "NORTHEAST"},
+		{"to": HexCoord.new(0, -1), "dir": HexFacing.DIR_NORTHWEST, "name": "NORTHWEST"},
+		{"to": HexCoord.new(-1, 0), "dir": HexFacing.DIR_WEST, "name": "WEST"},
+		{"to": HexCoord.new(-1, 1), "dir": HexFacing.DIR_SOUTHWEST, "name": "SOUTHWEST"},
+		{"to": HexCoord.new(0, 1), "dir": HexFacing.DIR_SOUTHEAST, "name": "SOUTHEAST"},
+	]
+	for case_data in cases:
+		var actual := HexFacing.direction_between(origin, case_data["to"] as HexCoord)
+		ctx.assert_eq(actual, case_data["dir"], "direction_between covers %s neighbor" % str(case_data["name"]))
