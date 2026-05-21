@@ -5,6 +5,8 @@
 ## (time_ms / ability_config / target_id)。tick 到达 keyframe.time_ms 时
 ## grant + activate, "所有 keyframe 已 fire 且无 executing instance 且无飞行
 ## 投射物"后 +POST_EXECUTION_TICKS 延迟关停。
+## ability runtime tick 复用 HexBattleProcedure.tick_actor_ability_runtime；本类只替换
+## 正式战斗里的"AI 决策并启动 action"阶段。
 ##
 ## 寄生在外部常驻 WorldGI 上 —— 不 GameWorld.destroy()，actor 生命周期归
 ## world 管，procedure 结束后可再次 start_battle。
@@ -134,6 +136,9 @@ func tick_once() -> void:
 
 	var cur_logic_time := world.get_logic_time() if world != null else float(_current_tick) * _tick_interval
 
+	if world != null:
+		world.broadcast_projectile_events()
+
 	# 先 fire 已到时的 keyframe; activate event 在本帧内被 ability_set 接收, 接着的 tick_executions
 	# 也会处理刚被 grant 的 ability。这样 t=0 keyframe 不会比"显式 grant" baseline 慢一帧。
 	# 但 fire 前必须先把 tag_container 的 logic_time 同步到本帧, 否则 cooldown 到期边界会
@@ -141,22 +146,11 @@ func tick_once() -> void:
 	_sync_participant_tag_logic_time(cur_logic_time)
 	_fire_due_keyframes(cur_logic_time)
 
-	# 合并两件事到同一循环:跑 ability tick + 探测 executing ability。
+	# 跑正式 hex battle 的 ability runtime tick；preview 只负责上面的 keyframe 调度。
 	var any_ability_executing := false
-	for pid in _participant_ids:
-		var actor := _get_actor(pid)
-		if actor is CharacterActor:
-			var cchar := actor as CharacterActor
-			cchar.ability_set.tick(_tick_interval, cur_logic_time)
-			cchar.ability_set.tick_executions(_tick_interval, world)
-			if not any_ability_executing:
-				for ability in cchar.ability_set.get_abilities():
-					if not ability.is_expired() and ability.get_executing_instances().size() > 0:
-						any_ability_executing = true
-						break
-
-	if world != null:
-		world.broadcast_projectile_events()
+	for actor in _get_alive_participants():
+		if HexBattleProcedure.tick_actor_ability_runtime(actor, _tick_interval, cur_logic_time, world):
+			any_ability_executing = true
 
 	record_current_frame_events()
 
@@ -213,7 +207,7 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		var kf: Dictionary = _pending_keyframes.pop_front()
 		var actor_id: String = kf["actor_id"] as String
 		var actor := _get_actor(actor_id) as CharacterActor
-		if actor == null:
+		if actor == null or actor.is_dead():
 			continue
 		var ability_cfg: AbilityConfig = kf["ability_config"]
 		if ability_cfg == null:
@@ -235,10 +229,17 @@ func _fire_due_keyframes(now_ms: float) -> void:
 
 
 func _sync_participant_tag_logic_time(now_ms: float) -> void:
+	for actor in _get_alive_participants():
+		actor.ability_set.tag_container.tick(0.0, now_ms)
+
+
+func _get_alive_participants() -> Array[CharacterActor]:
+	var result: Array[CharacterActor] = []
 	for pid in _participant_ids:
 		var actor := _get_actor(pid)
-		if actor is CharacterActor:
-			(actor as CharacterActor).ability_set.tag_container.tick(0.0, now_ms)
+		if actor is CharacterActor and not (actor as CharacterActor).is_dead():
+			result.append(actor as CharacterActor)
+	return result
 
 
 ## 扫 world.get_actors() 里是否有飞行中的投射物。
