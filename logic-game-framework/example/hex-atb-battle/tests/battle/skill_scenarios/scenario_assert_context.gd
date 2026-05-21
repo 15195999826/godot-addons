@@ -233,11 +233,18 @@ func assert_actor_ability_present(target_id: String, config_id: String, msg: Str
 static func _flatten_events(replay_data: Dictionary) -> Array[Dictionary]:
 	var flat: Array[Dictionary] = []
 	var timeline: Array = replay_data.get("timeline", [])
-	for frame_data in timeline:
+	for frame_index in range(timeline.size()):
+		var frame_data = timeline[frame_index]
 		if not (frame_data is Dictionary):
 			continue
+		var frame_number := int((frame_data as Dictionary).get("frame", frame_index))
 		var frame_events: Array = (frame_data as Dictionary).get("events", [])
-		for e in frame_events:
+		for event_index in range(frame_events.size()):
+			var e = frame_events[event_index]
 			if e is Dictionary:
-				flat.append(e as Dictionary)
+				var copied := (e as Dictionary).duplicate(true)
+				copied["replay_frame"] = frame_number
+				copied["replay_frame_index"] = frame_index
+				copied["replay_event_index"] = event_index
+				flat.append(copied)
 	return flat

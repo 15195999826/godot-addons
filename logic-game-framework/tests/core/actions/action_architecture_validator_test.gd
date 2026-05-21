@@ -16,6 +16,8 @@ func _init() -> void:
 	TestFramework.register_test("Allowlist entries have migrate_by metadata", _test_allowlist_has_migrate_by)
 	TestFramework.register_test("New extends BaseAction outside allowlist is flagged", _test_violation_detected_for_temp_file)
 	TestFramework.register_test("New PrimitiveAction without class_name in allowlist is flagged", _test_new_public_class_name_flagged)
+	TestFramework.register_test("SkillLocalAction in skill file must be private inner class", _test_skill_local_action_private_boundary)
+	TestFramework.register_test("Direct execution_state access is flagged", _test_direct_execution_state_access_flagged)
 
 
 func _test_repo_scan_clean() -> void:
@@ -72,3 +74,37 @@ func _test_new_public_class_name_flagged() -> void:
 			has_class_name_violation = true
 	TestFramework.assert_true(has_class_name_violation,
 		"Expected public_class_name_missing_from_allowlist violation, got: %s" % report.summary())
+
+
+func _test_skill_local_action_private_boundary() -> void:
+	var tmp_dir := "user://action_validator_test/"
+	DirAccess.make_dir_recursive_absolute(tmp_dir)
+	var tmp_path := tmp_dir + "mock_skill_local_action.gd"
+	var content := "class_name MockSkill\n\nclass RogueLocalAction:\n\textends Action.SkillLocalAction\n"
+	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
+	f.store_string(content)
+	f.close()
+	var report = VALIDATOR.scan_file(tmp_path)
+	var has_skill_local_violation := false
+	for v in report.violations:
+		if v.category == "skill_local_action_must_be_private":
+			has_skill_local_violation = true
+	TestFramework.assert_true(has_skill_local_violation,
+		"Expected skill_local_action_must_be_private violation, got: %s" % report.summary())
+
+
+func _test_direct_execution_state_access_flagged() -> void:
+	var tmp_dir := "user://action_validator_test/"
+	DirAccess.make_dir_recursive_absolute(tmp_dir)
+	var tmp_path := tmp_dir + "mock_execution_state_write.gd"
+	var content := "class_name MockSkill\n\nclass _LocalAction:\n\textends Action.SkillLocalAction\n\tfunc _execute_local(ctx: ExecutionContext) -> ActionResult:\n\t\tctx.execution_state[\"teleport_success\"] = true\n\t\treturn ActionResult.create_success_result([])\n"
+	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
+	f.store_string(content)
+	f.close()
+	var report = VALIDATOR.scan_file(tmp_path)
+	var has_execution_state_violation := false
+	for v in report.violations:
+		if v.category == "direct_execution_state_access_not_allowed":
+			has_execution_state_violation = true
+	TestFramework.assert_true(has_execution_state_violation,
+		"Expected direct_execution_state_access_not_allowed violation, got: %s" % report.summary())

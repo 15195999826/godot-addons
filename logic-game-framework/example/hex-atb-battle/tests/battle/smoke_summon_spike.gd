@@ -7,18 +7,41 @@
 ##   1. spawn  — 中途 add_actor 后 actor 在 get_actors / get_alive_actors, grid 占位
 ##   2. drive  — 中途加 CharacterActor (复用 WARRIOR 配置) 是否被 ATB/AI/ability tick 驱动
 ##   3. replay — 中途新 actor 的 spawn/grant 进入 recorder,可观察事件顺序
-##   4. ttl    — TimeDurationConfig 配 explicit remove_actor on expire 是否安全
+##   4a. manual remove — 显式 remove_actor 是否清 actor + grid
+##   4b. ttl lifecycle — TimeDurationConfig expire → NoInstance.on_remove 是否能自清 actor + grid
 ##   5. behavior — 图腾低 HP / 不移动 / 每 3s 攻最近敌人 / 死亡或 TTL 消失 (留给正式 impl)
 ##
 ## 输出: 控制台打印每阶段 PASS / FAIL + reason; smoke runner 协议:
-##   SMOKE_SPIKE_RESULT: PASS|FAIL - <N>/5 phases verified
+##   SMOKE_SPIKE_RESULT: PASS|FAIL - <N>/<M> verified phases passed; <K> placeholders skipped
 extends Node
 
 
 const TICK_INTERVAL := 100.0
+const TTL_LIFECYCLE_CONFIG_ID := "spike_ttl_lifecycle_cleanup"
 
 
 var _phase_results: Array[Dictionary] = []
+
+
+class _RemoveOwnerActorOnRemoveAction:
+	extends Action.SkillLocalAction
+
+	func _init() -> void:
+		super._init(HexBattleTargetSelectors.ability_owner(), TTL_LIFECYCLE_CONFIG_ID)
+		type = "spike_remove_owner_actor"
+
+	func _execute_local(ctx: ExecutionContext) -> ActionResult:
+		var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
+		if owner_id.is_empty():
+			return ActionResult.create_success_result([], {"removed": false, "reason": "missing owner"})
+		var actor := GameWorld.get_actor(owner_id)
+		if actor == null:
+			return ActionResult.create_success_result([], {"removed": false, "reason": "owner missing"})
+		var instance := actor.get_owner_gameplay_instance()
+		if instance == null:
+			return ActionResult.create_success_result([], {"removed": false, "reason": "instance missing"})
+		var removed := instance.remove_actor(owner_id)
+		return ActionResult.create_success_result([], {"removed": removed})
 
 
 func _ready() -> void:
@@ -26,7 +49,8 @@ func _ready() -> void:
 	_run_phase_1_spawn()
 	_run_phase_2_drive()
 	_run_phase_3_replay()
-	_run_phase_4_ttl()
+	_run_phase_4_manual_remove()
+	_run_phase_4b_ttl_lifecycle()
 	_run_phase_5_behavior_placeholder()
 	_report()
 
@@ -173,10 +197,10 @@ func _run_phase_3_replay() -> void:
 
 
 # ============================================================
-# Phase 4: TTL → remove_actor (显式)
+# Phase 4a: manual remove_actor (显式)
 # ============================================================
-func _run_phase_4_ttl() -> void:
-	var phase := "4. ttl_release"
+func _run_phase_4_manual_remove() -> void:
+	var phase := "4a. manual_remove_release"
 	GameWorld.init()
 	HexBattleAllSkills.register_all_timelines()
 	var grid_cfg := GridMapConfig.new()
@@ -195,7 +219,7 @@ func _run_phase_4_ttl() -> void:
 	UGridMap.model.place_occupant(HexCoord.new(1, 0), totem)
 	totem.hex_position = HexCoord.new(1, 0)
 
-	# 仿 TTL: 5s 后手动 remove_actor + grid clear (作为 spike, 不用 TimeDuration auto)
+	# 仿 TTL: 5s 后显式 remove_actor。HexWorldGameplayInstance.remove_actor 应同时清 grid。
 	var ttl_ms := 5000.0
 	var tick_count := 0
 	while instance.get_logic_time() < ttl_ms + 200.0:
@@ -204,17 +228,74 @@ func _run_phase_4_ttl() -> void:
 		if tick_count > 100:
 			break
 
-	# 手动 simulate TTL → remove
-	UGridMap.model.remove_occupant(HexCoord.new(1, 0))
+	# 手动 simulate TTL → remove；这是 manual remove 结论，不代表 TimeDuration lifecycle。
 	instance.remove_actor(totem.get_id())
 
 	var still_in_actors := instance.get_actor(totem.get_id()) != null
 	var grid_still_occupied := UGridMap.model.get_occupant(HexCoord.new(1, 0)) != null
 
 	if not still_in_actors and not grid_still_occupied:
-		_record(phase, true, "remove_actor + grid.remove_occupant 后 actor / grid 都清理干净")
+		_record(phase, true, "显式 remove_actor 后 actor / grid 都清理干净")
 	else:
 		_record(phase, false, "still_in_actors=%s grid_still_occupied=%s" % [still_in_actors, grid_still_occupied])
+
+	GameWorld.destroy()
+
+
+# ============================================================
+# Phase 4b: TimeDurationConfig → NoInstance.on_remove lifecycle
+# ============================================================
+func _run_phase_4b_ttl_lifecycle() -> void:
+	var phase := "4b. ttl_lifecycle_on_remove"
+	GameWorld.init()
+	HexBattleAllSkills.register_all_timelines()
+	var grid_cfg := GridMapConfig.new()
+	grid_cfg.grid_type = GridMapConfig.GridType.HEX
+	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
+	grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
+	grid_cfg.radius = 3
+	UGridMap.configure(grid_cfg)
+
+	var instance: HexWorldGameplayInstance = GameWorld.create_instance(func(): return HexWorldGameplayInstance.new("spike_p4b")) as HexWorldGameplayInstance
+	instance.grid = UGridMap.model
+
+	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
+	instance.add_actor(totem)
+	totem.set_team_id(0)
+	UGridMap.model.place_occupant(HexCoord.new(1, 0), totem)
+	totem.hex_position = HexCoord.new(1, 0)
+	var totem_id := totem.get_id()
+
+	var remove_actions: Array[Action.BaseAction] = [_RemoveOwnerActorOnRemoveAction.new()]
+	var ttl_config := (AbilityConfig.builder()
+		.config_id(TTL_LIFECYCLE_CONFIG_ID)
+		.display_name("Spike TTL Lifecycle Cleanup")
+		.ability_tags(["spike", "ttl"])
+		.component_config(TimeDurationConfig.new(300.0))
+		.component_config(NoInstanceConfig.builder()
+			.on_remove_actions(remove_actions)
+			.build())
+		.build())
+	var ttl_ability := Ability.new(ttl_config, totem_id)
+	totem.ability_set.grant_ability(ttl_ability, instance)
+
+	for _i in range(10):
+		totem.ability_set.tick(TICK_INTERVAL, instance.get_logic_time())
+		if instance.get_actor(totem_id) == null:
+			break
+
+	var removed_by_lifecycle := instance.get_actor(totem_id) == null
+	var grid_released := UGridMap.model.get_occupant(HexCoord.new(1, 0)) == null
+	var expired_by_duration := ttl_ability.is_expired() \
+		and ttl_ability.get_expire_reason() == TimeDurationComponent.EXPIRE_REASON_TIME_DURATION
+
+	if removed_by_lifecycle and grid_released and expired_by_duration:
+		_record(phase, true, "TimeDurationConfig expire → NoInstance.on_remove → remove_actor 清理 actor / grid")
+	else:
+		_record(phase, false,
+			"removed_by_lifecycle=%s grid_released=%s expired_by_duration=%s" % [
+				removed_by_lifecycle, grid_released, expired_by_duration,
+			])
 
 	GameWorld.destroy()
 
@@ -225,26 +306,40 @@ func _run_phase_4_ttl() -> void:
 func _run_phase_5_behavior_placeholder() -> void:
 	var phase := "5. behavior_placeholder"
 	# spike 阶段不实现正式图腾行为 (auto-attack / low HP / TTL 完整 lifecycle)。
-	# 仅记录 placeholder, 让 5/5 不全 false; 正式 impl 起新 /goal 时再补。
-	_record(phase, true, "placeholder: 正式图腾 impl 留给后续 /goal (本 spike 只验证前 4 个原语)")
+	# placeholder 不计入 pass_count；正式 impl 起新 /goal 时再补。
+	_record(phase, true, "placeholder: 正式图腾 behavior 留给后续 /goal (不计入完成)", false)
 
 
 # ============================================================
 # Reporting
 # ============================================================
-func _record(phase: String, pass_v: bool, reason: String) -> void:
-	_phase_results.append({"phase": phase, "pass": pass_v, "reason": reason})
+func _record(phase: String, pass_v: bool, reason: String, counts_toward_total: bool = true) -> void:
+	_phase_results.append({
+		"phase": phase,
+		"pass": pass_v,
+		"reason": reason,
+		"counts_toward_total": counts_toward_total,
+	})
 	var status := "PASS" if pass_v else "FAIL"
+	if not counts_toward_total:
+		status = "SKIP"
 	print("  [%s] %s — %s" % [status, phase, reason])
 
 
 func _report() -> void:
 	var pass_count := 0
+	var total_verified := 0
+	var skipped := 0
 	for r in _phase_results:
+		if not bool(r.get("counts_toward_total", true)):
+			skipped += 1
+			continue
+		total_verified += 1
 		if r["pass"]:
 			pass_count += 1
-	var total := _phase_results.size()
-	var ok := pass_count == total
+	var ok := pass_count == total_verified
 	var marker := "PASS" if ok else "FAIL"
-	print("\nSMOKE_SPIKE_RESULT: %s - %d/%d phases verified" % [marker, pass_count, total])
+	print("\nSMOKE_SPIKE_RESULT: %s - %d/%d verified phases passed; %d placeholders skipped" % [
+		marker, pass_count, total_verified, skipped,
+	])
 	get_tree().quit(0 if ok else 1)

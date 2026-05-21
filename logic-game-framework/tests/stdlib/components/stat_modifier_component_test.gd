@@ -35,6 +35,7 @@ func _init() -> void:
 	TestFramework.register_test("StatModifierConfig.scale_by_stacks() builder flag set", _test_builder_flag)
 	TestFramework.register_test("StatModifier on_apply initial value = config.value * stacks", _test_initial_scaled)
 	TestFramework.register_test("StatModifier add_stacks triggers update_modifier", _test_add_stacks)
+	TestFramework.register_test("StatModifier stack update emits one before/after attribute event", _test_stack_update_emits_attribute_event)
 	TestFramework.register_test("StatModifier remove_stacks updates modifier value", _test_remove_stacks)
 	TestFramework.register_test("StatModifier set_stacks updates modifier value", _test_set_stacks)
 	TestFramework.register_test("StatModifier non-scale mode does not react to stacks_changed", _test_non_scale_mode_noop)
@@ -108,6 +109,40 @@ func _test_add_stacks() -> void:
 	ability.add_stacks(2)
 	TestFramework.assert_true(absf(actor.attribute_set.atk - (initial_atk + 6.0)) < 0.01,
 		"after add 2 stacks: expected %.2f, got %.2f" % [initial_atk + 6.0, actor.attribute_set.atk])
+	_teardown()
+
+
+func _test_stack_update_emits_attribute_event() -> void:
+	_setup()
+	var actor := _make_actor()
+	var initial_atk := actor.attribute_set.atk
+	var cfg := (StatModifierConfig.builder()
+		.modifier("atk", AttributeModifier.Type.ADD_BASE, 2.0)
+		.scale_by_stacks()
+		.build())
+	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 1)
+	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null)
+	ability.apply_effects(ctx)
+
+	var events: Array[Dictionary] = []
+	actor.attribute_set.get_raw().add_change_listener(func(event: Dictionary) -> void:
+		events.append(event.duplicate())
+	)
+
+	ability.add_stacks(2)
+
+	TestFramework.assert_true(events.size() == 1,
+		"stack-scaled modifier update should emit exactly one attribute event, got %d" % events.size())
+	if events.size() == 1:
+		var event := events[0]
+		TestFramework.assert_true(str(event.get("attributeName", "")) == "atk",
+			"attribute event should be for atk")
+		TestFramework.assert_near(event.get("oldValue", 0.0) as float, initial_atk + 2.0, 0.01,
+			"attribute event oldValue should reflect pre-update atk")
+		TestFramework.assert_near(event.get("newValue", 0.0) as float, initial_atk + 6.0, 0.01,
+			"attribute event newValue should reflect post-update atk")
+		TestFramework.assert_true(str(event.get("changeType", "")) == "modifier",
+			"attribute event changeType should be modifier")
 	_teardown()
 
 
