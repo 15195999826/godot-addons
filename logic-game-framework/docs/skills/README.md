@@ -42,3 +42,5 @@ inkmon 项目层的**技能/战斗系统**设计与持续演进路线图。
 | [damage-pipeline.md](damage-pipeline.md) | 🔵 已落地 | 流程参考 | `apply_damage` 9 步流程、damage event 字段语义、插入式步骤清单 |
 | [shield-system.md](shield-system.md) | 🔵 V1 已落地 | 系统设计 | 护盾机制、消耗顺序、叠加策略、设计决策 |
 | [skill-implementation-progress.md](skill-implementation-progress.md) | 🟡 持续更新 | 进度追踪 | 16 张技能设计卡的落地状态 + Pattern 速查 + 偏离 design 文档之处 |
+| [remaining-skills-impl-plan.md](remaining-skills-impl-plan.md) | 🟡 Phase 开发入口 | 进度追踪 | 16 张技能设计卡剩余 5 个的 Phase 索引与落码总检查 |
+| [advanced-skills-impl-plan.md](advanced-skills-impl-plan.md) | 🟢 草案 | 进度追踪 | 16 技能完成后的进阶技能候选、优先级、评审门与暂缓项 |
