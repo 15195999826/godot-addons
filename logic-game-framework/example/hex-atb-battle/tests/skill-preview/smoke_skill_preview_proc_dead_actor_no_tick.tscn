@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://clu0deadnotick"]
+[gd_scene format=3 uid="uid://cktxk4ymery6a"]
 
 [ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/tests/skill-preview/smoke_skill_preview_proc_dead_actor_no_tick.gd" id="1"]
 
