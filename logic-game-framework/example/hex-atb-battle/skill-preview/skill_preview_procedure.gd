@@ -175,6 +175,26 @@ func tick_once() -> void:
 		if HexBattleProcedure.tick_actor_ability_runtime(actor, _tick_interval, cur_logic_time, world):
 			any_ability_executing = true
 
+	# Phase C (Fire Tile): EnvironmentActor 的 ability_set 也要 tick / tick_executions。
+	# 它不在 _get_alive_participants() (那是 CharacterActor 类型) 中, 单独遍历。
+	if world != null:
+		for actor in world.get_actors():
+			if not (actor is HexBattleActor) or actor is CharacterActor:
+				continue
+			var h := actor as HexBattleActor
+			h.ability_set.tag_container.tick(0.0, cur_logic_time)
+			h.ability_set.tick(_tick_interval, cur_logic_time)
+			var triggered := h.ability_set.tick_executions(_tick_interval, world)
+			# 任何 in-flight execution → any_ability_executing 防 idle 提前
+			if not triggered.is_empty():
+				any_ability_executing = true
+			for ability in h.ability_set.get_abilities():
+				if ability.is_expired():
+					continue
+				if ability.get_executing_instances().size() > 0:
+					any_ability_executing = true
+					break
+
 	record_current_frame_events()
 
 	if _current_tick >= MAX_TICKS:
@@ -266,19 +286,25 @@ func _get_alive_participants() -> Array[CharacterActor]:
 			seen_ids[pid] = true
 	# Phase C0 (Summon Totem): 把战斗中途 spawn 的 CharacterActor (totem 等) 也算进
 	# alive participants, 让它们的 ability_set tick / tick_executions 被驱动 +
-	# is_idle 判定能等到 periodic timeline 完成。否则 SpawnActorAction spawn 的 totem
-	# 既不 tick auto-attack 也不延迟 idle 退出。
+	# is_idle 判定能等到 periodic timeline 完成。
+	# Phase C (Fire Tile): 同样涵盖 EnvironmentActor mid-spawn (fire tile 持 passive
+	# periodic timeline), 否则 SkillPreviewProcedure 检测 idle 时 fire tile 的
+	# in-flight execution 不计入 — wait_for_idle 提前退出, pulse 不 fire。
+	# 返回类型放宽为 Array (CharacterActor + EnvironmentActor 公共基类 HexBattleActor,
+	# 但 _get_alive_participants 注解是 Array[CharacterActor]; 我们改用基类提取)。
 	var world := _get_world() as HexWorldGameplayInstance
 	if world != null:
 		for actor in world.get_actors():
-			if not (actor is CharacterActor):
-				continue
-			var c := actor as CharacterActor
-			if seen_ids.has(c.get_id()):
-				continue
-			if c.is_dead():
-				continue
-			result.append(c)
+			if actor is CharacterActor:
+				var c := actor as CharacterActor
+				if seen_ids.has(c.get_id()):
+					continue
+				if c.is_dead():
+					continue
+				result.append(c)
+			# EnvironmentActor 不属于 Array[CharacterActor], 不能直接 append。
+			# tick_executions / wait_for_idle 的 environment 路径由 tick_once 内单独遍历
+			# world.get_actors() (HexBattleActor) 处理。
 	return result
 
 
