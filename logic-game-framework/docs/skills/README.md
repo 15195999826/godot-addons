@@ -44,3 +44,4 @@ inkmon 项目层的**技能/战斗系统**设计与持续演进路线图。
 | [skill-implementation-progress.md](skill-implementation-progress.md) | 🟡 持续更新 | 进度追踪 | 16 张技能设计卡的落地状态 + Pattern 速查 + 偏离 design 文档之处 |
 | [remaining-skills-impl-plan.md](remaining-skills-impl-plan.md) | 🟡 Phase 开发入口 | 进度追踪 | 16 张技能设计卡剩余 5 个的 Phase 索引与落码总检查 |
 | [advanced-skills-impl-plan.md](advanced-skills-impl-plan.md) | 🟢 草案 | 进度追踪 | 16 技能完成后的进阶技能候选、优先级、评审门与暂缓项 |
+| [advanced-skills-next-batch.md](advanced-skills-next-batch.md) | 🟢 暂缓设计 | 进度追踪 | 下一轮暂缓技能：Lifesteal 与 Line/Cone AoE 的设计口径 |
