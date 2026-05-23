@@ -58,6 +58,10 @@ func _init(
 
 ## 走旧版 start_recording 路径保留 initial_actors / map_config，让
 ## FrontendBattleAnimator 消费 timeline dict 时 BattleRecord.from_dict 能正常构造。
+##
+## Phase C0 (Summon Totem): 同时 connect world.actor_added → recorder.register_actor,
+## 让 SpawnActorAction 中途 spawn 的 totem 自动 register 进 recorder; 否则它的
+## abilityGranted / actorSpawned / damage 不进 replay。
 func _start_recorder() -> void:
 	if _recorder == null:
 		return
@@ -73,6 +77,25 @@ func _start_recorder() -> void:
 	_recorder.start_recording(actors, {
 		"positionFormats": {"Character": "hex", "Environment": "hex"},
 	}, replay_map_config)
+
+	# Phase C0: 中途 add_actor 自动 register
+	if world != null and not world.actor_added.is_connected(_on_world_actor_added):
+		world.actor_added.connect(_on_world_actor_added)
+
+
+func _on_world_actor_added(actor_id: String) -> void:
+	if _recorder == null or not _recorder.get_is_recording():
+		return
+	var world := _get_world()
+	if world == null:
+		return
+	var actor := world.get_actor(actor_id)
+	if actor == null:
+		return
+	# 跳过 initial participants (已在 start_recording 时 register)
+	if actor_id in _participant_ids:
+		return
+	_recorder.register_actor(actor)
 
 
 func start() -> void:
@@ -235,10 +258,27 @@ func _sync_participant_tag_logic_time(now_ms: float) -> void:
 
 func _get_alive_participants() -> Array[CharacterActor]:
 	var result: Array[CharacterActor] = []
+	var seen_ids: Dictionary = {}
 	for pid in _participant_ids:
 		var actor := _get_actor(pid)
 		if actor is CharacterActor and not (actor as CharacterActor).is_dead():
 			result.append(actor as CharacterActor)
+			seen_ids[pid] = true
+	# Phase C0 (Summon Totem): 把战斗中途 spawn 的 CharacterActor (totem 等) 也算进
+	# alive participants, 让它们的 ability_set tick / tick_executions 被驱动 +
+	# is_idle 判定能等到 periodic timeline 完成。否则 SpawnActorAction spawn 的 totem
+	# 既不 tick auto-attack 也不延迟 idle 退出。
+	var world := _get_world() as HexWorldGameplayInstance
+	if world != null:
+		for actor in world.get_actors():
+			if not (actor is CharacterActor):
+				continue
+			var c := actor as CharacterActor
+			if seen_ids.has(c.get_id()):
+				continue
+			if c.is_dead():
+				continue
+			result.append(c)
 	return result
 
 
