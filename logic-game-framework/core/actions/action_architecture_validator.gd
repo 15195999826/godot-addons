@@ -78,6 +78,10 @@ const ALLOWLIST: Dictionary = {
 		"reason": "historical hex primitive",
 		"migrate_by": "future cleanup: convert to extends Action.PrimitiveAction",
 	},
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/actions/cancel_active_executions_action.gd": {
+		"reason": "Phase A Stun: cancel target's in-flight active executions in buff on_apply",
+		"migrate_by": "none (extends Action.PrimitiveAction; required because public class_name lives in public action dir)",
+	},
 	"res://addons/logic-game-framework/example/hex-atb-battle/logic/actions/apply_move_action.gd": {
 		"reason": "historical hex primitive",
 		"migrate_by": "future cleanup: convert to extends Action.PrimitiveAction",
