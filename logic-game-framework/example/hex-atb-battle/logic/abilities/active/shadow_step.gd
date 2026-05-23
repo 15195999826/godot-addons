@@ -156,6 +156,7 @@ static var ABILITY := (AbilityConfig.builder()
 			)] as Array[Action.BaseAction]
 		)])
 		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
+		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
 		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build())

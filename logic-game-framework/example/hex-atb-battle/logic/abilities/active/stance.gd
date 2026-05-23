@@ -115,6 +115,7 @@ static var ABILITY := (AbilityConfig.builder()
 			_calm_to_wrath_actions(),
 		)])
 		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
+		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
 		.condition(HexBattleCooldownSystem.CooldownCondition.new())
 		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build())
