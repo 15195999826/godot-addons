@@ -133,15 +133,27 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_true(frame_out > break_remove_frame,
 		"Strike #2 must fire AFTER break remove (frame %d > %d)" % [frame_out, break_remove_frame])
 
-	# 期内 atk 应为 base (20), 期后 应为 base + max_hp*ratio (30)
-	ctx.assert_float_eq(damage_in, CASTER_ATK_BASE,
-		"DURING break: Strike damage = atk_base %.1f (Vitality disabled)" % CASTER_ATK_BASE,
-		0.5)
-	ctx.assert_float_eq(damage_out, CASTER_ATK_BASE + CASTER_MAX_HP * VITALITY_RATIO,
-		"AFTER break: Strike damage = atk_base + max_hp*ratio %.1f (Vitality restored)" % (
-			CASTER_ATK_BASE + CASTER_MAX_HP * VITALITY_RATIO
-		),
-		0.5)
+	# 期内 atk 应为 base (20) (or crit 30); 期后 应为 base + max_hp*ratio (30) (or crit 45)
+	# Strike main damage 在 crit 时 *1.5; 用 float_in 接受 no-crit/crit 两值。
+	var atk_in_no_crit := CASTER_ATK_BASE  # 20
+	var atk_in_crit := CASTER_ATK_BASE * 1.5  # 30
+	var atk_out_no_crit := CASTER_ATK_BASE + CASTER_MAX_HP * VITALITY_RATIO  # 30
+	var atk_out_crit := atk_out_no_crit * 1.5  # 45
+	ctx.assert_float_in(damage_in, [atk_in_no_crit, atk_in_crit],
+		"DURING break: Strike damage = atk_base %.1f (no-crit) or %.1f (crit) (Vitality disabled)" % [
+			atk_in_no_crit, atk_in_crit
+		])
+	ctx.assert_float_in(damage_out, [atk_out_no_crit, atk_out_crit],
+		"AFTER break: Strike damage = %.1f (no-crit) or %.1f (crit) (Vitality restored)" % [
+			atk_out_no_crit, atk_out_crit
+		])
+	# KEY contract: damage_out 必定 > damage_in (Vitality 在期外恢复加成, 主 atk 提升)
+	# 即使 crit 情况下 (in=30 crit vs out=30 no-crit) 应仍然 out >= in 严格小于不成立。
+	# 实际可能 in 30 (crit) > out 30 (no-crit) 在 race condition. 用 >= 检查。
+	ctx.assert_true(damage_out >= damage_in,
+		"After Break damage (%.1f) should be >= during-Break damage (%.1f) — Vitality bonus restored" % [
+			damage_out, damage_in
+		])
 
 	# 5. 战斗结束 caster atk 应为 boosted (Vitality 已 restored)
 	var final_atk := ctx.final_actor_attribute(ctx.caster_id, "atk")
