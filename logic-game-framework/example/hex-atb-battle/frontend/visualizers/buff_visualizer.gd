@@ -70,6 +70,11 @@ const BUFF_REGISTRY := {
 		"color": Color(0.55, 0.35, 0.85),  # 紫色 - 口部禁言符号即视感
 		"primary_source": PrimarySource.NONE,
 	},
+	HexBattleBreakBuff.CONFIG_ID: {
+		"short": "✗",
+		"color": Color(0.45, 0.45, 0.55),  # 暗紫灰 - 被动失效的"沉灭"感
+		"primary_source": PrimarySource.NONE,
+	},
 }
 
 

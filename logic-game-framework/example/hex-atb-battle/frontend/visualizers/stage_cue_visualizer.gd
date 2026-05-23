@@ -47,6 +47,11 @@ const CONTROL_FLOATING_TEXTS := {
 		"color": Color(0.55, 0.35, 0.85),  # 紫色, 与 BuffVisualizer Silence entry 同色
 		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
 	},
+	"control_broken": {
+		"text": "破坏!",
+		"color": Color(0.45, 0.45, 0.55),  # 暗紫灰, 与 BuffVisualizer Break entry 同色
+		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
+	},
 }
 
 

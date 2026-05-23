@@ -65,3 +65,37 @@ func on_remove(context: AbilityLifecycleContext) -> void:
 	# 先取消动态依赖注册，再移除 modifier
 	raw.unregister_dynamic_dep(_modifier_id)
 	raw.remove_modifier(_modifier_id)
+
+
+## Phase B2 (Break): 进入 disabled 状态时撤销动态依赖 + modifier。
+## _modifier_id 保留以便 on_passive_enabled 用同 id 重新注册 (避免依赖图重新生成 noise)。
+func on_passive_disabled(context: AbilityLifecycleContext) -> void:
+	if context == null or context.attribute_set == null:
+		return
+	var raw := context.attribute_set.get_raw()
+	raw.unregister_dynamic_dep(_modifier_id)
+	raw.remove_modifier(_modifier_id)
+
+
+## Phase B2 (Break): 最后一个 disabled source 移除时, 按 Ability 当前状态重建动态依赖。
+## 重用同一个 _modifier_id (与 on_apply 生成的一致); RawAttributeSet 求解器立即按当前
+## source attribute 值算出正确 modifier value。
+func on_passive_enabled(context: AbilityLifecycleContext) -> void:
+	if context == null or context.attribute_set == null:
+		return
+	var raw := context.attribute_set.get_raw()
+	var modifier := AttributeModifier.new(
+		_modifier_id,
+		config.target_attribute,
+		config.modifier_type,
+		0.0,
+		context.ability.id,
+	)
+	raw.add_modifier(modifier)
+	raw.register_dynamic_dep(
+		_modifier_id,
+		config.source_attribute,
+		config.target_attribute,
+		config.modifier_type,
+		config.coefficient,
+	)

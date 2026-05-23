@@ -48,6 +48,29 @@ func on_remove(context: AbilityLifecycleContext) -> void:
 	context.attribute_set.get_raw().remove_modifiers_by_source(context.ability.id)
 	_clear_modifiers_internal()
 
+
+## Phase B2 (Break): 进入 disabled 状态时撤销当前 modifiers; 不清 _components state,
+## 等 on_passive_enabled 按当前 current_scale 重建。stacks / source metadata 全保留。
+func on_passive_disabled(context: AbilityLifecycleContext) -> void:
+	if context == null or context.attribute_set == null:
+		return
+	context.attribute_set.get_raw().remove_modifiers_by_source(context.ability.id)
+	applied_modifiers.clear()
+
+
+## Phase B2 (Break): 最后一个 disabled source 移除时, 按当前 ability state 重建 modifiers。
+## scales_by_stacks 模式: 按 ability.stacks 当前值重算 current_scale 再 add (Break 期间
+## stacks 可能被外部改, 这是允许行为, 按当前值重建)。
+func on_passive_enabled(context: AbilityLifecycleContext) -> void:
+	if context == null or context.attribute_set == null:
+		return
+	if scales_by_stacks and context.ability != null:
+		current_scale = float(context.ability.get_stacks())
+	applied_modifiers = _create_modifiers_internal(context)
+	var raw: RawAttributeSet = context.attribute_set.get_raw()
+	for modifier in applied_modifiers:
+		raw.add_modifier(modifier)
+
 ## §0.X: 在 Ability stacks 真实变化时，按 new_stacks 重算所有 modifier value，
 ## 通过 RawAttributeSet.update_modifier 原子更新 (不 remove + add)。
 ##

@@ -1,3 +1,9 @@
+## NoInstanceComponent - 无 execution instance 的事件被动 component
+##
+## Phase B2 (Break) 规则: 本 component 严禁实现 on_passive_disabled / on_passive_enabled hook。
+## Ability.receive_event() 已经顶层短路 disabled passive 的事件派发, 本 component 的
+## trigger / actions 自然不触发, 无需 component-level break 实现。如果在这里另行 implement,
+## 会与顶层短路重复, 引入不一致风险。
 class_name NoInstanceComponent
 extends AbilityComponent
 

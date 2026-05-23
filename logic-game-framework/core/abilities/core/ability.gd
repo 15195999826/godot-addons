@@ -44,6 +44,20 @@ var _execution_instances: Array[AbilityExecutionInstance] = []
 var _on_triggered_callbacks: Array[Callable] = []
 var _on_execution_callbacks: Array[Callable] = []
 
+## Phase B2 (Break) — passive disabled-source 引用计数。
+##
+## key = source ability id (如 BreakBuff 实例 id)，value = true（Set 语义）。
+## 多个 Break source 重叠时, 每个 source 独立贡献; 最后一个 source 移除才恢复 passive。
+## is_disabled() 决定 receive_event / tick_executions 是否短路。
+## State transitions empty→non-empty 触发 _notify_components_disabled (component
+## 撤销外部注册状态如 StatModifier); non-empty→empty 触发 _notify_components_enabled
+## (component 重建状态)。
+##
+## 规则: NoInstanceComponent / ActivateInstanceComponent 严禁实现 break hook —
+## passive 事件派发 / timeline 推进由 Ability 顶层短路, 不需要 component-level 实现。
+## 外部注册型 component (StatModifierComponent / DynamicStatModifierComponent) 实现 hook。
+var _disabled_sources: Dictionary = {}
+
 func _init(config: AbilityConfig, owner_actor_id_value: String, source_actor_id_value: String = ""):
 	id = IdGenerator.generate("ability")
 	config_id = config.config_id
@@ -87,6 +101,10 @@ func tick(dt: float) -> void:
 
 func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 	if _state == STATE_EXPIRED:
+		return []
+	# Phase B2 (Break) 顶层短路: disabled passive ability 冻结 periodic timeline,
+	# 不 destroy / 不 catch-up; 期内 elapsed 不推进, missed tick 丢弃 (per Goal)。
+	if is_disabled():
 		return []
 	var all_triggered: Array[String] = []
 	for instance in _execution_instances:
@@ -137,6 +155,11 @@ func cancel_all_executions() -> void:
 func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> void:
 	if _state == STATE_EXPIRED:
 		return
+	# Phase B2 (Break) 顶层短路: disabled passive ability 不派发事件给 NoInstanceComponent
+	# triggered passive (Thorn / Deathrattle 等), 也不进 ActiveUseComponent 的 cond/cost 链路。
+	# 这样 Break 不需要 NoInstanceComponent / ActivateInstanceComponent 自行实现 break hook。
+	if is_disabled():
+		return
 	var triggered_components: Array[String] = []
 	for comp in _components:
 		if not comp.is_active():
@@ -147,6 +170,60 @@ func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext, gam
 		for callback in _on_triggered_callbacks:
 			if callback.is_valid():
 				callback.call(event_dict, triggered_components)
+
+
+# ========== Phase B2 (Break) passive disabled-source 引用计数 API ==========
+
+## 是否处于 disabled 状态（至少有一个 disabled source 引用）。
+func is_disabled() -> bool:
+	return not _disabled_sources.is_empty()
+
+
+## 给本 Ability 添加一个 disabled source 引用 (Break buff 应用时).
+## 第一次添加 (empty → non-empty) 触发 _notify_components_disabled。
+## source_id 通常是 Break buff 的 ability id; 同一 source 多次 add 幂等。
+func add_disabled_source(source_id: String) -> void:
+	if source_id.is_empty():
+		return
+	var was_disabled := is_disabled()
+	_disabled_sources[source_id] = true
+	if not was_disabled:
+		_notify_components_disabled()
+
+
+## 移除一个 disabled source 引用 (Break buff expire / cleanse 时).
+## 最后一个 source 移除 (non-empty → empty) 触发 _notify_components_enabled。
+## 未知 source_id 不报错 (幂等)。
+func remove_disabled_source(source_id: String) -> void:
+	if source_id.is_empty():
+		return
+	if not _disabled_sources.has(source_id):
+		return
+	_disabled_sources.erase(source_id)
+	if _disabled_sources.is_empty():
+		_notify_components_enabled()
+
+
+func get_disabled_source_count() -> int:
+	return _disabled_sources.size()
+
+
+func _notify_components_disabled() -> void:
+	if not _effects_active:
+		return
+	var ctx := _build_remove_context()
+	for component in _components:
+		if component.is_active():
+			component.on_passive_disabled(ctx)
+
+
+func _notify_components_enabled() -> void:
+	if not _effects_active:
+		return
+	var ctx := _build_remove_context()
+	for component in _components:
+		if component.is_active():
+			component.on_passive_enabled(ctx)
 
 func add_triggered_listener(callback: Callable) -> Callable:
 	return _add_listener(_on_triggered_callbacks, callback)
