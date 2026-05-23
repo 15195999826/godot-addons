@@ -641,10 +641,13 @@ commit:
 
 ## 落码前总检查
 
-- [ ] 16 技能全部完成，`skill-implementation-progress.md` 已更新到 16 / 16。
-- [ ] 当前进阶技能的 Chosen / Rejected / 待拍板问题已收敛。
-- [ ] 明确它补的是新 pattern，不是已有技能换皮。
-- [ ] 新 public Action / Condition / TargetSelector 必须登记 rationale；技能私有逻辑优先 SkillLocalAction。
-- [ ] scenario 覆盖成功、失败、边界三类 case。
-- [ ] 若涉及 grid / actor lifecycle / replay，先写 spike 或最小红测。
-- [ ] 回写 `skill-implementation-progress.md` 的 Phase 2+ 区域或新增进阶进度表。
+- [x] 16 技能全部完成，`skill-implementation-progress.md` 已更新到 16 / 16 + Phase 2+ 区域到 9 / 9 (2026-05-24)。
+- [x] 当前进阶技能的 Chosen / Rejected / 待拍板问题已收敛 (本文档 + advanced-skills-next-batch.md V1)。
+- [x] 明确它补的是新 pattern (Stun/Silence/Break/Summon Totem/Fire Tile/Cleanse/Swap/Lifesteal/Piercing Line 各自代表独立 pattern,见 skill-implementation-progress.md 新 pattern 速查)。
+- [x] 新 public Action / Condition / TargetSelector 必须登记 rationale；技能私有逻辑优先 SkillLocalAction。
+    - 新 public Action: HexBattleCancelActiveExecutionsAction / HexBattleSpawnActorAction / HexBattleSpawnFireTileAction (都在 ALLOWLIST 登记)
+    - 新 TargetSelector: _PiercingLineSelector (内嵌 piercing_line.gd, 私有不算 public)
+    - 其它私有逻辑 (Cleanse / Swap / Lifesteal / FireTilePulse / TotemAttack 等) 走内嵌 SkillLocalAction
+- [x] scenario 覆盖成功、失败、边界三类 case (per phase 至少 1 个 scenario, Break 4 个 case 覆盖 Thorn/Vigor/DemonForm/Overlap)。
+- [x] 若涉及 grid / actor lifecycle / replay，先写 spike (Summon Totem Phase 05 spike) 或最小红测 (Break 4 scenarios TDD)。
+- [x] 回写 `skill-implementation-progress.md` 的 Phase 2+ 区域或新增进阶进度表 (新增 Phase 2+ 表 + 新 pattern 速查行)。
