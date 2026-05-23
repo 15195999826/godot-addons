@@ -60,6 +60,11 @@ const BUFF_REGISTRY := {
 		"color": Color(0.95, 0.85, 0.3),
 		"primary_source": PrimarySource.NONE,
 	},
+	HexBattleStunBuff.CONFIG_ID: {
+		"short": "★",
+		"color": Color(0.95, 0.85, 0.2),  # 金黄 - 头顶星星即视感
+		"primary_source": PrimarySource.NONE,  # 多实例独立挂, 单条 entry 表达"被眩晕"即可
+	},
 }
 
 

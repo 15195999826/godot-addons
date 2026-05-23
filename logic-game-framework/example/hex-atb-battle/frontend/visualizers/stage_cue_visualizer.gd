@@ -31,6 +31,19 @@ const EXECUTE_KILL_VFX_DURATION := 0.8
 ## 略延迟:让起手 melee_heavy 挥击先淡出,斩杀爆作为独立收尾炸出来,不糊在一起。
 const EXECUTE_KILL_VFX_DELAY := 0.15
 
+# ========== 控制状态 cue_id (Stun / Silence / Break 等共用 floating-text pattern) ==========
+
+## stage cue → floating text 映射: cue_id → { text, color, style }
+## 复用 FrontendFloatingTextAction (已存在的飘字系统), 不为单技能搭独立 VFX。
+## 加新 control 飘字 = 多写一行配置即可。
+const CONTROL_FLOATING_TEXTS := {
+	"control_stunned": {
+		"text": "眩晕!",
+		"color": Color(0.95, 0.85, 0.2),  # 金黄, 与 BuffVisualizer Stun entry 同色
+		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
+	},
+}
+
 
 func _init() -> void:
 	visualizer_name = "StageCueVisualizer"
@@ -59,9 +72,37 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	# 斩杀击杀 → 猩红冲击波(放大)醒目特效,区别于普通近战挥击
 	elif cue_id == EXECUTE_KILL_CUE:
 		actions.append_array(_create_execute_kill_vfx(source_id, target_ids, context))
+	# 控制状态 cue (Stun / Silence / Break) → 目标头顶飘字 (复用 floating-text pattern)
+	elif cue_id in CONTROL_FLOATING_TEXTS:
+		actions.append_array(_create_control_floating_text(target_ids, cue_id, context))
 	# 其他 cue_id（如 magic_fireball, ranged_arrow）不需要额外特效
 	# 因为它们有投射物飞行动画
-	
+
+	return actions
+
+
+## 控制状态 floating text (Stun "眩晕!" / Silence "沉默!" / Break "破坏!" 共用 pattern)
+func _create_control_floating_text(
+	target_ids: Array[String],
+	cue_id: String,
+	context: FrontendVisualizerContext
+) -> Array[FrontendVisualAction]:
+	var actions: Array[FrontendVisualAction] = []
+	var cfg: Dictionary = CONTROL_FLOATING_TEXTS.get(cue_id, {})
+	if cfg.is_empty() or target_ids.is_empty():
+		return actions
+
+	var anim_cfg := context.get_animation_config()
+	for target_id in target_ids:
+		var pos := context.get_actor_position(target_id)
+		actions.append(FrontendFloatingTextAction.new(
+			target_id,
+			cfg.get("text", "") as String,
+			cfg.get("color", Color.WHITE) as Color,
+			pos,
+			cfg.get("style", FrontendFloatingTextAction.FloatingTextStyle.NORMAL) as int,
+			anim_cfg.damage_floating_text_duration
+		))
 	return actions
 
 
