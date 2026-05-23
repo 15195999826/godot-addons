@@ -42,6 +42,11 @@ const CONTROL_FLOATING_TEXTS := {
 		"color": Color(0.95, 0.85, 0.2),  # 金黄, 与 BuffVisualizer Stun entry 同色
 		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
 	},
+	"control_silenced": {
+		"text": "沉默!",
+		"color": Color(0.55, 0.35, 0.85),  # 紫色, 与 BuffVisualizer Silence entry 同色
+		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
+	},
 }
 
 
