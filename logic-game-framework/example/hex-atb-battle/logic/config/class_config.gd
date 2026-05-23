@@ -10,7 +10,8 @@ enum CharacterClass {
 	ARCHER,
 	MAGE,
 	BERSERKER,
-	ASSASSIN
+	ASSASSIN,
+	TOTEM
 }
 
 
@@ -55,6 +56,11 @@ static func get_class_config(char_class: CharacterClass) -> ClassConfigItem:
 			return ClassConfigItem.new("刺客", {
 				"hp": 80.0, "max_hp": 80.0, "atk": 40.0, "def": 25.0, "speed": 140.0
 			})
+		CharacterClass.TOTEM:
+			# 召唤图腾: 低 HP, 中等 atk, 不动 (speed=0), 自动 nearest-enemy 攻击
+			return ClassConfigItem.new("图腾", {
+				"hp": 60.0, "max_hp": 60.0, "atk": 30.0, "def": 0.0, "speed": 0.0
+			})
 		_:
 			return ClassConfigItem.new("未知", {
 				"hp": 100.0, "max_hp": 100.0, "atk": 50.0, "def": 30.0, "speed": 100.0
@@ -76,6 +82,8 @@ static func class_to_string(char_class: CharacterClass) -> String:
 			return "Berserker"
 		CharacterClass.ASSASSIN:
 			return "Assassin"
+		CharacterClass.TOTEM:
+			return "Totem"
 		_:
 			return "Unknown"
 
@@ -95,5 +103,7 @@ static func string_to_class(s: String) -> CharacterClass:
 			return CharacterClass.BERSERKER
 		"Assassin":
 			return CharacterClass.ASSASSIN
+		"Totem", "TOTEM":
+			return CharacterClass.TOTEM
 		_:
 			return CharacterClass.WARRIOR

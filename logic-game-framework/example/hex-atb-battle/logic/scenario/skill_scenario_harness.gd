@@ -642,11 +642,37 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		base_tick(dt)
 		broadcast_projectile_events()
 
-	## 走 left_team + right_team staging, 不走 actor registry。
+
+	## Phase C0 (Summon Totem): mid-battle add_actor (例如 SpawnActorAction) 调用此入口,
+	## 需要自动 register 到 recorder, 否则中途 spawn 的 actor 的 abilityGranted /
+	## actorSpawned 等事件不会进 replay。父类签名 add_actor(Actor) -> Actor。
+	func add_actor(actor: Actor) -> Actor:
+		var added: Actor = super.add_actor(actor)
+		if recorder != null and recorder.get_is_recording():
+			recorder.register_actor(actor)
+		return added
+
+	## 走 left_team + right_team staging, 并合并 registry 中 mid-spawn 的 CharacterActor。
+	##
+	## Phase C0 (Summon Totem) 需要 mid-battle add_actor 的 totem 也参与 ability tick;
+	## staging 只含初始 caster/dummy, mid-spawn 不在其中。registry 是真实的 alive actor 源。
+	## 用 actor_id 去重避免 staging 已含的 actor 重复 tick。
 	func get_all_actors() -> Array[CharacterActor]:
 		var result: Array[CharacterActor] = []
-		result.append_array(left_team)
-		result.append_array(right_team)
+		var seen_ids: Dictionary = {}
+		for actor in left_team:
+			result.append(actor)
+			seen_ids[actor.get_id()] = true
+		for actor in right_team:
+			result.append(actor)
+			seen_ids[actor.get_id()] = true
+		for actor in get_actors():
+			if not (actor is CharacterActor):
+				continue
+			var c := actor as CharacterActor
+			if seen_ids.has(c.get_id()):
+				continue
+			result.append(c)
 		return result
 
 	func get_alive_actors() -> Array[CharacterActor]:
