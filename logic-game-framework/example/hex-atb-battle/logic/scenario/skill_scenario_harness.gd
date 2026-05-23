@@ -180,7 +180,9 @@ static func run_with_actions(
 				float(kf["time_ms"]),
 			)
 
-		for actor in battle.get_all_actors():
+		# Phase C (Fire Tile): tick all HexBattleActor (Character + Environment), 让
+		# EnvironmentActor 的 passive (FireTilePulse / FireTileLifetime) 也被驱动。
+		for actor in battle.get_all_hex_battle_actors():
 			actor.ability_set.tick(TICK_INTERVAL, cur_logic_time)
 			actor.ability_set.tick_executions(TICK_INTERVAL, battle)
 
@@ -203,9 +205,12 @@ static func run_with_actions(
 							still_executing = true
 							break
 						continue
-					if not (actor is CharacterActor):
+					# Phase C (Fire Tile): EnvironmentActor 也有 ability (FireTilePulse periodic),
+					# 它的 in-flight execution 算 still_executing — 否则 fire tile expire 之前
+					# harness 误判 idle 提前退出。HexBattleActor 是 Character + Environment 公共基类。
+					if not (actor is HexBattleActor):
 						continue
-					for ability in (actor as CharacterActor).ability_set.get_abilities():
+					for ability in (actor as HexBattleActor).ability_set.get_abilities():
 						if ability.is_expired():
 							continue
 						if ability.get_executing_instances().size() > 0:
@@ -673,6 +678,27 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 			if seen_ids.has(c.get_id()):
 				continue
 			result.append(c)
+		return result
+
+
+	## Phase C (Fire Tile): EnvironmentActor 也有 ability_set + passive (FireTilePulse 等)。
+	## 当前 harness tick loop 只 tick CharacterActor。这里返回所有 HexBattleActor (含 environment)
+	## 供 harness 在 tick 循环里给 environment 也跑 ability_set.tick / tick_executions。
+	func get_all_hex_battle_actors() -> Array[HexBattleActor]:
+		var result: Array[HexBattleActor] = []
+		var seen_ids: Dictionary = {}
+		for c in get_all_actors():
+			result.append(c)
+			seen_ids[c.get_id()] = true
+		for actor in get_actors():
+			if not (actor is HexBattleActor):
+				continue
+			if actor is CharacterActor:
+				continue  # 已在 get_all_actors() 中
+			var h := actor as HexBattleActor
+			if seen_ids.has(h.get_id()):
+				continue
+			result.append(h)
 		return result
 
 	func get_alive_actors() -> Array[CharacterActor]:
