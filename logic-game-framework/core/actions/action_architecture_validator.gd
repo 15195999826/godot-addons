@@ -30,8 +30,10 @@ const _EXAMPLE_LOGIC_ACTION_DIRS := [
 ]
 
 const _SKILL_FILE_DIRS := [
-	"res://addons/logic-game-framework/example/hex-atb-battle/logic/skills/",
-	"res://addons/logic-game-framework/example/hex-atb-battle/logic/buffs/",
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/abilities/active/",
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/abilities/passives/",
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/abilities/buffs/",
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/abilities/shared/",
 ]
 
 ## allowlist: file path → { reason, migrate_by }
