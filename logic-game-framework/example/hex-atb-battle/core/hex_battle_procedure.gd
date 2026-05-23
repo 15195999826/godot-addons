@@ -106,6 +106,25 @@ func tick_once() -> void:
 		if actor.can_act():
 			_start_actor_action(actor, cur_logic_time)
 
+	# Phase C0/C: 战斗中途 spawn 的 CharacterActor (totem) + EnvironmentActor (fire tile)
+	# 也要 tick ability_set + tick_executions, 否则 TotemAttack / FireTilePulse periodic
+	# timeline 永不 fire, lifetime 永不 expire — production demo battle 才会触发。
+	# initial team 已在上方主循环处理, 这里只补 mid-spawn 的 HexBattleActor。
+	if world != null:
+		var seen_ids: Dictionary = {}
+		for a in get_alive_characters():
+			seen_ids[a.get_id()] = true
+		for actor in world.get_actors():
+			if not (actor is HexBattleActor):
+				continue
+			var h := actor as HexBattleActor
+			if seen_ids.has(h.get_id()):
+				continue
+			# CharacterActor mid-spawn: tick + executions (与 production 主循环对齐, 但不进 ATB/AI)
+			# EnvironmentActor (fire tile): 同上 tick + executions
+			h.ability_set.tick(_tick_interval, cur_logic_time)
+			h.ability_set.tick_executions(_tick_interval, world)
+
 	record_current_frame_events()
 
 	if _current_tick >= MAX_TICKS:
