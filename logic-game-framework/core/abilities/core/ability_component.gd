@@ -63,6 +63,29 @@ func on_remove(_context: AbilityLifecycleContext) -> void:
 func on_stacks_changed(_context: AbilityLifecycleContext, _old_stacks: int, _new_stacks: int) -> void:
 	pass
 
+
+## Phase B2 (Break): Ability 首次进入 disabled 状态时调用 (empty → non-empty)。
+##
+## 仅外部注册型 component 应实现 (StatModifierComponent / DynamicStatModifierComponent):
+## 撤销外部注册状态 (RawAttributeSet modifier / dynamic dep), 这样 derived stat 立即
+## 反映"passive 被禁用"。
+##
+## ❌ NoInstanceComponent / ActivateInstanceComponent **不应**实现此 hook:
+## Ability.receive_event() 和 Ability.tick_executions() 已经顶层短路, 这些 component
+## 的事件 / timeline 自然不推进。重复短路会引入不一致风险。
+func on_passive_disabled(_context: AbilityLifecycleContext) -> void:
+	pass
+
+
+## Phase B2 (Break): Ability 最后一个 disabled source 移除 (non-empty → empty)。
+##
+## 与 on_passive_disabled 对称: 外部注册型 component 按当前 Ability state
+## (current_scale / stacks / 依赖关系) 重建状态; 不补 Break 期间错过的 tick。
+##
+## ❌ NoInstanceComponent / ActivateInstanceComponent **不应**实现此 hook。
+func on_passive_enabled(_context: AbilityLifecycleContext) -> void:
+	pass
+
 ## 序列化组件状态（可选覆盖）
 func serialize() -> Dictionary:
 	return {}

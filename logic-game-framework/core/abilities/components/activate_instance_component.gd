@@ -1,3 +1,10 @@
+## ActivateInstanceComponent - 触发即创建 AbilityExecutionInstance 走 timeline 的 component
+##
+## Phase B2 (Break) 规则: 本 component 严禁实现 on_passive_disabled / on_passive_enabled hook。
+## Ability.tick_executions() 已经顶层短路 disabled passive 的 periodic timeline 推进
+## (per Goal: "冻结 periodic timeline, 不 destroy 不 catch-up"); Ability.receive_event()
+## 同样顶层短路 GRANTED_SELF / 其它 event trigger 的 activation。本 component 不需要
+## component-level break 实现。重复短路会引入不一致 (例如 break 期间 catch-up tick)。
 class_name ActivateInstanceComponent
 extends AbilityComponent
 

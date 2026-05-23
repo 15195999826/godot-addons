@@ -45,6 +45,7 @@ static func _build_manifest() -> Array[_Entry]:
 	arr.append(_Entry.new(HexBattleExpose.ABILITY,        [HexBattleExpose.EXPOSE_TIMELINE]))
 	arr.append(_Entry.new(HexBattleStun.ABILITY,          [HexBattleStun.STUN_TIMELINE]))
 	arr.append(_Entry.new(HexBattleSilence.ABILITY,       [HexBattleSilence.SILENCE_TIMELINE]))
+	arr.append(_Entry.new(HexBattleBreak.ABILITY,         [HexBattleBreak.BREAK_TIMELINE]))
 	# Pure passives(no timeline)
 	arr.append(_Entry.new(HexBattleThorn.ABILITY,           []))
 	arr.append(_Entry.new(HexBattleDeathrattleAoe.ABILITY,  []))
@@ -59,6 +60,7 @@ static func _build_manifest() -> Array[_Entry]:
 	arr.append(_Entry.new(HexBattleExposeBuff.EXPOSE_BUFF,  []))
 	arr.append(_Entry.new(HexBattleStunBuff.create_config(HexBattleStunBuff.DEFAULT_DURATION_MS), []))
 	arr.append(_Entry.new(HexBattleSilenceBuff.create_config(HexBattleSilenceBuff.DEFAULT_DURATION_MS), []))
+	arr.append(_Entry.new(HexBattleBreakBuff.create_config(HexBattleBreakBuff.DEFAULT_DURATION_MS), []))
 	return arr
 
 
