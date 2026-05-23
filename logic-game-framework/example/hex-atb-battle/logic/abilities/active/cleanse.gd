@@ -110,7 +110,7 @@ static var ABILITY := (
 	.config_id(CONFIG_ID)
 	.display_name("净化")
 	.description("移除友方目标身上 1 个负面 buff (control → passive_break → 其它)")
-	.ability_tags(["skill", "active", "ranged", "ally", "cleanse"])
+	.ability_tags(["skill", "active", "ranged", "ally", "self", "cleanse"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 3)
 	.active_use(
 		ActiveUseConfig.builder()

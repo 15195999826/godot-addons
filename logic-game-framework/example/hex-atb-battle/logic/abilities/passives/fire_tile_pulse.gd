@@ -37,6 +37,11 @@ class _FireTilePulseAction:
 		var fire_tile := battle.get_actor(owner_id)
 		if fire_tile == null:
 			return ActionResult.create_success_result([], {})
+		# 死者留 world 不主动 remove (per project_dead_actor_retention memory): fire tile
+		# 被 Thorn 反伤打死后, is_dead()=true 但 actor 仍在 registry。pulse 必须 guard 否则
+		# 死 tile 继续每 1s 对同 coord 造伤。totem_attack.gd:38 同 pattern。
+		if (fire_tile as HexBattleActor).is_dead():
+			return ActionResult.create_success_result([], { "pulse_skipped": "dead" })
 		var tile_coord: HexCoord = (fire_tile as HexBattleActor).hex_position
 		if tile_coord == null:
 			return ActionResult.create_success_result([], {})

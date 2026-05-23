@@ -87,10 +87,16 @@ static var ABILITY := (
 	.active_use(
 		ActiveUseConfig.builder()
 		.timeline_id(TIMELINE_ID)
-		.on_timeline_start([StageCueAction.new(
-			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("melee_slash"),
-		)])
+		.on_timeline_start([
+			StageCueAction.new(
+				HexBattleTargetSelectors.current_target(),
+				Resolvers.str_val("melee_slash"),
+			),
+			StageCueAction.new(
+				HexBattleTargetSelectors.ability_owner(),
+				Resolvers.str_val("lifesteal_drain"),
+			),
+		])
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(
 				HexBattleTargetSelectors.current_target(),

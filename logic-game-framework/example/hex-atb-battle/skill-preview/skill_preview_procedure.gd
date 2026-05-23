@@ -98,6 +98,15 @@ func _on_world_actor_added(actor_id: String) -> void:
 	_recorder.register_actor(actor)
 
 
+## 覆盖 finish 以 disconnect world.actor_added signal — preview 寄生在常驻 WorldGI 上,
+## 不释 connection 会导致跨 preview 累积旧 procedure 监听器 + 阻止旧 procedure GC。
+func finish(result: String = "battle_complete") -> Dictionary:
+	var world := _get_world()
+	if world != null and world.actor_added.is_connected(_on_world_actor_added):
+		world.actor_added.disconnect(_on_world_actor_added)
+	return super.finish(result)
+
+
 func start() -> void:
 	super.start()
 	var world := _get_world()

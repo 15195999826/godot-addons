@@ -52,6 +52,37 @@ const CONTROL_FLOATING_TEXTS := {
 		"color": Color(0.45, 0.45, 0.55),  # 暗紫灰, 与 BuffVisualizer Break entry 同色
 		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
 	},
+	# Phase 2+ 进阶技能 floating text (Cleanse / Swap / Lifesteal / Piercing Line / Summon / Fire Tile)
+	"control_cleansed": {
+		"text": "净化!",
+		"color": Color(0.95, 0.95, 1.0),  # 白光, 净化的圣洁感
+		"style": FrontendFloatingTextAction.FloatingTextStyle.HEAL,
+	},
+	"swap_blink": {
+		"text": "换位!",
+		"color": Color(0.6, 0.85, 0.95),  # 浅青蓝, 瞬移感
+		"style": FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
+	},
+	"summon_totem_cast": {
+		"text": "图腾!",
+		"color": Color(0.75, 0.55, 0.3),  # 木褐, 图腾木质感
+		"style": FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
+	},
+	"fire_tile_cast": {
+		"text": "火地!",
+		"color": Color(1.0, 0.45, 0.1),  # 橘红, 火焰即视感
+		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
+	},
+	"piercing_line_cast": {
+		"text": "穿透!",
+		"color": Color(0.6, 0.85, 1.0),  # 锐青, 直线穿透感
+		"style": FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
+	},
+	"lifesteal_drain": {
+		"text": "汲血!",
+		"color": Color(0.85, 0.15, 0.25),  # 暗红, 吸血的血色
+		"style": FrontendFloatingTextAction.FloatingTextStyle.HEAL,
+	},
 }
 
 

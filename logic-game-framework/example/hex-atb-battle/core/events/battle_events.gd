@@ -288,11 +288,14 @@ class ActorDisplacedEvent extends GameEvent.Base:
 	var actor_id: String = ""
 	var from_hex: Dictionary = {}
 	var to_hex: Dictionary = {}
-	var displacement_kind: String = ""  # "knockback" | (future) "pull" | "scatter"
+	var displacement_kind: String = ""  # "knockback" | (future) "pull" | "scatter" | "swap"
 	var source_actor_id: String = ""
 	var actual_distance: int = 0
 	var action_lock_duration_ms: float = 0.0
 	var collision_action_lock_bonus_ms: float = 0.0
+	## Phase E (Swap): 配对 displacement event 同 swap_id, 让 frontend visualizer
+	## 找到对手做配对动画。其它 displacement_kind 默认空字符串。
+	var swap_id: String = ""
 
 	func _init() -> void:
 		kind = "actor_displaced"
@@ -305,7 +308,8 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		p_source_actor_id: String,
 		p_actual_distance: int = 0,
 		p_action_lock_duration_ms: float = 0.0,
-		p_collision_action_lock_bonus_ms: float = 0.0
+		p_collision_action_lock_bonus_ms: float = 0.0,
+		p_swap_id: String = ""
 	) -> ActorDisplacedEvent:
 		var e := ActorDisplacedEvent.new()
 		e.actor_id = p_actor_id
@@ -316,6 +320,7 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		e.actual_distance = p_actual_distance
 		e.action_lock_duration_ms = p_action_lock_duration_ms
 		e.collision_action_lock_bonus_ms = p_collision_action_lock_bonus_ms
+		e.swap_id = p_swap_id
 		return e
 
 	func to_dict() -> Dictionary:
@@ -329,6 +334,7 @@ class ActorDisplacedEvent extends GameEvent.Base:
 			"actual_distance": actual_distance,
 			"action_lock_duration_ms": action_lock_duration_ms,
 			"collision_action_lock_bonus_ms": collision_action_lock_bonus_ms,
+			"swap_id": swap_id,
 		}
 
 	static func from_dict(d: Dictionary) -> ActorDisplacedEvent:
@@ -341,6 +347,7 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		e.actual_distance = d.get("actual_distance", 0) as int
 		e.action_lock_duration_ms = d.get("action_lock_duration_ms", 0.0) as float
 		e.collision_action_lock_bonus_ms = d.get("collision_action_lock_bonus_ms", 0.0) as float
+		e.swap_id = d.get("swap_id", "") as String
 		return e
 
 	static func is_match(d: Dictionary) -> bool:

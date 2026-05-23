@@ -76,18 +76,19 @@ class _SwapPositionsAction:
 
 		# 双 ActorDisplacedEvent 同 swap_id (caster 先, target 后)
 		var swap_id := IdGenerator.generate("swap")
+		var actual_distance := caster_pos.distance_to(target_pos)
 		var caster_event := BattleEvents.ActorDisplacedEvent.create(
 			caster_id,
 			{ "q": caster_pos.q, "r": caster_pos.r },
 			{ "q": target_pos.q, "r": target_pos.r },
 			DISPLACEMENT_KIND,
 			caster_id,  # source = caster
-			1,  # actual_distance (treated as 1 hex for swap)
+			actual_distance,
 			0.0,  # no action_lock
 			0.0,
+			swap_id,
 		)
 		var caster_dict := caster_event.to_dict()
-		caster_dict["swap_id"] = swap_id
 		ctx.event_collector.push(caster_dict)
 
 		var target_event := BattleEvents.ActorDisplacedEvent.create(
@@ -96,12 +97,12 @@ class _SwapPositionsAction:
 			{ "q": caster_pos.q, "r": caster_pos.r },
 			DISPLACEMENT_KIND,
 			caster_id,
-			1,
+			actual_distance,
 			0.0,
 			0.0,
+			swap_id,
 		)
 		var target_dict := target_event.to_dict()
-		target_dict["swap_id"] = swap_id
 		ctx.event_collector.push(target_dict)
 
 		return ActionResult.create_success_result([caster_dict, target_dict], {
