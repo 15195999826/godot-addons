@@ -48,6 +48,7 @@ static func _build_manifest() -> Array[_Entry]:
 	arr.append(_Entry.new(HexBattleBreak.ABILITY,         [HexBattleBreak.BREAK_TIMELINE]))
 	arr.append(_Entry.new(HexBattleSummonTotem.ABILITY,   [HexBattleSummonTotem.SUMMON_TIMELINE]))
 	arr.append(_Entry.new(HexBattleSpawnFireTile.ABILITY, [HexBattleSpawnFireTile.SPAWN_FIRE_TILE_TIMELINE]))
+	arr.append(_Entry.new(HexBattleCleanse.ABILITY,       [HexBattleCleanse.CLEANSE_TIMELINE]))
 	# Pure passives(no timeline)
 	arr.append(_Entry.new(HexBattleThorn.ABILITY,           []))
 	arr.append(_Entry.new(HexBattleDeathrattleAoe.ABILITY,  []))
