@@ -13,11 +13,41 @@
 |---|---|---|
 | Tier 1 — MVP | 🟢 6 / 6 | 核心 pattern 验证 |
 | Tier 2 — 中级 | 🟢 6 / 6 | 多原语组合 |
-| Tier 3 — 高级 | 🟡 3 / 4 (+1 spike) | 跨系统; Summon Totem spike closeout 完成, 路线 A 待正式 impl |
-| **合计** | **15 / 16 (+1 spike)** | |
+| Tier 3 — 高级 | 🟢 4 / 4 | 跨系统; Summon Totem 路线 A 正式 impl 完成 (Phase C0) |
+| Phase 2+ 进阶 | 🟢 9 / 9 | A Stun / B Silence / B2 Break (改 LGF core) / C0 Summon Totem 正式 / C Fire Tile minimal / D Cleanse / E Swap / F Lifesteal / G Piercing Line |
+| **合计** | **24 / 24 + 1 spike 收口** | |
 
-**当前焦点** ：暂无；remaining skills review closeout 已补 Chain Lightning frame metadata / caster-death regression、HexFacing 6 向覆盖、stack modifier notification、Action validator guardrail 与 Summon Totem spike 真实口径。
-**下一个建议**：Summon Totem 正式 impl (per phase-05 §5.5 "待办") — `HexBattleSpawnActorAction` + 新 TOTEM character class + hex actor-level lifetime + summon_totem.gd + HexBattleTotemAttack(nearest enemy target selection)。Fire Tile / 地形伤害格排在它之后并复用同一个 spawn action 的 `OVERLAY` placement；正式做 Fire Tile 前补 `HexBattleActor.placement_mode` cleanup 与 all-`HexBattleActor` ability runtime tick。
+**当前焦点** ：Phase 2+ 9 phase 全部完成 (2026-05-24). `.claude-goal/lgf-advanced-skills/` 跟踪整个 goal 范围 (主仓 commit f69827d 起 — `git log --oneline f69827d..HEAD`)。
+**下一个建议**：Open Review Findings 中转移到 accepted descope 的 Break post-V1 items (late-grant passive, tick duration 短路, AbilityDisabled/Enabled GameEvent, serialize disabled_sources) — 可以单独开 phase 收口。Fire Tile minimal 留的设计 (placement_mode 字段, 双线 tick 拆分) 同样 post-V1。
+
+---
+
+## 🆕 Phase 2+ 进阶技能 (2026-05-24)
+
+| # | 设计名 | 状态 | 落地名 | 主要文件 | scenario 测试 |
+|---|---|---|---|---|---|
+| A | Stun | 🔵 已落地 | skill_stun + buff_stun | `abilities/active/stun.gd` + `abilities/buffs/stun_buff.gd` + `actions/cancel_active_executions_action.gd` | `stun_independent_instances_scenario.gd` + `stun_independent_instances_long_first_scenario.gd` |
+| B | Silence | 🔵 已落地 | skill_silence + buff_silence | `abilities/active/silence.gd` + `abilities/buffs/silence_buff.gd` (+ 18 active skill 加 `cant_use_skill` condition) | `silence_active_skill_gate_scenario.gd` + `silence_no_interrupt_inflight_scenario.gd` |
+| B2 | Break (改 core) | 🔵 已落地 | skill_break + buff_break | `abilities/active/break.gd` + `abilities/buffs/break_buff.gd` + core (`ability.gd` _disabled_sources + receive_event/tick_executions 顶层短路 + `ability_component.gd` virtual hook + StatModifier/DynamicStatModifier on_passive_disabled/enabled) | `break_thorn_disabled` + `break_dynamic_stat_disabled` + `break_demon_form_disabled` + `break_overlap` |
+| C0 | Summon Totem 正式 | 🔵 已落地 | skill_summon_totem | `abilities/active/summon_totem.gd` + `abilities/passives/totem_attack.gd` + `totem_lifetime.gd` + `actions/spawn_actor_action.gd` + TOTEM character class | `summon_totem_lifecycle_scenario.gd` |
+| C | Fire Tile (minimal) | 🟡 V1 已落地 | skill_spawn_fire_tile + FireTile EnvironmentActor | `abilities/active/spawn_fire_tile.gd` + `abilities/passives/fire_tile_pulse.gd` + `fire_tile_lifetime.gd` + `actions/spawn_fire_tile_action.gd` + `environment/fire_tile.gd` | `fire_tile_lifecycle_scenario.gd` |
+| D | Cleanse | 🔵 已落地 | skill_cleanse | `abilities/active/cleanse.gd` (内嵌 _CleanseAction SkillLocalAction) | `cleanse_priority_scenario.gd` |
+| E | Swap | 🔵 已落地 | skill_swap | `abilities/active/swap.gd` (内嵌 _SwapPositionsAction SkillLocalAction) | `swap_position_scenario.gd` |
+| F | Lifesteal | 🔵 已落地 | skill_lifesteal | `abilities/active/lifesteal.gd` (内嵌 _LifestealHealAction SkillLocalAction; on_hit callback chain) | `lifesteal_basic_scenario.gd` |
+| G | Piercing Line | 🔵 已落地 | skill_piercing_line | `abilities/active/piercing_line.gd` (内嵌 _PiercingLineSelector TargetSelector) | `piercing_line_scenario.gd` |
+
+新 pattern 速查 (Phase 2+):
+| 想做什么 | 看哪个已落地技能 | 关键看点 |
+|---|---|---|
+| Hard control (打断 + 行动锁) | stun (#A) | TagComponentConfig(cant_act) per-instance + TimeDurationConfig + NoInstance.on_apply CancelActiveExecutionsAction; 独立实例语义 component-owned tag; ApplyBuffAction 默认每次 grant 新 Ability |
+| Soft control (技能门禁) | silence (#B) | TagComponentConfig(cant_use_skill); 18 个 active skill condition 列表加 NoTagCondition(cant_use_skill); 不挡 Strike / Move; in-flight execution 不取消 |
+| Passive control + core 改动 (顶层短路 + component hook) | break (#B2) | Ability._disabled_sources Set 引用计数; receive_event / tick_executions 顶层短路; on_passive_disabled/enabled component hook (仅 StatModifier / DynamicStatModifier 实现, NoInstance / ActivateInstance 严禁实现); 内嵌 SkillLocalAction 给 passive 加/撤 disabled source |
+| 召唤 Actor (CharacterActor archetype + actor-level lifetime + 自动攻击) | summon_totem (#C0) | TOTEM CharacterClass; HexBattleSpawnActorAction + caster.neighbor free coord; TotemAttack periodic + nearest enemy target; TotemLifetime TimeDurationConfig + NoInstance.on_remove → remove_actor |
+| 火焰地形 (passable EnvironmentActor overlay) | spawn_fire_tile (#C) | HexBattleSpawnFireTileAction 不 place_occupant (overlay); FireTilePulse 每 1s 找同 coord alive CharacterActor 造 PURE damage; FireTileLifetime auto remove |
+| Cleanse 友方 buff (按 ability_tag 优先级) | cleanse (#D) | _CleanseAction (skill-local) 遍历 target.ability_set 按 control > passive_break > other 选 1 个 negative buff, AbilitySet.revoke_ability(REVOKE_REASON_DISPELLED, "cleanse") |
+| 原子位置交换 + 双事件 | swap (#E) | _SwapPositionsAction validate-all → commit (临时清两 occupant → 重放); 双 ActorDisplacedEvent 同 swap_id; 不造伤不加 cant_act |
+| Lifesteal (DamageEvent.actual_life_damage 驱动 heal) | lifesteal (#F) | DamageAction.on_hit callback chain; _LifestealHealAction (skill-local) 从 callback_ctx.get_current_event() 读 actual_life_damage * ratio → 嵌入 HexBattleHealAction; shield 全吸收 (actual=0) 不吸血 |
+| 直线穿透 (TargetSelector + hex direction) | piercing_line (#G) | _PiercingLineSelector (TargetSelector 子类) — caster→target 方向遍历 LINE_LENGTH 格收 occupant; 复用 HexBattleDamageAction
 
 ---
 
