@@ -15,7 +15,7 @@
 | 02 | [`phase-02-shadow-step.md`](remaining-skills-impl-plan/phase-02-shadow-step.md) | Shadow Step：logic-facing + teleport_success + delayed damage | ✅ 已批准 |
 | 03 | [`phase-03-stance.md`](remaining-skills-impl-plan/phase-03-stance.md) | Stance：单 Ability + loose stance tags + NoInstance lifecycle cleanup | ✅ 已批准 |
 | 04 | [`phase-04-demon-form.md`](remaining-skills-impl-plan/phase-04-demon-form.md) | Demon Form：stack-scaled StatModifier + scenario attribute snapshot + pulse VFX | ✅ 已批准 |
-| 05 | [`phase-05-summon-totem-spike.md`](remaining-skills-impl-plan/phase-05-summon-totem-spike.md) | Summon Totem：spawn/remove/replay/TTL TDD spike | ✅ spike closeout；正式 impl 另起目标 |
+| 05 | [`phase-05-summon-totem-spike.md`](remaining-skills-impl-plan/phase-05-summon-totem-spike.md) | Summon Totem：spawn/remove/replay/TTL TDD spike | ✅ spike closeout；正式 impl 另起目标；先于 Fire Tile |
 
 状态：⬜ 待评审 · 🟡 需改(见该节末「评审意见」) · ✅ 已批准可落码
 
@@ -31,7 +31,7 @@
 3. Phase 02 需要 Phase 00 的 facing、execution-local state、DamageAction no-op 全部可用。
 4. Phase 03 需要 `LooseTagAction`、`FlowAction.if_`、`NoInstanceConfig` lifecycle actions。
 5. Phase 04 需要 stack-scaled StatModifier 和 scenario attribute snapshot。
-6. Phase 05 spike closeout 已完成；本轮不直接实现正式图腾技能，正式 impl 另起目标。
+6. Phase 05 spike closeout 已完成；正式图腾技能另起目标，且必须排在 Fire Tile / 地形伤害格之前。
 
 ## 收敛的全局决策
 
@@ -41,7 +41,7 @@
 | schema 倾向 | 优先复用；Chain 允许补 projectile `customData` 透传 + `FlowAction.if_`；Shadow 引入 CharacterActor logic-facing + execution-local state；不扩 core Timeline | Chain=projectileHit 链式触发；Shadow=ActorDisplacedEvent + facing state + teleport_success；DamageAction 统一过滤 dead/invalid target |
 | facing 归属 | `facing_direction` 是 CharacterActor 运行时状态，不进 `RawAttributeSet`，不放 `HexBattleActor` 基类 | AttributeSet 是 float/modifier/breakdown 数值管线；EnvironmentActor 暂无朝向语义 |
 | Demon Form 实现 | 单 passive Ability：`StatModifierConfig.scale_by_stacks()` + periodic tick 只递增 stacks | 补完既有 `StatModifierComponent.scale_by_stacks` 半成品；属性加成仍通过 Ability/Component 建模，渲染层显示同一 Ability stacks |
-| Summon Totem | TDD spike 已验证框架原语；正式 impl 另起目标 | 战斗中途 add_actor / replay / manual remove / TimeDurationConfig→NoInstance.on_remove lifecycle 均已覆盖；behavior placeholder 不计入完成 |
+| Summon Totem | TDD spike 已验证框架原语；正式 impl 另起目标，且先于 Fire Tile | 战斗中途 add_actor / replay / manual remove / TimeDurationConfig→NoInstance.on_remove lifecycle 均已覆盖；正式 impl 抽 `HexBattleSpawnActorAction` 并改用 hex actor-level lifetime。Fire Tile 追加约束：`HexBattleActor.placement_mode` 记录 `OCCUPANT`/`OVERLAY` cleanup 语义，EnvironmentActor ability runtime 也必须被 battle tick |
 | crit 建模 | 「+X%」用 damage resolver ×系数，**不**强设 is_critical | DamageAction 无强制 crit 入口；resolver 系数是既有 pattern |
 
 ## 落码前总检查
