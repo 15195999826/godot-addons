@@ -101,16 +101,21 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_true(inst_a != inst_b,
 		"Break A id != Break B id (independent instances)")
 
-	# 2. 2 个 remove (短先, 长后)
+	# 2. 2 个 remove (短先, 长后), 拿到 last_break_remove_frame (= 长 Break B remove)
 	var break_removes: Array = []
+	var remove_b_frame := -1  # 长 Break B remove frame
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
 		if str(e.get("actorId", "")) != ctx.caster_id:
 			continue
 		var inst := str(e.get("abilityInstanceId", ""))
 		if inst == inst_a or inst == inst_b:
 			break_removes.append(e)
+		if inst == inst_b:
+			remove_b_frame = int(e.get("replay_frame", -1))
 	ctx.assert_eq(break_removes.size(), 2,
 		"Expect both Breaks to expire (got %d removes)" % break_removes.size())
+	ctx.assert_true(remove_b_frame > 0,
+		"Long Break B should expire (got frame %d)" % remove_b_frame)
 
 	# 3. enemy_0 → caster 的 Strike 主伤害事件 = 2 (期内 + 期后)
 	# 过滤 crit bonus (10 PURE), 只看主伤害 (50 或 75 crit)。
@@ -127,6 +132,8 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"Expect 2 enemy_0 Strike main hits on caster (crit bonus filtered) got %d" % main_strikes.size())
 
 	# 4. Thorn 反伤事件: 1-2 (期后 strike 主 + 可能 crit bonus; 期内 strike 不反伤)
+	#    关键 (multi-source refcount 契约): 每个 reflect frame 必须 > Break B remove frame,
+	#    验证 短 Break A 到期不会过早恢复 Thorn (refcount = 1, B 仍在)。
 	var reflects := ctx.filter_damage_events({
 		"source_actor_id": ctx.caster_id,
 		"target_actor_id": ctx.enemy_id(0),
@@ -134,6 +141,12 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	})
 	ctx.assert_true(reflects.size() >= 1 and reflects.size() <= 2,
 		"Expect 1-2 Thorn reflects (main + optional crit bonus, only after BOTH breaks removed); got %d" % reflects.size())
+	for r in reflects:
+		var frame := int(r.get("replay_frame", -1))
+		ctx.assert_true(frame > remove_b_frame,
+			"Thorn reflect must fire AFTER long Break B remove (refcount semantics): reflect frame %d > remove_b_frame %d" % [
+				frame, remove_b_frame
+			])
 
 	# 5. 期末 caster 上无 BreakBuff
 	ctx.assert_actor_ability_absent(
