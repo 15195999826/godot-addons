@@ -16,7 +16,10 @@
 extends Node
 
 
-const TIMEOUT_SEC := 30.0
+## smoke 实际只需要 ~0.5s 跑完所有 label transitions (见 _label_history 序列: ""→U2→U1→""
+## 在 t=0.42 完成). 之前 30s 与 launcher default_timeout_ms 撞车导致 parallel run 下
+## TIMEOUT. 降到 5s 留充足余量但不再撞 launcher 上限.
+const TIMEOUT_SEC := 5.0
 
 
 var _director: FrontendBattleDirector
