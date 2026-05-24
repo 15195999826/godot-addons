@@ -48,9 +48,13 @@ func _init(id_value: String = "") -> void:
 
 # ========== 显式 mutation API ==========
 
-func add_actor(actor: Actor) -> Actor:
+## 可选 after_id_assigned 回调在 ID 分配 / registry 写入之后、actor_added signal 之前执行。
+## 用于 spawn path 在外部观察者 snapshot actor 前完成 position / team / abilities 初始化。
+func add_actor(actor: Actor, after_id_assigned: Callable = Callable()) -> Actor:
 	var added := super.add_actor(actor)
 	if added != null:
+		if after_id_assigned.is_valid():
+			after_id_assigned.call(added)
 		actor_added.emit(added.get_id())
 	return added
 

@@ -49,16 +49,30 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 	# Spawn fire tile (EnvironmentActor) — 不 place_occupant, overlay 语义
 	var tile := HexBattleFireTile.create()
-	battle.add_actor(tile)
 	tile.hex_position = spawn_coord.duplicate()
-	# 标记 source_actor_id 作为追溯 metadata (caller / creator)
-	# Goal: "Fire Tile actor 可额外记录 creator_actor_id / source_skill_id 作为追溯 metadata"
-	# 当前 EnvironmentActor 没有 source field, 这里通过 ability source 间接关联。
+	battle.add_actor(
+		tile,
+		func(added: Actor) -> void:
+			_initialize_fire_tile(added, battle, caster_id),
+	)
 
+	return ActionResult.create_success_result([], {
+		"fire_tile_actor_id": tile.get_id(),
+		"fire_tile_coord": [spawn_coord.q, spawn_coord.r],
+	})
+
+
+func _initialize_fire_tile(
+	added: Actor,
+	battle: HexWorldGameplayInstance,
+	caster_id: String,
+) -> void:
+	var tile := added as EnvironmentActor
+	if tile == null:
+		return
 	# Grant passives (PulseAction periodic + Lifetime auto-remove)
 	# Note: HexBattleFireTilePulse.ABILITY 默认 1s interval / 20 damage; 自定义 interval/damage
 	# 留给后续 (当前 V1 用默认值, 与 SpawnFireTileAction 的 _pulse_interval_ms 等参数解耦)。
-	# 默认 5000ms lifetime 通过 caller 传 _lifetime_ms 覆盖。
 	var pulse_ab := Ability.new(HexBattleFireTilePulse.ABILITY, tile.get_id(), caster_id)
 	tile.ability_set.grant_ability(pulse_ab, battle)
 	var lifetime_ab := Ability.new(
@@ -67,8 +81,3 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		caster_id,
 	)
 	tile.ability_set.grant_ability(lifetime_ab, battle)
-
-	return ActionResult.create_success_result([], {
-		"fire_tile_actor_id": tile.get_id(),
-		"fire_tile_coord": [spawn_coord.q, spawn_coord.r],
-	})

@@ -247,6 +247,7 @@ static func run_with_actions(
 	var final_actor_attributes: Dictionary = {}
 	# §0.3: facing 快照 { actor_id: int 0..5 }, 只 CharacterActor 有 facing。
 	var final_facing_directions: Dictionary = {}
+	var final_grid_occupants: Dictionary = {}
 	for actor in battle.get_all_actors():
 		if not (actor is CharacterActor):
 			continue
@@ -264,6 +265,13 @@ static func run_with_actions(
 			attr_snap[attr_name] = raw.get_current_value(attr_name)
 		final_actor_attributes[c_actor.get_id()] = attr_snap
 		final_facing_directions[c_actor.get_id()] = c_actor.get_facing_direction()
+
+	if battle.grid != null:
+		for coord in battle.grid.get_all_coords():
+			var occupant := battle.grid.get_occupant(coord)
+			if occupant == null or not (occupant is Actor):
+				continue
+			final_grid_occupants[_grid_coord_key(coord)] = (occupant as Actor).get_id()
 
 	# 死者也加到 final_actor_hps(check_death 会 remove_actor,得从 ally/enemy_ids 补)
 	for aid in ally_ids + enemy_ids + [caster_id]:
@@ -288,6 +296,7 @@ static func run_with_actions(
 		"final_actor_hps": final_actor_hps,
 		"final_actor_attributes": final_actor_attributes,
 		"final_facing_directions": final_facing_directions,
+		"final_grid_occupants": final_grid_occupants,
 		"errors": errors,
 	}
 
@@ -344,8 +353,13 @@ static func _empty_result(errs: Array) -> Dictionary:
 		"final_actor_hps": {},
 		"final_actor_attributes": {},
 		"final_facing_directions": {},
+		"final_grid_occupants": {},
 		"errors": typed_errs,
 	}
+
+
+static func _grid_coord_key(coord: HexCoord) -> String:
+	return "%d,%d" % [coord.q, coord.r]
 
 
 ## 把 scene_config.target dict 转成 action target_ref 字符串
@@ -650,11 +664,11 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 
 	## Phase C0 (Summon Totem): mid-battle add_actor (例如 SpawnActorAction) 调用此入口,
 	## 需要自动 register 到 recorder, 否则中途 spawn 的 actor 的 abilityGranted /
-	## actorSpawned 等事件不会进 replay。父类签名 add_actor(Actor) -> Actor。
-	func add_actor(actor: Actor) -> Actor:
-		var added: Actor = super.add_actor(actor)
-		if recorder != null and recorder.get_is_recording():
-			recorder.register_actor(actor)
+	## actorSpawned 等事件不会进 replay。父类签名 add_actor(Actor, Callable) -> Actor。
+	func add_actor(actor: Actor, after_id_assigned: Callable = Callable()) -> Actor:
+		var added: Actor = super.add_actor(actor, after_id_assigned)
+		if added != null and recorder != null and recorder.get_is_recording():
+			recorder.register_actor(added)
 		return added
 
 	## 走 left_team + right_team staging, 并合并 registry 中 mid-spawn 的 CharacterActor。

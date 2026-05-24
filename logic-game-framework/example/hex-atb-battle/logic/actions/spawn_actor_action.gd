@@ -49,30 +49,47 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		return ActionResult.create_success_result([], { "spawn_failed": "no_free_neighbor" })
 
 	var spawned := CharacterActor.new(_character_class)
-	battle.add_actor(spawned)
 	spawned.set_team_id(caster.get_team_id())
-	battle.grid.place_occupant(spawn_coord, spawned)
-	spawned.hex_position = spawn_coord
+	spawned.hex_position = spawn_coord.duplicate()
+	_apply_attribute_overrides(spawned)
 
-	# 属性覆盖 (可选: max_hp / atk / def / speed)
-	if not _attribute_overrides.is_empty():
-		if _attribute_overrides.has("max_hp"):
-			spawned.attribute_set.set_max_hp_base(_attribute_overrides["max_hp"] as float)
-		if _attribute_overrides.has("hp"):
-			spawned.attribute_set.set_hp_base(_attribute_overrides["hp"] as float)
-		if _attribute_overrides.has("atk"):
-			spawned.attribute_set.set_atk_base(_attribute_overrides["atk"] as float)
-
-	# Grant abilities (passive periodic timeline / TimeDuration lifetime etc.)
-	for cfg in _grant_ability_configs:
-		if cfg is AbilityConfig:
-			var ab := Ability.new(cfg, spawned.get_id(), caster_id)
-			spawned.ability_set.grant_ability(ab, battle)
+	battle.add_actor(
+		spawned,
+		func(added: Actor) -> void:
+			_initialize_spawned_actor(added, battle, spawn_coord.duplicate(), caster_id),
+	)
 
 	return ActionResult.create_success_result([], {
 		"spawned_actor_id": spawned.get_id(),
 		"spawn_coord": [spawn_coord.q, spawn_coord.r],
 	})
+
+
+func _apply_attribute_overrides(spawned: CharacterActor) -> void:
+	if _attribute_overrides.is_empty():
+		return
+	if _attribute_overrides.has("max_hp"):
+		spawned.attribute_set.set_max_hp_base(_attribute_overrides["max_hp"] as float)
+	if _attribute_overrides.has("hp"):
+		spawned.attribute_set.set_hp_base(_attribute_overrides["hp"] as float)
+	if _attribute_overrides.has("atk"):
+		spawned.attribute_set.set_atk_base(_attribute_overrides["atk"] as float)
+
+
+func _initialize_spawned_actor(
+	added: Actor,
+	battle: HexWorldGameplayInstance,
+	spawn_coord: HexCoord,
+	caster_id: String,
+) -> void:
+	var spawned := added as CharacterActor
+	if spawned == null:
+		return
+	battle.grid.place_occupant(spawn_coord, spawned)
+	for cfg in _grant_ability_configs:
+		if cfg is AbilityConfig:
+			var ab := Ability.new(cfg, spawned.get_id(), caster_id)
+			spawned.ability_set.grant_ability(ab, battle)
 
 
 ## 找 anchor 的第一个未占邻格。全占满返回 null。

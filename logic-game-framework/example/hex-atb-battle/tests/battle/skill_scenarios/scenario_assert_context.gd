@@ -31,6 +31,8 @@ var final_actor_hps: Dictionary = {}
 var final_actor_attributes: Dictionary = {}
 ## §0.3 actor_id → int 0..5, 战斗结束瞬间 CharacterActor 朝向
 var final_facing_directions: Dictionary = {}
+## "q,r" → occupant actor_id，战斗结束瞬间 grid.occupant 快照
+var final_grid_occupants: Dictionary = {}
 
 var _failures: Array[String] = []
 
@@ -44,6 +46,7 @@ func _init(preview_result: Dictionary) -> void:
 	final_actor_hps = preview_result.get("final_actor_hps", {}) as Dictionary
 	final_actor_attributes = preview_result.get("final_actor_attributes", {}) as Dictionary
 	final_facing_directions = preview_result.get("final_facing_directions", {}) as Dictionary
+	final_grid_occupants = preview_result.get("final_grid_occupants", {}) as Dictionary
 	events = _flatten_events(preview_result.get("replay", {}) as Dictionary)
 
 
@@ -166,6 +169,10 @@ func final_actor_attribute(target_id: String, attr_name: String, fallback: float
 ## 默认 -1 表示未抓到 (非 CharacterActor / 不存在)。
 func actor_final_facing(target_id: String) -> int:
 	return final_facing_directions.get(target_id, -1) as int
+
+
+func grid_occupant_id(q: int, r: int) -> String:
+	return str(final_grid_occupants.get("%d,%d" % [q, r], ""))
 
 
 # ========== 断言 ==========
