@@ -12,6 +12,37 @@
 
 ---
 
+## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase D — Cone AoE selectors (skill_grid_cone + skill_angle_cone)
+
+引入首批 AoE `TargetSelector` 实现, 对比 hex 格子 sector (`GridConeSelector`) 与真实世界角度 (`AngleConeSelector`) 两种范围语义。两个 cone skill 都使用 `target_coord` 释放 (不点 actor), 复用 `HexBattleDamageAction` 多目标同帧产生多个 `DamageEvent`。
+
+### Added
+
+- **`example/hex-atb-battle/logic/abilities/active/grid_cone.gd`** — `HexBattleGridCone` (config_id `skill_grid_cone`, range 3, cooldown 8000ms). 内嵌 `_GridConeSelector`: `cast_dir = HexFacing.direction_between(caster, target_coord)`, 取 caster range 内所有 hex, 过滤 `direction_between(caster→cand) ∈ {cast_dir-1, cast_dir, cast_dir+1}` 三方向 sector 的敌方 alive CharacterActor。命中排序: hex_distance 升序 → coord sort_key 升序。`target_coord == caster.hex_position` → `Log.assert_crash` (caller contract 错误, 不 fallback)。
+- **`example/hex-atb-battle/logic/abilities/active/angle_cone.gd`** — `HexBattleAngleCone` (config_id `skill_angle_cone`, range 3, half_angle 45°, cooldown 8000ms). 内嵌 `_AngleConeSelector`: forward = `coord_to_world(target_coord) - coord_to_world(caster)`, 对每 candidate (world coords) 检查 `|angle(forward, cand_vec)| <= 45° + epsilon`。命中排序: hex_distance → world angle → coord sort_key. 同 `target_coord == caster` assertion + forward 零向量检测。
+- **3 个新 scenario** (`tests/battle/skill_scenarios/cone_*_scenario.gd`):
+  - `cone_grid_hits_sector` — 同站位 4 enemy, grid 命中前方 3 (E/E/NE), 后方 W 不中。
+  - `cone_angle_narrow` — 同设, angle 仅命中 2 个 (正东两枚), NE 60° world 角超出 45° 半角不中。
+  - `cone_grid_vs_angle_distinguishable` — 两 cast 同站位, 断言 angle hit set ⊂ grid hit set 且 grid 严格更多。
+
+### Changed
+
+- **`example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd`** — `_fire_action` 加 `target_coord: Dictionary = {}` 默认参数; action 字典支持 `"target_coord": {q,r}` 字段, 写入 `activate_event["target_coord"]`. cone / move 类 coord-based skill 在 scenario harness 内可直接释放。
+- **`example/hex-atb-battle/logic/abilities/shared/all_skills.gd`** — manifest 加 2 个 cone ability + 各自 timeline 注册。
+- **`example/hex-atb-battle/skill-preview/skill_preview.gd` `_collect_actor_setups`** — fixed_pos mode 现在透传 `target_coord` Dictionary 给 ability (而非仅 fallback 到 nearest actor)。
+- **`example/hex-atb-battle/skill-preview/skill_preview_procedure.gd`** — keyframe 携带 `target_coord` 时, activate event 写入 `target_coord` 字段。dev-scene 现在可以测试 cone / move 这类真 coord-based ability。
+
+### Validation
+
+| 测试 | 结果 |
+|---|---|
+| `hex/skills smoke_skill_scenarios` | PASS 58/58 (含 3 新 cone) |
+| `hex/regression` | PASS 3/3 |
+| `core/unit` | PASS |
+| dev-scene 视觉验证 | SkillPreview caster atk=40 朝 target_coord (3,0) cast `skill_grid_cone` → 3 enemy 同帧 `-40` damage 浮字 (timeline log 3 条 PHYSICAL 300ms 同时刻); 后方 enemy_3 (-1,0) HP 100 unchanged + Inspector "No damage or heal events". 多目标 AoE contract 闭环 |
+
+---
+
 ## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase C — hp_regen_per_sec + RegenerationEvent
 
 `hp_regen_per_sec` 由 `HexBattleGeneralPassive` periodic 1s timeline 驱动, 走自有 `HexBattleRegenerateAction` + `RegenerationEvent` (kind=`regeneration`), **不走 heal pipeline**, **不产 HealEvent**, **不触发 heal-related passive** (per spec)。VitalitySurge 普通被动 (`+5 hp/s`) 受 Break 影响; GeneralPassive 仍 tick 但属性归零 → action 早退。

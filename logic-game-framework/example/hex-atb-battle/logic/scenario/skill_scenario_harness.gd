@@ -141,8 +141,10 @@ static func run_with_actions(
 		var action_target_id := _resolve_target_ref(
 			target_ref, action_caster, caster, ally_actors, enemy_actors, battle.environments
 		)
+		# Phase D: target_coord 释放 (cone / move 等不点 actor 的技能).
+		var target_coord: Dictionary = action.get("target_coord", {}) as Dictionary
 		if time_ms <= 0:
-			_fire_action(battle, action_caster, skill_config, action_target_id, 0.0)
+			_fire_action(battle, action_caster, skill_config, action_target_id, 0.0, target_coord)
 		else:
 			pending.append({
 				"time_ms": time_ms,
@@ -150,6 +152,7 @@ static func run_with_actions(
 				"action_caster": action_caster,
 				"ability_config": skill_config,
 				"target_id": action_target_id,
+				"target_coord": target_coord,
 			})
 
 	pending.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -186,6 +189,7 @@ static func run_with_actions(
 				kf["ability_config"] as AbilityConfig,
 				kf["target_id"] as String,
 				float(kf["time_ms"]),
+				kf.get("target_coord", {}) as Dictionary,
 			)
 
 		# Phase C (Fire Tile): tick all HexBattleActor (Character + Environment), 让
@@ -331,6 +335,7 @@ static func _fire_action(
 	ability_config: AbilityConfig,
 	target_id: String,
 	keyframe_time_ms: float,
+	target_coord: Dictionary = {},
 ) -> void:
 	var existing := action_caster.ability_set.find_ability_by_config_id(ability_config.config_id)
 	var ability: Ability
@@ -347,6 +352,8 @@ static func _fire_action(
 	}
 	if target_id != "":
 		activate_event["target_actor_id"] = target_id
+	if not target_coord.is_empty():
+		activate_event["target_coord"] = target_coord
 	action_caster.ability_set.receive_event(activate_event, battle)
 
 
