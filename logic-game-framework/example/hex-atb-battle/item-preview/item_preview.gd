@@ -191,11 +191,18 @@ func get_inventory_state() -> Dictionary:
 
 ## Phase D adapter 转发: 当前 selected actor 的 6 slot 状态。Phase E "切 actor
 ## 验证装备隔离" step 直接读这个字段更稳, 不必每次解全 inventory_state.actors[i]。
+## 同时携带 last_op_* 字段, 让 success-path 的 select_actor 响应也能直接断言
+## last_op_success (不必跟一个额外 inventory_state op)。
 func get_selected_actor_state() -> Dictionary:
+	var common := {
+		"last_op_message": _last_op_message,
+		"last_op_success": _last_op_success,
+		"last_error": _last_error,
+	}
 	if _inventory == null:
-		return {}
+		return common
 	if _selected_actor_idx < 0 or _selected_actor_idx >= SANDBOX_ACTOR_IDS.size():
-		return {}
+		return common
 	var aid: String = SANDBOX_ACTOR_IDS[_selected_actor_idx]
 	var eq_id := _inventory.get_equipment_container_id(aid)
 	var slots: Array = []
@@ -207,6 +214,9 @@ func get_selected_actor_state() -> Dictionary:
 		"equipment_container_id": eq_id,
 		"slots": slots,
 		"selected_actor_idx": _selected_actor_idx,
+		"last_op_message": _last_op_message,
+		"last_op_success": _last_op_success,
+		"last_error": _last_error,
 	}
 
 
