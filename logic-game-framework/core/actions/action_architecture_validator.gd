@@ -118,6 +118,10 @@ const ALLOWLIST: Dictionary = {
 		"reason": "historical hex primitive (Thorns)",
 		"migrate_by": "future cleanup: convert to extends Action.PrimitiveAction",
 	},
+	"res://addons/logic-game-framework/example/hex-atb-battle/logic/actions/regenerate_action.gd": {
+		"reason": "phase C public primitive: resource regen separate from heal pipeline (extends Action.PrimitiveAction directly)",
+		"migrate_by": "n/a (already on the correct base; allowlisted because validator requires explicit registration for all public class_name actions)",
+	},
 	"res://addons/logic-game-framework/example/hex-atb-battle/logic/actions/start_move_action.gd": {
 		"reason": "historical hex primitive",
 		"migrate_by": "future cleanup: convert to extends Action.PrimitiveAction",

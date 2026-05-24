@@ -12,6 +12,7 @@ func _init(p_actor_id: String = "") -> void:
 		"def": { "baseValue": 30.0 },
 		"speed": { "baseValue": 100.0 },
 		"attack_lifesteal_pct": { "baseValue": 0.0, "minValue": 0.0 },
+		"hp_regen_per_sec": { "baseValue": 0.0, "minValue": 0.0 },
 	})
 
 
@@ -101,6 +102,30 @@ func set_attack_lifesteal_pct_base(value: float) -> void:
 func on_attack_lifesteal_pct_changed(callback: Callable) -> Callable:
 	var wrapper := func(raw_event: Dictionary) -> void:
 		if raw_event.get("attributeName", "") == "attack_lifesteal_pct":
+			callback.call(GameEvent.AttributeChanged.create(
+				actor_id,
+				raw_event.get("attributeName", ""),
+				raw_event.get("oldValue", 0.0),
+				raw_event.get("newValue", 0.0),
+			))
+	_raw.add_change_listener(wrapper)
+	return func() -> void:
+		_raw.remove_change_listener(wrapper)
+
+var hp_regen_per_sec: float:
+	get:
+		return _raw.get_current_value("hp_regen_per_sec")
+var hp_regen_per_sec_breakdown: AttributeBreakdown:
+	get:
+		return _raw.get_breakdown("hp_regen_per_sec")
+func get_hp_regen_per_sec_breakdown() -> AttributeBreakdown:
+	return _raw.get_breakdown("hp_regen_per_sec")
+const hp_regen_per_sec_attribute := "hp_regen_per_sec"
+func set_hp_regen_per_sec_base(value: float) -> void:
+	_raw.set_base("hp_regen_per_sec", value)
+func on_hp_regen_per_sec_changed(callback: Callable) -> Callable:
+	var wrapper := func(raw_event: Dictionary) -> void:
+		if raw_event.get("attributeName", "") == "hp_regen_per_sec":
 			callback.call(GameEvent.AttributeChanged.create(
 				actor_id,
 				raw_event.get("attributeName", ""),

@@ -23,6 +23,24 @@ class_name HexBattleGeneralPassive
 
 
 const CONFIG_ID := "general_passive"
+const REGEN_TIMELINE_ID := "general_passive_regen"
+const REGEN_INTERVAL_MS := 1000.0  # 每 1 秒 tick 一次, 与 hp_regen_per_sec 单位对齐.
+const REGEN_INTERVAL_SECONDS := REGEN_INTERVAL_MS / 1000.0
+
+
+static var REGEN_TIMELINE := TimelineData.periodic(REGEN_TIMELINE_ID, REGEN_INTERVAL_MS)
+
+
+## per-sec 解析: 在每次 tick 时读 owner 当前 hp_regen_per_sec (会随 buff/passive grant/revoke 浮动).
+static var _HP_REGEN_PER_SEC_RESOLVER: FloatResolver = Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
+	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
+	if owner_id.is_empty():
+		return 0.0
+	var actor := GameWorld.get_actor(owner_id)
+	if actor == null or not (actor is CharacterActor):
+		return 0.0
+	return (actor as CharacterActor).attribute_set.hp_regen_per_sec
+)
 
 
 ## attack_lifesteal_pct = 0 / actual_life_damage = 0 / source 不在场都走早退,
@@ -90,6 +108,19 @@ static var ABILITY: AbilityConfig = (
 		NoInstanceConfig.builder()
 		.trigger(TriggerConfig.new("attack_landed", _attack_landed_filter()))
 		.action(_LifestealAction.new())
+		.build()
+	)
+	.component_config(
+		ActivateInstanceConfig.builder()
+		.trigger(TriggerConfig.GRANTED_SELF)
+		.timeline_id(REGEN_TIMELINE_ID)
+		.on_timeline_end([HexBattleRegenerateAction.new(
+			HexBattleTargetSelectors.ability_owner(),
+			"hp",
+			_HP_REGEN_PER_SEC_RESOLVER,
+			REGEN_INTERVAL_SECONDS,
+			"general_passive",
+		)])
 		.build()
 	)
 	.build()

@@ -86,6 +86,14 @@ func _run_scenario(path: String) -> void:
 		scene_config = scene_config.duplicate()
 		scene_config["caster_passives"] = passives
 
+	# Phase C: Min-ticks override — scenarios that need to observe periodic timeline
+	# behavior (HP regen, Demon Form stacks) set get_min_ticks() > 0 to prevent
+	# idle detection from short-circuiting before the periodic ticks accumulate.
+	var min_ticks := scenario.get_min_ticks()
+	if min_ticks > 0:
+		scene_config = scene_config.duplicate()
+		scene_config["min_ticks"] = min_ticks
+
 	var result := HexBattleSkillScenarioHarness.run_with_actions(
 		scene_config, actions, scenario.get_max_ticks()
 	)
