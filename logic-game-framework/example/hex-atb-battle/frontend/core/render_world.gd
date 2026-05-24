@@ -141,7 +141,10 @@ func _initialize_actor_from_init_data(actor_init: ReplayData.ActorInitData) -> v
 	actor_state.is_alive = true
 	actor_state.flash_progress = 0.0
 	actor_state.tint_color = Color.WHITE
-	
+	# Phase F: facing_direction 从 init data 重建 (CharacterActor.get_attribute_snapshot 含此字段).
+	# EnvironmentActor 等没 facing 的 actor 默认 0 (DIR_EAST) 不显示箭头, 由 UnitView 自查 actor type.
+	actor_state.facing_direction = int(actor_init.attributes.get("facing_direction", 0))
+
 	_actors[actor_init.id] = actor_state
 	_interpolated_positions[actor_init.id] = Vector2(hex_pos.q, hex_pos.r)
 
@@ -208,6 +211,8 @@ func _apply_action(active_action: FrontendActionScheduler.ActiveAction) -> void:
 			_apply_apply_shield_state_action(action)
 		FrontendVisualAction.ActionType.BUMP:
 			_apply_bump_action(action, progress)
+		FrontendVisualAction.ActionType.APPLY_FACING_STATE:
+			_apply_apply_facing_state_action(action)
 
 
 ## 应用移动动作
@@ -221,6 +226,17 @@ func _apply_move_action(action: FrontendMoveAction, progress: float) -> void:
 		if actor != null:
 			actor.position = action.to_hex
 			actor_state_changed.emit(action.actor_id, actor)
+
+
+## Phase F · 应用朝向状态(瞬时, 无 lerp / turn speed): 立即把 new_direction 写入
+## actor.facing_direction, 触发 actor_state_changed signal 让 UnitView 旋转箭头.
+## EnvironmentActor 不该收到此事件 (HexFacing.face_actor_toward 不调它); 兜底 skip null actor.
+func _apply_apply_facing_state_action(action: FrontendApplyFacingStateAction) -> void:
+	var actor: FrontendActorRenderState = _actors.get(action.actor_id)
+	if actor == null:
+		return
+	actor.facing_direction = action.new_direction
+	_dirty_actors[action.actor_id] = true
 
 
 ## 应用 hp delta(瞬时):把伤害 / 治疗的 delta 立刻累到 target_hp,

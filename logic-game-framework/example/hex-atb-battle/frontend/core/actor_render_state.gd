@@ -60,6 +60,13 @@ var bump_offset: Vector3 = Vector3.ZERO
 ## bump 临时 mesh 挤压(Vector3 scale;Vector3.ONE = 无形变)
 var bump_squish: Vector3 = Vector3.ONE
 
+## §0.3 Phase F: 角色逻辑朝向 (HexFacing.DIR_* 0..5)
+##   - Replay 初始化时由 RenderWorld 读 actor_init.attributes["facing_direction"] 填入.
+##   - 战斗中 actor_facing_changed event 由 FrontendActorFacingChangedVisualizer
+##     翻译为 ApplyFacingStateAction → RenderWorld 更新此字段.
+##   - FrontendUnitView 用此字段旋转朝向箭头 attached visual (仅 CharacterActor).
+var facing_direction: int = 0
+
 
 # ========== Buff 状态 ==========
 
@@ -99,6 +106,7 @@ func duplicate() -> FrontendActorRenderState:
 	copy.death_progress = death_progress
 	copy.bump_offset = bump_offset
 	copy.bump_squish = bump_squish
+	copy.facing_direction = facing_direction
 	for b in buffs:
 		copy.buffs.append(b.duplicate())
 	for s in shields:

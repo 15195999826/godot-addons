@@ -198,9 +198,14 @@ func _get_team_int() -> int:
 	return _team_id
 
 
-## 角色 attribute snapshot 含完整 stats (覆盖基类的 hp/max_hp 默认实现)
+## 角色 attribute snapshot 含完整 stats + facing (Phase F: replay 重建朝向必须从 init data 读)
+##
+## facing_direction 不是严格意义的 attribute, 但 replay 重建状态需要它在初始 ActorInitData 里;
+## 与其在 ReplayData 加额外字段, 这里复用 attribute_snapshot 作为"重建 actor 视觉状态"载体.
 func get_attribute_snapshot() -> Dictionary:
-	return get_stats()
+	var snap := get_stats()
+	snap["facing_direction"] = _facing_direction
+	return snap
 
 
 # ========== 序列化 ==========

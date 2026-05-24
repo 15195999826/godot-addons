@@ -35,6 +35,8 @@ var _hp_bar_view: FrontendHpBarView
 var _shield_bar_view: FrontendShieldBarView
 var _buff_row_view: FrontendBuffRowView
 var _name_label_view: FrontendNameLabelView
+## Phase F: 朝向箭头. _ready 装配, set_environment_style 中隐藏 (env 不显示 facing).
+var _facing_indicator_view: FrontendFacingIndicatorView
 
 
 # ========== 状态 ==========
@@ -66,6 +68,8 @@ func _ready() -> void:
 	add_child(_buff_row_view)
 	_name_label_view = FrontendNameLabelView.new()
 	add_child(_name_label_view)
+	_facing_indicator_view = FrontendFacingIndicatorView.new()
+	add_child(_facing_indicator_view)
 	_target_position = position
 	_smoothed_position = position
 
@@ -132,6 +136,9 @@ func set_environment_style(kind: String) -> void:
 	if _name_label_view != null:
 		var override := "StoneWall" if kind == "stone_wall" else kind
 		_name_label_view.set_override_text(override)
+	# Phase F: env actor 不显示朝向箭头 (per spec).
+	if _facing_indicator_view != null:
+		_facing_indicator_view.visible = false
 
 
 ## 获取 Actor ID
@@ -144,6 +151,11 @@ func get_buff_row_view() -> FrontendBuffRowView:
 	return _buff_row_view
 
 
+## Phase F: 给 smoke 测试用 (verify env actor 不显示朝向箭头).
+func get_facing_indicator_view() -> FrontendFacingIndicatorView:
+	return _facing_indicator_view
+
+
 ## 同步可覆盖 state(hp / flash / tint / buffs)。一次性动画(死亡 / 复活)走
 ## play_death / revive 公共方法,不在这里推断 transition。
 func update_state(new_state: FrontendActorRenderState) -> void:
@@ -151,6 +163,7 @@ func update_state(new_state: FrontendActorRenderState) -> void:
 	_shield_bar_view.update_from_state(new_state)
 	_buff_row_view.update_from_state(new_state)
 	_name_label_view.update_from_state(new_state)
+	_facing_indicator_view.update_from_state(new_state)
 	_update_flash_effect(new_state.flash_progress)
 	_update_tint_color(new_state.tint_color)
 	_bump_offset = new_state.bump_offset

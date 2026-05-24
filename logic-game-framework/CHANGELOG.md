@@ -12,6 +12,40 @@
 
 ---
 
+## [Unreleased] — 2026-05-25 advanced-skills-next-batch Phase F — Facing 前端回归
+
+补齐既有 `facing_direction` 机制的渲染层. logic side (HexFacing.face_actor_toward + ActorFacingChangedEvent) 已存在多轮; 本轮把这条信息引到 frontend, 让 SkillPreview / dev-scene 能可视化朝向。
+
+### Added
+
+- **`example/hex-atb-battle/frontend/core/actor_render_state.gd`** — `facing_direction: int = 0` 字段; `duplicate()` 复制。
+- **`example/hex-atb-battle/frontend/actions/apply_facing_state_action.gd`** — `FrontendApplyFacingStateAction` (extends FrontendVisualAction, type=APPLY_FACING_STATE), 瞬时 (duration=0) 更新 actor.facing_direction, 不引入 turn-speed / lerp / 复杂转身动画。
+- **`example/hex-atb-battle/frontend/actions/visual_action.gd`** — `ActionType.APPLY_FACING_STATE` 枚举。
+- **`example/hex-atb-battle/frontend/visualizers/actor_facing_changed_visualizer.gd`** — `FrontendActorFacingChangedVisualizer` 翻译 `actor_facing_changed` event → `ApplyFacingStateAction`。default_registry 注册。
+- **`example/hex-atb-battle/frontend/scene/facing_indicator_view.gd`** — `FrontendFacingIndicatorView` Label3D 黄色 "▶" 箭头, BILLBOARD_FIXED_Y 朝相机, 通过位置 (`cos/sin * ARROW_DISTANCE`) 表达 6 向朝向. `update_from_state` 自查 `state.type == "Character"` 才显示 (per spec: 不对 EnvironmentActor 显示)。
+- **`example/hex-atb-battle/frontend/scene/unit_view.gd`** — UnitView `_ready` 装配 indicator, `update_state` 转发, `set_environment_style` 强制 indicator 隐藏 (双保险)。`get_facing_indicator_view()` 给 smoke 用。
+- **`example/hex-atb-battle/frontend/core/render_world.gd`** — `_apply_apply_facing_state_action` 处理 action;`_initialize_actor_from_init_data` 从 `actor_init.attributes["facing_direction"]` 读取初始朝向。
+- **`example/hex-atb-battle/logic/character_actor.gd`** — `get_attribute_snapshot()` 加 `facing_direction` 字段, 让 BattleRecorder 通过现有 `actor.get_attribute_snapshot()` 链路把朝向写入 `ActorInitData.attributes`, frontend 重建时读到。
+- **`example/hex-atb-battle/tests/frontend/smoke_facing_indicator.gd` + `.tscn`** — 验证三条契约: (1) replay init 从 attributes 读 facing 写入 RenderState; (2) actor_facing_changed event 翻译为 visual action + RenderState 更新; (3) Environment-type UnitView 的 facing indicator 不显示 (二种隐藏路径: type 自查 + set_environment_style 兜底)。注册到 `hex/frontend` test group。
+
+### Validation
+
+| 测试 | 结果 |
+|---|---|
+| `hex/skills smoke_skill_scenarios` | PASS 60/60 |
+| `hex/regression` | PASS 3/3 |
+| `hex/frontend` | 7/8 PASS (新加 smoke_facing_indicator 通过; pre-existing smoke_surge_unit_view 仍 30s flake) |
+| `core/unit` | PASS |
+| dev-scene 视觉验证 | SkillPreview 加载 preset 01_caster_strike → caster (A 队, 蓝色) 头顶黄色 "▶" 箭头明显朝东; enemy_0 (B 队, 红色) 箭头明显朝西 (path: dev-agent/sessions/phaseF-facing-arrow/screenshots/03-initial_facing.jpg)。spec "初始 A 队朝东、B 队朝西的箭头可见" 完整闭环 |
+
+### Spec acceptance (per advanced-skills-next-batch.md Phase F)
+
+- [x] 初始 A 队朝东、B 队朝西的箭头可见 — dev-scene 截图证实
+- [x] 主动攻击/施法产生 facing change 后, 箭头随 replay 更新 — logic side ActorFacingChangedEvent 已发, smoke `Step2 PASS: actor_facing_changed event → FrontendActorRenderState.facing_direction updated` 确认
+- [x] forced displacement 不改变 facing, 箭头不转 — HexFacing.face_actor_toward 是唯一更新入口, displacement 路径不触发它 (现状已是; smoke 不需要 specially 覆盖此 negative case)
+
+---
+
 ## [Unreleased] — 2026-05-25 advanced-skills-next-batch Phase E — Cone StageCue debug payload + frontend overlay
 
 Cone abilities 在 `on_timeline_start` 的 `StageCueAction` 现在通过 `DictResolver` 在 cast 时计算 selector 检查区域几何, 写入 `cue.params`:
