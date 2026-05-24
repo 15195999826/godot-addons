@@ -12,6 +12,39 @@
 
 ---
 
+## [Unreleased] — 2026-05-25 advanced-skills-next-batch Phase E — Cone StageCue debug payload + frontend overlay
+
+Cone abilities 在 `on_timeline_start` 的 `StageCueAction` 现在通过 `DictResolver` 在 cast 时计算 selector 检查区域几何, 写入 `cue.params`:
+- `shape`: "grid_cone" / "angle_cone"
+- `origin_coord`: caster.hex_position
+- `target_coord`: event.target_coord
+- `checked_coords`: `Array[{q,r}]` — selector 会枚举到的全部格子, 不论格内是否有敌人 (区别于 `targetActorIds` 只列真正命中的 actor)
+- `range`: CONE_RANGE
+- `cast_direction` (grid only): 0..5
+- `direction_sector` (grid only): [cast_dir-1, cast_dir, cast_dir+1]
+- `half_angle_deg` (angle only): 45.0
+
+frontend `FrontendStageCueVisualizer` 消费 cone cue + params,emit `FrontendFloatingTextAction` 在每个 `checked_coords` 格子的 world 坐标短暂绘制 marker (1.5s),让玩家/dev-scene 看到本次 AoE 检查区域。frontend 只读 params,不反推 selector 逻辑(spec contract)。
+
+### Added
+
+- **`example/hex-atb-battle/logic/abilities/active/grid_cone.gd`** — `compute_checked_coords(caster_pos, target_coord) -> Array[Dictionary]` 静态 helper, selector 内嵌实现也调用同一 helper (DRY)。`_DEBUG_PARAMS_RESOLVER` DictResolver 在 cast 时生成 frontend payload。
+- **`example/hex-atb-battle/logic/abilities/active/angle_cone.gd`** — 同上, `compute_checked_coords` + `_DEBUG_PARAMS_RESOLVER` 各 1 套, 用 world coord + angle 计算检查区域。
+- **`example/hex-atb-battle/frontend/visualizers/stage_cue_visualizer.gd`** — `CONE_DEBUG_CUES = ["grid_cone_cast", "angle_cone_cast"]`, `_create_cone_overlay(cue_id, params)` 读 `checked_coords` 在每个 hex 用 `UGridMap.model.coord_to_world(hex_coord)` 计算 world 位置,发 FloatingText (grid cyan #74D9FF, angle orange #FFA533, duration 1.5s, y=0.5 抬到 unit-view 同高度避开 ground plane culling).
+- **2 个新 scenario** (`cone_grid_stage_cue_params_scenario.gd` / `cone_angle_stage_cue_params_scenario.gd`): 断言 stageCue.params 含 shape / origin_coord / target_coord / checked_coords (非空, 含 caster 相邻格子) / range / cast_direction / direction_sector / half_angle_deg, 并验证 `targetActorIds` 与 `checked_coords` 语义独立 (`checked_coords` 严格 > 命中 actor 数)。
+
+### Validation
+
+| 测试 | 结果 |
+|---|---|
+| `hex/skills smoke_skill_scenarios` | PASS 60/60 (2 新 cone stage cue params 场景) |
+| `hex/regression` | PASS 3/3 |
+| `hex/frontend` | 6/7 PASS (`smoke_surge_unit_view` 仍是既有 30s walltime/launcher timeout flake, 不阻塞本 phase) |
+| `core/unit` | PASS |
+| dev-scene 数据流验证 | SkillPreview 触发 `skill_grid_cone` cast → timeline `stageCue` event params.checked_coords.size() = 18 + shape="grid_cone" + range=3 + cast_direction=0; godot.log 确认 18 个 FloatingText marker 已 push 到 RenderWorld → BattleAnimator (`[Frontend:RenderWorld] 飘字: actor= text='▲' pos=...` × 18). Logical contract / data plumbing 全闭环;Label3D 在 SkillPreview camera 视角下的最终像素显示 needs follow-up polish (visual marker 还未在截图中清晰可见, 但 frontend visualizer 已正确 emit 视觉 actions) |
+
+---
+
 ## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase D — Cone AoE selectors (skill_grid_cone + skill_angle_cone)
 
 引入首批 AoE `TargetSelector` 实现, 对比 hex 格子 sector (`GridConeSelector`) 与真实世界角度 (`AngleConeSelector`) 两种范围语义。两个 cone skill 都使用 `target_coord` 释放 (不点 actor), 复用 `HexBattleDamageAction` 多目标同帧产生多个 `DamageEvent`。

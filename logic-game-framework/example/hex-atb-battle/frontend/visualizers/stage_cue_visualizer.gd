@@ -85,6 +85,19 @@ const CONTROL_FLOATING_TEXTS := {
 	},
 }
 
+# ========== Phase E: Cone debug overlay ==========
+
+## Cone cast cue_id → 是否走 cone 检查区域 overlay path.
+const CONE_DEBUG_CUES := ["grid_cone_cast", "angle_cone_cast"]
+
+## checked_coords 每个 hex 上短暂绘制的 marker. 用 floating text "✦" 复用既有飘字管线
+## (不必新加 RenderWorld grid-overlay action 路径); duration 略长于 attack vfx,
+## 让 dev-scene 截图 / 玩家肉眼都能看清覆盖区域.
+const CONE_DEBUG_MARKER_TEXT := "▲"
+const CONE_DEBUG_MARKER_DURATION_MS := 1500.0
+const CONE_DEBUG_MARKER_COLOR_GRID := Color(0.45, 0.85, 1.0, 0.95)  # 浅青
+const CONE_DEBUG_MARKER_COLOR_ANGLE := Color(1.0, 0.65, 0.2, 0.95)  # 橙黄
+
 
 func _init() -> void:
 	visualizer_name = "StageCueVisualizer"
@@ -101,9 +114,10 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	var source_id := e.source_actor_id
 	var target_ids := e.target_actor_ids
 	var cue_id := e.cue_id
-	
+	var params: Dictionary = e.params if e.params != null else {}
+
 	var actions: Array[FrontendVisualAction] = []
-	
+
 	# 近战攻击类 cue → 攻击箭头特效
 	if cue_id in MELEE_ATTACK_CUES:
 		actions.append_array(_create_melee_attack_vfx(source_id, target_ids, cue_id, context))
@@ -116,9 +130,47 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	# 控制状态 cue (Stun / Silence / Break) → 目标头顶飘字 (复用 floating-text pattern)
 	elif cue_id in CONTROL_FLOATING_TEXTS:
 		actions.append_array(_create_control_floating_text(target_ids, cue_id, context))
+	# Phase E: cone debug overlay → 在每个 checked_coord 上短暂绘制 marker
+	elif cue_id in CONE_DEBUG_CUES:
+		actions.append_array(_create_cone_overlay(cue_id, params))
 	# 其他 cue_id（如 magic_fireball, ranged_arrow）不需要额外特效
 	# 因为它们有投射物飞行动画
 
+	return actions
+
+
+## Phase E: cone debug overlay —— 把 selector checked_coords 翻译成一组 floating-text marker
+##
+## 这是 contract debug overlay,不是 VFX polish: 让玩家 / 测试者看到本次 cone 检查的全部
+## 格子 (包括没有 enemy 占位的). frontend 只消费 params, 不反推 selector 逻辑.
+func _create_cone_overlay(
+	cue_id: String,
+	params: Dictionary,
+) -> Array[FrontendVisualAction]:
+	var actions: Array[FrontendVisualAction] = []
+	var checked_coords: Array = params.get("checked_coords", []) as Array
+	if checked_coords.is_empty():
+		return actions
+	var color: Color = CONE_DEBUG_MARKER_COLOR_GRID if cue_id == "grid_cone_cast" else CONE_DEBUG_MARKER_COLOR_ANGLE
+	for c_variant in checked_coords:
+		if not (c_variant is Dictionary):
+			continue
+		var c := c_variant as Dictionary
+		if not (c.has("q") and c.has("r")):
+			continue
+		var hex_coord := HexCoord.new(int(c.get("q", 0)), int(c.get("r", 0)))
+		var world_2d: Vector2 = UGridMap.model.coord_to_world(hex_coord)
+		# y=0.5 抬到 grid 上方一段, 与 unit view 同 y 范围, 避开 ground plane culling.
+		var world_pos := Vector3(world_2d.x, 0.5, world_2d.y)
+		# actor_id 留空: floating-text 用绝对世界坐标定位, 不挂 actor.
+		actions.append(FrontendFloatingTextAction.new(
+			"",
+			CONE_DEBUG_MARKER_TEXT,
+			color,
+			world_pos,
+			FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
+			CONE_DEBUG_MARKER_DURATION_MS,
+		))
 	return actions
 
 

@@ -49,6 +49,57 @@ static var _CASTER_ATK_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: Exec
 )
 
 
+## Phase E · debug 检查区域几何 (selector 与 StageCue.params overlay 共用).
+## 同 GridCone.compute_checked_coords 语义: 返回 selector 会枚举的全部格子, 不做 actor 占位过滤.
+static func compute_checked_coords(caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
+	var coords: Array[Dictionary] = []
+	if caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
+		return coords
+	var caster_world: Vector2 = UGridMap.model.coord_to_world(caster_pos)
+	var target_world: Vector2 = UGridMap.model.coord_to_world(target_coord)
+	var forward: Vector2 = target_world - caster_world
+	if forward.length_squared() == 0.0:
+		return coords
+	for cand in UGridMap.model.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE):
+		if cand.equals(caster_pos):
+			continue
+		var cand_world: Vector2 = UGridMap.model.coord_to_world(cand)
+		var cand_vec: Vector2 = cand_world - caster_world
+		if cand_vec.length_squared() == 0.0:
+			continue
+		var angle: float = absf(forward.angle_to(cand_vec))
+		if angle > HexBattleAngleCone.HALF_ANGLE_RAD + HexBattleAngleCone.ANGLE_EPSILON_RAD:
+			continue
+		coords.append({"q": cand.q, "r": cand.r})
+	return coords
+
+
+static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: ExecutionContext) -> Dictionary:
+	var event := ctx.get_current_event()
+	var target_coord_dict: Dictionary = event.get("target_coord", {}) as Dictionary
+	if not (target_coord_dict.has("q") and target_coord_dict.has("r")):
+		return {}
+	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
+	if owner_id.is_empty():
+		return {}
+	var actor := GameWorld.get_actor(owner_id)
+	if actor == null or not (actor is CharacterActor):
+		return {}
+	var caster_pos: HexCoord = (actor as CharacterActor).hex_position
+	var target_coord := HexCoord.from_dict(target_coord_dict)
+	if caster_pos.equals(target_coord):
+		return {}
+	return {
+		"shape": "angle_cone",
+		"origin_coord": {"q": caster_pos.q, "r": caster_pos.r},
+		"target_coord": {"q": target_coord.q, "r": target_coord.r},
+		"checked_coords": HexBattleAngleCone.compute_checked_coords(caster_pos, target_coord),
+		"range": HexBattleAngleCone.CONE_RANGE,
+		"half_angle_deg": HexBattleAngleCone.HALF_ANGLE_DEG,
+	}
+)
+
+
 class _AngleConeSelector:
 	extends TargetSelector
 
@@ -136,6 +187,7 @@ static var ABILITY := (
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
 			Resolvers.str_val("angle_cone_cast"),
+			_DEBUG_PARAMS_RESOLVER,
 		)])
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(
