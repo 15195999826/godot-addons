@@ -227,6 +227,68 @@ class ShieldBrokenEvent extends GameEvent.Base:
 		return d.get("kind") == "shield_broken"
 
 
+# ========== RegenerationEvent ==========
+##
+## Resource 自然恢复 (Phase C: hp_regen_per_sec; 未来 mp_regen_per_sec).
+##
+## V1 contract (per advanced-skills-next-batch.md):
+##   - NOT a heal: 不走 HexBattleHealAction, 不产生 HealEvent.
+##   - 不触发 heal-related passive (on-heal / post-heal / heal amp / overheal).
+##   - 仍 replay/frontend 可见: 独立 RegenerationEvent.
+##   - actual_amount clamp 到 max_hp - hp_before (overheal 不补 shield).
+##   - 由 HexBattleGeneralPassive periodic timeline 驱动, source 标 "general_passive".
+
+class RegenerationEvent extends GameEvent.Base:
+	var target_actor_id: String = ""
+	var resource: String = "hp"  ## 当前仅 "hp"; 未来 "mp" 等
+	## amount: 周期内理论恢复量 (= resource_per_sec * period_s)
+	var amount: float = 0.0
+	## actual_amount: clamp 到 max 之后的实际恢复 (overheal 会 < amount)
+	var actual_amount: float = 0.0
+	## source: 标记来源, 便于 replay/分析区分多个 regen 来源
+	var source: String = ""
+
+	func _init() -> void:
+		kind = "regeneration"
+
+	static func create(
+		p_target_actor_id: String,
+		p_resource: String,
+		p_amount: float,
+		p_actual_amount: float,
+		p_source: String,
+	) -> RegenerationEvent:
+		var e := RegenerationEvent.new()
+		e.target_actor_id = p_target_actor_id
+		e.resource = p_resource
+		e.amount = p_amount
+		e.actual_amount = p_actual_amount
+		e.source = p_source
+		return e
+
+	func to_dict() -> Dictionary:
+		return {
+			"kind": kind,
+			"target_actor_id": target_actor_id,
+			"resource": resource,
+			"amount": amount,
+			"actual_amount": actual_amount,
+			"source": source,
+		}
+
+	static func from_dict(d: Dictionary) -> RegenerationEvent:
+		var e := RegenerationEvent.new()
+		e.target_actor_id = d.get("target_actor_id", "") as String
+		e.resource = d.get("resource", "hp") as String
+		e.amount = d.get("amount", 0.0) as float
+		e.actual_amount = d.get("actual_amount", 0.0) as float
+		e.source = d.get("source", "") as String
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == "regeneration"
+
+
 # ========== HealEvent ==========
 
 class HealEvent extends GameEvent.Base:

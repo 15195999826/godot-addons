@@ -66,6 +66,13 @@ func get_max_ticks() -> int:
 	return 500
 
 
+## 最小 tick 数。idle 判定在 tick_count >= min_ticks 之前禁止收敛, 强制 battle 至少跑 N 帧。
+## 用途: Phase C HP regen / Demon Form / 其他依赖周期 timeline 的 scenario, 让 intrinsic
+## periodic tick 有时间累积观察。普通 scenario 不需要 override (默认 0 = 让 harness 自然判定 idle).
+func get_min_ticks() -> int:
+	return 0
+
+
 ## 断言 replay 与场景状态。用 ctx 提供的工具做断言，任一失败 ctx.fail(...)
 func assert_replay(_ctx: ScenarioAssertContext) -> void:
 	push_error("[SkillScenario] assert_replay not implemented in %s" % get_name())

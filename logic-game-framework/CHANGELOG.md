@@ -12,6 +12,40 @@
 
 ---
 
+## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase C — hp_regen_per_sec + RegenerationEvent
+
+`hp_regen_per_sec` 由 `HexBattleGeneralPassive` periodic 1s timeline 驱动, 走自有 `HexBattleRegenerateAction` + `RegenerationEvent` (kind=`regeneration`), **不走 heal pipeline**, **不产 HealEvent**, **不触发 heal-related passive** (per spec)。VitalitySurge 普通被动 (`+5 hp/s`) 受 Break 影响; GeneralPassive 仍 tick 但属性归零 → action 早退。
+
+### Added
+
+- **`example/attributes/attributes_config.gd` / generated `hex_battle_character_attribute_set.gd`** — 新增 `hp_regen_per_sec` 属性, 默认 `0.0`, `minValue: 0.0`。
+- **`example/hex-atb-battle/core/events/battle_events.gd`** — `RegenerationEvent` (kind=`regeneration`), payload: `target_actor_id` / `resource` / `amount` (理论恢复=per_sec*period) / `actual_amount` (clamp 到 max-current) / `source`。
+- **`example/hex-atb-battle/logic/actions/regenerate_action.gd`** — `HexBattleRegenerateAction` 直接 `extends Action.PrimitiveAction` (新 LGF 规范), 走自有 resource → set_hp_base → push RegenerationEvent + broadcast 给存活 actor (kind `regeneration` 与 'heal' 不冲突, heal listener 自然不响应)。`Log.assert_crash(_resource == "hp")` 保证 V1 只支持 hp。`action_architecture_validator` allowlist 增 1 条对应入口。
+- **`example/hex-atb-battle/logic/abilities/passives/general_passive.gd`** — 增 `REGEN_TIMELINE` (period=1000ms) + `ActivateInstanceConfig + GRANTED_SELF + on_timeline_end -> HexBattleRegenerateAction`。`_HP_REGEN_PER_SEC_RESOLVER` 每 tick 实时读 owner attribute (不冻结), buff/passive grant/revoke 自动响应。
+- **`example/hex-atb-battle/logic/abilities/passives/vitality_surge.gd`** — `HexBattleVitalitySurge` (`config_id: passive_vitality_surge`, +5 hp/s 通过 StatModifier), tags `["passive", "regen"]` (Break 可禁)。
+- **`example/hex-atb-battle/logic/abilities/shared/all_skills.gd`** — manifest 加 `HexBattleVitalitySurge` + `HexBattleGeneralPassive.REGEN_TIMELINE` 注册 (timeline 列表里)。
+- **4 个新 scenario** 覆盖 Phase C 验收 (`hp_regen_*_scenario.gd`): default_zero / basic / clamp_max / break_disables_source。
+
+### Changed
+
+- **`example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd`** —
+  - `_PreviewInstance._create_actor` 在 idle 判定 still_executing 循环里 skip `intrinsic` ability。GeneralPassive 周期 timeline granted 后永不停止, 没有这个 skip 会让所有 scenario 都跑到 max_ticks (=以前的 Demon Form scenario 也是同款 timeout 路径, 但 shield_damage_type_matrix 等紧贴 max_ticks 边界的 scenario 会因边界 race 失败)。
+  - `run_with_actions` 接受 `scene_config["min_ticks"]` (default 0), 在 tick 循环里 `tick_count < min_ticks` 时强制 `still_executing=true`, 让 periodic-timeline-依赖的 scenario (HP regen, Demon Form) 跑够帧数。
+- **`example/hex-atb-battle/tests/battle/skill_scenarios/skill_scenario.gd`** — 新增 `get_min_ticks() -> int = 0` 钩子, scenario 自助声明"最少跑 N 帧才允许 idle 收敛"。
+- **`example/hex-atb-battle/tests/battle/smoke_skill_scenarios.gd`** — 把 `scenario.get_min_ticks()` 透传到 harness 的 `scene_config["min_ticks"]`。
+- **`core/actions/action_architecture_validator.gd`** — ALLOWLIST 加 `regenerate_action.gd` 条目 (extends PrimitiveAction 直接, allowlist 用于显式登记新 public action)。
+
+### Validation
+
+| 测试 | 结果 |
+|---|---|
+| `hex/skills smoke_skill_scenarios` | PASS 55/55 (含 4 新 hp_regen + 4 phase A + 5 phase B) |
+| `hex/regression` | PASS 3/3 |
+| `core/unit` | PASS |
+| dev-scene 视觉验证 | timeline 8 个 RegenerationEvent (frame 10/20/30/.../80 each +5, frame 90+ actual_amount=0 clamped); caster HP 60 → 100 经 8 ticks, Inspector "Damage History" 显示 -40 initial damage from enemy_0 |
+
+---
+
 ## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase B — HexBattleGeneralPassive + attack_lifesteal_pct
 
 把"角色属性 → 标准战斗效果"的桥接落地。VampiricTraining (普通 passive, 受 Break 影响) 通过 StatModifier 给 owner +0.5 `attack_lifesteal_pct`; HexBattleGeneralPassive (intrinsic, 不受 Break) 监听 Phase A 落地的 `attack_landed` 事件, 按 `actual_life_damage * attack_lifesteal_pct` 调 `HexBattleHealAction` heal attacker。

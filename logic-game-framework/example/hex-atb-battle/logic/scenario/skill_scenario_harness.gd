@@ -158,6 +158,11 @@ static func run_with_actions(
 		return a["_idx"] < b["_idx"]
 	)
 
+	# Phase C: scene_config["min_ticks"] 允许 scenario 强制至少跑 N tick 才能开始 idle 收敛,
+	# 用于 periodic timeline (HP regen / Demon Form stacks) scenario 等周期 tick 累积。默认 0
+	# 不影响普通 scenario。
+	var min_ticks: int = scene_config.get("min_ticks", 0) as int
+
 	# Tick 循环 —— 顺序对齐 SkillPreviewProcedure.tick_once:
 	#   base_tick 推进 logic_time → fire 已到时 keyframe → ability tick + tick_executions → record。
 	# fire 必须在 ability tick 之前, 否则刚 grant 的 ability 要等下帧才跑首次 tick,
@@ -194,9 +199,12 @@ static func run_with_actions(
 			#   1. 所有 CharacterActor 的 ability 都没有 executing instance(cover DOT/HOT loop)
 			#   2. 场上没有飞行中的 projectile(cover 投射物命中前的飞行阶段)
 			#   3. pending 队列空 (cover 还没到点的 schedule)
+			#   4. tick_count >= min_ticks (Phase C: 强制等待 periodic tick 累积)
 			# 用 battle.get_actors() (registry) 而非 get_all_actors() (staging)
 			var still_executing := false
-			if not pending.is_empty():
+			if tick_count < min_ticks:
+				still_executing = true
+			elif not pending.is_empty():
 				still_executing = true
 			else:
 				for actor in battle.get_actors():
@@ -212,6 +220,12 @@ static func run_with_actions(
 						continue
 					for ability in (actor as HexBattleActor).ability_set.get_abilities():
 						if ability.is_expired():
+							continue
+						# Phase C: intrinsic ability (HexBattleGeneralPassive 等)
+						# 由 periodic timeline 驱动, 一旦 granted 永不停止, 不能让它阻塞 idle
+						# 判定; 否则任何 scenario 都会跑到 max_ticks. Demon Form 类需要 stacks
+						# 累积的场景仍走 max_ticks 路径 (它没有 intrinsic tag, 不被过滤).
+						if ability.has_ability_tag("intrinsic"):
 							continue
 						if ability.get_executing_instances().size() > 0:
 							still_executing = true
