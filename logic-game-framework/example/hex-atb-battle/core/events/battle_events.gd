@@ -89,6 +89,72 @@ class DamageEvent extends GameEvent.Base:
 		return d.get("kind") == "damage"
 
 
+# ========== AttackLandedEvent ==========
+##
+## Basic-attack 命中后的 domain event. Strike (以及未来其它"普攻"类 ability)
+## 在标准 damage 结算之后通过 on_hit callback emit. 用于:
+##   - Phase B HexBattleGeneralPassive 触发 attack_lifesteal_pct
+##   - 未来装备 on-hit / 法球 / 攻击特效订阅
+##
+## 不由 Fireball / Poison tick / reflected damage / Fire Tile / Totem passive damage 触发.
+## 通过 mutable.cancelled 或 target 已死的 damage 同样不触发 (callback 在那两个分支前 skip).
+## actual_life_damage = 0 (shield 全吸) 时仍 emit, consumer 自行 no-op.
+
+class AttackLandedEvent extends GameEvent.Base:
+	var attacker_actor_id: String = ""
+	var target_actor_id: String = ""
+	var source_ability_id: String = ""
+	var source_ability_config_id: String = ""
+	var actual_life_damage: float = 0.0
+	## 携带触发本事件的 damage event dict, 供 consumer 读取 shield_absorbed /
+	## consumption_records / is_critical 等字段, 不必再回查 EventCollector.
+	var damage_event: Dictionary = {}
+
+	func _init() -> void:
+		kind = "attack_landed"
+
+	static func create(
+		p_attacker_actor_id: String,
+		p_target_actor_id: String,
+		p_source_ability_id: String,
+		p_source_ability_config_id: String,
+		p_actual_life_damage: float,
+		p_damage_event: Dictionary,
+	) -> AttackLandedEvent:
+		var e := AttackLandedEvent.new()
+		e.attacker_actor_id = p_attacker_actor_id
+		e.target_actor_id = p_target_actor_id
+		e.source_ability_id = p_source_ability_id
+		e.source_ability_config_id = p_source_ability_config_id
+		e.actual_life_damage = p_actual_life_damage
+		e.damage_event = p_damage_event.duplicate(true)
+		return e
+
+	func to_dict() -> Dictionary:
+		return {
+			"kind": kind,
+			"attacker_actor_id": attacker_actor_id,
+			"target_actor_id": target_actor_id,
+			"source_ability_id": source_ability_id,
+			"source_ability_config_id": source_ability_config_id,
+			"actual_life_damage": actual_life_damage,
+			"damage_event": damage_event.duplicate(true),
+		}
+
+	static func from_dict(d: Dictionary) -> AttackLandedEvent:
+		var e := AttackLandedEvent.new()
+		e.attacker_actor_id = d.get("attacker_actor_id", "") as String
+		e.target_actor_id = d.get("target_actor_id", "") as String
+		e.source_ability_id = d.get("source_ability_id", "") as String
+		e.source_ability_config_id = d.get("source_ability_config_id", "") as String
+		e.actual_life_damage = d.get("actual_life_damage", 0.0) as float
+		e.damage_event = (d.get("damage_event", {}) as Dictionary).duplicate(true)
+		return e
+
+	static func is_match(d: Dictionary) -> bool:
+		return d.get("kind") == "attack_landed"
+
+
 # ========== ShieldBrokenEvent ==========
 ##
 ## 护盾被本次伤害打破时由 apply_damage 触发的二次事件。
