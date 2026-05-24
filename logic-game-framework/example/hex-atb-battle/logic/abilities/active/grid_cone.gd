@@ -40,6 +40,69 @@ static var _CASTER_ATK_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: Exec
 )
 
 
+## Phase E · debug 检查区域几何 (selector 与 StageCue.params overlay 共用).
+##
+## 返回所有"selector 会枚举到"的格子 (不含 caster 自身, 不论格内是否有敌人).
+## checked_coords = 完整 sector 区域; targetActorIds = 真正命中的 actor —— 二者
+## 区别让 frontend overlay 可显示"扫过区域"vs"命中目标"双层 cue.
+##
+## caster_pos.equals(target_coord) 在此 helper 返回空; 真正 cast 路径上 selector 自身
+## 仍会 Log.assert_crash, 这层只为 visualizer 提前查询时不崩溃.
+static func compute_checked_coords(caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
+	var coords: Array[Dictionary] = []
+	if caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
+		return coords
+	var cast_dir := HexFacing.direction_between(caster_pos, target_coord)
+	var sector: Array[int] = [
+		posmod(cast_dir - 1, 6),
+		cast_dir,
+		posmod(cast_dir + 1, 6),
+	]
+	for cand in UGridMap.model.get_range(caster_pos, HexBattleGridCone.CONE_RANGE):
+		if cand.equals(caster_pos):
+			continue
+		var cand_dir := HexFacing.direction_between(caster_pos, cand)
+		if not sector.has(cand_dir):
+			continue
+		coords.append({"q": cand.q, "r": cand.r})
+	return coords
+
+
+## DictResolver 在 on_timeline_start 解析: 返回 frontend overlay 需要的几何 payload.
+## payload 字段: shape / origin_coord / target_coord / checked_coords / range /
+## cast_direction / direction_sector.
+static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: ExecutionContext) -> Dictionary:
+	var event := ctx.get_current_event()
+	var target_coord_dict: Dictionary = event.get("target_coord", {}) as Dictionary
+	if not (target_coord_dict.has("q") and target_coord_dict.has("r")):
+		return {}
+	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
+	if owner_id.is_empty():
+		return {}
+	var actor := GameWorld.get_actor(owner_id)
+	if actor == null or not (actor is CharacterActor):
+		return {}
+	var caster_pos: HexCoord = (actor as CharacterActor).hex_position
+	var target_coord := HexCoord.from_dict(target_coord_dict)
+	if caster_pos.equals(target_coord):
+		return {}
+	var cast_dir := HexFacing.direction_between(caster_pos, target_coord)
+	return {
+		"shape": "grid_cone",
+		"origin_coord": {"q": caster_pos.q, "r": caster_pos.r},
+		"target_coord": {"q": target_coord.q, "r": target_coord.r},
+		"checked_coords": HexBattleGridCone.compute_checked_coords(caster_pos, target_coord),
+		"range": HexBattleGridCone.CONE_RANGE,
+		"cast_direction": cast_dir,
+		"direction_sector": [
+			posmod(cast_dir - 1, 6),
+			cast_dir,
+			posmod(cast_dir + 1, 6),
+		],
+	}
+)
+
+
 ## TargetSelector 子类: caster range 内, 方向 ∈ {cast_dir-1, cast_dir, cast_dir+1} sector
 ## 的敌方 alive CharacterActor。
 class _GridConeSelector:
@@ -126,6 +189,7 @@ static var ABILITY := (
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
 			Resolvers.str_val("grid_cone_cast"),
+			_DEBUG_PARAMS_RESOLVER,
 		)])
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(
