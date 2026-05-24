@@ -653,6 +653,12 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 			if passive_config is AbilityConfig:
 				var passive_ability := Ability.new(passive_config, actor.get_id())
 				actor.ability_set.grant_ability(passive_ability, self)
+		# Phase B: 角色内建规则桥, 每个 CharacterActor 必有 (与 CharacterActor.equip_abilities
+		# 对齐). Harness 不走 equip_abilities (per-scenario 不要默认 Move/Strike grant), 单独
+		# grant GeneralPassive 以让 attack_lifesteal_pct / hp_regen_per_sec 等 attribute-driven
+		# 规则在 scenario 中生效.
+		var general_passive := Ability.new(HexBattleGeneralPassive.ABILITY, actor.get_id())
+		actor.ability_set.grant_ability(general_passive, self)
 		return actor
 
 	## projectile_hit 必须从 event_collector 广播出去, 否则 Fireball/PreciseShot

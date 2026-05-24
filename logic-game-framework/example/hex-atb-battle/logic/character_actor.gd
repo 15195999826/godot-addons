@@ -74,6 +74,13 @@ func equip_abilities() -> void:
 	var skill_ability := Ability.new(skill_config, get_id())
 	ability_set.grant_ability(skill_ability)
 	_skill_ability_id = skill_ability.id
+
+	# 角色内建规则桥：每个 CharacterActor 必有, 不受 Break 影响.
+	# 当前承载 attack_lifesteal_pct → AttackLandedEvent → heal 链路;
+	# Phase C 起加 hp_regen_per_sec.
+	var general_passive := Ability.new(HexBattleGeneralPassive.ABILITY, get_id())
+	ability_set.grant_ability(general_passive)
+
 	_grant_class_passives()
 
 

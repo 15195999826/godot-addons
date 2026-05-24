@@ -17,11 +17,13 @@ const SETS := {
 		"max_hp": { "baseValue": 100.0, "minValue": 1.0 },
 	},
 	# Hex 角色专属属性集（demo / preview / scenario 共用）
+	# attack_lifesteal_pct: HexBattleGeneralPassive 读取以决定普攻吸血量；默认 0 = 无吸血。
 	"HexBattleCharacter": {
 		"_extends": "HexBattleActor",
 		"atk": { "baseValue": 50.0 },
 		"def": { "baseValue": 30.0 },
 		"speed": { "baseValue": 100.0 },
+		"attack_lifesteal_pct": { "baseValue": 0.0, "minValue": 0.0 },
 	},
 	# Hex 环境 actor 属性集（M1 起步只继承公共 hp/max_hp，未来按需 + mass / hardness 等）
 	"HexBattleEnvironment": {

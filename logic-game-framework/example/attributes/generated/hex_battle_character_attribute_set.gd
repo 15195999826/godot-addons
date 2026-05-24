@@ -11,6 +11,7 @@ func _init(p_actor_id: String = "") -> void:
 		"atk": { "baseValue": 50.0 },
 		"def": { "baseValue": 30.0 },
 		"speed": { "baseValue": 100.0 },
+		"attack_lifesteal_pct": { "baseValue": 0.0, "minValue": 0.0 },
 	})
 
 
@@ -76,6 +77,30 @@ func set_speed_base(value: float) -> void:
 func on_speed_changed(callback: Callable) -> Callable:
 	var wrapper := func(raw_event: Dictionary) -> void:
 		if raw_event.get("attributeName", "") == "speed":
+			callback.call(GameEvent.AttributeChanged.create(
+				actor_id,
+				raw_event.get("attributeName", ""),
+				raw_event.get("oldValue", 0.0),
+				raw_event.get("newValue", 0.0),
+			))
+	_raw.add_change_listener(wrapper)
+	return func() -> void:
+		_raw.remove_change_listener(wrapper)
+
+var attack_lifesteal_pct: float:
+	get:
+		return _raw.get_current_value("attack_lifesteal_pct")
+var attack_lifesteal_pct_breakdown: AttributeBreakdown:
+	get:
+		return _raw.get_breakdown("attack_lifesteal_pct")
+func get_attack_lifesteal_pct_breakdown() -> AttributeBreakdown:
+	return _raw.get_breakdown("attack_lifesteal_pct")
+const attack_lifesteal_pct_attribute := "attack_lifesteal_pct"
+func set_attack_lifesteal_pct_base(value: float) -> void:
+	_raw.set_base("attack_lifesteal_pct", value)
+func on_attack_lifesteal_pct_changed(callback: Callable) -> Callable:
+	var wrapper := func(raw_event: Dictionary) -> void:
+		if raw_event.get("attributeName", "") == "attack_lifesteal_pct":
 			callback.call(GameEvent.AttributeChanged.create(
 				actor_id,
 				raw_event.get("attributeName", ""),
