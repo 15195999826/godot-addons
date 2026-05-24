@@ -121,7 +121,10 @@ func reset_sandbox() -> void:
 	_last_error = ""
 	_selected_actor_idx = 0
 	_setup_session()
-	# Sanity: actor 0 装备容器必须注册成功,否则后续 drag 会因 container_id=-1 失败
+	# Sanity: player_bag + actor 0 装备容器必须注册成功,否则后续 drag 会因
+	# container_id<=0 静默失败 (move_item 报 "目标容器不存在")。
+	Log.assert_crash(_inventory.player_bag_id > 0, "ItemPreview",
+		"player_bag 未正确初始化 — sandbox lifecycle bug")
 	Log.assert_crash(_inventory.get_equipment_container_id(SANDBOX_ACTOR_IDS[0]) > 0,
 		"ItemPreview", "actor 0 equipment container 未正确注册 — sandbox lifecycle bug")
 	_seed_initial_items()
