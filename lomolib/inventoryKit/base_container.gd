@@ -36,7 +36,10 @@ signal item_removed(item_id: int, slot_index: int)
 signal item_moved_out(item_id: int, target_container_id: int, target_slot_index: int)
 
 ## 物品移入时触发（从其他容器移入当前容器）
-signal item_moved_in(item_id: int, source_container_id: int, source_slot_index: int)
+signal item_moved_in(item_id: int, source_container_id: int, source_slot_index: int, target_slot_index: int)
+
+## 物品在同容器内换槽时触发 (跨容器走 moved_out / moved_in)
+signal item_moved_within(item_id: int, old_slot_index: int, new_slot_index: int)
 
 
 ## 初始化容器
@@ -199,9 +202,26 @@ func on_item_moved_in(item_id: int, source_container_id: int, source_slot_index:
 	if space_manager != null and target_slot_index >= 0:
 		space_manager.mark_slot_occupied(target_slot_index)
 
-	item_moved_in.emit(item_id, source_container_id, source_slot_index)
-	Log.debug("BaseContainer", "容器 %s 移入物品: ID=%d <- ContainerID=%d" % [
-		container_name, item_id, source_container_id
+	item_moved_in.emit(item_id, source_container_id, source_slot_index, target_slot_index)
+	Log.debug("BaseContainer", "容器 %s 移入物品: ID=%d <- ContainerID=%d Slot=%d" % [
+		container_name, item_id, source_container_id, target_slot_index
+	])
+
+
+## 物品在同容器内换槽通知 (由 ItemSystem._move_item_within_container 调用)
+## [param item_id] 物品ID
+## [param old_slot_index] 原槽位索引
+## [param new_slot_index] 新槽位索引
+func on_item_moved(item_id: int, old_slot_index: int, new_slot_index: int) -> void:
+	if space_manager != null:
+		if old_slot_index >= 0:
+			space_manager.mark_slot_available(old_slot_index)
+		if new_slot_index >= 0:
+			space_manager.mark_slot_occupied(new_slot_index)
+
+	item_moved_within.emit(item_id, old_slot_index, new_slot_index)
+	Log.debug("BaseContainer", "容器 %s 同容器移动: ID=%d, Slot=%d -> %d" % [
+		container_name, item_id, old_slot_index, new_slot_index
 	])
 
 
