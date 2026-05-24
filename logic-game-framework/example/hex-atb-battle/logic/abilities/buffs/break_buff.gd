@@ -5,6 +5,7 @@
 ## - 内嵌 _BreakPassivesAction (SkillLocalAction) on_apply: 给目标当前每个 passive ability
 ##   add_disabled_source(buff.id); _UnbreakPassivesAction on_remove: remove_disabled_source。
 ## - TimeDurationConfig → 到期自动 ability.expire → on_remove → 撤销 source 引用
+## - "lifetime" passive 不禁用: actor 生命周期不是战斗被动效果, Break 不延寿 Totem/FireTile
 ## - 多个 Break 实例独立: 每个 source_id 独立 add/remove; passive ability 的引用计数 Set
 ##   只有当最后一个 Break source 移除后 (empty → non-empty 边界) 才恢复; 由 Ability
 ##   层 _disabled_sources Dictionary + _notify_components_enabled hook 自动处理。
@@ -26,6 +27,7 @@ class_name HexBattleBreakBuff
 const CONFIG_ID := "buff_break"
 const TAG_CANT_USE_PASSIVE := "cant_use_passive"
 const PASSIVE_TAG := "passive"
+const LIFETIME_TAG := "lifetime"
 
 
 const DEFAULT_DURATION_MS := 2000.0
@@ -75,8 +77,8 @@ static func _on_remove_actions() -> Array[Action.BaseAction]:
 
 # ========== 内嵌 SkillLocalAction (Phase B2 V1 私有) ==========
 
-## 给目标的所有 passive ability 添加 disabled source = self buff ability id。
-## 仅过滤 ability_tags.has("passive"); 跳过 self / expired。
+## 给目标的非 lifetime passive ability 添加 disabled source = self buff ability id。
+## lifetime passive 表达 actor 生命周期, Break 不应让 summons / overlays 被硬控延寿。
 class _BreakPassivesAction:
 	extends Action.SkillLocalAction
 
@@ -100,6 +102,8 @@ class _BreakPassivesAction:
 			if ab.is_expired():
 				continue
 			if not ab.has_ability_tag(HexBattleBreakBuff.PASSIVE_TAG):
+				continue
+			if ab.has_ability_tag(HexBattleBreakBuff.LIFETIME_TAG):
 				continue
 			ab.add_disabled_source(self_ability.id)
 			disabled_count += 1

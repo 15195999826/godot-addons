@@ -79,6 +79,21 @@ func _start_recorder() -> void:
 		},
 	}
 	_recorder.start_recording(get_all_characters(), configs, replay_map_config)
+	if _world_instance != null and not _world_instance.actor_added.is_connected(_on_world_actor_added):
+		_world_instance.actor_added.connect(_on_world_actor_added)
+
+
+func _on_world_actor_added(actor_id: String) -> void:
+	if actor_id in _participant_ids:
+		return
+	if _recorder == null or not _recorder.get_is_recording():
+		return
+	if _world_instance == null:
+		return
+	var actor := _world_instance.get_actor(actor_id)
+	if actor == null:
+		return
+	_recorder.register_actor(actor)
 
 
 func tick_once() -> void:
@@ -136,6 +151,8 @@ func tick_once() -> void:
 
 
 func finish(result: String = "") -> Dictionary:
+	if _world_instance != null and _world_instance.actor_added.is_connected(_on_world_actor_added):
+		_world_instance.actor_added.disconnect(_on_world_actor_added)
 	var effective := result if result != "" else _result
 	if effective == "":
 		effective = "battle_complete"

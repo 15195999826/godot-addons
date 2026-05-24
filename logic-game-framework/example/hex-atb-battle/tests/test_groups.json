@@ -6,12 +6,14 @@
       "required": true,
       "scenes": [
         "battle/smoke_skill_scenarios.tscn",
+        "battle/smoke_mid_spawn_production_replay.tscn",
         "frontend/smoke_frontend_main.tscn"
       ]
     },
     "skills": {
       "scenes": [
         "battle/smoke_skill_scenarios.tscn",
+        "battle/smoke_mid_spawn_production_replay.tscn",
         "battle/smoke_knockback_punch.tscn",
         "battle/smoke_wall_breaker.tscn"
       ]

@@ -146,12 +146,15 @@ func get_timeline() -> Array[Dictionary]:
 func register_actor(actor: Actor) -> void:
 	if not is_recording:
 		return
+	if actor_subscriptions.has(actor.id):
+		return
 
 	var init_data := ReplayData.ActorInitData.create(actor)
 	var event := GameEvent.ActorSpawned.create(actor.id, init_data.to_dict())
 	GameWorld.event_collector.push(event.to_dict())
 
 	_subscribe_actor(actor)
+	_record_existing_actor_abilities(actor)
 
 func unregister_actor(actor_id: String, reason: String = "") -> void:
 	if not is_recording:
@@ -183,3 +186,27 @@ func _subscribe_actor(actor: Actor) -> void:
 			"actorId": actor_id,
 			"unsubscribes": unsubscribes,
 		}
+
+
+func _record_existing_actor_abilities(actor: Actor) -> void:
+	var ability_set := IAbilitySetOwner.get_ability_set(actor)
+	if ability_set == null:
+		return
+	for ability in ability_set.get_abilities():
+		if ability.is_expired():
+			continue
+		var granted_payload := ability.serialize()
+		granted_payload["instanceId"] = ability.id
+		GameWorld.event_collector.push(
+			GameEvent.AbilityGranted.create(actor.id, granted_payload).to_dict()
+		)
+		for instance in ability.get_executing_instances():
+			GameWorld.event_collector.push(
+				GameEvent.ExecutionActivated.create(
+					actor.id,
+					ability.id,
+					ability.config_id,
+					instance.id,
+					instance.timeline_id,
+				).to_dict()
+			)

@@ -60,7 +60,9 @@ func remove_actor(actor_id: String) -> bool:
 	if actor != null and actor is HexBattleActor:
 		var battle_actor := actor as HexBattleActor
 		if grid != null and battle_actor.hex_position != null and battle_actor.hex_position.is_valid():
-			grid.remove_occupant(battle_actor.hex_position)
+			var occupant := grid.get_occupant(battle_actor.hex_position)
+			if occupant == battle_actor:
+				grid.remove_occupant(battle_actor.hex_position)
 			for coord in _find_reservations_by(actor_id):
 				grid.cancel_reservation(coord)
 	return super.remove_actor(actor_id)
@@ -204,11 +206,12 @@ func can_use_skill_on(actor: CharacterActor, skill: Ability, target: HexBattleAc
 	if target is CharacterActor:
 		var character_target := target as CharacterActor
 		var same_team := actor.get_team_id() == character_target.get_team_id()
+		var is_self := actor.get_id() == character_target.get_id()
 		if skill.has_ability_tag("enemy") and same_team:
 			return false
 		if skill.has_ability_tag("ally") and not same_team:
 			return false
-		if skill.has_ability_tag("ally") and actor.get_id() == character_target.get_id():
+		if skill.has_ability_tag("ally") and is_self and not skill.has_ability_tag("self"):
 			return false
 
 	var skill_range := skill.get_meta_int(HexBattleSkillMetaKeys.RANGE, 1)

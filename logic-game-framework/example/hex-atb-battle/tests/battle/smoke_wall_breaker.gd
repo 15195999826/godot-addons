@@ -64,6 +64,8 @@ func _phase_can_use_skill_on() -> bool:
 
 	var strike := Ability.new(HexBattleStrike.ABILITY, caster.get_id())
 	var wallbreaker := Ability.new(HexBattleWallBreaker.ABILITY, caster.get_id())
+	var cleanse := Ability.new(HexBattleCleanse.ABILITY, caster.get_id())
+	var holy_heal := Ability.new(HexBattleHolyHeal.ABILITY, caster.get_id())
 
 	var passed := true
 
@@ -82,10 +84,25 @@ func _phase_can_use_skill_on() -> bool:
 		_fail("can_use_skill_on(WallBreaker, character_target) expected true, got false")
 		passed = false
 
+	# Cleanse declares ["ally", "self"], so self-target is legal.
+	if battle.can_use_skill_on(caster, cleanse, caster) != true:
+		_fail("can_use_skill_on(Cleanse, self) expected true, got false")
+		passed = false
+
+	# Ally skills without "self" still cannot target self.
+	if battle.can_use_skill_on(caster, holy_heal, caster) != false:
+		_fail("can_use_skill_on(HolyHeal, self) expected false, got true")
+		passed = false
+
+	# Cleanse remains ally-only; enemy targets are still illegal.
+	if battle.can_use_skill_on(caster, cleanse, character_target) != false:
+		_fail("can_use_skill_on(Cleanse, enemy) expected false, got true")
+		passed = false
+
 	GameWorld.destroy()
 
 	if passed:
-		print("  [PASS] can_use_skill_on three-case eligibility check")
+		print("  [PASS] can_use_skill_on eligibility check")
 	return passed
 
 

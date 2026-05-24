@@ -86,3 +86,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 			lifetime_removes.append(e)
 	ctx.assert_true(lifetime_removes.size() >= 1,
 		"FireTileLifetime expired (got %d remove events)" % lifetime_removes.size())
+
+	# 4. FireTile 是 overlay，remove_actor(fire_tile) 不允许清掉同格 enemy_0 occupant。
+	ctx.assert_eq(
+		ctx.grid_occupant_id(1, 0),
+		ctx.enemy_id(0),
+		"FireTile overlay cleanup must leave enemy_0 as grid occupant at [1,0]",
+	)
