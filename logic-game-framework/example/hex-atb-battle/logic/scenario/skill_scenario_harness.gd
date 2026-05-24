@@ -162,6 +162,9 @@ static func run_with_actions(
 	# 用于 periodic timeline (HP regen / Demon Form stacks) scenario 等周期 tick 累积。默认 0
 	# 不影响普通 scenario。
 	var min_ticks: int = scene_config.get("min_ticks", 0) as int
+	Log.assert_crash(min_ticks <= max_ticks,
+		"HexBattleSkillScenarioHarness",
+		"min_ticks (%d) must be <= max_ticks (%d) or scenario will timeout with confusing assertion failures" % [min_ticks, max_ticks])
 
 	# Tick 循环 —— 顺序对齐 SkillPreviewProcedure.tick_once:
 	#   base_tick 推进 logic_time → fire 已到时 keyframe → ability tick + tick_executions → record。
