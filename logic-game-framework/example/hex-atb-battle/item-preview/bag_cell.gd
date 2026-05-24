@@ -50,6 +50,9 @@ func setup(owner_scene: Control, container_id: int, slot_index: int) -> void:
 ## reset_sandbox 后 ItemSystem 重建 player_bag (新 container_id), bag cell
 ## 需要 rebind 到新的 container_id, 否则 _drop_data 会去 move 到已死的旧 container。
 ## ItemPreview._refresh_bag 在每次 refresh 时调用。
+##
+## (bug 仅在 bag 作为 drop target 时触发: 卸装回 bag / bag 内重排。装备路径
+##  bag→eq 用的是 target eq id, 不受 bag cache 影响。)
 func set_target_container_id(container_id: int) -> void:
 	_container_id = container_id
 	set_meta("container_id", container_id)
