@@ -75,12 +75,13 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_true(break_remove_frame > 0,
 		"BreakBuff should expire (got frame %d)" % break_remove_frame)
 
-	# 所有 RegenerationEvent 必须发生在 break_remove_frame 之后
+	# 所有 RegenerationEvent 必须发生在 break_remove_frame 之后 (含同帧, 因为 Break 期满
+	# tick(dt) 阶段恢复 hp_regen_per_sec, tick_executions(dt) 阶段 regen tick 才 fire).
 	var regen_events := ctx.events_of_kind("regeneration")
 	for r in regen_events:
 		var frame := int(r.get("replay_frame", -1))
-		ctx.assert_true(frame > break_remove_frame,
-			"regen frame %d must be AFTER break_remove_frame %d" % [frame, break_remove_frame])
+		ctx.assert_true(frame >= break_remove_frame,
+			"regen frame %d must be AT/AFTER break_remove_frame %d" % [frame, break_remove_frame])
 
 	# 期后至少 1 个 regen tick (Break 期满后, regen 恢复)
 	ctx.assert_true(regen_events.size() >= 1,

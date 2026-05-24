@@ -48,6 +48,20 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	if battle == null:
 		return ActionResult.create_success_result([], { "regen_skipped": "no_game_state" })
+	# Phase C V1 只支持 hp; 未来扩展到 mp 时需把下面 attribute_set.hp/max_hp/set_hp_base 也按
+	# _resource 分支, 不只是删 assert. 放 execute 顶部做单次检查, 不在 target 循环内重复.
+	Log.assert_crash(_resource == "hp",
+		"HexBattleRegenerateAction",
+		"V1 仅支持 resource='hp', got '%s'" % _resource)
+
+	var targets := get_targets(ctx)
+	# Phase C V1: ability_owner selector 始终单 target. 若未来加 multi-target aura 形式,
+	# resolver 需要按 target 分别解析 (而不是只读 owner 的属性) —— 显式 assert 让 footgun
+	# 早暴露, 避免静默"全员收到 owner 的 per_sec 量".
+	Log.assert_crash(targets.size() <= 1,
+		"HexBattleRegenerateAction",
+		"V1 仅支持单 target (ability_owner); multi-target aura 需要 per-target resolver, got %d targets" % targets.size())
+
 	var per_sec := _per_sec_resolver.resolve(ctx)
 	if per_sec <= 0.0:
 		return ActionResult.create_success_result([], { "regen_skipped": "zero_per_sec" })
@@ -55,16 +69,11 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	if amount <= 0.0:
 		return ActionResult.create_success_result([], { "regen_skipped": "zero_amount" })
 
-	var targets := get_targets(ctx)
 	var events: Array[Dictionary] = []
 	for target_id in targets:
 		var actor := battle.get_character_actor(target_id)
 		if actor == null or actor.is_dead():
 			continue
-		# Phase C V1 只支持 hp; 未来 _resource == "mp" 走另条 attribute_set 字段.
-		Log.assert_crash(_resource == "hp",
-			"HexBattleRegenerateAction",
-			"V1 仅支持 resource='hp', got '%s'" % _resource)
 		var old_hp: float = actor.attribute_set.hp
 		var max_hp: float = actor.attribute_set.max_hp
 		var new_hp := minf(old_hp + amount, max_hp)
