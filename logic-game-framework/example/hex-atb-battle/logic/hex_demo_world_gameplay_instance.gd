@@ -73,7 +73,7 @@ func start(config: Dictionary = {}) -> void:
 		_create_team_actor(HexBattleClassConfig.CharacterClass.ASSASSIN, 1),
 	]
 	for actor in get_all_actors():
-		actor.equip_abilities()
+		actor.equip_abilities(self)
 
 	var placement_ranges := _calculate_placement_ranges(grid_config)
 	_place_team_randomly(left_team, placement_ranges["left"])

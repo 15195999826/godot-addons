@@ -40,7 +40,8 @@
         "frontend/smoke_shield_layout.tscn",
         "frontend/smoke_surge_unit_view.tscn",
         "frontend/smoke_world_view.tscn",
-        "frontend/smoke_facing_indicator.tscn"
+        "frontend/smoke_facing_indicator.tscn",
+        "frontend/smoke_regeneration_visualizer.tscn"
       ]
     }
   }
