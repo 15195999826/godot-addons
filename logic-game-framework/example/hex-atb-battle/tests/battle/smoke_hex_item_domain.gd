@@ -40,6 +40,16 @@ func _ready() -> void:
 		return
 	if not _phase_dispose_and_reset_session():
 		return
+	if not _phase_container_equipable_defense_in_depth():
+		return
+	if not _phase_merge_stack_contract():
+		return
+	if not _phase_snapshot_fields():
+		return
+	if not _phase_get_actor_id_for_container():
+		return
+	if not _phase_domain_reset_clears_equipment_ids():
+		return
 
 	print("SMOKE_TEST_RESULT: PASS - all HexItemDomain data-layer checks passed")
 	get_tree().quit(0)
@@ -91,9 +101,9 @@ func _phase_register_actor_creates_equipment_container() -> bool:
 	if eq_a <= 0 or eq_b <= 0 or eq_a == eq_b:
 		return _fail("phase2: equipment container_id 应 > 0 且 A != B, got A=%d B=%d" % [eq_a, eq_b])
 
-	# domain.equipment_container_ids 必须同步
-	if not domain.equipment_container_ids.has(eq_a) or not domain.equipment_container_ids.has(eq_b):
-		return _fail("phase2: domain.equipment_container_ids 未同步")
+	# domain 必须同步 equipment container 记录
+	if not domain.has_equipment_container(eq_a) or not domain.has_equipment_container(eq_b):
+		return _fail("phase2: domain has_equipment_container 应同步 eq_a / eq_b")
 
 	# 容器槽数 = 6
 	var container_a := ItemSystem.get_container(eq_a) as HexActorEquipmentContainer
@@ -225,8 +235,8 @@ func _phase_unregister_actor_unloads_equipment() -> bool:
 	# 容器应被销毁
 	if ItemSystem.get_container(eq_a) != null:
 		return _fail("phase6: equipment container 应被销毁")
-	if domain.equipment_container_ids.has(eq_a):
-		return _fail("phase6: domain.equipment_container_ids 仍含 eq_a")
+	if domain.has_equipment_container(eq_a):
+		return _fail("phase6: domain 仍含 eq_a 的 equipment container 记录")
 	# sword 应回到 bag
 	var loc := ItemSystem.get_item_location(sword_id)
 	if loc == null or loc.container_id != inv.player_bag_id:
@@ -318,6 +328,202 @@ func _phase_dispose_and_reset_session() -> bool:
 	if not (ItemSystem.get_domain() is DefaultItemDomain):
 		return _fail("phase8: reset_session 后 domain 应为 DefaultItemDomain")
 	print("  phase8 OK")
+	return true
+
+
+# ============================================================
+# Phase 9: container equipable defense-in-depth (review H2)
+# 直接调 container.can_add_item, 绕过 ItemSystem.move_item / domain.can_move_item,
+# 验证 HexActorEquipmentContainer 自己也能拦 non-equipable item。
+# ============================================================
+
+func _phase_container_equipable_defense_in_depth() -> bool:
+	var ctx := _setup()
+	var inv: HexPlayerInventory = ctx.inv
+	inv.register_actor(ACTOR_A)
+	var eq_a := inv.get_equipment_container_id(ACTOR_A)
+	var container := ItemSystem.get_container(eq_a) as HexActorEquipmentContainer
+
+	# 创建 non-equipable item (broken_stone)
+	var stone_r := ItemSystem.create_item(inv.player_bag_id, &"broken_stone", 1, 0)
+	var stone_id: int = stone_r.created_item_ids[0]
+
+	# 直接走 container.can_add_item, 绕过 ItemSystem.move_item: 必须拦
+	var direct_check := container.can_add_item(stone_id, 0)
+	if direct_check.success:
+		return _fail("phase9: container.can_add_item 应拦 non-equipable item (defense-in-depth)")
+	if not "不可装备" in direct_check.error_message:
+		return _fail("phase9: error_message 应含 '不可装备', got: %s" % direct_check.error_message)
+
+	# 同样的 container, equipable item 应允许
+	var sword_r := ItemSystem.create_item(inv.player_bag_id, &"training_sword", 1, 1)
+	var sword_id: int = sword_r.created_item_ids[0]
+	var allow_check := container.can_add_item(sword_id, 0)
+	if not allow_check.success:
+		return _fail("phase9: equipable item 应被 container 允许 (defense-in-depth 不应误伤)")
+
+	_teardown(ctx)
+	print("  phase9 OK")
+	return true
+
+
+# ============================================================
+# Phase 10: HexItemDomain.merge_stack 专项 (review H3)
+# 验证 mutate-existing-count + leftover 合约
+# ============================================================
+
+func _phase_merge_stack_contract() -> bool:
+	var ctx := _setup()
+	var inv: HexPlayerInventory = ctx.inv
+
+	# 先放 5 个 minor_rune (max_stack=9, slot 0)
+	var r1 := ItemSystem.create_item(inv.player_bag_id, &"minor_rune", 5, 0)
+	if not r1.success or r1.created_item_ids.size() != 1:
+		return _fail("phase10 setup: 第一批 minor_rune 应创建成功")
+	var first_id: int = r1.created_item_ids[0]
+	if ItemSystem.get_item_data(first_id).count != 5:
+		return _fail("phase10 setup: 第一批 count 应 = 5")
+
+	# 再放 3 个: 应该 merge (5+3=8), 0 新建
+	var r2 := ItemSystem.create_item(inv.player_bag_id, &"minor_rune", 3)
+	if not r2.success:
+		return _fail("phase10: 第二批 merge 应成功")
+	if r2.created_item_ids.size() != 0:
+		return _fail("phase10: 第二批应 merge 而非新建, created=%d" % r2.created_item_ids.size())
+	if r2.updated_item_ids.size() != 1 or r2.updated_item_ids[0] != first_id:
+		return _fail("phase10: updated_item_ids 应 = [first_id]")
+	if ItemSystem.get_item_data(first_id).count != 8:
+		return _fail("phase10: merge 后 count 应 = 8, got %d" % ItemSystem.get_item_data(first_id).count)
+
+	# 再放 6 个: max_stack=9, 只能 merge 1 (count -> 9); 剩 5 新建
+	var r3 := ItemSystem.create_item(inv.player_bag_id, &"minor_rune", 6, 1)
+	if not r3.success:
+		return _fail("phase10: 第三批 partial merge + new stack 应成功")
+	if r3.updated_item_ids.size() != 1:
+		return _fail("phase10: 第三批 updated 应 = 1 个 (撑爆第一 stack)")
+	if r3.created_item_ids.size() != 1:
+		return _fail("phase10: 第三批 created 应 = 1 (剩余新建)")
+	if ItemSystem.get_item_data(first_id).count != 9:
+		return _fail("phase10: 第一 stack 应被撑到 9, got %d" % ItemSystem.get_item_data(first_id).count)
+	var second_id: int = r3.created_item_ids[0]
+	if ItemSystem.get_item_data(second_id).count != 5:
+		return _fail("phase10: 新 stack 应 = 5, got %d" % ItemSystem.get_item_data(second_id).count)
+
+	_teardown(ctx)
+	print("  phase10 OK")
+	return true
+
+
+# ============================================================
+# Phase 11: snapshot 全字段 (review L5)
+# ============================================================
+
+func _phase_snapshot_fields() -> bool:
+	var ctx := _setup()
+	var inv: HexPlayerInventory = ctx.inv
+
+	# non-stackable equipable
+	var sword_r := ItemSystem.create_item(inv.player_bag_id, &"training_sword", 1, 0)
+	var sword_id: int = sword_r.created_item_ids[0]
+	var ssnap := ItemSystem.get_item_snapshot(sword_id)
+	if ssnap.get("config_id") != "training_sword":
+		return _fail("phase11: sword config_id 错")
+	if ssnap.get("display_name") != "Training Sword":
+		return _fail("phase11: sword display_name 错")
+	if ssnap.get("icon_key") != "sword":
+		return _fail("phase11: sword icon_key 错")
+	if int(ssnap.get("max_stack", 0)) != 1:
+		return _fail("phase11: sword max_stack 应 = 1")
+	if ssnap.get("stackable") != false:
+		return _fail("phase11: sword stackable 应 false")
+	if ssnap.get("equipable") != true:
+		return _fail("phase11: sword equipable 应 true")
+	var stags: Array = ssnap.get("item_tags", [])
+	if not &"equipment" in stags:
+		return _fail("phase11: sword item_tags 应含 equipment")
+	if int(ssnap.get("count", 0)) != 1:
+		return _fail("phase11: sword count 应 = 1")
+
+	# stackable item (minor_rune)
+	var rune_r := ItemSystem.create_item(inv.player_bag_id, &"minor_rune", 7, 1)
+	var rune_id: int = rune_r.created_item_ids[0]
+	var rsnap := ItemSystem.get_item_snapshot(rune_id)
+	if int(rsnap.get("max_stack", 0)) != 9:
+		return _fail("phase11: rune max_stack 应 = 9")
+	if rsnap.get("stackable") != true:
+		return _fail("phase11: rune stackable 应 true")
+	if int(rsnap.get("count", 0)) != 7:
+		return _fail("phase11: rune count 应 = 7")
+	var rtags: Array = rsnap.get("item_tags", [])
+	if not &"rune" in rtags:
+		return _fail("phase11: rune item_tags 应含 rune")
+
+	# non-equipable
+	var stone_r := ItemSystem.create_item(inv.player_bag_id, &"broken_stone", 1, 2)
+	var stone_id: int = stone_r.created_item_ids[0]
+	var nsnap := ItemSystem.get_item_snapshot(stone_id)
+	if nsnap.get("equipable") != false:
+		return _fail("phase11: stone equipable 应 false")
+
+	_teardown(ctx)
+	print("  phase11 OK")
+	return true
+
+
+# ============================================================
+# Phase 12: get_actor_id_for_container 反向查询 (review M2)
+# ============================================================
+
+func _phase_get_actor_id_for_container() -> bool:
+	var ctx := _setup()
+	var inv: HexPlayerInventory = ctx.inv
+	inv.register_actor(ACTOR_A)
+	inv.register_actor(ACTOR_B)
+	var eq_a := inv.get_equipment_container_id(ACTOR_A)
+	var eq_b := inv.get_equipment_container_id(ACTOR_B)
+
+	if inv.get_actor_id_for_container(eq_a) != ACTOR_A:
+		return _fail("phase12: eq_a -> %s, expected %s" % [inv.get_actor_id_for_container(eq_a), ACTOR_A])
+	if inv.get_actor_id_for_container(eq_b) != ACTOR_B:
+		return _fail("phase12: eq_b -> %s, expected %s" % [inv.get_actor_id_for_container(eq_b), ACTOR_B])
+	# 不存在的 container 应返回 ""
+	if inv.get_actor_id_for_container(99999) != "":
+		return _fail("phase12: 不存在 container 应返回 empty string")
+	# player bag 不是 actor 装备容器, 也返回 ""
+	if inv.get_actor_id_for_container(inv.player_bag_id) != "":
+		return _fail("phase12: player bag 不是 actor 装备容器, 应返回 empty string")
+
+	_teardown(ctx)
+	print("  phase12 OK")
+	return true
+
+
+# ============================================================
+# Phase 13: domain.reset() 清理 _equipment_container_ids (review H1)
+# ============================================================
+
+func _phase_domain_reset_clears_equipment_ids() -> bool:
+	var ctx := _setup()
+	var inv: HexPlayerInventory = ctx.inv
+	var domain: HexItemDomain = ctx.domain
+	inv.register_actor(ACTOR_A)
+	var eq_a := inv.get_equipment_container_id(ACTOR_A)
+	if not domain.has_equipment_container(eq_a):
+		return _fail("phase13 setup: domain 应记录 eq_a")
+
+	# 单独调 domain.reset() 不通过 ItemSystem.reset_session(), 验证 reset() 自身清理
+	domain.reset()
+	if domain.has_equipment_container(eq_a):
+		return _fail("phase13: domain.reset() 后 _equipment_container_ids 应被清空")
+
+	# 模拟 ItemSystem.reset_session 的完整路径: 也要 OK
+	_teardown(ctx)
+	# teardown 内部已经 reset_session, 此时 domain 已被 ItemSystem 替换;ctx.domain
+	# (旧实例) 内部的 _equipment_container_ids 也应被它自己的 reset() 清空
+	# (reset_session 会先调 _domain.reset(), 然后才替换)
+	if domain.has_equipment_container(eq_a):
+		return _fail("phase13: reset_session 后旧 domain 实例 _equipment_container_ids 也应清空")
+	print("  phase13 OK")
 	return true
 
 

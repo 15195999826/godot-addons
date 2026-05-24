@@ -26,20 +26,29 @@ var player_bag_id: int = -1
 ## actor_id -> equipment_container_id
 var _actor_equipment: Dictionary = {}  # String -> int
 
-## reference to HexItemDomain so register/unregister equipment container 能通知
-var _domain: HexItemDomain
 
-
-## init: 创建 player bag + 保留 domain 引用 (从 ItemSystem 拿)
-## 调用者负责事先 ItemSystem.configure_domain(HexItemDomain.new(), HexItemCatalog.new())
+## init: 创建 player bag。
+## 调用者负责事先 ItemSystem.configure_domain(HexItemDomain.new(), HexItemCatalog.new())。
+## (domain 不在 init 时 snapshot — 每个 register/unregister 调用都即时 fetch
+##  确保 ItemSystem.reset_session() 后 inv 仍然 active 时不会用到 stale 引用)
 func init_inventory(bag_width: int = DEFAULT_BAG_WIDTH, bag_height: int = DEFAULT_BAG_HEIGHT) -> void:
-	_domain = ItemSystem.get_domain() as HexItemDomain
-	Log.assert_crash(_domain != null, "HexPlayerInventory",
+	var domain := _get_domain_strict()
+	# domain 仅用于 assert; init 阶段不实际改 domain 状态
+	Log.assert_crash(domain != null, "HexPlayerInventory",
 		"ItemSystem must be configured with HexItemDomain before HexPlayerInventory.init_inventory()")
 
 	var bag := BaseContainer.create_grid(&"PlayerBag", bag_width, bag_height)
 	player_bag_id = ItemSystem.register_container(bag)
 	Log.info("HexPlayerInventory", "player bag 已创建 (id=%d, %dx%d)" % [player_bag_id, bag_width, bag_height])
+
+
+## 即时 fetch 当前 ItemSystem domain;不存或类型不对 = lifecycle bug (caller 应已
+## 配置 HexItemDomain),走 assert 防御后续静默失败。
+func _get_domain_strict() -> HexItemDomain:
+	var d := ItemSystem.get_domain() as HexItemDomain
+	Log.assert_crash(d != null, "HexPlayerInventory",
+		"ItemSystem.get_domain() 不是 HexItemDomain — 是否在 reset_session 后忘了重新 configure_domain?")
+	return d
 
 
 ## 为 actor 创建 equipment container
@@ -53,7 +62,7 @@ func register_actor(actor_id: String) -> int:
 	var container := HexActorEquipmentContainer.create_for_actor(actor_id)
 	var cid := ItemSystem.register_container(container)
 	_actor_equipment[actor_id] = cid
-	_domain.register_equipment_container(cid)
+	_get_domain_strict().register_equipment_container(cid)
 	Log.info("HexPlayerInventory", "actor %s equipment container 已创建 (id=%d)" % [actor_id, cid])
 	return cid
 
@@ -64,7 +73,7 @@ func unregister_actor(actor_id: String) -> void:
 		return
 	var cid: int = _actor_equipment[actor_id]
 	_unload_equipment_to_bag(cid)
-	_domain.unregister_equipment_container(cid)
+	_get_domain_strict().unregister_equipment_container(cid)
 	ItemSystem.unregister_container(cid)
 	_actor_equipment.erase(actor_id)
 	Log.info("HexPlayerInventory", "actor %s equipment container 已销毁" % actor_id)
@@ -73,6 +82,15 @@ func unregister_actor(actor_id: String) -> void:
 ## actor 的 equipment container_id (未注册返回 -1)
 func get_equipment_container_id(actor_id: String) -> int:
 	return _actor_equipment.get(actor_id, -1)
+
+
+## 反向查询: container_id -> actor_id (UI 收到 item_moved signal 需要)。
+## 通过 container.owner_actor_id 实现,不维护反向 dict;未找到返回 ""。
+func get_actor_id_for_container(container_id: int) -> String:
+	var container := ItemSystem.get_container(container_id) as HexActorEquipmentContainer
+	if container == null:
+		return ""
+	return container.owner_actor_id
 
 
 ## 已注册的 actor 列表 (按注册顺序)
@@ -90,10 +108,11 @@ func reset_actor_equipment_keep_player() -> void:
 	for k in _actor_equipment.keys():
 		actor_ids.append(k)
 
+	var domain := _get_domain_strict()
 	for actor_id in actor_ids:
 		var cid: int = _actor_equipment[actor_id]
 		_unload_equipment_to_bag(cid)
-		_domain.unregister_equipment_container(cid)
+		domain.unregister_equipment_container(cid)
 		ItemSystem.unregister_container(cid)
 
 	# 重建空容器
@@ -104,12 +123,18 @@ func reset_actor_equipment_keep_player() -> void:
 	Log.info("HexPlayerInventory", "reset_actor_equipment_keep_player: %d actors 重建" % actor_ids.size())
 
 
-## 整个 inventory 释放: 销毁所有 equipment container + player bag,
+## 整个 inventory 释放: 销毁所有 equipment container + player bag。
 ## 留 ItemSystem 自身 (sandbox exit 通常另调 ItemSystem.reset_session)。
+##
+## **注意**: dispose 会销毁所有 items (包括装备到 actor 上的)。需要保留 player bag
+## 但清空 actor 装备的场景请用 reset_actor_equipment_keep_player。dispose 仅用于
+## sandbox exit / scene 销毁。
 func dispose() -> void:
+	var domain := ItemSystem.get_domain() as HexItemDomain  # dispose 容忍 domain 已被替换
 	for actor_id in _actor_equipment.keys():
 		var cid: int = _actor_equipment[actor_id]
-		_domain.unregister_equipment_container(cid)
+		if domain != null:
+			domain.unregister_equipment_container(cid)
 		ItemSystem.unregister_container(cid)
 	_actor_equipment.clear()
 

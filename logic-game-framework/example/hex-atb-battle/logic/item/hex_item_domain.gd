@@ -18,17 +18,29 @@ extends ItemDomain
 ## 用于 can_move_item 决策: equipment container_id 集合;由
 ## HexPlayerInventory 在创建 / 销毁 actor equipment container 时维护。
 ## 不持有 container 引用,只记 id (避免 dangling reference)。
-var equipment_container_ids: Dictionary = {}  # int -> bool (set语义)
+## 外部只读;mutate 走 register/unregister_equipment_container API。
+var _equipment_container_ids: Dictionary = {}  # int -> bool (set语义)
 
 
 ## HexPlayerInventory 创建 actor 装备容器时调用
 func register_equipment_container(container_id: int) -> void:
-	equipment_container_ids[container_id] = true
+	_equipment_container_ids[container_id] = true
 
 
 ## HexPlayerInventory 销毁 actor 装备容器时调用
 func unregister_equipment_container(container_id: int) -> void:
-	equipment_container_ids.erase(container_id)
+	_equipment_container_ids.erase(container_id)
+
+
+## debug / smoke 用: 查询某 container_id 是否登记为 equipment container
+func has_equipment_container(container_id: int) -> bool:
+	return _equipment_container_ids.has(container_id)
+
+
+## ItemSystem.reset_session() 调用时被调,清理本 domain 内的 stale state。
+## 避免 "复用 domain 实例 + 重新 configure_domain" 场景下旧 equipment ids 残留。
+func reset() -> void:
+	_equipment_container_ids.clear()
 
 
 func create_instance_data(config_id: StringName, count: int) -> ItemInstanceData:
@@ -54,7 +66,7 @@ func can_create_item(_config_id: StringName, _container_id: int, _slot_index: in
 
 ## 目标 = equipment container 时, item 必须 equipable
 func can_move_item(item_id: int, target_container_id: int, _target_slot_index: int) -> ContainerResult:
-	if not equipment_container_ids.has(target_container_id):
+	if not _equipment_container_ids.has(target_container_id):
 		return ContainerResult.ok(true)
 
 	# 走 equipment 路径: 必须 equipable
