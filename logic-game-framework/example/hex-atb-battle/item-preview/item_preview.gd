@@ -456,8 +456,9 @@ func _refresh_bag() -> void:
 	if _inventory == null:
 		return
 	var bag_id := _inventory.player_bag_id
-	# 先清空全部 cell
+	# 先清空全部 cell + rebind 到当前 player_bag_id (reset_sandbox 会换 container)
 	for cell in _bag_cells:
+		cell.set_target_container_id(bag_id)
 		cell.set_item(0, {})
 	# 再把当前 bag 中的 item 填进去
 	for item_id in ItemSystem.get_items_in_container(bag_id):
