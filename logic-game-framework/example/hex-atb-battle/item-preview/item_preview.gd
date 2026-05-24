@@ -37,6 +37,11 @@ const SANDBOX_WINDOW_SIZE := Vector2i(1280, 800)
 # 需要拖整套 actor system 配置, 包括 GameWorld autoload init / class
 # config / passives 等)。Phase B HexPlayerInventory 只依赖 actor_id 是 String,
 # 所以用 sandbox-local 固定 ID。Phase F 接入 SkillPreviewWorldGI 时换成真实 actor。
+#
+# **DevAgent / 测试约束**: 不要硬编 actor_id 字符串("preview-actor-1" 等)做断言。
+# Phase F 替换真实 actor 时 ID 会变成 HexBattleActor.get_id() 的自动生成格式。
+# 请通过 `selected_actor_idx` (0/1/2) 或 `display_name` 字段做匹配,
+# 保持 sandbox 与 SkillPreview 接入路径的 acceptance script 复用。
 const SANDBOX_ACTOR_IDS: Array[String] = ["preview-actor-1", "preview-actor-2", "preview-actor-3"]
 const SANDBOX_ACTOR_NAMES: Array[String] = ["Actor 1 (Warrior)", "Actor 2 (Mage)", "Actor 3 (Archer)"]
 
@@ -48,6 +53,8 @@ var _selected_actor_idx: int = 0
 var _bag_cells: Array[Control] = []  # bag_slot_index -> BagCell Panel
 var _equipment_slots: Array[Control] = []  # 0..5 → EquipmentSlot Panel
 var _last_op_message: String = ""
+var _last_op_success: bool = true
+var _last_error: String = ""
 
 # UI nodes
 var _bag_grid_root: Control
@@ -76,14 +83,25 @@ func _ready() -> void:
 	_refresh_all()
 
 
+## ItemPreview 自身作为 root Control 提供 _can_drop_data / _drop_data 兜底,
+## 避免 drop 到 panel 之间空白区被 Godot drag/drop 静默 abort — DevAgent
+## 测试时能看到明确的 "ignored" status, 而不是 drag 像没发生。
+func _can_drop_data(_pos: Vector2, data: Variant) -> bool:
+	return data is Dictionary and data.has("item_id")
+
+
+func _drop_data(_pos: Vector2, _data: Variant) -> void:
+	_set_op_result(false, "drop ignored: dropped on empty area (not a slot/cell)", "drop_on_empty_area")
+
+
 func _exit_tree() -> void:
 	_disconnect_item_system_signals()
 	if _inventory != null:
 		_inventory.dispose()
 		_inventory = null
-	# 注意: 不 reset_session() 此处, 避免污染其他场景的 ItemSystem (本场景独立运行
-	# 时无影响; 嵌入 SkillPreview 时由 caller 决定)。
-	# 但 sandbox 独立运行时, ItemSystem autoload 会在进程退出时自己清理。
+	# _exit_tree 不 reset_session — dispose() 已清完本场景所有 containers/items。
+	# ItemSystem autoload 的 _next_*_id counter 不会回滚,但数据层是干净的。
+	# 其他场景 (Phase F 接入的 SkillPreview) 需要时自己 configure_domain 重置。
 
 
 # ----- Public API (DevAgent adapter consumes) --------------------------------
@@ -95,8 +113,13 @@ func reset_sandbox() -> void:
 		_inventory = null
 	ItemSystem.reset_session()
 	_last_op_message = "reset_sandbox"
+	_last_op_success = true
+	_last_error = ""
 	_selected_actor_idx = 0
 	_setup_session()
+	# Sanity: actor 0 装备容器必须注册成功,否则后续 drag 会因 container_id=-1 失败
+	Log.assert_crash(_inventory.get_equipment_container_id(SANDBOX_ACTOR_IDS[0]) > 0,
+		"ItemPreview", "actor 0 equipment container 未正确注册 — sandbox lifecycle bug")
 	_seed_initial_items()
 	_connect_item_system_signals()
 	if _actor_selector != null:
@@ -111,17 +134,26 @@ func seed_items() -> void:
 
 func select_actor_by_idx(idx: int) -> bool:
 	if idx < 0 or idx >= SANDBOX_ACTOR_IDS.size():
+		_set_op_result(false, "select_actor failed: invalid idx %d (valid 0..%d)" % [idx, SANDBOX_ACTOR_IDS.size() - 1], "invalid_actor_idx")
 		return false
 	_selected_actor_idx = idx
 	if _actor_selector != null:
 		_actor_selector.selected = idx
 	_refresh_equipment_panel()
+	_set_op_result(true, "selected actor: %s" % SANDBOX_ACTOR_NAMES[idx], "")
 	return true
 
 
 func get_inventory_state() -> Dictionary:
 	if _inventory == null:
-		return {"bag": [], "actors": [], "selected_actor_idx": -1, "last_error": "no inventory"}
+		return {
+			"bag": [],
+			"actors": [],
+			"selected_actor_idx": -1,
+			"last_op_message": _last_op_message,
+			"last_op_success": _last_op_success,
+			"last_error": _last_error,
+		}
 
 	var bag_items: Array = []
 	for item_id in ItemSystem.get_items_in_container(_inventory.player_bag_id):
@@ -148,6 +180,29 @@ func get_inventory_state() -> Dictionary:
 		"selected_actor_idx": _selected_actor_idx,
 		"selected_actor_id": SANDBOX_ACTOR_IDS[_selected_actor_idx] if _selected_actor_idx < SANDBOX_ACTOR_IDS.size() else "",
 		"last_op_message": _last_op_message,
+		"last_op_success": _last_op_success,
+		"last_error": _last_error,
+	}
+
+
+## Phase D adapter 转发: 当前 selected actor 的 6 slot 状态。Phase E "切 actor
+## 验证装备隔离" step 直接读这个字段更稳, 不必每次解全 inventory_state.actors[i]。
+func get_selected_actor_state() -> Dictionary:
+	if _inventory == null:
+		return {}
+	if _selected_actor_idx < 0 or _selected_actor_idx >= SANDBOX_ACTOR_IDS.size():
+		return {}
+	var aid: String = SANDBOX_ACTOR_IDS[_selected_actor_idx]
+	var eq_id := _inventory.get_equipment_container_id(aid)
+	var slots: Array = []
+	for slot_idx in range(6):
+		slots.append(_snapshot_slot(eq_id, slot_idx))
+	return {
+		"actor_id": aid,
+		"display_name": SANDBOX_ACTOR_NAMES[_selected_actor_idx],
+		"equipment_container_id": eq_id,
+		"slots": slots,
+		"selected_actor_idx": _selected_actor_idx,
 	}
 
 
@@ -190,14 +245,14 @@ func get_layout_state() -> Dictionary:
 func handle_drop(payload: Dictionary, target_container_id: int, target_slot_index: int) -> void:
 	var item_id := int(payload.get("item_id", -1))
 	if item_id < 0:
-		_set_status("drop ignored: invalid payload")
+		_set_op_result(false, "drop ignored: invalid payload", "invalid_drop_payload")
 		return
 
 	var result := ItemSystem.move_item(item_id, target_container_id, target_slot_index)
 	if result.success:
-		_set_status("moved item %d to container %d slot %d" % [item_id, target_container_id, target_slot_index])
+		_set_op_result(true, "moved item %d to container %d slot %d" % [item_id, target_container_id, target_slot_index], "")
 	else:
-		_set_status("move FAILED: %s" % result.error_message)
+		_set_op_result(false, "move FAILED: %s" % result.error_message, result.error_message)
 
 
 # ----- Internals -------------------------------------------------------------
@@ -221,10 +276,16 @@ func _seed_initial_items() -> void:
 		{"config_id": &"broken_stone", "count": 10, "slot": 3},
 		{"config_id": &"training_sword", "count": 1, "slot": 10},  # 第二行
 	]
+	var failed_seeds: Array = []
 	for s in seeds:
 		var r := ItemSystem.create_item(_inventory.player_bag_id, s.config_id, s.count, s.slot)
 		if not r.success:
 			Log.warning("ItemPreview", "seed 失败 %s: %s" % [str(s.config_id), r.error_message])
+			failed_seeds.append({"config": str(s.config_id), "error": r.error_message})
+
+	if not failed_seeds.is_empty():
+		_set_op_result(false, "seed: %d/%d items failed (see last_error)" % [failed_seeds.size(), seeds.size()],
+			"seed_failures: %s" % JSON.stringify(failed_seeds))
 
 
 # ----- UI construction -------------------------------------------------------
@@ -395,6 +456,12 @@ func _refresh_bag() -> void:
 func _refresh_equipment_panel() -> void:
 	if _inventory == null:
 		return
+	if _selected_actor_idx < 0 or _selected_actor_idx >= SANDBOX_ACTOR_IDS.size():
+		# defensive: 越界时把所有 slot 清空, 避免 IndexError
+		for slot in _equipment_slots:
+			slot.set_target_container_id(-1)
+			slot.set_item(0, {})
+		return
 	var actor_id: String = SANDBOX_ACTOR_IDS[_selected_actor_idx]
 	var eq_id := _inventory.get_equipment_container_id(actor_id)
 	# 设置每个 slot 的 target container_id, 清空 item, 再填充
@@ -410,11 +477,25 @@ func _refresh_equipment_panel() -> void:
 
 
 func _on_actor_selector_changed(idx: int) -> void:
+	if idx < 0 or idx >= SANDBOX_ACTOR_IDS.size():
+		_set_op_result(false, "actor selector got invalid idx %d" % idx, "invalid_actor_idx")
+		return
 	_selected_actor_idx = idx
 	_refresh_equipment_panel()
-	_set_status("selected actor: %s" % SANDBOX_ACTOR_NAMES[idx])
+	_set_op_result(true, "selected actor: %s" % SANDBOX_ACTOR_NAMES[idx], "")
 
 
+## 统一记 status + last_op_success + last_error。
+## error_text 为空表示成功;非空表示失败。
+func _set_op_result(success: bool, msg: String, error_text: String) -> void:
+	_last_op_message = msg
+	_last_op_success = success
+	_last_error = error_text
+	if _status_label != null:
+		_status_label.text = msg
+
+
+## 仅更新 status label 文案 (informational, 不影响 last_op_success)
 func _set_status(msg: String) -> void:
 	_last_op_message = msg
 	if _status_label != null:
