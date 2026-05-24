@@ -99,6 +99,12 @@ class DamageEvent extends GameEvent.Base:
 ## 不由 Fireball / Poison tick / reflected damage / Fire Tile / Totem passive damage 触发.
 ## 通过 mutable.cancelled 或 target 已死的 damage 同样不触发 (callback 在那两个分支前 skip).
 ## actual_life_damage = 0 (shield 全吸) 时仍 emit, consumer 自行 no-op.
+##
+## Post-broadcast 顺序: AttackLandedEvent 在 HexBattleDamageAction.on_hit 内 broadcast,
+## 早于 broadcast_post_damage (即"父 damage event 的 post"). 同一帧同时订阅 'damage' 与
+## 'attack_landed' 的 listener 会先收到 attack_landed 再收到 damage post.
+## attacker_actor_id 可能指向已死 actor (Strike timeline 自 HIT 起 fire-and-forget, 父
+## DamageAction 没有 caster-alive guard); consumer 自行用 GameWorld.get_actor() 校验.
 
 class AttackLandedEvent extends GameEvent.Base:
 	var attacker_actor_id: String = ""
@@ -113,6 +119,10 @@ class AttackLandedEvent extends GameEvent.Base:
 	func _init() -> void:
 		kind = "attack_landed"
 
+	## 注意: damage_event 字段保存 caller 传入的 dict 引用本身 (不 duplicate).
+	## 反正 to_dict() 出口会 duplicate(true), 此处再拷一次纯属浪费 (deep array /
+	## consumption_records 在 shield 链长时尤甚). caller 责任: 传入后不再 mutate
+	## 该 dict (Strike._EmitAttackLandedAction 满足此约定).
 	static func create(
 		p_attacker_actor_id: String,
 		p_target_actor_id: String,
@@ -127,7 +137,7 @@ class AttackLandedEvent extends GameEvent.Base:
 		e.source_ability_id = p_source_ability_id
 		e.source_ability_config_id = p_source_ability_config_id
 		e.actual_life_damage = p_actual_life_damage
-		e.damage_event = p_damage_event.duplicate(true)
+		e.damage_event = p_damage_event
 		return e
 
 	func to_dict() -> Dictionary:
@@ -148,7 +158,8 @@ class AttackLandedEvent extends GameEvent.Base:
 		e.source_ability_id = d.get("source_ability_id", "") as String
 		e.source_ability_config_id = d.get("source_ability_config_id", "") as String
 		e.actual_life_damage = d.get("actual_life_damage", 0.0) as float
-		e.damage_event = (d.get("damage_event", {}) as Dictionary).duplicate(true)
+		var damage_event_value: Variant = d.get("damage_event", null)
+		e.damage_event = (damage_event_value as Dictionary).duplicate(true) if damage_event_value is Dictionary else {}
 		return e
 
 	static func is_match(d: Dictionary) -> bool:

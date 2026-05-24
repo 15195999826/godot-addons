@@ -12,6 +12,35 @@
 
 ---
 
+## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase A — AttackLandedEvent (basic-attack domain event)
+
+为 `HexBattleGeneralPassive` (Phase B) / 未来装备 on-hit / 法球 / 攻击特效订阅准备的 "普攻命中" domain event。**只由 Strike (以及未来其它"普攻"类 ability) 发射,Fireball / Poison tick / reflected damage / Fire Tile / Totem passive damage 都不发射** —— 这是 contract 而非命名约定。
+
+### Added
+
+- **`example/hex-atb-battle/core/events/battle_events.gd`** — `AttackLandedEvent` (kind `attack_landed`),payload: `attacker_actor_id` / `target_actor_id` / `source_ability_id` / `source_ability_config_id` / `actual_life_damage` / `damage_event` (deep-copy of the原始 damage dict)。Header 文档了顺序契约 (post broadcast 早于 父 damage post) 与 `attacker_actor_id` 可能指向已死 actor (Strike timeline 自 HIT 起 fire-and-forget) 的边界。
+- **`example/hex-atb-battle/logic/abilities/active/strike.gd`** — 内嵌 `_EmitAttackLandedAction extends Action.SkillLocalAction` (`owner_config_id = "skill_strike"` 锁定只在 Strike 触发),通过 `.on_hit(...)` 挂在主 `HexBattleDamageAction` (不挂 `.on_critical`,crit bonus 不复触发)。事件 push 到 `event_collector` + broadcast 给 **fresh** alive list (与父 DamageAction 的 stale snapshot 不同 —— 死亡 target 在 attack_landed broadcast 自动出列,语义更对)。`Log.assert_crash` 兜底 `damage_event_dict` 必含 `actual_life_damage` / `target_actor_id`。
+- **`example/hex-atb-battle/tests/battle/skill_scenarios/attack_landed_*_scenario.gd`** — 4 个新 scenario:
+  - `strike_emits` (Strike 命中后必有 1 条事件 + 字段齐全 + `actual_life_damage > 0`);
+  - `fireball_no_emit` (Fireball 不发);
+  - `zero_actual_damage` (caster atk=20 + target ward cap=30 → `actual_life_damage = 0` 仍 emit, consumer 自行 no-op);
+  - `reflect_no_emit` (Thorn 反伤经 `HexBattleReflectDamageAction` 走另条 path, 不触发 AttackLandedEvent)。
+
+### 设计取舍
+
+- **顺序倒置 (attack_landed broadcast 早于父 damage post)** —— `_process_callbacks` 跑在 `broadcast_post_damage` 之前是 DamageAction 既有顺序,Phase A 顺势使用; consumer 同时订阅 'damage' 与 'attack_landed' 时记录此顺序作 contract,header 文档已说明。
+- **fresh vs stale alive list** —— `broadcast_post_damage` 用 stale (LGF 框架约定,本帧死的 actor 仍参与广播); `attack_landed` 用 fresh (本次 hit 把 target 打死时 target 自动出局,不再被打扰)。二者不强求一致,Phase B 仅 attacker 侧 lifesteal 监听,attacker 必在 fresh list。
+- **damage_event 字段** —— `AttackLandedEvent.create()` 不再 `duplicate(true)` (instance 字段无人读),只在 `to_dict()` 出口 deep-copy 一次进 replay JSON。`from_dict()` 防御 `damage_event` 字段存在但为 null 的迁移情形 (`null as Dictionary` 不会 crash duplicate)。
+
+| 测试 | 结果 |
+|---|---|
+| `hex/skills smoke_skill_scenarios` | PASS 46/46 (含 4 个新 attack_landed scenario) |
+| `hex/regression` | PASS 3/3 |
+| `core/unit` | PASS |
+| `hex/frontend` | 6/7 PASS (唯一 TIMEOUT = 既有无关 `smoke_surge_unit_view`, standalone 跑 PASS) |
+
+---
+
 ## [Unreleased] — 2026-05-18 devagent — 确定性回放定格(解锁瞬时 VFX 视觉验证)
 
 skill_preview 回放此前只有 `wait_for_idle`(等全完,太晚)/ `wait_frames`(墙钟,与回放轴无固定换算)→ 截不到超短战斗里的一次性 VFX(斩杀爆 / 命中闪 / 投射物消失帧)。新增确定性回放控制,**永久解开"表演层无法 dev 闭环"**。

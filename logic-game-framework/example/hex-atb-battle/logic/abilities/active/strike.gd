@@ -41,6 +41,11 @@ static var _CASTER_ATK_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: Exec
 ## 挂在主 damage action 的 on_hit chain, 不挂在 on_critical (crit bonus 不算独立"普攻命中").
 ## callback ctx 已携带主 damage event dict; cancelled / dead-target 由 DamageAction 上游 skip,
 ## 这里不会被复触发。事件 push 到 event_collector + broadcast 给存活 actor 以触发被动.
+##
+## alive_actor_ids 用 fresh fetch (不复用父 DamageAction 的 stale snapshot): 若 target 在
+## 本次 hit 被打死, fresh list 会自动排除 target —— attack_landed broadcast 不去打扰已死的
+## actor 是更符合"基础攻击命中"语义的选择. (broadcast_post_damage 沿用 stale 是 LGF 框架既定
+## 约定, 二者不强求一致.) 当前 Phase B 仅 attacker 侧 lifesteal 监听, attacker 必在 fresh list.
 class _EmitAttackLandedAction:
 	extends Action.SkillLocalAction
 
@@ -59,7 +64,14 @@ class _EmitAttackLandedAction:
 		if attacker_id.is_empty():
 			return ActionResult.create_success_result([], { "attack_landed_skipped": "no_attacker" })
 
-		var target_id := str(damage_event_dict.get("target_actor_id", ""))
+		Log.assert_crash(damage_event_dict.has("actual_life_damage"),
+			"HexBattleStrike._EmitAttackLandedAction",
+			"damage_event_dict 缺 actual_life_damage 字段; 上游应通过 HexBattleDamageUtils.apply_damage 注入")
+		Log.assert_crash(damage_event_dict.has("target_actor_id"),
+			"HexBattleStrike._EmitAttackLandedAction",
+			"damage_event_dict 缺 target_actor_id 字段")
+
+		var target_id := damage_event_dict.get("target_actor_id", "") as String
 		var actual_life_damage := damage_event_dict.get("actual_life_damage", 0.0) as float
 		var source_ability_id := ctx.ability_ref.id if ctx.ability_ref != null else ""
 		var source_ability_config_id := ctx.ability_ref.config_id if ctx.ability_ref != null else ""
