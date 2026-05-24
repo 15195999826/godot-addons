@@ -140,6 +140,7 @@ func start() -> void:
 				"actor_id": actor_id,
 				"ability_config": kf.get("ability_config"),
 				"target_id": String(kf.get("target_id", "")),
+				"target_coord": kf.get("target_coord", {}) as Dictionary,
 				"_actor_order": actor_idx,
 				"_track_order": kf_idx,
 			})
@@ -277,6 +278,11 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		var target_id: String = kf["target_id"] as String
 		if target_id != "":
 			event["target_actor_id"] = target_id
+		# Phase D: target_coord 由 SkillPreview._collect_actor_setups 在 fixed_pos mode 时填充,
+		# cone / move 等 coord-based ability 直接读 event["target_coord"].
+		var target_coord: Dictionary = kf.get("target_coord", {}) as Dictionary
+		if not target_coord.is_empty():
+			event["target_coord"] = target_coord
 		actor.ability_set.receive_event(event, world)
 
 

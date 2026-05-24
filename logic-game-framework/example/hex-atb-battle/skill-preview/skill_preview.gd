@@ -4451,10 +4451,19 @@ func _collect_actor_setups() -> Array[Dictionary]:
 				continue
 			var target_dict: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
 			var target_id := _resolve_keyframe_target(target_dict, actor)
+			# Phase D: fixed_pos 直传 target_coord 给 ability, 让 cone / move 等 coord-based skill
+			# 真正用 grid 坐标释放 (而不是 fallback 到 fixed_pos 解析出的 nearest actor).
+			var target_coord: Dictionary = {}
+			if str(target_dict.get("mode", "auto")) == "fixed_pos":
+				target_coord = {
+					"q": int(target_dict.get("q", 0)),
+					"r": int(target_dict.get("r", 0)),
+				}
 			track_out.append({
 				"time_ms": int(kf.get("time_ms", 0)),
 				"ability_config": skill_cfg,
 				"target_id": target_id,
+				"target_coord": target_coord,
 			})
 
 		setups.append({
