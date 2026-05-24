@@ -45,4 +45,5 @@ inkmon 项目层的**技能/战斗系统**设计与持续演进路线图。
 | [remaining-skills-impl-plan.md](remaining-skills-impl-plan.md) | 🟡 Phase 开发入口 | 进度追踪 | 16 张技能设计卡剩余 5 个的 Phase 索引与落码总检查 |
 | [advanced-skills-impl-plan.md](advanced-skills-impl-plan.md) | 🟢 草案 | 进度追踪 | 16 技能完成后的进阶技能候选、优先级、评审门与暂缓项 |
 | [advanced-skills-next-batch.md](advanced-skills-next-batch.md) | 🟢 暂缓设计 | 进度追踪 | 本轮机制：GeneralPassive / 普攻吸血属性 / Cone AoE selector/debug 区域 / facing 前端回归 |
+| [skill-preview-item-system-plan.md](skill-preview-item-system-plan.md) | 🟢 计划中 | 系统设计 | 先做 hex item-preview sandbox + DevAgent 验收，再接入 SkillPreview：`ItemSystem` + `ItemDomain` 扩展点、player bag、actor equipment slots、drag/drop UI、生命周期清理 |
 | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) | 🟢 暂缓设计 | 系统设计 | 下一阶段：装备系统接入、装备属性、法球 / attack effect 示例与开放问题 |
