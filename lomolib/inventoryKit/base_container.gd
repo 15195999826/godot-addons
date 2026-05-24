@@ -33,7 +33,7 @@ signal item_added(item_id: int, slot_index: int)
 signal item_removed(item_id: int, slot_index: int)
 
 ## 物品移动时触发（从当前容器移出到其他容器）
-signal item_moved_out(item_id: int, target_container_id: int, target_slot_index: int)
+signal item_moved_out(item_id: int, source_slot_index: int, target_container_id: int, target_slot_index: int)
 
 ## 物品移入时触发（从其他容器移入当前容器）
 signal item_moved_in(item_id: int, source_container_id: int, source_slot_index: int, target_slot_index: int)
@@ -183,9 +183,11 @@ func on_item_moved_out(item_id: int, target_container_id: int, target_slot_index
 	if space_manager != null and slot_index >= 0:
 		space_manager.mark_slot_available(slot_index)
 
-	item_moved_out.emit(item_id, target_container_id, target_slot_index)
-	Log.debug("BaseContainer", "容器 %s 移出物品: ID=%d -> ContainerID=%d" % [
-		container_name, item_id, target_container_id
+	# 注意 signal 参数顺序: source_slot_index 在最前 — 听众通常先关心"我这边
+	# 哪个槽腾出来了",再决定是否同步 UI;target_* 用于跟踪去向。
+	item_moved_out.emit(item_id, slot_index, target_container_id, target_slot_index)
+	Log.debug("BaseContainer", "容器 %s 移出物品: ID=%d Slot=%d -> ContainerID=%d Slot=%d" % [
+		container_name, item_id, slot_index, target_container_id, target_slot_index
 	])
 
 

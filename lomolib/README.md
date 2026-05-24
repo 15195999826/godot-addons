@@ -17,28 +17,47 @@ LomoLib 是一个 Godot 4.x 通用工具库插件，提供常用的开发工具�
 - ✅ 灵活的配置系统 - 支持运行时配置容器类型
 - ✅ 完整的信号通知 - 物品移动、添加、移除事件
 
-**快速示例：**
+**API 分层（v0.5.0+）：**
+- 业务 API 走 `ItemSystem.create_item(container_id, config_id, count, slot_index) -> ItemCreateResult` /
+  `ItemSystem.move_item(...) -> ItemMoveResult`，依赖 `configure_domain(ItemDomain, ItemCatalog)` 注册项目规则。
+- 底层 API `ItemSystem.register_item_instance(container_id, slot_index, item_type, notify)` 跳过 catalog/domain，
+  只做 base ItemInstance + location 写入，用于框架自身测试或不需要项目语义的简单 demo。
+
+**业务 API 快速示例（项目通过 configure_domain 注册规则后）：**
 ```gdscript
-# 创建背包容器（无序，30个格子）
+# 1. 项目实现 ItemDomain / ItemCatalog 子类，注册项目规则（具体见 hex-atb-battle 示例）
+ItemSystem.configure_domain(MyItemDomain.new(), MyItemCatalog.new())
+
+# 2. 创建背包容器（无序，30个格子）+ 装备栏（固定槽位）
+var backpack := BaseContainer.create_unordered(&"Backpack", 30)
+var backpack_id := ItemSystem.register_container(backpack)
+var equipment := BaseContainer.create_fixed(&"Equipment", [&"Helmet", &"Armor", &"Weapon", &"Shield"])
+var equipment_id := ItemSystem.register_container(equipment)
+
+# 3. 业务 create_item -> ItemCreateResult（catalog 必须含 config_id）
+var create_result := ItemSystem.create_item(backpack_id, &"iron_sword", 1)
+if not create_result.success:
+    print("创建失败: ", create_result.error_message)
+var sword_id := create_result.created_item_ids[0]
+
+# 4. 业务 move_item -> ItemMoveResult
+var weapon_slot := equipment.get_space_manager().get_slot_index_by_type(&"Weapon")
+var move_result := ItemSystem.move_item(sword_id, equipment_id, weapon_slot)
+if not move_result.success:
+    print("移动失败: ", move_result.error_message)
+
+# 5. 整场景退出/重置时清理本轮 containers/items/data
+ItemSystem.reset_session()
+```
+
+**底层 API 快速示例（不需要项目规则的简单 demo / 框架自身测试）：**
+```gdscript
 var backpack := BaseContainer.create_unordered(&"Backpack", 30)
 var backpack_id := ItemSystem.register_container(backpack)
 
-# 创建装备栏（固定槽位）
-var equipment := BaseContainer.create_fixed(&"Equipment", [
-    &"Helmet", &"Armor", &"Weapon", &"Shield"
-])
-var equipment_id := ItemSystem.register_container(equipment)
-
-# 创建物品
-var sword_id := ItemSystem.create_item(backpack_id, -1, &"IronSword")
-
-# 移动物品到装备栏
-var weapon_slot := equipment.get_space_manager().get_slot_index_by_type(&"Weapon")
-ItemSystem.move_item(sword_id, equipment_id, weapon_slot)
-
-# 查询容器中的物品
-var items := ItemSystem.get_items_in_container(backpack_id)
-print("背包物品: ", items)
+# 底层 register_item_instance：跳过 catalog/domain，直接登记 base ItemInstance
+var sword_id := ItemSystem.register_item_instance(backpack_id, -1, &"IronSword")
+ItemSystem.move_item(sword_id, equipment_id, 0)  # move_item 仍可用，只是 domain.can_move_item 走 DefaultItemDomain（默认 allow）
 ```
 
 **文件结构：**
@@ -247,6 +266,15 @@ addons/lomolib/
 
 ## 版本历史
 
+- **v0.5.0** - InventoryKit API 分层（业务 vs 底层）
+  - 新增 `ItemDomain` / `ItemCatalog` / `ItemInstanceData` 扩展点
+  - 新增 `ItemCreateResult` / `ItemMoveResult` 返回 contract
+  - `ItemSystem.create_item()` 改为业务入口（`container_id, config_id, count, slot_index`）；
+    旧 raw 创建语义迁移到 `register_item_instance(container_id, slot_index, item_type, notify)`
+  - `ItemSystem.move_item()` 返回 `ItemMoveResult`（替换旧 bool 返回值）
+  - `ItemSystem.configure_domain(domain, catalog)` + `reset_session()` 生命周期
+  - `BaseContainer.item_moved_in` signal 补 `target_slot_index`（3 参 → 4 参）
+  - `BaseContainer` 新增同容器换槽 callback `on_item_moved` + signal `item_moved_within`
 - **v0.4.0** - 新增 DevAgent Debug Mode
   - JSONL inbox/outbox 开发期调试桥
   - 真实输入注入、截图、Control/Node inspector

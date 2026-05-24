@@ -123,11 +123,11 @@ func reset_session() -> void:
 		_item_map.erase(item_id)
 	_item_data_by_id.clear()
 
-	# 3. domain 自身复位
+	# 3. 让外发 domain 清理可能保留的状态 (counter / cache),BEFORE 我们丢引用
 	if _domain != null:
 		_domain.reset()
 
-	# 4. 回退到 default domain / catalog
+	# 4. 安装新的 default; 故意不调 reset() — 新实例本身已是 pristine 状态
 	_domain = DefaultItemDomain.new()
 	_catalog = EmptyItemCatalog.new()
 
@@ -213,11 +213,20 @@ func get_all_containers() -> Array[int]:
 ## 底层 item instance 登记。业务代码应优先使用 create_item();
 ## 直接调用本 API 跳过 catalog/domain 规则,只做 base ItemInstance + location 写入。
 ##
+## **公共 signal 约定**: 本 API 永远不 emit public `item_created` signal。
+## 业务 create_item() 才是 public signal 唯一来源,确保 signal 触发时
+## `_item_data_by_id[item_id]` 已写入 — UI / DevAgent / 项目 domain
+## listener 可安全调用 `get_item_data()` / `get_item_snapshot()`。
+## 如果 raw API 也 emit,listener 会收到没有 instance_data 的 item,
+## 违反 Plan §"ItemDomain Contract" 的 "_item_data_by_id 已写入后才触发 public signal" 约束。
+## 仅 container 级别的 `item_added` signal 会(在 notify=true 时)触发,因为 container
+## 听众通常只关心 slot/cache 更新,不会查询 project instance data。
+##
 ## [param container_id] 目标容器ID
 ## [param slot_index] 目标槽位索引（-1 表示自动分配）
 ## [param item_type] 物品类型 (用于 base instance.item_type 字段)
 ## [param notify] 是否触发 container.on_item_added (业务 create_item 设 false,
-##                自己控制 callback 顺序)
+##                自己控制 callback 顺序;raw 调用通常用 true)
 ## [return] 返回新 item_id; 失败返回 -1
 func register_item_instance(container_id: int, slot_index: int = -1, item_type: StringName = &"", notify: bool = true) -> int:
 	var container := get_container(container_id)
@@ -244,7 +253,8 @@ func register_item_instance(container_id: int, slot_index: int = -1, item_type: 
 
 	if notify:
 		container.on_item_added(item_id, slot_index)
-		item_created.emit(item_id, location)
+		# 注意: 此处不 emit public item_created signal — 见函数 doc 中的
+		# "公共 signal 约定"。
 
 	Log.debug("ItemSystem", "register_item_instance: ID=%d, Type=%s, Container%d:%d" % [
 		item_id, item_type, container_id, slot_index
@@ -296,6 +306,12 @@ func create_item(container_id: int, config_id: StringName, count: int = 1, slot_
 			if not _domain.can_stack(existing_id, config_id):
 				continue
 			var leftover := _domain.merge_stack(existing_data, remaining, max_stack)
+			# Domain 合约: merge_stack 必须 mutate existing_data.count;
+			# leftover 描述未合并的 incoming count。撑爆 max_stack = domain bug。
+			Log.assert_crash(existing_data.count <= max_stack, "ItemSystem",
+				"ItemDomain.merge_stack overran max_stack: %d > %d (item %d, config %s)" % [
+					existing_data.count, max_stack, existing_id, str(config_id)
+				])
 			var merged := remaining - leftover
 			if merged > 0:
 				updated.append(existing_id)
@@ -314,9 +330,7 @@ func create_item(container_id: int, config_id: StringName, count: int = 1, slot_
 			if updated.is_empty():
 				return ItemCreateResult.fail(add_check.error_message, remaining)
 			# stack merge 成功但新 stack 创建失败: 返回 partial-success
-			var partial := ItemCreateResult.ok(created, updated, remaining)
-			partial.success = true
-			return partial
+			return ItemCreateResult.ok(created, updated, remaining)
 
 		var data := _domain.create_instance_data(config_id, new_stack_count)
 		var new_item_id := register_item_instance(container_id, slot_index, config_id, false)
@@ -432,6 +446,12 @@ func _move_item_within_container(item_id: int, container: BaseContainer, old_loc
 
 ## 业务 destroy_item: container callback -> domain.on_item_destroyed ->
 ## _item_data_by_id.erase -> _item_map.erase -> emit item_destroyed
+##
+## **Raw item 行为**: 通过 `register_item_instance()` 创建的 raw item 没有
+## instance_data,domain.on_item_destroyed 会以 `data == null` 调用,
+## 让 project domain 自行决定是否处理 (counter 之类的可以根据 item_id
+## 仍然 tracking)。这样 raw 与业务 item 在销毁路径上行为一致,
+## 避免 domain 收不到 raw item 的 destroy 通知造成 silent leak。
 func destroy_item(item_id: int) -> bool:
 	if not _item_map.has(item_id):
 		Log.warning("ItemSystem", "destroy_item: 物品不存在 ID=%d" % item_id)
@@ -446,7 +466,9 @@ func destroy_item(item_id: int) -> bool:
 	if container != null:
 		container.on_item_removed(item_id)
 
-	if data != null and _domain != null:
+	# 即使 data == null 也 notify domain — raw item 也是 item, domain 可能在
+	# tracking item_id (例如全局 counter)。子类需自行判断 data 是否为 null。
+	if _domain != null:
 		_domain.on_item_destroyed(item_id, data)
 
 	_item_data_by_id.erase(item_id)
