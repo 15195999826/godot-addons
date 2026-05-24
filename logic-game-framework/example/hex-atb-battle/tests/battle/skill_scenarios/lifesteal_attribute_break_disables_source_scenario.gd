@@ -63,7 +63,9 @@ func get_actions() -> Array[Dictionary]:
 
 
 func get_max_ticks() -> int:
-	return 60
+	# t=3000 第二次 Strike + 500ms timeline + idle countdown 1000ms ≈ t=4500;
+	# 80 ticks * 100ms = 8000ms 给未来 hp_regen periodic tick 增量留 timing buffer.
+	return 80
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:

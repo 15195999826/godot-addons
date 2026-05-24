@@ -69,8 +69,8 @@ class _LifestealAction:
 
 
 ## Trigger filter: attacker 必须是 passive owner; attack_landed event 只对"我打出"那一次响应.
-## actual_life_damage > 0 不在 filter 检查 —— 仍 fire callback, 让 _LifestealAction 自身 no-op,
-## 这样后续 attack_landed 消费者 (装备 on-hit / 法球) 不被 filter 短路掉.
+## actual_life_damage > 0 检查放在 _LifestealAction 内部, 不进 filter —— 仅作风格选择, NoInstanceComponent
+## 的 filter 对其它 attack_landed 消费者 (Phase B+ 装备 on-hit / 法球) 没有 short-circuit 语义.
 static func _attack_landed_filter() -> Callable:
 	return func(event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
 		var owner_id := ctx.owner_actor_id
