@@ -5,9 +5,10 @@
 ## - cast_dir = HexFacing.direction_between(caster, target_coord)
 ## - 选区: caster range 内所有 candidate hex; direction_between(caster→candidate)
 ##   必须落在 {cast_dir-1, cast_dir, cast_dir+1} 三方向 sector 才算前向命中
-## - target_coord == caster 是 caller contract 错误 → Log.assert_crash (不 fallback 到 facing)
+## - target_coord 字段必须存在 (event["target_coord"].has(q,r)); 缺字段 / target_coord == caster
+##   都是 caller contract 错误 → Log.assert_crash (不 fallback 到 facing)
 ## - 命中过滤: 敌方 alive CharacterActor 占该格
-## - 命中顺序确定: distance_to(caster) 升序 → coord (q*100+r) 升序 二级
+## - 命中顺序确定: distance_to(caster) 升序 → coord (q*1000+r) 升序 二级 (multiplier 需 > 地图半径 diameter)
 ## - damage = caster.atk PHYSICAL (复用 HexBattleDamageAction)
 class_name HexBattleGridCone
 
@@ -57,6 +58,11 @@ class _GridConeSelector:
 		var caster_pos: HexCoord = caster.hex_position
 		var event := ctx.get_current_event()
 		var target_coord_dict: Dictionary = event.get("target_coord", {}) as Dictionary
+		# Caller contract: activate event 必须显式 set target_coord; 缺字段会让 HexCoord.from_dict({})
+		# 静默返回 (0,0) 误用作 cast 方向 → silent gameplay corruption. fail fast.
+		Log.assert_crash(target_coord_dict.has("q") and target_coord_dict.has("r"),
+			"HexBattleGridCone._GridConeSelector",
+			"activate event missing target_coord.q/r; AI/UI must populate target_coord for cone skills")
 		var target_coord := HexCoord.from_dict(target_coord_dict)
 		# Caller contract: target_coord != caster.hex_position; AI / UI 必须避免传入 own pos.
 		Log.assert_crash(not target_coord.equals(caster_pos),

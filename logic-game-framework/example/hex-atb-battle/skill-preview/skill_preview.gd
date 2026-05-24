@@ -4451,14 +4451,25 @@ func _collect_actor_setups() -> Array[Dictionary]:
 				continue
 			var target_dict: Dictionary = kf.get("target", {"mode": "auto"}) as Dictionary
 			var target_id := _resolve_keyframe_target(target_dict, actor)
-			# Phase D: fixed_pos 直传 target_coord 给 ability, 让 cone / move 等 coord-based skill
-			# 真正用 grid 坐标释放 (而不是 fallback 到 fixed_pos 解析出的 nearest actor).
+			# Phase D: coord-based ability (cone / move / 未来) 需要 target_coord 字段, 不能让
+			# 'auto' / 'enemy_index' 等模式留空 (cone 会读 {} → HexCoord(0,0) → 错误 cast 方向).
+			# 解析策略:
+			#   fixed_pos     → 直接用 dict 的 q,r
+			#   其它 (auto/index) → 用 _resolve_keyframe_target 解析出的目标 actor 的 hex_position
+			# 这样 cone 用 'enemy_index' 也能正常工作 (cone 朝该 enemy 释放).
 			var target_coord: Dictionary = {}
 			if str(target_dict.get("mode", "auto")) == "fixed_pos":
 				target_coord = {
 					"q": int(target_dict.get("q", 0)),
 					"r": int(target_dict.get("r", 0)),
 				}
+			elif target_id != "":
+				var target_actor := _world.get_actor(target_id) as HexBattleActor
+				if target_actor != null and target_actor.hex_position.is_valid():
+					target_coord = {
+						"q": target_actor.hex_position.q,
+						"r": target_actor.hex_position.r,
+					}
 			track_out.append({
 				"time_ms": int(kf.get("time_ms", 0)),
 				"ability_config": skill_cfg,

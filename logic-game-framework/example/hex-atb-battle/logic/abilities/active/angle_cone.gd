@@ -65,6 +65,9 @@ class _AngleConeSelector:
 		var caster_pos: HexCoord = caster.hex_position
 		var event := ctx.get_current_event()
 		var target_coord_dict: Dictionary = event.get("target_coord", {}) as Dictionary
+		Log.assert_crash(target_coord_dict.has("q") and target_coord_dict.has("r"),
+			"HexBattleAngleCone._AngleConeSelector",
+			"activate event missing target_coord.q/r; AI/UI must populate target_coord for cone skills")
 		var target_coord := HexCoord.from_dict(target_coord_dict)
 		Log.assert_crash(not target_coord.equals(caster_pos),
 			"HexBattleAngleCone._AngleConeSelector",
