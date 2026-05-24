@@ -38,12 +38,20 @@ func _ready() -> void:
 	_refresh_visual()
 
 
-## ItemPreview 在 _build_bag_grid 中调用
+## ItemPreview 在 _build_bag_grid 中调用 (一次性 slot_index 绑定)
 func setup(owner_scene: Control, container_id: int, slot_index: int) -> void:
 	_owner_scene = owner_scene
 	_container_id = container_id
 	_slot_index = slot_index
 	set_meta("slot_index", slot_index)
+	set_meta("container_id", container_id)
+
+
+## reset_sandbox 后 ItemSystem 重建 player_bag (新 container_id), bag cell
+## 需要 rebind 到新的 container_id, 否则 _drop_data 会去 move 到已死的旧 container。
+## ItemPreview._refresh_bag 在每次 refresh 时调用。
+func set_target_container_id(container_id: int) -> void:
+	_container_id = container_id
 	set_meta("container_id", container_id)
 
 
