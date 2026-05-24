@@ -13,6 +13,7 @@
 ##   2. abilityActivateFailed.reason 含 "冷却" (来自 CooldownCondition.get_fail_reason)
 ##   3. abilityActivateFailed.failedComponentType == "condition"
 ##   4. caster 上只 grant 一个 Strike Ability (procedure 去重)
+##   5. HexBattleGeneralPassive intrinsic periodic execution 不阻塞 preview battle_finished
 extends Node
 
 
@@ -68,6 +69,8 @@ func _ready() -> void:
 
 	_caster_id = caster.get_id()
 	_dummy_id = dummy.get_id()
+	caster.ability_set.grant_ability(Ability.new(HexBattleGeneralPassive.ABILITY, _caster_id), _world)
+	dummy.ability_set.grant_ability(Ability.new(HexBattleGeneralPassive.ABILITY, _dummy_id), _world)
 
 	_world.queue_preview([
 		{
@@ -119,7 +122,9 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 				continue
 			var kind := str((ev as Dictionary).get("kind", ""))
 			if kind == "abilityGranted" and str((ev as Dictionary).get("actorId", "")) == _caster_id:
-				grant_count += 1
+				var ability_dict: Dictionary = (ev as Dictionary).get("ability", {}) as Dictionary
+				if str(ability_dict.get("configId", "")) == HexBattleStrike.CONFIG_ID:
+					grant_count += 1
 			elif kind == "executionActivated" and str((ev as Dictionary).get("actorId", "")) == _caster_id:
 				exec_count += 1
 			elif kind == "abilityActivateFailed" and str((ev as Dictionary).get("sourceId", "")) == _caster_id:

@@ -65,7 +65,7 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 
 
 ## 装备技能 (在 HexBattle 初始化时调用)
-func equip_abilities() -> void:
+func equip_abilities(game_state_provider: Variant = null) -> void:
 	var move_ability := Ability.new(HexBattleMove.ABILITY, get_id())
 	ability_set.grant_ability(move_ability)
 	_move_ability_id = move_ability.id
@@ -79,7 +79,10 @@ func equip_abilities() -> void:
 	# 当前承载 attack_lifesteal_pct → AttackLandedEvent → heal 链路;
 	# Phase C 起加 hp_regen_per_sec.
 	var general_passive := Ability.new(HexBattleGeneralPassive.ABILITY, get_id())
-	ability_set.grant_ability(general_passive)
+	var provider := game_state_provider
+	if provider == null:
+		provider = get_owner_gameplay_instance()
+	ability_set.grant_ability(general_passive, provider)
 
 	_grant_class_passives()
 

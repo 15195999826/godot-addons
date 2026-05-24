@@ -207,6 +207,15 @@ static func actor_has_executing_ability(actor: CharacterActor) -> bool:
 	return false
 
 
+static func actor_has_blocking_execution(actor: CharacterActor) -> bool:
+	for ability in actor.ability_set.get_abilities():
+		if ability.has_ability_tag("intrinsic"):
+			continue
+		if ability.get_executing_instances().size() > 0:
+			return true
+	return false
+
+
 ## 正式 hex battle 的 ability runtime tick。
 ## SkillPreviewProcedure 复用这里, 只替换"选择/启动 action"阶段, 不另写 ability tick 合同。
 static func tick_actor_ability_runtime(
@@ -216,14 +225,15 @@ static func tick_actor_ability_runtime(
 	world: HexWorldGameplayInstance,
 ) -> bool:
 	actor.ability_set.tick(tick_interval, logic_time)
-	if HexBattleProcedure.actor_has_executing_ability(actor):
+	var has_any_execution := HexBattleProcedure.actor_has_executing_ability(actor)
+	var has_blocking_execution := HexBattleProcedure.actor_has_blocking_execution(actor)
+	if has_any_execution:
 		actor.ability_set.tick_executions(tick_interval, world)
-		return true
-	return false
+	return has_blocking_execution
 
 
 func _is_actor_executing(actor: CharacterActor) -> bool:
-	return HexBattleProcedure.actor_has_executing_ability(actor)
+	return HexBattleProcedure.actor_has_blocking_execution(actor)
 
 
 func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
