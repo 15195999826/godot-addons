@@ -26,6 +26,23 @@
 extends "res://addons/lomolib/dev_agent/dev_agent_scene_ops.gd"
 
 
+const _REQUIRED_PARENT_METHODS: Array[String] = [
+	"get_inventory_state", "get_layout_state", "get_selected_actor_state",
+	"reset_sandbox", "seed_items", "select_actor_by_idx",
+]
+
+
+func _ready() -> void:
+	# scene wiring bug 在 _ready 时一次性 assert_crash, 比每个 op 都 silent
+	# return error 更友好。parent 在 _ready 已经全部构造完毕 (本 adapter 是
+	# ItemPreview._install_dev_agent 在 _ready 末尾添加的 child)。
+	var preview := get_parent()
+	Log.assert_crash(preview != null, "ItemPreviewAgentOps", "must be a child of ItemPreview")
+	for required_method in _REQUIRED_PARENT_METHODS:
+		Log.assert_crash(preview.has_method(required_method), "ItemPreviewAgentOps",
+			"parent ItemPreview missing required method: %s" % required_method)
+
+
 func get_supported_ops() -> PackedStringArray:
 	return PackedStringArray([
 		"state",
@@ -40,17 +57,10 @@ func get_supported_ops() -> PackedStringArray:
 
 func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 	var preview := get_parent()
+	# 已经在 _ready assert 过 parent 接口完整, 这里只挡 parent null 的极端情况
+	# (e.g., parent 在 op 处理期间 queue_free)
 	if preview == null:
-		return _error("ItemPreviewAgentOps must be a child of ItemPreview")
-
-	# 提前 sanity check: parent 必须暴露我们用到的方法。其中任何一个缺,就是
-	# adapter / scene 接线 bug — fail fast 比 silent 跑下去更友好。
-	for required_method in [
-		"get_inventory_state", "get_layout_state", "get_selected_actor_state",
-		"reset_sandbox", "seed_items", "select_actor_by_idx",
-	]:
-		if not preview.has_method(required_method):
-			return _error("parent ItemPreview missing required method: %s" % required_method)
+		return _error("ItemPreviewAgentOps parent gone (queue_free during op?)")
 
 	match String(op_name):
 		"state", "inventory_state":

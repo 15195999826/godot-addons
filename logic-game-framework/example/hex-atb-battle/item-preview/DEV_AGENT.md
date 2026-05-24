@@ -61,6 +61,17 @@ inbox / outbox 路径在 godot.log 开头打印:
 | `inspect_tree` | `{root?, max_depth?}` | 验证场景 tree 结构 |
 | `dump_node` | `{path}` | 单 node detail |
 
+## Important: drag_at 总是 ok:true (input dispatch 结果) — 业务结果在 inventory_state
+
+`drag_at` 是 raw input op,只报告 InputEvent 序列是否成功 dispatch 到 viewport,**不**反映 ItemSystem.move_item 的业务结果。任何 drag 后都必须跟一个 `inventory_state` / `selected_actor_state` op 读 `last_op_success` / `last_error` 才能知道实际 move 成功/失败。例:
+
+```jsonl
+{"id":"drag-01","op":"drag_at","from_x":68,"from_y":132,"to_x":808,"to_y":192,"steps":12}
+{"id":"check-01","op":"scene","name":"inventory_state"}
+```
+
+`drag-01` outbox 给 `ok:true` (input dispatched), `check-01` 才反映 last_op_success=true/false。
+
 ## Snapshot 字段 -> action op 触发 -> 期望 verify 字段
 
 | 触发 op | 后续 observation | 期望字段变化 |
@@ -104,11 +115,10 @@ drag steps 建议 ≥ 8 (Godot drag threshold ≈ 几像素 + 累计 motion ≥ 
 
 `selected_actor_idx == 0` (Actor 1 (Warrior)),所有 actor 装备槽空。
 
-## Acceptance Flow 13 步
+## Acceptance Flow (简版 — 完整 13 步见 plan)
 
 详见 `addons/logic-game-framework/docs/skills/skill-preview-item-system-plan.md` §"DevAgent Acceptance Flow"。
-
-简要:
+下面 9 个 step 是简化合并版,逐项对照 plan 内 13 个 functional step (plan §"DevAgent Acceptance Flow" 第 14 项 "stop Godot process" 是 admin 步骤,不计入功能验收):
 1. `state` → 拿 `supported_ops`
 2. `seed_items` (= reset) + `inventory_state` → bag.size()==5
 3. `inspect_controls` + `layout_state` → bag / equipment panel rect 可见、不重叠
