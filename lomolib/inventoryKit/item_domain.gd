@@ -31,7 +31,17 @@ func can_stack(_existing_item_id: int, _config_id: StringName) -> bool:
 	return false
 
 
-## 把 incoming_count 合并到 existing_data; 返回未合并的剩余 count
+## 把 incoming_count 合并到 existing_data; 返回未合并的剩余 count。
+##
+## **实现合约**: 子类必须 mutate `existing_data.count`,把成功合并的部分加到
+## 已有 stack 上 — ItemSystem 只看返回值知道还有多少 leftover,不会自己
+## 改 existing_data.count。如果子类只 return leftover < incoming_count
+## 而不 mutate existing_data.count,会出现 phantom merge:
+## ItemCreateResult.updated_item_ids 报告合并成功,但 stack 实际 count 没变。
+##
+## ItemSystem 在调用后会断言 `existing_data.count <= max_stack`,避免子类
+## 错误实现把 stack 撑爆。
+##
 ## (max_stack 来自 catalog config; 默认实现整批拒绝合并)
 func merge_stack(_existing_data: ItemInstanceData, incoming_count: int, _max_stack: int) -> int:
 	return incoming_count
@@ -58,6 +68,11 @@ func on_item_moved(_item_id: int, _old_location: ItemLocation, _new_location: It
 
 
 ## item 销毁前的 hook (item_data 仍可访问)
+##
+## **Raw item**: 通过 `ItemSystem.register_item_instance()` 创建的 raw item
+## 没有 instance_data,本 hook 仍会被调用但 `data == null`。子类如果在
+## tracking item_id (counter / tag 索引等),需要据 `data is_instance_valid`
+## 决定如何处理。
 func on_item_destroyed(_item_id: int, _data: ItemInstanceData) -> void:
 	pass
 

@@ -108,6 +108,7 @@ func _init() -> void:
 	TestFramework.register_test("move_item rejected by domain returns error", _test_move_item_domain_reject)
 	TestFramework.register_test("move_item within container fires on_item_moved", _test_move_item_within)
 	TestFramework.register_test("item_moved_in signal carries target_slot_index", _test_item_moved_in_signal)
+	TestFramework.register_test("item_moved_out signal carries source_slot_index", _test_item_moved_out_signal)
 	TestFramework.register_test("destroy_item clears data + container state", _test_destroy_item)
 	TestFramework.register_test("get_item_snapshot merges catalog + domain", _test_get_item_snapshot)
 	TestFramework.register_test("unregister_container destroys contained items", _test_unregister_container_destroys_items)
@@ -255,11 +256,18 @@ func _test_create_item_callback_order() -> void:
 	var ctx := _setup()
 	var domain: TestDomain = ctx.domain
 
-	# 监听 item_created signal: signal handler 必须能在 emit 时读到 _item_data_by_id
-	var captured_data: Array[ItemInstanceData] = []
-	var signal_handler := func(item_id: int, _loc: ItemLocation) -> void:
-		captured_data.append(ItemSystem.get_item_data(item_id))
-	ItemSystem.item_created.connect(signal_handler)
+	# 监听 ItemSystem.item_created: signal handler 必须能在 emit 时读到 _item_data_by_id
+	var item_created_captured: Array[ItemInstanceData] = []
+	var item_created_handler := func(item_id: int, _loc: ItemLocation) -> void:
+		item_created_captured.append(ItemSystem.get_item_data(item_id))
+	ItemSystem.item_created.connect(item_created_handler)
+
+	# 监听 BaseContainer.item_added: container 听众也需要 data 已写入,因为
+	# UI 通常在 container 层 connect (slot-targeted refresh)。
+	var container_added_captured: Array[ItemInstanceData] = []
+	var container_added_handler := func(item_id: int, _slot: int) -> void:
+		container_added_captured.append(ItemSystem.get_item_data(item_id))
+	ctx.bag.item_added.connect(container_added_handler)
 
 	var r := ItemSystem.create_item(ctx.bag_id, ITEM_SWORD, 1, 0)
 	TestFramework.assert_true(r.success)
@@ -269,12 +277,18 @@ func _test_create_item_callback_order() -> void:
 	TestFramework.assert_equal(1, domain.on_created_calls.size())
 	TestFramework.assert_equal(item_id, domain.on_created_calls[0])
 
-	# signal 触发时 data 必须已写入
-	TestFramework.assert_equal(1, captured_data.size())
-	TestFramework.assert_true(captured_data[0] != null, "item_data must be available at item_created signal")
-	TestFramework.assert_equal(ITEM_SWORD, captured_data[0].config_id)
+	# ItemSystem.item_created signal 触发时 data 必须已写入
+	TestFramework.assert_equal(1, item_created_captured.size())
+	TestFramework.assert_true(item_created_captured[0] != null, "item_data must be available at ItemSystem.item_created signal")
+	TestFramework.assert_equal(ITEM_SWORD, item_created_captured[0].config_id)
 
-	ItemSystem.item_created.disconnect(signal_handler)
+	# BaseContainer.item_added signal 触发时 data 也必须已写入
+	TestFramework.assert_equal(1, container_added_captured.size())
+	TestFramework.assert_true(container_added_captured[0] != null, "item_data must be available at container.item_added signal")
+	TestFramework.assert_equal(ITEM_SWORD, container_added_captured[0].config_id)
+
+	ItemSystem.item_created.disconnect(item_created_handler)
+	ctx.bag.item_added.disconnect(container_added_handler)
 	_teardown()
 
 
@@ -403,6 +417,29 @@ func _test_item_moved_in_signal() -> void:
 	TestFramework.assert_equal(0, emitted[0][2])
 	TestFramework.assert_true(emitted[0][3] == 2, "target_slot_index must be in signal arg 4")
 	ctx.equip.item_moved_in.disconnect(handler)
+	_teardown()
+
+
+func _test_item_moved_out_signal() -> void:
+	var ctx := _setup()
+	var r := ItemSystem.create_item(ctx.bag_id, ITEM_SWORD, 1, 3)
+	var sword_id: int = r.created_item_ids[0]
+
+	# 监听 bag (source) 的 item_moved_out: 新签名 = (item_id, source_slot,
+	# target_container_id, target_slot)
+	var emitted: Array = []
+	var handler := func(iid: int, src_s: int, tgt_c: int, tgt_s: int) -> void:
+		emitted.append([iid, src_s, tgt_c, tgt_s])
+	ctx.bag.item_moved_out.connect(handler)
+
+	var m := ItemSystem.move_item(sword_id, ctx.equip_id, 2)
+	TestFramework.assert_true(m.success)
+	TestFramework.assert_equal(1, emitted.size())
+	TestFramework.assert_equal(sword_id, emitted[0][0])
+	TestFramework.assert_true(emitted[0][1] == 3, "source_slot_index must be the slot just vacated in source container")
+	TestFramework.assert_equal(ctx.equip_id, emitted[0][2])
+	TestFramework.assert_equal(2, emitted[0][3])
+	ctx.bag.item_moved_out.disconnect(handler)
 	_teardown()
 
 
