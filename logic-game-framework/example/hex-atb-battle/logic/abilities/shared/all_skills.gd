@@ -53,6 +53,8 @@ static func _build_manifest() -> Array[_Entry]:
 	arr.append(_Entry.new(HexBattleLifesteal.ABILITY,     [HexBattleLifesteal.LIFESTEAL_TIMELINE]))
 	arr.append(_Entry.new(HexBattlePiercingLine.ABILITY,  [HexBattlePiercingLine.PIERCING_LINE_TIMELINE]))
 	# Pure passives(no timeline)
+	arr.append(_Entry.new(HexBattleGeneralPassive.ABILITY,  []))
+	arr.append(_Entry.new(HexBattleVampiricTraining.ABILITY, []))
 	arr.append(_Entry.new(HexBattleThorn.ABILITY,           []))
 	arr.append(_Entry.new(HexBattleDeathrattleAoe.ABILITY,  []))
 	arr.append(_Entry.new(HexBattleVitality.ABILITY,        []))

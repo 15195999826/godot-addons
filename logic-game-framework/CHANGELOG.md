@@ -12,6 +12,32 @@
 
 ---
 
+## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase B — HexBattleGeneralPassive + attack_lifesteal_pct
+
+把"角色属性 → 标准战斗效果"的桥接落地。VampiricTraining (普通 passive, 受 Break 影响) 通过 StatModifier 给 owner +0.5 `attack_lifesteal_pct`; HexBattleGeneralPassive (intrinsic, 不受 Break) 监听 Phase A 落地的 `attack_landed` 事件, 按 `actual_life_damage * attack_lifesteal_pct` 调 `HexBattleHealAction` heal attacker。
+
+### Added
+
+- **`example/attributes/attributes_config.gd` / generated `hex_battle_character_attribute_set.gd`** — 新增 `attack_lifesteal_pct` 属性, 默认 `0.0`, `minValue: 0.0`。
+- **`example/hex-atb-battle/logic/abilities/passives/general_passive.gd`** — `HexBattleGeneralPassive` (`config_id: "general_passive"`), tags `["intrinsic", "character_rules"]` (无 `passive` tag, Break 不禁)。`NoInstanceConfig` + trigger `"attack_landed"` + filter (attacker == owner) + inner `_LifestealAction extends Action.SkillLocalAction`。Action 内部读 callback ctx 拿 actual_life_damage, 读 attacker.attack_lifesteal_pct, 走 `HexBattleHealAction` 标准 heal pipeline; 所有 early-return 分支携 `attack_lifesteal_skipped` 原因 (no_event / no_actual_damage / zero_pct / attacker_unavailable) 便于排查。
+- **`example/hex-atb-battle/logic/abilities/passives/vampiric_training.gd`** — `HexBattleVampiricTraining` (`config_id: "passive_vampiric_training"`, `LIFESTEAL_PCT = 0.5`), tags `["passive", "lifesteal"]` (带 `passive` tag, Break 禁源后 GeneralPassive 自然 no-op)。仅 `StatModifierConfig` 给 owner +0.5 `attack_lifesteal_pct`。
+- **`example/hex-atb-battle/logic/character_actor.gd`** — `equip_abilities()` 在 class passive grant **之前** unconditional grant `HexBattleGeneralPassive`, 与 spec "每个 CharacterActor 必有" 对齐。
+- **`example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd` `_PreviewInstance._create_actor`** — 每个 scenario actor 单独 grant GeneralPassive (harness 故意不走 `equip_abilities` 避免 Move/Strike 默认注入, 但 GeneralPassive 是 intrinsic 必须保留)。
+- **`example/hex-atb-battle/skill-preview/skill_preview.gd` `_spawn_one_actor`** — 与 harness 对齐, GeneralPassive 由 skill-preview 自动 grant。
+- **`example/hex-atb-battle/logic/abilities/shared/all_skills.gd`** — manifest 注册 `HexBattleGeneralPassive` + `HexBattleVampiricTraining` 进 "Pure passives" 区块, skill-preview 现在能在 passive 列表里看到 `passive_vampiric_training` (`general_passive` 也可显式选, 但不必, 自动 grant 已覆盖)。
+- **5 个新 scenario** 覆盖 Phase B 验收 (`lifesteal_attribute_*_scenario.gd`): default_zero / basic / shield_no_heal / fireball_no_trigger / break_disables_source。
+
+### Validation
+
+| 测试 | 结果 |
+|---|---|
+| `hex/skills smoke_skill_scenarios` | PASS 51/51 (含 5 个新 lifesteal_attribute + 4 个 Phase A attack_landed) |
+| `hex/regression` | PASS 3/3 |
+| `core/unit` | PASS |
+| dev-scene 视觉验证 | caster `+20` heal 浮字可见, Inspector "Damage History" 列出 `+20.0 heal`; caster HP 70→90 ✓ |
+
+---
+
 ## [Unreleased] — 2026-05-24 advanced-skills-next-batch Phase A — AttackLandedEvent (basic-attack domain event)
 
 为 `HexBattleGeneralPassive` (Phase B) / 未来装备 on-hit / 法球 / 攻击特效订阅准备的 "普攻命中" domain event。**只由 Strike (以及未来其它"普攻"类 ability) 发射,Fireball / Poison tick / reflected damage / Fire Tile / Totem passive damage 都不发射** —— 这是 contract 而非命名约定。
