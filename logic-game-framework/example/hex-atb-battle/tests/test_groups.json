@@ -8,6 +8,7 @@
         "battle/smoke_skill_scenarios.tscn",
         "battle/smoke_mid_spawn_production_replay.tscn",
         "battle/smoke_hex_item_domain.tscn",
+        "frontend/smoke_item_preview_boot.tscn",
         "frontend/smoke_frontend_main.tscn"
       ]
     },
