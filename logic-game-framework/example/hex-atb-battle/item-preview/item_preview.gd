@@ -24,6 +24,8 @@ const HexItemCatalogScript := preload("res://addons/logic-game-framework/example
 const HexPlayerInventoryScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
 const BagCellScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/bag_cell.gd")
 const EquipmentSlotScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/equipment_slot.gd")
+const ItemPreviewAgentOpsScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview_agent_ops.gd")
+const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
 
 const BAG_COLS := 10
 const BAG_ROWS := 8
@@ -61,6 +63,7 @@ var _bag_grid_root: Control
 var _equipment_panel_root: Control
 var _actor_selector: OptionButton
 var _status_label: Label
+var _dev_agent_bridge: Node = null
 
 
 # ----- Lifecycle -------------------------------------------------------------
@@ -81,6 +84,7 @@ func _ready() -> void:
 	_seed_initial_items()
 	_connect_item_system_signals()
 	_refresh_all()
+	_install_dev_agent()
 
 
 ## ItemPreview 自身作为 root Control 提供 _can_drop_data / _drop_data 兜底,
@@ -483,6 +487,33 @@ func _on_actor_selector_changed(idx: int) -> void:
 	_selected_actor_idx = idx
 	_refresh_equipment_panel()
 	_set_op_result(true, "selected actor: %s" % SANDBOX_ACTOR_NAMES[idx], "")
+
+
+## DevAgent 接入: 仅在 `--dev-agent` cmdline arg 时启用 (bridge 自检)。
+## adapter (ItemPreviewAgentOps) 作为本 Control 的 child, bridge 通过 scene_ops_path
+## 指向它。
+func _install_dev_agent() -> void:
+	var ops := ItemPreviewAgentOpsScript.new() as Node
+	ops.name = "ItemPreviewAgentOps"
+	add_child(ops)
+
+	_dev_agent_bridge = DevAgentBridgeScript.new()
+	_dev_agent_bridge.name = "DevAgentBridge"
+	_dev_agent_bridge.scene_ops_path = NodePath("../ItemPreviewAgentOps")
+	add_child(_dev_agent_bridge)
+	call_deferred("_print_dev_agent_paths")
+
+
+func _print_dev_agent_paths() -> void:
+	if _dev_agent_bridge == null:
+		return
+	var info: Dictionary = _dev_agent_bridge.get_session_info() as Dictionary
+	if String(info.get("session_id", "")).is_empty():
+		# DevAgent not enabled
+		return
+	print("[ItemPreview] inbox: %s" % str(info.get("inbox_global", "")))
+	print("[ItemPreview] outbox: %s" % str(info.get("outbox_global", "")))
+	print("[ItemPreview] session_dir: %s" % str(info.get("session_dir_global", "")))
 
 
 ## 统一记 status + last_op_success + last_error。
