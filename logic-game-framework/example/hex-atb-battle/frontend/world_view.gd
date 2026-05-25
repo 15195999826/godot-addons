@@ -158,6 +158,8 @@ func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 	var max_hp := 100.0
 	var cur_hp := 100.0
 	var hex_pos: HexCoord = null
+	var actor_type := "Character"
+	var facing_direction := 0
 
 	if actor is CharacterActor:
 		var cchar := actor as CharacterActor
@@ -166,15 +168,17 @@ func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 			max_hp = cchar.attribute_set.max_hp
 			cur_hp = cchar.attribute_set.hp
 		hex_pos = cchar.hex_position
+		facing_direction = cchar.get_facing_direction()
 	elif actor is EnvironmentActor:
 		var env_actor := actor as EnvironmentActor
 		team = -1
+		actor_type = "Environment"
 		if env_actor.attribute_set != null:
 			max_hp = env_actor.attribute_set.max_hp
 			cur_hp = env_actor.attribute_set.hp
 		hex_pos = env_actor.hex_position
 
-	view.initialize(actor.get_id(), actor.get_display_name(), team, max_hp, cur_hp)
+	view.initialize(actor.get_id(), actor.get_display_name(), team, max_hp, cur_hp, actor_type, facing_direction)
 	if actor is EnvironmentActor:
 		view.set_environment_style((actor as EnvironmentActor).environment_kind)
 	if hex_pos != null and hex_pos.is_valid():

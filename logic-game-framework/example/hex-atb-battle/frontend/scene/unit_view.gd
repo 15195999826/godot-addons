@@ -100,7 +100,15 @@ func _create_mesh() -> void:
 # ========== 公共方法 ==========
 
 ## 初始化单位
-func initialize(p_actor_id: String, display_name: String, team: int, max_hp: float, current_hp: float) -> void:
+func initialize(
+	p_actor_id: String,
+	display_name: String,
+	team: int,
+	max_hp: float,
+	current_hp: float,
+	actor_type: String = "Character",
+	facing_direction: int = 0
+) -> void:
 	_actor_id = p_actor_id
 	_team = team
 	_update_team_color()
@@ -108,16 +116,19 @@ func initialize(p_actor_id: String, display_name: String, team: int, max_hp: flo
 	# 用初始 state 同步给子 view,避免每个子 view 各自 initialize 接口爆炸
 	var initial_state := FrontendActorRenderState.new()
 	initial_state.id = p_actor_id
+	initial_state.type = actor_type
 	initial_state.display_name = display_name
 	initial_state.team = team
 	initial_state.visual_hp = current_hp
 	initial_state.target_hp = current_hp
 	initial_state.max_hp = max_hp
 	initial_state.is_alive = current_hp > 0
+	initial_state.facing_direction = posmod(facing_direction, 6)
 	_hp_bar_view.update_from_state(initial_state)
 	_shield_bar_view.update_from_state(initial_state)
 	_buff_row_view.update_from_state(initial_state)
 	_name_label_view.update_from_state(initial_state)
+	_facing_indicator_view.update_from_state(initial_state)
 
 
 func set_environment_style(kind: String) -> void:
