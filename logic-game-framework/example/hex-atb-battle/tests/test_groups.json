@@ -29,7 +29,8 @@
         "skill-preview/smoke_skill_preview_proc_multi_kf_legal.tscn",
         "skill-preview/smoke_skill_preview_proc_multi_kf_diff_skills.tscn",
         "skill-preview/smoke_skill_preview_proc_dead_actor_no_tick.tscn",
-        "skill-preview/smoke_skill_preview_proc_target_dies_mid_timeline.tscn"
+        "skill-preview/smoke_skill_preview_proc_target_dies_mid_timeline.tscn",
+        "skill-preview/smoke_skill_preview_inventory.tscn"
       ]
     },
     "frontend": {

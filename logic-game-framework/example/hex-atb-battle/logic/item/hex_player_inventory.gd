@@ -134,6 +134,32 @@ func reset_actor_equipment_keep_player() -> bool:
 	return true
 
 
+## 保留 player bag + player-owned items, 只清理当前 actor equipment containers。
+## SkillPreviewWorldGI.reset() 会先卸装旧 runtime actor id 的装备容器,随后用新的
+## scene actor runtime id 重新 add_actor/register_actor。这里不能重建旧 actor id
+## 的容器,否则 reset 后会留下 stale equipment containers。
+func clear_actor_equipment_keep_player() -> bool:
+	var actor_ids: Array[String] = []
+	for k in _actor_equipment.keys():
+		actor_ids.append(k)
+
+	var domain := _get_domain_strict()
+	for actor_id in actor_ids:
+		var cid: int = _actor_equipment[actor_id]
+		if not _unload_equipment_to_bag(cid):
+			Log.error("HexPlayerInventory", "clear_actor_equipment_keep_player 卸装失败, 已保留所有 equipment containers")
+			return false
+
+	for actor_id in actor_ids:
+		var cid: int = _actor_equipment[actor_id]
+		domain.unregister_equipment_container(cid)
+		ItemSystem.unregister_container(cid)
+
+	_actor_equipment.clear()
+	Log.info("HexPlayerInventory", "clear_actor_equipment_keep_player: %d actor containers cleared" % actor_ids.size())
+	return true
+
+
 ## 整个 inventory 释放: 销毁所有 equipment container + player bag。
 ## 留 ItemSystem 自身 (sandbox exit 通常另调 ItemSystem.reset_session)。
 ##

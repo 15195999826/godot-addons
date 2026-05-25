@@ -25,6 +25,7 @@ extends HexWorldGameplayInstance
 # 每条 keyframe = {time_ms: int, ability_config: AbilityConfig, target_id: String}
 var _queued_setups: Array[Dictionary] = []
 var _queued_allow_empty_track: bool = false
+var _player_inventory: HexPlayerInventory = null
 
 
 # ========== 初始化 ==========
@@ -32,6 +33,14 @@ var _queued_allow_empty_track: bool = false
 func _init(id_value: String = "") -> void:
 	super._init(id_value if id_value != "" else IdGenerator.generate("skill_preview_world"))
 	type = "skill_preview_world"
+
+
+func set_player_inventory(inventory: HexPlayerInventory) -> void:
+	_player_inventory = inventory
+
+
+func get_player_inventory() -> HexPlayerInventory:
+	return _player_inventory
 
 
 # ========== Reset ==========
@@ -42,7 +51,13 @@ func _init(id_value: String = "") -> void:
 ## 不走 remove_actor 以省略逐个清 grid occupant 的开销 —— 反正 grid 字段也一起清掉。
 ## _state 不动 —— start_battle 由 _active_battle 单例保护，不依赖 _state 流转；
 ## _logic_time 清零方便录像时间戳起点稳定。
-func reset() -> void:
+func reset() -> bool:
+	if _player_inventory != null:
+		var cleared := _player_inventory.clear_actor_equipment_keep_player()
+		Log.assert_crash(cleared, "SkillPreviewWorldGI",
+			"failed to clear actor equipment containers before world reset")
+		if not cleared:
+			return false
 	# 先 emit, 再 clear —— emit 不 mutate _actors, 不需要中转 array。
 	for a in _actors:
 		actor_removed.emit(a.get_id())
@@ -53,6 +68,24 @@ func reset() -> void:
 	_logic_time = 0.0
 	_queued_setups = []
 	_queued_allow_empty_track = false
+	return true
+
+
+# ========== Actor registry ==========
+
+func add_actor(actor: Actor, after_id_assigned: Callable = Callable()) -> Actor:
+	var added := super.add_actor(actor, after_id_assigned)
+	if added != null and _player_inventory != null and added is CharacterActor:
+		_player_inventory.register_actor(added.get_id())
+	return added
+
+
+func remove_actor(actor_id: String) -> bool:
+	if _player_inventory != null:
+		var unloaded := _player_inventory.unregister_actor(actor_id)
+		if not unloaded:
+			return false
+	return super.remove_actor(actor_id)
 
 
 # ========== Preview 参数 ==========

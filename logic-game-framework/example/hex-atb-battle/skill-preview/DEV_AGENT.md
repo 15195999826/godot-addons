@@ -4,7 +4,11 @@
 
 ## 设计分类 (per dev-agent-scene-debug-mode SKILL Step 0)
 
-**业务逻辑 / 数据流 / 表演验证**。AI 的目标是验证新技能的战斗效果, 不是 SpinBox / Button 自身的 UX。因此所有 action / setup ops **直调 SkillPreview 方法**, 不走 `Viewport.push_input`。`click_control` 作为 raw 真输入逃生口保留, 将来真要做"按钮点击 → UI 更新链路"validation 时再用。
+**业务逻辑 / 数据流 / 表演验证 + Inventory UI operation loop**。
+
+技能战斗类 action / setup ops 仍 **直调 SkillPreview 方法**，用于验证技能流程、timeline 和表演，不用真实按钮点击。
+
+Inventory 是 Phase F 接入的 UI 操作闭环，验收目标是 `Control._get_drag_data -> _drop_data -> ItemSystem.move_item -> snapshot refresh`。因此 bag / equipment drag/drop 必须用 `drag_at` 真实输入验证；`inventory_state` / `inventory_layout_state` / `selected_actor_equipment_state` 用于结构化观察。
 
 ## 一图概览
 
@@ -106,6 +110,7 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 | `set_controls` | `max_ticks?`, `speed?` | 改 Run footer 控件 |
 | `add_actor` | `team` (A/B) | 等价 add_enemy/add_ally; 返回新 idx |
 | `remove_actor` | `idx` | 删除非 caster actor; idx=0 (caster) 拒绝 |
+| `select_actor` | `idx` | 选择 actor, 同步 Character panel + Inventory equipment panel |
 | `set_actor_pos` | `idx`, `q`, `r` | 移动 actor; 占位冲突拒绝 |
 | `set_actor_hp` | `idx`, `hp` | 改 hp |
 | `set_actor_atk` | `idx`, `atk` | 改 atk |
@@ -116,6 +121,7 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 | `remove_keyframe` | `actor_idx`, `kf_idx` | 删 keyframe |
 | `set_keyframe` | `actor_idx`, `kf_idx`, `fields: {time_ms?, skill?, target?}` | 改 keyframe |
 | `reset_world_to_model` | — | 强制按 `_actors` 数据模型重建 world |
+| `show_inventory` | — | 展开 Workspace drawer 并切到 Inventory tab, 返回 inventory layout |
 
 ### 观察 (只读, 不写场景)
 
@@ -123,6 +129,9 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 |---|---|---|
 | `scene_state` | — | actors / environments / map / controls / status / is_playing / button disabled |
 | `world_state` | — | 当前 world 中 actor 的 id/team/pos/hp/max_hp/atk |
+| `inventory_state` | — | player bag / actor equipment containers / selected actor / last inventory op result |
+| `inventory_layout_state` | — | bag cells / equipment slots / status label rects, 供 `drag_at` 坐标计算 |
+| `selected_actor_equipment_state` | — | 当前 selected actor 的 6 个 equipment slots |
 | `timeline` | `max_events?` (默认 60) | 最近一场战斗 timeline.events 前 N 条 (flatten 成 `{frame, event}` 数组) |
 | `console_log` | `max_chars?` (默认 8000) | _console_log 解析后的纯文本 |
 | `setup_error` | — | `_find_preview_setup_error()` 返回的提示 |
@@ -135,6 +144,34 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 | name | args | 用途 |
 |---|---|---|
 | `click_control` | `name` | 真实 Viewport.push_input click 目标 Control 中心。预检 (gui_get_hovered_control) 不通过会返回 `ok=false` + 报告实际遮挡节点。**仅当需要验证"按钮点击 → UI 更新链路"时使用**, 业务场景请用 action ops |
+
+## Inventory 验收回路
+
+Inventory tab 使用与 `item-preview` 相同的 Hex item model 和 bag/equipment 控件规则。DevAgent 验收时先 `show_inventory`，再等 2-3 帧让 TabContainer 完成 layout，随后读取 `inventory_layout_state` 计算 drag 坐标。
+
+```jsonl
+{"id":"01","op":"scene","name":"show_inventory"}
+{"id":"02","op":"wait_frames","frames":3}
+{"id":"03","op":"scene","name":"inventory_state"}
+{"id":"04","op":"scene","name":"inventory_layout_state"}
+{"id":"05","op":"drag_at","from_x":63,"from_y":831,"to_x":736,"to_y":847,"steps":18}
+{"id":"06","op":"scene","name":"inventory_state"}
+```
+
+`drag_at` 只说明真实输入已派发；业务成败必须读后续 `inventory_state.last_op_success` / `last_error`。
+
+建议 acceptance:
+
+1. `show_inventory` + `inventory_state`: bag 至少有 seed items, actors 都有 runtime `actor_id` 和 equipment container。
+2. `inventory_layout_state`: `bag_cells.size()==80`, `equipment_slots.size()==6`, 目标 cell/slot 可见。
+3. `drag_at` bag slot 0 `training_sword` -> equipment slot 1: `last_op_success==true`。
+4. `drag_at` `frost_orb` -> occupied slot 1: `last_op_success==false`。
+5. `drag_at` `broken_stone` -> equipment slot 2: `last_op_success==false`, `last_error` 含不可装备。
+6. `drag_at` equipment slot 1 -> empty bag slot: item 回到 player bag。
+7. `select_actor {idx:1}` + `selected_actor_equipment_state`: actor selection 同步, slots 与 actor 隔离。
+8. `add_actor` 后新 actor 有 equipment container; 装备 item 后 `remove_actor` 会卸回 bag 并 unregister container。
+9. `reset_world_to_model` / `reset_battle`: player bag id 和 player-owned items 保留, actor equipment containers 用新 runtime actor ids 重建。
+10. `start_battle` -> `wait_for_idle` -> `reset_battle`: inventory state 仍一致。
 
 ## 典型新技能验证回路
 
