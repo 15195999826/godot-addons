@@ -4365,7 +4365,15 @@ func _apply_actor_hp_change(idx: int, hp: float) -> void:
 	actor.attribute_set.set_hp_base(hp)
 	var view := _world_view.get_unit_view(actor_id)
 	if view != null:
-		view.initialize(actor_id, actor.get_display_name(), actor.get_team_id(), hp, hp)
+		view.initialize(
+			actor_id,
+			actor.get_display_name(),
+			actor.get_team_id(),
+			hp,
+			hp,
+			"Character",
+			actor.get_facing_direction()
+		)
 
 
 func _apply_actor_atk_change(idx: int, atk: float) -> void:
