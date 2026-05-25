@@ -35,22 +35,23 @@ const EQ_SLOT_SIZE := Vector2(96, 96)
 const EQ_SLOT_GAP := 12
 const SANDBOX_WINDOW_SIZE := Vector2i(1280, 800)
 
-# 三个 sandbox actor 的固定 ID — 不创建真实 HexBattleActor / World (避免 sandbox
-# 需要拖整套 actor system 配置, 包括 GameWorld autoload init / class
-# config / passives 等)。Phase B HexPlayerInventory 只依赖 actor_id 是 String,
-# 所以用 sandbox-local 固定 ID。Phase F 接入 SkillPreviewWorldGI 时换成真实 actor。
-#
-# **DevAgent / 测试约束**: 不要硬编 actor_id 字符串("preview-actor-1" 等)做断言。
-# Phase F 替换真实 actor 时 ID 会变成 HexBattleActor.get_id() 的自动生成格式。
-# 请通过 `selected_actor_idx` (0/1/2) 或 `display_name` 字段做匹配,
-# 保持 sandbox 与 SkillPreview 接入路径的 acceptance script 复用。
-const SANDBOX_ACTOR_IDS: Array[String] = ["preview-actor-1", "preview-actor-2", "preview-actor-3"]
-const SANDBOX_ACTOR_NAMES: Array[String] = ["Actor 1 (Warrior)", "Actor 2 (Mage)", "Actor 3 (Archer)"]
+# 三个 sandbox actor 使用真实 CharacterActor, 并通过 GameplayInstance.add_actor()
+# 分配 runtime actor_id。DevAgent / 测试只能用 selected_actor_idx 或 display_name
+# 做匹配, 不要硬编 runtime id。
+const SANDBOX_ACTOR_CLASSES: Array[HexBattleClassConfig.CharacterClass] = [
+	HexBattleClassConfig.CharacterClass.WARRIOR,
+	HexBattleClassConfig.CharacterClass.MAGE,
+	HexBattleClassConfig.CharacterClass.ARCHER,
+]
 
 
 # ----- State -----------------------------------------------------------------
 
 var _inventory: HexPlayerInventory
+var _sandbox_world: GameplayInstance
+var _sandbox_actors: Array[CharacterActor] = []
+var _sandbox_actor_ids: Array[String] = []
+var _sandbox_actor_names: Array[String] = []
 var _selected_actor_idx: int = 0
 var _bag_cells: Array[Control] = []  # bag_slot_index -> BagCell Panel
 var _equipment_slots: Array[Control] = []  # 0..5 → EquipmentSlot Panel
@@ -103,6 +104,7 @@ func _exit_tree() -> void:
 	if _inventory != null:
 		_inventory.dispose()
 		_inventory = null
+	_clear_sandbox_world()
 	# _exit_tree 不 reset_session — dispose() 已清完本场景所有 containers/items。
 	# ItemSystem autoload 的 _next_*_id counter 不会回滚,但数据层是干净的。
 	# 其他场景 (Phase F 接入的 SkillPreview) 需要时自己 configure_domain 重置。
@@ -115,6 +117,7 @@ func reset_sandbox() -> void:
 	if _inventory != null:
 		_inventory.dispose()
 		_inventory = null
+	_clear_sandbox_world()
 	ItemSystem.reset_session()
 	_last_op_message = "reset_sandbox"
 	_last_op_success = true
@@ -125,7 +128,9 @@ func reset_sandbox() -> void:
 	# container_id<=0 静默失败 (move_item 报 "目标容器不存在")。
 	Log.assert_crash(_inventory.player_bag_id > 0, "ItemPreview",
 		"player_bag 未正确初始化 — sandbox lifecycle bug")
-	Log.assert_crash(_inventory.get_equipment_container_id(SANDBOX_ACTOR_IDS[0]) > 0,
+	Log.assert_crash(not _sandbox_actor_ids.is_empty(), "ItemPreview",
+		"sandbox actors 未正确创建 — sandbox lifecycle bug")
+	Log.assert_crash(_inventory.get_equipment_container_id(_sandbox_actor_ids[0]) > 0,
 		"ItemPreview", "actor 0 equipment container 未正确注册 — sandbox lifecycle bug")
 	_seed_initial_items()
 	_connect_item_system_signals()
@@ -140,14 +145,14 @@ func seed_items() -> void:
 
 
 func select_actor_by_idx(idx: int) -> bool:
-	if idx < 0 or idx >= SANDBOX_ACTOR_IDS.size():
-		_set_op_result(false, "select_actor failed: invalid idx %d (valid 0..%d)" % [idx, SANDBOX_ACTOR_IDS.size() - 1], "invalid_actor_idx")
+	if idx < 0 or idx >= _sandbox_actor_ids.size():
+		_set_op_result(false, "select_actor failed: invalid idx %d (valid 0..%d)" % [idx, _sandbox_actor_ids.size() - 1], "invalid_actor_idx")
 		return false
 	_selected_actor_idx = idx
 	if _actor_selector != null:
 		_actor_selector.selected = idx
 	_refresh_equipment_panel()
-	_set_op_result(true, "selected actor: %s" % SANDBOX_ACTOR_NAMES[idx], "")
+	_set_op_result(true, "selected actor: %s" % _sandbox_actor_names[idx], "")
 	return true
 
 
@@ -167,15 +172,15 @@ func get_inventory_state() -> Dictionary:
 		bag_items.append(_snapshot_item(item_id))
 
 	var actors_state: Array = []
-	for i in range(SANDBOX_ACTOR_IDS.size()):
-		var actor_id: String = SANDBOX_ACTOR_IDS[i]
+	for i in range(_sandbox_actor_ids.size()):
+		var actor_id: String = _sandbox_actor_ids[i]
 		var eq_id := _inventory.get_equipment_container_id(actor_id)
 		var slots: Array = []
 		for slot_idx in range(6):
 			slots.append(_snapshot_slot(eq_id, slot_idx))
 		actors_state.append({
 			"actor_id": actor_id,
-			"display_name": SANDBOX_ACTOR_NAMES[i],
+			"display_name": _sandbox_actor_names[i],
 			"equipment_container_id": eq_id,
 			"slots": slots,
 		})
@@ -185,7 +190,7 @@ func get_inventory_state() -> Dictionary:
 		"bag": bag_items,
 		"actors": actors_state,
 		"selected_actor_idx": _selected_actor_idx,
-		"selected_actor_id": SANDBOX_ACTOR_IDS[_selected_actor_idx] if _selected_actor_idx < SANDBOX_ACTOR_IDS.size() else "",
+		"selected_actor_id": _sandbox_actor_ids[_selected_actor_idx] if _selected_actor_idx < _sandbox_actor_ids.size() else "",
 		"last_op_message": _last_op_message,
 		"last_op_success": _last_op_success,
 		"last_error": _last_error,
@@ -204,16 +209,16 @@ func get_selected_actor_state() -> Dictionary:
 	}
 	if _inventory == null:
 		return common
-	if _selected_actor_idx < 0 or _selected_actor_idx >= SANDBOX_ACTOR_IDS.size():
+	if _selected_actor_idx < 0 or _selected_actor_idx >= _sandbox_actor_ids.size():
 		return common
-	var aid: String = SANDBOX_ACTOR_IDS[_selected_actor_idx]
+	var aid: String = _sandbox_actor_ids[_selected_actor_idx]
 	var eq_id := _inventory.get_equipment_container_id(aid)
 	var slots: Array = []
 	for slot_idx in range(6):
 		slots.append(_snapshot_slot(eq_id, slot_idx))
 	return {
 		"actor_id": aid,
-		"display_name": SANDBOX_ACTOR_NAMES[_selected_actor_idx],
+		"display_name": _sandbox_actor_names[_selected_actor_idx],
 		"equipment_container_id": eq_id,
 		"slots": slots,
 		"selected_actor_idx": _selected_actor_idx,
@@ -276,11 +281,30 @@ func handle_drop(payload: Dictionary, target_container_id: int, target_slot_inde
 
 func _setup_session() -> void:
 	ItemSystem.reset_session()
+	_clear_sandbox_world()
 	ItemSystem.configure_domain(HexItemDomainScript.new(), HexItemCatalogScript.new())
 	_inventory = HexPlayerInventoryScript.new()
 	_inventory.init_inventory()
-	for actor_id in SANDBOX_ACTOR_IDS:
-		_inventory.register_actor(actor_id)
+	_sandbox_world = GameplayInstance.new(IdGenerator.generate("item_preview_sandbox"))
+	for i in range(SANDBOX_ACTOR_CLASSES.size()):
+		var char_class: HexBattleClassConfig.CharacterClass = SANDBOX_ACTOR_CLASSES[i]
+		var actor := CharacterActor.new(char_class)
+		actor.set_team_id(0)
+		var added := _sandbox_world.add_actor(actor) as CharacterActor
+		Log.assert_crash(added != null and ActorId.is_valid(added.get_id()), "ItemPreview",
+			"sandbox CharacterActor add_actor failed")
+		var display_name := "Actor %d (%s)" % [i + 1, HexBattleClassConfig.class_to_string(char_class)]
+		_sandbox_actors.append(added)
+		_sandbox_actor_ids.append(added.get_id())
+		_sandbox_actor_names.append(display_name)
+		_inventory.register_actor(added.get_id())
+
+
+func _clear_sandbox_world() -> void:
+	_sandbox_world = null
+	_sandbox_actors.clear()
+	_sandbox_actor_ids.clear()
+	_sandbox_actor_names.clear()
 
 
 func _seed_initial_items() -> void:
@@ -385,8 +409,8 @@ func _build_equipment_panel() -> void:
 	_actor_selector.name = "ActorSelector"
 	_actor_selector.position = Vector2(12, 36)
 	_actor_selector.size = Vector2(eq_root.size.x - 24, 36)
-	for i in range(SANDBOX_ACTOR_IDS.size()):
-		_actor_selector.add_item(SANDBOX_ACTOR_NAMES[i], i)
+	for i in range(_sandbox_actor_ids.size()):
+		_actor_selector.add_item(_sandbox_actor_names[i], i)
 	_actor_selector.selected = 0
 	_actor_selector.item_selected.connect(_on_actor_selector_changed)
 	eq_root.add_child(_actor_selector)
@@ -474,13 +498,13 @@ func _refresh_bag() -> void:
 func _refresh_equipment_panel() -> void:
 	if _inventory == null:
 		return
-	if _selected_actor_idx < 0 or _selected_actor_idx >= SANDBOX_ACTOR_IDS.size():
+	if _selected_actor_idx < 0 or _selected_actor_idx >= _sandbox_actor_ids.size():
 		# defensive: 越界时把所有 slot 清空, 避免 IndexError
 		for slot in _equipment_slots:
 			slot.set_target_container_id(-1)
 			slot.set_item(0, {})
 		return
-	var actor_id: String = SANDBOX_ACTOR_IDS[_selected_actor_idx]
+	var actor_id: String = _sandbox_actor_ids[_selected_actor_idx]
 	var eq_id := _inventory.get_equipment_container_id(actor_id)
 	# 设置每个 slot 的 target container_id, 清空 item, 再填充
 	for i in range(_equipment_slots.size()):
@@ -495,12 +519,12 @@ func _refresh_equipment_panel() -> void:
 
 
 func _on_actor_selector_changed(idx: int) -> void:
-	if idx < 0 or idx >= SANDBOX_ACTOR_IDS.size():
+	if idx < 0 or idx >= _sandbox_actor_ids.size():
 		_set_op_result(false, "actor selector got invalid idx %d" % idx, "invalid_actor_idx")
 		return
 	_selected_actor_idx = idx
 	_refresh_equipment_panel()
-	_set_op_result(true, "selected actor: %s" % SANDBOX_ACTOR_NAMES[idx], "")
+	_set_op_result(true, "selected actor: %s" % _sandbox_actor_names[idx], "")
 
 
 ## DevAgent 接入: 仅在 `--dev-agent` cmdline arg 时启用 (bridge 自检)。

@@ -58,6 +58,18 @@ func _ready() -> void:
 	if bag_items.size() < 5:
 		_finish_fail("seed 应至少 5 个 item, 实际 %d" % bag_items.size())
 		return
+	var actors: Array = state.get("actors", [])
+	if actors.size() != 3:
+		_finish_fail("sandbox actors 应 = 3, 实际 %d" % actors.size())
+		return
+	for actor_state in actors:
+		var actor_id := String((actor_state as Dictionary).get("actor_id", ""))
+		if actor_id.begins_with("preview-actor-"):
+			_finish_fail("actor_id 不应是旧 fake id: %s" % actor_id)
+			return
+		if not ActorId.is_valid(actor_id):
+			_finish_fail("actor_id 应是 GameplayInstance 分配的 runtime id, got: %s" % actor_id)
+			return
 
 	# layout_state 含 bag_cells / equipment_slots rect
 	var layout: Dictionary = inst.get_layout_state()
