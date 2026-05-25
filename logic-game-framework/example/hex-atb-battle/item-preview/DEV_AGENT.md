@@ -16,7 +16,7 @@
 SESS_NAME="<short-task-slug>"   # e.g. item-equip-flow, occupied-reject
 SESS_DIR="$APPDATA/Godot/app_userdata/Inkmon/dev-agent/sessions/$SESS_NAME"
 rm -rf "$SESS_DIR" && mkdir -p "$SESS_DIR"
-godot --path D:/GodotProjects/inkmon/inkmon-godot \
+godot --path C:/GodotPorjects/inkmon-godot \
   res://addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview.tscn \
   -- --dev-agent --dev-agent-session=$SESS_NAME \
   > "$SESS_DIR/godot.log" 2>&1
@@ -133,7 +133,7 @@ drag steps 建议 ≥ 8 (Godot drag threshold ≈ 几像素 + 累计 motion ≥ 
 
 ## Known constraints
 
-- **不要硬编 `actor_id` 字符串** ("preview-actor-1"): 用 `selected_actor_idx` (0/1/2) 或 `display_name` 字段。Phase F 接入 SkillPreview 时 ID 变成 `HexBattleActor.get_id()` 自动生成格式。
+- **不要硬编 `actor_id` 字符串**: sandbox 已通过真实 `HexBattleActor` / `GameplayInstance.add_actor()` 生成 runtime id。DevAgent 验收用 `selected_actor_idx` (0/1/2) 或 `display_name` 字段匹配。
 - bag 总是 10x8 = 80 cells; equipment 总是 6 slots。layout 变了再调 layout_state。
 - drag drop 到非 cell/slot 区 (panel 之间) ItemPreview root 会发 status "drop ignored: dropped on empty area",不算 fail。
 

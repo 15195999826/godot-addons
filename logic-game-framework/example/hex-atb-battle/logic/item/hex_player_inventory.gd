@@ -67,16 +67,20 @@ func register_actor(actor_id: String) -> int:
 	return cid
 
 
-## actor 删除时清理 equipment container — 先把装备卸回 bag, 再 unregister
-func unregister_actor(actor_id: String) -> void:
+## actor 删除时清理 equipment container — 先把装备卸回 bag, 再 unregister。
+## 卸回失败时保留 equipment container 和映射, 避免 unregister_container 销毁装备。
+func unregister_actor(actor_id: String) -> bool:
 	if not _actor_equipment.has(actor_id):
-		return
+		return true
 	var cid: int = _actor_equipment[actor_id]
-	_unload_equipment_to_bag(cid)
+	if not _unload_equipment_to_bag(cid):
+		Log.error("HexPlayerInventory", "actor %s equipment container 卸装失败, 已保留 container %d" % [actor_id, cid])
+		return false
 	_get_domain_strict().unregister_equipment_container(cid)
 	ItemSystem.unregister_container(cid)
 	_actor_equipment.erase(actor_id)
 	Log.info("HexPlayerInventory", "actor %s equipment container 已销毁" % actor_id)
+	return true
 
 
 ## actor 的 equipment container_id (未注册返回 -1)
@@ -103,7 +107,8 @@ func get_registered_actor_ids() -> Array[String]:
 
 ## 保留 player bag + items, 只把所有 actor equipment container 销毁后重建。
 ## 用于未来 SkillPreviewWorldGI.reset() — sandbox reset 走 dispose() + 重新 init。
-func reset_actor_equipment_keep_player() -> void:
+## 任一装备卸回失败时返回 false, 保留所有 equipment containers, 避免静默丢 item。
+func reset_actor_equipment_keep_player() -> bool:
 	var actor_ids: Array[String] = []
 	for k in _actor_equipment.keys():
 		actor_ids.append(k)
@@ -111,7 +116,12 @@ func reset_actor_equipment_keep_player() -> void:
 	var domain := _get_domain_strict()
 	for actor_id in actor_ids:
 		var cid: int = _actor_equipment[actor_id]
-		_unload_equipment_to_bag(cid)
+		if not _unload_equipment_to_bag(cid):
+			Log.error("HexPlayerInventory", "reset_actor_equipment_keep_player 卸装失败, 已保留所有 equipment containers")
+			return false
+
+	for actor_id in actor_ids:
+		var cid: int = _actor_equipment[actor_id]
 		domain.unregister_equipment_container(cid)
 		ItemSystem.unregister_container(cid)
 
@@ -121,6 +131,7 @@ func reset_actor_equipment_keep_player() -> void:
 		register_actor(actor_id)
 
 	Log.info("HexPlayerInventory", "reset_actor_equipment_keep_player: %d actors 重建" % actor_ids.size())
+	return true
 
 
 ## 整个 inventory 释放: 销毁所有 equipment container + player bag。
@@ -148,14 +159,17 @@ func dispose() -> void:
 ## 卸不下 (bag full) = lifecycle bug, log error 但继续 — Plan §"Actor
 ## Equipment Containers": "bag 容量足够大;如果卸回失败,视为 lifecycle bug,
 ## 记录错误并阻断静默丢 item"。本实现选择不 destroy,而是 log error 让人发现。
-func _unload_equipment_to_bag(equipment_container_id: int) -> void:
+func _unload_equipment_to_bag(equipment_container_id: int) -> bool:
 	if player_bag_id <= 0:
-		return
+		return false
+	var ok := true
 	var items := ItemSystem.get_items_in_container(equipment_container_id)
 	for item_id in items:
 		var move_result := ItemSystem.move_item(item_id, player_bag_id, -1)
 		if not move_result.success:
+			ok = false
 			Log.error("HexPlayerInventory",
 				"卸装失败 (item %d eq=%d -> bag %d): %s — 视为 lifecycle bug, item 仍在 equipment container" % [
 					item_id, equipment_container_id, player_bag_id, move_result.error_message
 				])
+	return ok

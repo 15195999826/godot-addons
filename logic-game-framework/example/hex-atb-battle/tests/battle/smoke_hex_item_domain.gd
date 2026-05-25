@@ -50,6 +50,10 @@ func _ready() -> void:
 		return
 	if not _phase_domain_reset_clears_equipment_ids():
 		return
+	if not _phase_unregister_actor_unload_failure_keeps_equipment():
+		return
+	if not _phase_reset_actor_equipment_unload_failure_keeps_equipment():
+		return
 
 	print("SMOKE_TEST_RESULT: PASS - all HexItemDomain data-layer checks passed")
 	get_tree().quit(0)
@@ -230,7 +234,8 @@ func _phase_unregister_actor_unloads_equipment() -> bool:
 	if ItemSystem.get_item_location(sword_id).container_id != eq_a:
 		return _fail("phase6 setup: sword 没装上")
 
-	inv.unregister_actor(ACTOR_A)
+	if not inv.unregister_actor(ACTOR_A):
+		return _fail("phase6: unregister_actor 应成功")
 
 	# 容器应被销毁
 	if ItemSystem.get_container(eq_a) != null:
@@ -267,7 +272,8 @@ func _phase_reset_actor_equipment_keep_player() -> bool:
 
 	var bag_count_before := ItemSystem.get_items_in_container(inv.player_bag_id).size()
 
-	inv.reset_actor_equipment_keep_player()
+	if not inv.reset_actor_equipment_keep_player():
+		return _fail("phase7: reset_actor_equipment_keep_player 应成功")
 
 	# bag 应 +2 (sword + orb 都卸回);两个新 equipment container_id 不一定与旧相同
 	var bag_count_after := ItemSystem.get_items_in_container(inv.player_bag_id).size()
@@ -528,16 +534,96 @@ func _phase_domain_reset_clears_equipment_ids() -> bool:
 
 
 # ============================================================
+# Phase 14: unregister_actor unload failure must not destroy equipment item
+# ============================================================
+
+func _phase_unregister_actor_unload_failure_keeps_equipment() -> bool:
+	var ctx := _setup(1, 1)
+	var inv: HexPlayerInventory = ctx.inv
+	var domain: HexItemDomain = ctx.domain
+	inv.register_actor(ACTOR_A)
+	var eq_a := inv.get_equipment_container_id(ACTOR_A)
+
+	var sword_id: int = ItemSystem.create_item(inv.player_bag_id, &"training_sword", 1, 0).created_item_ids[0]
+	var equip_result := ItemSystem.move_item(sword_id, eq_a, 0)
+	if not equip_result.success:
+		return _fail("phase14 setup: sword 应能装备")
+
+	# bag 只有 1 格, 填满后 unregister_actor 的 unload 必须失败。
+	var stone_r := ItemSystem.create_item(inv.player_bag_id, &"broken_stone", 1, 0)
+	if not stone_r.success:
+		return _fail("phase14 setup: broken_stone 应能填满 bag")
+
+	var unregister_ok := inv.unregister_actor(ACTOR_A)
+	if unregister_ok:
+		return _fail("phase14: bag full 时 unregister_actor 应失败")
+	if not ItemSystem.item_exists(sword_id):
+		return _fail("phase14: unload 失败不应 destroy 装备 item")
+	var loc := ItemSystem.get_item_location(sword_id)
+	if loc == null or loc.container_id != eq_a:
+		return _fail("phase14: sword 应仍在 equipment container, loc=%s" % str(loc))
+	if ItemSystem.get_container(eq_a) == null:
+		return _fail("phase14: unload 失败时 equipment container 应保留")
+	if inv.get_equipment_container_id(ACTOR_A) != eq_a:
+		return _fail("phase14: actor -> equipment mapping 应保留")
+	if not domain.has_equipment_container(eq_a):
+		return _fail("phase14: domain equipment container 记录应保留")
+
+	_teardown(ctx)
+	print("  phase14 OK")
+	return true
+
+
+# ============================================================
+# Phase 15: reset_actor_equipment_keep_player unload failure must not unregister
+# ============================================================
+
+func _phase_reset_actor_equipment_unload_failure_keeps_equipment() -> bool:
+	var ctx := _setup(1, 1)
+	var inv: HexPlayerInventory = ctx.inv
+	var domain: HexItemDomain = ctx.domain
+	inv.register_actor(ACTOR_A)
+	var eq_a := inv.get_equipment_container_id(ACTOR_A)
+
+	var sword_id: int = ItemSystem.create_item(inv.player_bag_id, &"training_sword", 1, 0).created_item_ids[0]
+	var equip_result := ItemSystem.move_item(sword_id, eq_a, 0)
+	if not equip_result.success:
+		return _fail("phase15 setup: sword 应能装备")
+	var stone_r := ItemSystem.create_item(inv.player_bag_id, &"broken_stone", 1, 0)
+	if not stone_r.success:
+		return _fail("phase15 setup: broken_stone 应能填满 bag")
+
+	var reset_ok := inv.reset_actor_equipment_keep_player()
+	if reset_ok:
+		return _fail("phase15: bag full 时 reset_actor_equipment_keep_player 应失败")
+	if not ItemSystem.item_exists(sword_id):
+		return _fail("phase15: reset unload 失败不应 destroy 装备 item")
+	var loc := ItemSystem.get_item_location(sword_id)
+	if loc == null or loc.container_id != eq_a:
+		return _fail("phase15: sword 应仍在旧 equipment container, loc=%s" % str(loc))
+	if ItemSystem.get_container(eq_a) == null:
+		return _fail("phase15: reset unload 失败时旧 equipment container 应保留")
+	if inv.get_equipment_container_id(ACTOR_A) != eq_a:
+		return _fail("phase15: actor -> equipment mapping 应保留旧 container")
+	if not domain.has_equipment_container(eq_a):
+		return _fail("phase15: domain equipment container 记录应保留")
+
+	_teardown(ctx)
+	print("  phase15 OK")
+	return true
+
+
+# ============================================================
 # helpers
 # ============================================================
 
-func _setup() -> Dictionary:
+func _setup(bag_width: int = HexPlayerInventory.DEFAULT_BAG_WIDTH, bag_height: int = HexPlayerInventory.DEFAULT_BAG_HEIGHT) -> Dictionary:
 	ItemSystem.reset_session()
 	var domain := HexItemDomainScript.new()
 	var catalog := HexItemCatalogScript.new()
 	ItemSystem.configure_domain(domain, catalog)
 	var inv := HexPlayerInventoryScript.new()
-	inv.init_inventory()
+	inv.init_inventory(bag_width, bag_height)
 	return {
 		"inv": inv,
 		"domain": domain,
