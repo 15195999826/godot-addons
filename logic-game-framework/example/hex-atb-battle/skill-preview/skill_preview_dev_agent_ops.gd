@@ -32,12 +32,14 @@ func get_supported_ops() -> PackedStringArray:
 		"set_map", "set_controls",
 		"add_actor", "remove_actor",
 		"set_actor_pos", "set_actor_hp", "set_actor_atk", "set_actor_passives",
+		"select_actor",
 		"add_stone_wall", "remove_environment",
 		"add_keyframe", "remove_keyframe", "set_keyframe",
-		"reset_world_to_model",
+		"reset_world_to_model", "show_inventory",
 		# Observation
 		"scene_state", "world_state", "timeline", "console_log",
 		"setup_error", "list_presets", "list_skills", "control_rect",
+		"inventory_state", "inventory_layout_state", "selected_actor_equipment_state",
 		# Raw real-input escape hatch (留给未来 UI-loop validation)
 		"click_control",
 	])
@@ -125,6 +127,8 @@ func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 			var ids_v: Variant = args.get("ids", [])
 			var ids_arr: Array = (ids_v as Array) if ids_v is Array else []
 			return preview.dev_agent_set_actor_passives(int(args.get("idx", -1)), ids_arr)
+		"select_actor":
+			return preview.dev_agent_select_actor(int(args.get("idx", -1)))
 		"add_stone_wall":
 			return preview.dev_agent_add_stone_wall(
 				int(args.get("q", 0)),
@@ -156,6 +160,8 @@ func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 			)
 		"reset_world_to_model":
 			return preview.dev_agent_reset_world_to_model()
+		"show_inventory":
+			return preview.dev_agent_show_inventory()
 
 		# ----- Observation ops -----
 		"scene_state":
@@ -212,6 +218,24 @@ func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 					"name": name,
 					"rect": _rect_to_dict(rect),
 				},
+			}
+		"inventory_state":
+			return {
+				"ok": true,
+				"message": "inventory state captured",
+				"data": preview.dev_agent_inventory_state(),
+			}
+		"inventory_layout_state":
+			return {
+				"ok": true,
+				"message": "inventory layout captured",
+				"data": preview.dev_agent_inventory_layout_state(),
+			}
+		"selected_actor_equipment_state":
+			return {
+				"ok": true,
+				"message": "selected actor equipment captured",
+				"data": preview.dev_agent_selected_actor_equipment_state(),
 			}
 
 		_:

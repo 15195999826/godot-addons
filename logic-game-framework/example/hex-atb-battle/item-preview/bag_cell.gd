@@ -6,7 +6,7 @@
 extends Panel
 
 
-var _owner_scene: Control
+var _owner_scene: Node
 var _container_id: int = -1
 var _slot_index: int = -1
 
@@ -19,6 +19,7 @@ var _count_label: Label
 
 func _ready() -> void:
 	_name_label = Label.new()
+	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_name_label.position = Vector2(4, 4)
 	_name_label.size = size - Vector2(8, 24)
 	_name_label.add_theme_font_size_override("font_size", 11)
@@ -27,6 +28,7 @@ func _ready() -> void:
 	add_child(_name_label)
 
 	_count_label = Label.new()
+	_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_count_label.position = Vector2(size.x - 28, size.y - 20)
 	_count_label.size = Vector2(24, 16)
 	_count_label.add_theme_font_size_override("font_size", 12)
@@ -39,7 +41,7 @@ func _ready() -> void:
 
 
 ## ItemPreview 在 _build_bag_grid 中调用 (一次性 slot_index 绑定)
-func setup(owner_scene: Control, container_id: int, slot_index: int) -> void:
+func setup(owner_scene: Node, container_id: int, slot_index: int) -> void:
 	_owner_scene = owner_scene
 	_container_id = container_id
 	_slot_index = slot_index

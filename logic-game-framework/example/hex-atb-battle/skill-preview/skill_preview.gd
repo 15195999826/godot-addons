@@ -40,6 +40,11 @@ extends Node
 
 const PRESET_DIR := "user://skill_preview_presets"
 const BUILTIN_PRESET_DIR := "res://addons/logic-game-framework/example/hex-atb-battle/skill-preview/presets"
+const HexItemDomainScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_domain.gd")
+const HexItemCatalogScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_catalog.gd")
+const HexPlayerInventoryScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
+const BagCellScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/bag_cell.gd")
+const EquipmentSlotScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/equipment_slot.gd")
 const ENV_STONE_WALL := "stone_wall"
 const PREVIEW_ACTOR_CLASS := HexBattleClassConfig.CharacterClass.WARRIOR
 const PREVIEW_DEFAULT_HP := 100.0
@@ -112,6 +117,19 @@ const SPT_EDITOR_TEXT_SOFT := Color("94A3B8")
 const SPT_CURSOR_COLOR := Color("FACC15")
 
 const HEX_DRAG_HOLD_SECONDS := 0.16
+const INVENTORY_BAG_COLS := HexPlayerInventory.DEFAULT_BAG_WIDTH
+const INVENTORY_BAG_ROWS := HexPlayerInventory.DEFAULT_BAG_HEIGHT
+const INVENTORY_BAG_CELL_SIZE := Vector2(58, 46)
+const INVENTORY_BAG_CELL_GAP := 4
+const INVENTORY_EQ_SLOT_SIZE := Vector2(92, 74)
+const INVENTORY_EQ_SLOT_GAP := 8
+const INVENTORY_SEED_ITEMS: Array[Dictionary] = [
+	{"config_id": &"training_sword", "count": 1, "slot": 0},
+	{"config_id": &"frost_orb", "count": 1, "slot": 1},
+	{"config_id": &"minor_rune", "count": 5, "slot": 2},
+	{"config_id": &"broken_stone", "count": 10, "slot": 3},
+	{"config_id": &"training_sword", "count": 1, "slot": 10},
+]
 
 
 # ========== Scene 节点 (unique names) ==========
@@ -166,6 +184,7 @@ var _environments: Array[Dictionary] = []
 var _world: SkillPreviewWorldGI
 var _world_view: FrontendWorldView
 var _animator: FrontendBattleAnimator
+var _inventory: HexPlayerInventory = null
 var _camera_rig: LomoCameraRig
 var _player_controller: LomoPlayerController
 var _hex_selection_cursor: MeshInstance3D = null
@@ -215,6 +234,7 @@ var _timeline_warnings_button: Button = null
 var _timeline_status_label: Label = null
 var _drawer_tabs: TabContainer = null
 var _drawer_timeline_tab: VBoxContainer = null
+var _drawer_inventory_tab: VBoxContainer = null
 var _drawer_log_tab: VBoxContainer = null
 var _drawer_header: Control = null
 var _control_toggle_button: Button = null
@@ -240,6 +260,16 @@ var _popup_environment_idx: int = -1
 var _role_id_to_actor_id: Dictionary[String, String] = {}
 var _actor_ids: Array[String] = []
 var _environment_ids: Array[String] = []
+var _inventory_bag_cells: Array[Control] = []
+var _inventory_equipment_slots: Array[Control] = []
+var _inventory_bag_grid_root: Control = null
+var _inventory_equipment_panel_root: Control = null
+var _inventory_actor_label: Label = null
+var _inventory_status_label: Label = null
+var _last_inventory_op_message: String = "ready"
+var _last_inventory_op_success: bool = true
+var _last_inventory_error: String = ""
+var _inventory_seeded: bool = false
 
 ## 最近一次战斗的总帧数, 从 timeline.meta.totalFrames 缓存。
 ## 不能从 _world.get_active_battle() 读 —— battle_finished emit 之前
@@ -270,6 +300,7 @@ func _ready() -> void:
 	_update_workspace_layout()
 	get_viewport().size_changed.connect(_update_workspace_layout)
 	GameWorld.init()
+	_init_inventory_session()
 	_init_world_stack()
 	_init_player_controller()
 	_init_skill_lookup()
@@ -279,6 +310,8 @@ func _ready() -> void:
 	_init_default_actors()
 	_refresh_preset_list()
 	_reset_world_to_model()
+	_seed_inventory_items_once()
+	_refresh_inventory_all()
 	_apply_setup_inspector_layout()
 	_set_console_expanded(false)
 	_set_status("Ready — 长按角色格拖拽摆位")
@@ -286,6 +319,11 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_disconnect_item_system_signals()
+	if _inventory != null:
+		_inventory.dispose()
+		_inventory = null
+	ItemSystem.reset_session()
 	GameWorld.destroy()
 
 
@@ -337,6 +375,17 @@ func _get_passive_skill_configs() -> Array[AbilityConfig]:
 	return _passive_skill_configs
 
 
+func _init_inventory_session() -> void:
+	ItemSystem.reset_session()
+	ItemSystem.configure_domain(HexItemDomainScript.new(), HexItemCatalogScript.new())
+	_inventory = HexPlayerInventoryScript.new()
+	_inventory.init_inventory()
+	_last_inventory_op_message = "inventory ready"
+	_last_inventory_op_success = true
+	_last_inventory_error = ""
+	_inventory_seeded = false
+
+
 func _apply_skill_preview_window_size() -> void:
 	if OS.has_feature("web") or DisplayServer.get_name() == "headless":
 		return
@@ -364,6 +413,7 @@ func _apply_skill_preview_window_size() -> void:
 
 func _init_world_stack() -> void:
 	_world = SkillPreviewWorldGI.new()
+	_world.set_player_inventory(_inventory)
 	GameWorld.create_instance(func() -> GameplayInstance: return _world)
 	_world.start()
 	_world.battle_finished.connect(_on_battle_finished)
@@ -554,6 +604,7 @@ func _init_timeline_workspace_shell() -> void:
 	_build_drawer_timeline_tab()
 	_build_drawer_scene_tab()
 	_build_drawer_run_tab()
+	_build_drawer_inventory_tab()
 
 	_drawer_log_tab = VBoxContainer.new()
 	_drawer_log_tab.name = "Log"
@@ -800,6 +851,122 @@ func _build_drawer_run_tab() -> void:
 	run_shell.add_child(run_spacer)
 
 
+func _build_drawer_inventory_tab() -> void:
+	_drawer_inventory_tab = VBoxContainer.new()
+	_drawer_inventory_tab.name = "Inventory"
+	_drawer_inventory_tab.add_theme_constant_override("separation", 8)
+	_drawer_inventory_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_drawer_inventory_tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_drawer_tabs.add_child(_drawer_inventory_tab)
+
+	var title := Label.new()
+	title.text = "Inventory"
+	title.add_theme_font_override("font", _clay_font_bold())
+	_drawer_inventory_tab.add_child(title)
+
+	var shell := HBoxContainer.new()
+	shell.name = "InventoryShell"
+	shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	shell.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shell.add_theme_constant_override("separation", 12)
+	_drawer_inventory_tab.add_child(shell)
+
+	var bag_panel := PanelContainer.new()
+	bag_panel.name = "InventoryBagPanel"
+	bag_panel.custom_minimum_size = Vector2(
+		INVENTORY_BAG_COLS * (INVENTORY_BAG_CELL_SIZE.x + INVENTORY_BAG_CELL_GAP) + 24,
+		0
+	)
+	bag_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	bag_panel.add_theme_stylebox_override("panel", _clay_sb(Color("111827"), 6, 10, 8, 1, 0))
+	shell.add_child(bag_panel)
+	_inventory_bag_grid_root = bag_panel
+
+	var bag_box := VBoxContainer.new()
+	bag_box.add_theme_constant_override("separation", 6)
+	bag_panel.add_child(bag_box)
+	var bag_header := Label.new()
+	bag_header.text = "Player Bag"
+	bag_header.add_theme_font_override("font", _clay_font_bold())
+	bag_header.add_theme_color_override("font_color", CLAY_TEXT)
+	bag_box.add_child(bag_header)
+
+	var bag_scroll := ScrollContainer.new()
+	bag_scroll.name = "InventoryBagScroll"
+	bag_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	bag_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	bag_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bag_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	bag_box.add_child(bag_scroll)
+
+	var bag_grid := GridContainer.new()
+	bag_grid.name = "InventoryBagGrid"
+	bag_grid.columns = INVENTORY_BAG_COLS
+	bag_grid.add_theme_constant_override("h_separation", INVENTORY_BAG_CELL_GAP)
+	bag_grid.add_theme_constant_override("v_separation", INVENTORY_BAG_CELL_GAP)
+	bag_scroll.add_child(bag_grid)
+
+	_inventory_bag_cells.clear()
+	for slot_index in range(INVENTORY_BAG_COLS * INVENTORY_BAG_ROWS):
+		var cell := BagCellScript.new() as Control
+		cell.name = "SkillPreviewBagCell_%d" % slot_index
+		cell.custom_minimum_size = INVENTORY_BAG_CELL_SIZE
+		cell.size = INVENTORY_BAG_CELL_SIZE
+		cell.setup(self, _inventory.player_bag_id if _inventory != null else -1, slot_index)
+		bag_grid.add_child(cell)
+		_inventory_bag_cells.append(cell)
+
+	var eq_panel := PanelContainer.new()
+	eq_panel.name = "InventoryEquipmentPanel"
+	eq_panel.custom_minimum_size = Vector2(380, 0)
+	eq_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	eq_panel.add_theme_stylebox_override("panel", _clay_sb(Color("111827"), 6, 10, 8, 1, 0))
+	shell.add_child(eq_panel)
+	_inventory_equipment_panel_root = eq_panel
+
+	var eq_box := VBoxContainer.new()
+	eq_box.add_theme_constant_override("separation", 8)
+	eq_panel.add_child(eq_box)
+	var eq_header := HBoxContainer.new()
+	eq_header.add_theme_constant_override("separation", 8)
+	eq_box.add_child(eq_header)
+	var eq_title := Label.new()
+	eq_title.text = "Actor Equipment"
+	eq_title.add_theme_font_override("font", _clay_font_bold())
+	eq_title.add_theme_color_override("font_color", CLAY_TEXT)
+	eq_header.add_child(eq_title)
+	_inventory_actor_label = Label.new()
+	_inventory_actor_label.text = "Actor: -"
+	_inventory_actor_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_inventory_actor_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_inventory_actor_label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	eq_header.add_child(_inventory_actor_label)
+
+	var eq_grid := GridContainer.new()
+	eq_grid.name = "InventoryEquipmentGrid"
+	eq_grid.columns = 3
+	eq_grid.add_theme_constant_override("h_separation", INVENTORY_EQ_SLOT_GAP)
+	eq_grid.add_theme_constant_override("v_separation", INVENTORY_EQ_SLOT_GAP)
+	eq_box.add_child(eq_grid)
+
+	_inventory_equipment_slots.clear()
+	for slot_index in range(6):
+		var slot := EquipmentSlotScript.new() as Control
+		slot.name = "SkillPreviewEquipmentSlot_%d" % slot_index
+		slot.custom_minimum_size = INVENTORY_EQ_SLOT_SIZE
+		slot.size = INVENTORY_EQ_SLOT_SIZE
+		slot.setup(self, slot_index)
+		eq_grid.add_child(slot)
+		_inventory_equipment_slots.append(slot)
+
+	_inventory_status_label = Label.new()
+	_inventory_status_label.name = "InventoryStatusLabel"
+	_inventory_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_inventory_status_label.add_theme_color_override("font_color", CLAY_TEXT_SOFT)
+	_inventory_status_label.add_theme_font_size_override("font_size", 12)
+	eq_box.add_child(_inventory_status_label)
+
+
 func _reparent_control(control: Control, new_parent: Control) -> void:
 	if control == null or new_parent == null:
 		return
@@ -808,6 +975,144 @@ func _reparent_control(control: Control, new_parent: Control) -> void:
 	new_parent.add_child(control)
 	control.visible = true
 	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+
+# ========== Inventory UI / model bridge ==========
+
+func _seed_inventory_items_once() -> void:
+	if _inventory == null or _inventory_seeded:
+		return
+	var failed_seeds: Array = []
+	for seed in INVENTORY_SEED_ITEMS:
+		var config_id: StringName = seed.get("config_id", &"") as StringName
+		var count := int(seed.get("count", 1))
+		var slot_index := int(seed.get("slot", -1))
+		var result := ItemSystem.create_item(_inventory.player_bag_id, config_id, count, slot_index)
+		if not result.success:
+			failed_seeds.append({"config_id": str(config_id), "error": result.error_message})
+	_inventory_seeded = true
+	if failed_seeds.is_empty():
+		_set_inventory_op_result(true, "inventory seeded", "")
+	else:
+		_set_inventory_op_result(false, "inventory seed failed", JSON.stringify(failed_seeds))
+
+
+func handle_drop(payload: Dictionary, target_container_id: int, target_slot_index: int) -> void:
+	var item_id := int(payload.get("item_id", -1))
+	if item_id <= 0:
+		_set_inventory_op_result(false, "drop ignored: invalid payload", "invalid_drop_payload")
+		return
+	var result := ItemSystem.move_item(item_id, target_container_id, target_slot_index)
+	if result.success:
+		_set_inventory_op_result(true, "moved item %d to container %d slot %d" % [
+			item_id, target_container_id, target_slot_index,
+		], "")
+	else:
+		_set_inventory_op_result(false, "move FAILED: %s" % result.error_message, result.error_message)
+	_refresh_inventory_all()
+
+
+func _set_inventory_op_result(success: bool, message: String, error_text: String) -> void:
+	_last_inventory_op_success = success
+	_last_inventory_op_message = message
+	_last_inventory_error = error_text
+	if _inventory_status_label != null:
+		_inventory_status_label.text = message
+
+
+func _refresh_inventory_all() -> void:
+	_refresh_inventory_bag()
+	_refresh_inventory_equipment_panel()
+	if _inventory_status_label != null:
+		_inventory_status_label.text = _last_inventory_op_message
+
+
+func _refresh_inventory_bag() -> void:
+	if _inventory == null:
+		return
+	for cell in _inventory_bag_cells:
+		cell.set_target_container_id(_inventory.player_bag_id)
+		cell.set_item(0, {})
+	for item_id in ItemSystem.get_items_in_container(_inventory.player_bag_id):
+		var loc := ItemSystem.get_item_location(item_id)
+		if loc == null or loc.slot_index < 0 or loc.slot_index >= _inventory_bag_cells.size():
+			continue
+		_inventory_bag_cells[loc.slot_index].set_item(item_id, ItemSystem.get_item_snapshot(item_id))
+
+
+func _refresh_inventory_equipment_panel() -> void:
+	if _inventory == null:
+		return
+	var actor_idx := _inventory_selected_actor_idx()
+	if _inventory_actor_label != null:
+		_inventory_actor_label.text = "Actor: %s" % (_actor_timeline_label(actor_idx) if actor_idx >= 0 else "-")
+	var eq_id := _inventory_equipment_container_id_for_idx(actor_idx)
+	for slot in _inventory_equipment_slots:
+		slot.set_target_container_id(eq_id)
+		slot.set_item(0, {})
+	if eq_id <= 0:
+		return
+	for item_id in ItemSystem.get_items_in_container(eq_id):
+		var loc := ItemSystem.get_item_location(item_id)
+		if loc == null or loc.slot_index < 0 or loc.slot_index >= _inventory_equipment_slots.size():
+			continue
+		_inventory_equipment_slots[loc.slot_index].set_item(item_id, ItemSystem.get_item_snapshot(item_id))
+
+
+func _inventory_selected_actor_idx() -> int:
+	if _selected_kind == SELECT_ACTOR and _selected_actor_idx >= 0 and _selected_actor_idx < _actors.size():
+		return _selected_actor_idx
+	if _selected_kind == SELECT_KEYFRAME and _selected_spt_actor_idx >= 0 and _selected_spt_actor_idx < _actors.size():
+		return _selected_spt_actor_idx
+	if _selected_actor_idx >= 0 and _selected_actor_idx < _actors.size():
+		return _selected_actor_idx
+	return 0 if not _actors.is_empty() else -1
+
+
+func _inventory_actor_id_for_idx(actor_idx: int) -> String:
+	if actor_idx < 0 or actor_idx >= _actor_ids.size():
+		return ""
+	return _actor_ids[actor_idx]
+
+
+func _inventory_equipment_container_id_for_idx(actor_idx: int) -> int:
+	if _inventory == null:
+		return -1
+	var actor_id := _inventory_actor_id_for_idx(actor_idx)
+	if actor_id == "":
+		return -1
+	return _inventory.get_equipment_container_id(actor_id)
+
+
+func _snapshot_inventory_item(item_id: int) -> Dictionary:
+	return ItemSystem.get_item_snapshot(item_id)
+
+
+func _snapshot_inventory_slot(container_id: int, slot_index: int) -> Dictionary:
+	var snap: Dictionary = {
+		"slot_index": slot_index,
+		"slot_label_1_based": slot_index + 1,
+		"item_id": 0,
+		"item_snapshot": {},
+	}
+	if container_id <= 0:
+		return snap
+	for item_id in ItemSystem.get_items_in_container(container_id):
+		var loc := ItemSystem.get_item_location(item_id)
+		if loc != null and loc.slot_index == slot_index:
+			snap["item_id"] = item_id
+			snap["item_snapshot"] = ItemSystem.get_item_snapshot(item_id)
+			break
+	return snap
+
+
+func _rect_to_inventory_dict(rect: Rect2) -> Dictionary:
+	return {
+		"x": rect.position.x,
+		"y": rect.position.y,
+		"w": rect.size.x,
+		"h": rect.size.y,
+	}
 
 
 func _init_control_toggle_button(root: Control) -> void:
@@ -866,6 +1171,7 @@ func _init_details_popup(root: Control) -> void:
 
 
 func _init_signals() -> void:
+	_connect_item_system_signals()
 	_start_button.pressed.connect(_on_start_pressed)
 	_reset_button.pressed.connect(_on_reset_pressed)
 	_replay_button.pressed.connect(_on_replay_pressed)
@@ -898,6 +1204,36 @@ func _init_signals() -> void:
 		_warn_if_override_below_keyframes()
 		_rebuild_spt_ui()
 	)
+
+
+func _connect_item_system_signals() -> void:
+	if not ItemSystem.item_created.is_connected(_on_inventory_item_created):
+		ItemSystem.item_created.connect(_on_inventory_item_created)
+	if not ItemSystem.item_moved.is_connected(_on_inventory_item_moved):
+		ItemSystem.item_moved.connect(_on_inventory_item_moved)
+	if not ItemSystem.item_destroyed.is_connected(_on_inventory_item_destroyed):
+		ItemSystem.item_destroyed.connect(_on_inventory_item_destroyed)
+
+
+func _disconnect_item_system_signals() -> void:
+	if ItemSystem.item_created.is_connected(_on_inventory_item_created):
+		ItemSystem.item_created.disconnect(_on_inventory_item_created)
+	if ItemSystem.item_moved.is_connected(_on_inventory_item_moved):
+		ItemSystem.item_moved.disconnect(_on_inventory_item_moved)
+	if ItemSystem.item_destroyed.is_connected(_on_inventory_item_destroyed):
+		ItemSystem.item_destroyed.disconnect(_on_inventory_item_destroyed)
+
+
+func _on_inventory_item_created(_item_id: int, _location: ItemLocation) -> void:
+	_refresh_inventory_all()
+
+
+func _on_inventory_item_moved(_item_id: int, _old_location: ItemLocation, _new_location: ItemLocation) -> void:
+	_refresh_inventory_all()
+
+
+func _on_inventory_item_destroyed(_item_id: int) -> void:
+	_refresh_inventory_all()
 
 
 func _apply_setup_inspector_layout() -> void:
@@ -1379,7 +1715,10 @@ func _remove_actor_at(idx: int) -> void:
 		# 清理并 emit actor_removed → WorldView 销毁对应 unit view。其它 view 不动。
 		var actor_id := _actor_ids[idx]
 		if actor_id != "":
-			_world.remove_actor(actor_id)
+			if not _world.remove_actor(actor_id):
+				_set_inventory_op_result(false, "remove actor failed: equipment unload failed", "equipment_unload_failed")
+				_set_status("Remove actor failed — equipment could not be unloaded")
+				return
 		_actor_ids.remove_at(idx)
 	_actors.remove_at(idx)
 	if _selected_actor_idx > idx:
@@ -1462,6 +1801,7 @@ func _rebuild_actors_ui() -> void:
 	_clear_selection_if_invalid()
 	_refresh_details_popup()
 	_refresh_character_panel()
+	_refresh_inventory_all()
 
 
 func _refresh_details_popup() -> void:
@@ -3825,7 +4165,9 @@ func _reset_world_to_model() -> void:
 
 
 func _reset_world_to_model_unguarded() -> void:
-	_world.reset()
+	if not _world.reset():
+		_set_inventory_op_result(false, "world reset aborted: failed to unload equipment", "equipment_unload_failed")
+		return
 	_role_id_to_actor_id.clear()
 	_actor_ids.clear()
 	_environment_ids.clear()
@@ -3844,6 +4186,7 @@ func _reset_world_to_model_unguarded() -> void:
 	for i in _environments.size():
 		_spawn_one_environment(i)
 	_update_hex_selection_cursor()
+	_refresh_inventory_all()
 
 
 func _sanitize_actor_positions() -> bool:
@@ -3944,6 +4287,7 @@ func _spawn_one_actor(idx: int) -> void:
 	if idx >= _actor_ids.size():
 		_actor_ids.resize(idx + 1)
 	_actor_ids[idx] = cchar.get_id()
+	_refresh_inventory_all()
 
 
 func _spawn_one_environment(idx: int) -> bool:
@@ -5569,7 +5913,143 @@ func dev_agent_state() -> Dictionary:
 			"reset_disabled": _reset_button.disabled,
 			"replay_disabled": _replay_button.disabled,
 		},
+		"inventory": dev_agent_inventory_state(),
 	}
+
+
+func dev_agent_show_inventory() -> Dictionary:
+	if _drawer_tabs == null:
+		return {"ok": false, "message": "workspace tabs not ready"}
+	_set_console_expanded(true)
+	_set_drawer_tab("Inventory")
+	_refresh_inventory_all()
+	return {
+		"ok": true,
+		"message": "inventory tab shown",
+		"data": dev_agent_inventory_layout_state(),
+	}
+
+
+func dev_agent_select_actor(idx: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot select actor while playing"}
+	if idx < 0 or idx >= _actors.size():
+		return {"ok": false, "message": "actor idx out of range: %d" % idx}
+	_select_actor_at(idx)
+	return {
+		"ok": true,
+		"message": "selected actor idx=%d" % idx,
+		"data": dev_agent_selected_actor_equipment_state(),
+	}
+
+
+func dev_agent_inventory_state() -> Dictionary:
+	if _inventory == null:
+		return {
+			"player_bag_id": -1,
+			"bag": [],
+			"actors": [],
+			"selected_actor_idx": -1,
+			"last_op_message": _last_inventory_op_message,
+			"last_op_success": _last_inventory_op_success,
+			"last_error": _last_inventory_error,
+		}
+
+	var bag_items: Array = []
+	for item_id in ItemSystem.get_items_in_container(_inventory.player_bag_id):
+		bag_items.append(_snapshot_inventory_item(item_id))
+
+	var actors_state: Array = []
+	for idx in range(_actor_ids.size()):
+		var actor_id: String = _actor_ids[idx]
+		var eq_id := _inventory.get_equipment_container_id(actor_id)
+		var slots: Array = []
+		for slot_idx in range(6):
+			slots.append(_snapshot_inventory_slot(eq_id, slot_idx))
+		actors_state.append({
+			"idx": idx,
+			"role_id": _role_id_for(idx),
+			"actor_id": actor_id,
+			"display_name": _actor_timeline_label(idx),
+			"equipment_container_id": eq_id,
+			"slots": slots,
+		})
+
+	var selected_idx := _inventory_selected_actor_idx()
+	return {
+		"player_bag_id": _inventory.player_bag_id,
+		"bag": bag_items,
+		"actors": actors_state,
+		"selected_actor_idx": selected_idx,
+		"selected_actor_id": _inventory_actor_id_for_idx(selected_idx),
+		"selected_equipment_container_id": _inventory_equipment_container_id_for_idx(selected_idx),
+		"last_op_message": _last_inventory_op_message,
+		"last_op_success": _last_inventory_op_success,
+		"last_error": _last_inventory_error,
+	}
+
+
+func dev_agent_selected_actor_equipment_state() -> Dictionary:
+	var common := {
+		"selected_actor_idx": _inventory_selected_actor_idx(),
+		"last_op_message": _last_inventory_op_message,
+		"last_op_success": _last_inventory_op_success,
+		"last_error": _last_inventory_error,
+	}
+	var actor_idx := int(common["selected_actor_idx"])
+	if actor_idx < 0:
+		return common
+	var actor_id := _inventory_actor_id_for_idx(actor_idx)
+	var eq_id := _inventory_equipment_container_id_for_idx(actor_idx)
+	var slots: Array = []
+	for slot_idx in range(6):
+		slots.append(_snapshot_inventory_slot(eq_id, slot_idx))
+	return {
+		"selected_actor_idx": actor_idx,
+		"role_id": _role_id_for(actor_idx),
+		"actor_id": actor_id,
+		"display_name": _actor_timeline_label(actor_idx),
+		"equipment_container_id": eq_id,
+		"slots": slots,
+		"last_op_message": _last_inventory_op_message,
+		"last_op_success": _last_inventory_op_success,
+		"last_error": _last_inventory_error,
+	}
+
+
+func dev_agent_inventory_layout_state() -> Dictionary:
+	var data: Dictionary = {
+		"current_tab": _drawer_tabs.get_tab_title(_drawer_tabs.current_tab) if _drawer_tabs != null else "",
+		"drawer_expanded": _console_expanded,
+	}
+	if _inventory_bag_grid_root != null:
+		data["bag_grid_rect"] = _rect_to_inventory_dict(_inventory_bag_grid_root.get_global_rect())
+		var bag_cells: Array = []
+		for cell in _inventory_bag_cells:
+			bag_cells.append({
+				"slot_index": int(cell.get_meta("slot_index", -1)),
+				"container_id": int(cell.get_meta("container_id", -1)),
+				"rect": _rect_to_inventory_dict(cell.get_global_rect()),
+				"visible": cell.is_visible_in_tree(),
+			})
+		data["bag_cells"] = bag_cells
+	if _inventory_equipment_panel_root != null:
+		data["equipment_panel_rect"] = _rect_to_inventory_dict(_inventory_equipment_panel_root.get_global_rect())
+		var eq_slots: Array = []
+		for slot in _inventory_equipment_slots:
+			eq_slots.append({
+				"slot_index": int(slot.get_meta("slot_index", -1)),
+				"slot_label_1_based": int(slot.get_meta("slot_index", -1)) + 1,
+				"container_id": int(slot.get_meta("container_id", -1)),
+				"rect": _rect_to_inventory_dict(slot.get_global_rect()),
+				"visible": slot.is_visible_in_tree(),
+			})
+		data["equipment_slots"] = eq_slots
+	if _inventory_actor_label != null:
+		data["actor_label_rect"] = _rect_to_inventory_dict(_inventory_actor_label.get_global_rect())
+	if _inventory_status_label != null:
+		data["status_label_rect"] = _rect_to_inventory_dict(_inventory_status_label.get_global_rect())
+	return data
 
 
 func dev_agent_world_state() -> Array:
@@ -5694,7 +6174,7 @@ func dev_agent_reset_battle() -> Dictionary:
 	if _is_playing:
 		return {"ok": false, "message": "cannot reset while playing"}
 	_on_reset_pressed()
-	return {"ok": true, "message": "battle reset"}
+	return {"ok": true, "message": "battle reset", "data": dev_agent_inventory_state()}
 
 
 func dev_agent_replay_battle() -> Dictionary:
@@ -5815,7 +6295,7 @@ func dev_agent_add_actor_team(team: String) -> Dictionary:
 	_add_actor_at_next_free(normalized)
 	if _actors.size() == before_size:
 		return {"ok": false, "message": "no free hex available"}
-	return {"ok": true, "message": "added %s actor" % normalized, "data": {"idx": _actors.size() - 1}}
+	return {"ok": true, "message": "added %s actor" % normalized, "data": dev_agent_inventory_state()}
 
 
 func dev_agent_remove_actor(idx: int) -> Dictionary:
@@ -5823,8 +6303,11 @@ func dev_agent_remove_actor(idx: int) -> Dictionary:
 		return {"ok": false, "message": "cannot remove actor while playing"}
 	if idx <= 0 or idx >= _actors.size():
 		return {"ok": false, "message": "idx out of range or caster (0): %d" % idx}
+	var before_size := _actors.size()
 	_remove_actor_at(idx)
-	return {"ok": true, "message": "removed actor idx=%d" % idx}
+	if _actors.size() == before_size:
+		return {"ok": false, "message": "remove actor failed idx=%d" % idx, "data": dev_agent_inventory_state()}
+	return {"ok": true, "message": "removed actor idx=%d" % idx, "data": dev_agent_inventory_state()}
 
 
 func dev_agent_set_actor_pos(idx: int, q: int, r: int) -> Dictionary:
@@ -5949,4 +6432,4 @@ func dev_agent_reset_world_to_model() -> Dictionary:
 	if _is_playing:
 		return {"ok": false, "message": "cannot reset while playing"}
 	_reset_world_to_model_unguarded()
-	return {"ok": true, "message": "world reset to model"}
+	return {"ok": true, "message": "world reset to model", "data": dev_agent_inventory_state()}

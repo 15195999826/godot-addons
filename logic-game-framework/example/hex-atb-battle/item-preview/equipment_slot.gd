@@ -4,7 +4,7 @@
 extends Panel
 
 
-var _owner_scene: Control
+var _owner_scene: Node
 var _container_id: int = -1
 var _slot_index: int = -1  # 0..5
 
@@ -18,12 +18,14 @@ var _count_label: Label
 
 func _ready() -> void:
 	_slot_label = Label.new()
+	_slot_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_slot_label.position = Vector2(6, 4)
 	_slot_label.add_theme_font_size_override("font_size", 11)
 	_slot_label.add_theme_color_override("font_color", Color(0.72, 0.74, 0.78))
 	add_child(_slot_label)
 
 	_name_label = Label.new()
+	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_name_label.position = Vector2(8, 28)
 	_name_label.size = size - Vector2(16, 48)
 	_name_label.add_theme_font_size_override("font_size", 12)
@@ -32,6 +34,7 @@ func _ready() -> void:
 	add_child(_name_label)
 
 	_count_label = Label.new()
+	_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_count_label.position = Vector2(size.x - 36, size.y - 24)
 	_count_label.size = Vector2(28, 20)
 	_count_label.add_theme_font_size_override("font_size", 13)
@@ -43,7 +46,7 @@ func _ready() -> void:
 	_refresh_visual()
 
 
-func setup(owner_scene: Control, slot_index: int) -> void:
+func setup(owner_scene: Node, slot_index: int) -> void:
 	_owner_scene = owner_scene
 	_slot_index = slot_index
 	set_meta("slot_index", slot_index)
