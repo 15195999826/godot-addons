@@ -36,6 +36,8 @@ func get_supported_ops() -> PackedStringArray:
 		"add_stone_wall", "remove_environment",
 		"add_keyframe", "remove_keyframe", "set_keyframe",
 		"reset_world_to_model", "show_inventory",
+		# §Phase G equipment ops (装备 grant/revoke 业务 API; 不走 drag_at UI 路径)
+		"equip_item", "unequip_item",
 		# Observation
 		"scene_state", "world_state", "timeline", "console_log",
 		"setup_error", "list_presets", "list_skills", "control_rect",
@@ -162,6 +164,19 @@ func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 			return preview.dev_agent_reset_world_to_model()
 		"show_inventory":
 			return preview.dev_agent_show_inventory()
+		# §Phase G equipment ops
+		"equip_item":
+			var item_cfg_id := StringName(str(args.get("item_config_id", "")))
+			return preview.dev_agent_equip_item(
+				int(args.get("actor_idx", -1)),
+				item_cfg_id,
+				int(args.get("slot", -1)),
+			)
+		"unequip_item":
+			return preview.dev_agent_unequip_item(
+				int(args.get("actor_idx", -1)),
+				int(args.get("slot", -1)),
+			)
 
 		# ----- Observation ops -----
 		"scene_state":
