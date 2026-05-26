@@ -54,9 +54,9 @@ func get_player_inventory() -> HexPlayerInventory:
 func reset() -> bool:
 	if _player_inventory != null:
 		var cleared := _player_inventory.clear_actor_equipment_keep_player()
-		Log.assert_crash(cleared, "SkillPreviewWorldGI",
-			"failed to clear actor equipment containers before world reset")
 		if not cleared:
+			Log.error("SkillPreviewWorldGI",
+				"failed to clear actor equipment containers before world reset")
 			return false
 	# 先 emit, 再 clear —— emit 不 mutate _actors, 不需要中转 array。
 	for a in _actors:
@@ -74,14 +74,20 @@ func reset() -> bool:
 # ========== Actor registry ==========
 
 func add_actor(actor: Actor, after_id_assigned: Callable = Callable()) -> Actor:
-	var added := super.add_actor(actor, after_id_assigned)
-	if added != null and _player_inventory != null and added is CharacterActor:
-		_player_inventory.register_actor(added.get_id())
-	return added
+	var wrapped_after_id_assigned := after_id_assigned
+	if _player_inventory != null and actor is CharacterActor:
+		wrapped_after_id_assigned = func(added_actor: Actor) -> void:
+			_player_inventory.register_actor(added_actor.get_id())
+			if after_id_assigned.is_valid():
+				after_id_assigned.call(added_actor)
+	return super.add_actor(actor, wrapped_after_id_assigned)
 
 
 func remove_actor(actor_id: String) -> bool:
-	if _player_inventory != null:
+	var actor := get_actor(actor_id)
+	if actor == null:
+		return false
+	if _player_inventory != null and actor is CharacterActor:
 		var unloaded := _player_inventory.unregister_actor(actor_id)
 		if not unloaded:
 			return false
