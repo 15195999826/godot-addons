@@ -377,6 +377,10 @@ func _get_passive_skill_configs() -> Array[AbilityConfig]:
 
 func _init_inventory_session() -> void:
 	ItemSystem.reset_session()
+	_create_inventory_session()
+
+
+func _create_inventory_session() -> void:
 	ItemSystem.configure_domain(HexItemDomainScript.new(), HexItemCatalogScript.new())
 	_inventory = HexPlayerInventoryScript.new()
 	_inventory.init_inventory()
@@ -384,6 +388,20 @@ func _init_inventory_session() -> void:
 	_last_inventory_op_success = true
 	_last_inventory_error = ""
 	_inventory_seeded = false
+
+
+func _reset_inventory_session_to_demo() -> void:
+	_disconnect_item_system_signals()
+	if _world != null:
+		_world.set_player_inventory(null)
+	if _inventory != null:
+		_inventory.dispose()
+		_inventory = null
+	ItemSystem.reset_session()
+	_create_inventory_session()
+	if _world != null:
+		_world.set_player_inventory(_inventory)
+	_connect_item_system_signals()
 
 
 func _apply_skill_preview_window_size() -> void:
@@ -4140,8 +4158,8 @@ func _make_actor_spin(
 
 # ========== World Reset (按数据模型重置到默认状态) ==========
 
-## 把 world 重置成 _actors 数据模型对应的初始状态: reset → configure_grid →
-## add_actor × N + place_occupant。每一步都走 WorldGI 的显式 mutation API,
+## 把 world + inventory 重置成 demo 初始状态: rebuild ItemSystem session →
+## world reset → configure_grid → add_actor × N + place_occupant。每一步都走 WorldGI 的显式 mutation API,
 ## 触发 signal -> FrontendWorldView 自动维护 unit view 生命周期
 ## (无 destructive load_replay 或 _spawn_units 调用)。
 ##
@@ -4168,8 +4186,9 @@ func _reset_world_to_model() -> bool:
 
 
 func _reset_world_to_model_unguarded() -> bool:
+	_reset_inventory_session_to_demo()
 	if not _world.reset():
-		_set_inventory_op_result(false, "world reset aborted: failed to unload equipment", "equipment_unload_failed")
+		_set_inventory_op_result(false, "world reset aborted", "world_reset_failed")
 		return false
 	_role_id_to_actor_id.clear()
 	_actor_ids.clear()
@@ -4188,6 +4207,7 @@ func _reset_world_to_model_unguarded() -> bool:
 		_spawn_one_actor(i)
 	for i in _environments.size():
 		_spawn_one_environment(i)
+	_seed_inventory_items_once()
 	_update_hex_selection_cursor()
 	_refresh_inventory_all()
 	return true
@@ -4948,7 +4968,7 @@ func _on_reset_pressed() -> bool:
 	if _is_playing:
 		return false
 	if not _reset_world_to_model_unguarded():
-		_set_status("Reset failed — equipment could not be unloaded")
+		_set_status("Reset failed")
 		return false
 	_console_log.clear()
 	_set_console_expanded(false)
@@ -6189,7 +6209,7 @@ func dev_agent_reset_battle() -> Dictionary:
 	if _is_playing:
 		return {"ok": false, "message": "cannot reset while playing"}
 	if not _on_reset_pressed():
-		return {"ok": false, "message": "battle reset failed: equipment unload failed", "data": dev_agent_inventory_state()}
+		return {"ok": false, "message": "battle reset failed", "data": dev_agent_inventory_state()}
 	return {"ok": true, "message": "battle reset", "data": dev_agent_inventory_state()}
 
 
@@ -6449,5 +6469,5 @@ func dev_agent_reset_world_to_model() -> Dictionary:
 	if _is_playing:
 		return {"ok": false, "message": "cannot reset while playing"}
 	if not _reset_world_to_model_unguarded():
-		return {"ok": false, "message": "world reset failed: equipment unload failed", "data": dev_agent_inventory_state()}
-	return {"ok": true, "message": "world reset to model", "data": dev_agent_inventory_state()}
+		return {"ok": false, "message": "world reset failed", "data": dev_agent_inventory_state()}
+	return {"ok": true, "message": "world reset to initial demo", "data": dev_agent_inventory_state()}

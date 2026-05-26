@@ -69,7 +69,7 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 | name | args | 行为 |
 |---|---|---|
 | `start_battle` | — | 直调 `_on_start_pressed`, 跑当前 _actors 配置的战斗 |
-| `reset_battle` | — | 直调 `_on_reset_pressed`, world 回到 _actors 模型 |
+| `reset_battle` | — | 直调 `_on_reset_pressed`, world 回到 _actors 模型并恢复初始 demo inventory |
 | `replay_battle` | — | 直调 `_on_replay_pressed`, 重播上次 timeline |
 | `add_enemy` | — | 等价点 `%ActorAddEnemyButton` 但直调 `_add_actor_at_next_free("B")` |
 | `add_ally` | — | 等价点 `%ActorAddAllyButton` 但直调 `_add_actor_at_next_free("A")` |
@@ -120,7 +120,7 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 | `add_keyframe` | `actor_idx`, `time_ms?`, `skill?`, `target?` | 添 keyframe; target = `{mode, index?, q?, r?}` |
 | `remove_keyframe` | `actor_idx`, `kf_idx` | 删 keyframe |
 | `set_keyframe` | `actor_idx`, `kf_idx`, `fields: {time_ms?, skill?, target?}` | 改 keyframe |
-| `reset_world_to_model` | — | 强制按 `_actors` 数据模型重建 world |
+| `reset_world_to_model` | — | 强制按 `_actors` 数据模型重建 world 并恢复初始 demo inventory |
 | `show_inventory` | — | 展开 Workspace drawer 并切到 Inventory tab, 返回 inventory layout |
 
 ### 观察 (只读, 不写场景)
@@ -170,8 +170,8 @@ Inventory tab 使用与 `item-preview` 相同的 Hex item model 和 bag/equipmen
 6. `drag_at` equipment slot 1 -> empty bag slot: item 回到 player bag。
 7. `select_actor {idx:1}` + `selected_actor_equipment_state`: actor selection 同步, slots 与 actor 隔离。
 8. `add_actor` 后新 actor 有 equipment container; 装备 item 后 `remove_actor` 会卸回 bag 并 unregister container。
-9. `reset_world_to_model` / `reset_battle`: player bag id 和 player-owned items 保留, actor equipment containers 用新 runtime actor ids 重建。
-10. `start_battle` -> `wait_for_idle` -> `reset_battle`: inventory state 仍一致。
+9. `reset_world_to_model` / `reset_battle`: inventory 恢复初始 demo seed, actor equipment containers 用新 runtime actor ids 重建且为空。
+10. `start_battle` -> `wait_for_idle` -> `reset_battle`: inventory 回到初始 demo state。
 
 ## 典型新技能验证回路
 

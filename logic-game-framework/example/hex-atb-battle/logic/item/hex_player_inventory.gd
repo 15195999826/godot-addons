@@ -106,7 +106,7 @@ func get_registered_actor_ids() -> Array[String]:
 
 
 ## 保留 player bag + items, 只把所有 actor equipment container 销毁后重建。
-## 用于未来 SkillPreviewWorldGI.reset() — sandbox reset 走 dispose() + 重新 init。
+## 用于需要保留 player bag 的 world reset；SkillPreview 当前产品 reset 走 dispose() + 重新 init。
 ## 任一装备卸回失败时返回 false, 保留所有 equipment containers, 避免静默丢 item。
 func reset_actor_equipment_keep_player() -> bool:
 	var actor_ids: Array[String] = []
@@ -135,7 +135,7 @@ func reset_actor_equipment_keep_player() -> bool:
 
 
 ## 保留 player bag + player-owned items, 只清理当前 actor equipment containers。
-## SkillPreviewWorldGI.reset() 会先卸装旧 runtime actor id 的装备容器,随后用新的
+## 保留 player bag 的 world reset 会先卸装旧 runtime actor id 的装备容器,随后用新的
 ## scene actor runtime id 重新 add_actor/register_actor。这里不能重建旧 actor id
 ## 的容器,否则 reset 后会留下 stale equipment containers。
 func clear_actor_equipment_keep_player() -> bool:

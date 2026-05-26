@@ -5,7 +5,7 @@
 ## - 每个 SkillPreview scene actor 使用真实 runtime actor_id 绑定 equipment container
 ## - bag -> equipment / occupied reject / non-equipable reject / equipment -> bag
 ## - add/remove actor 同步创建/清理 equipment container, remove 会卸回 bag
-## - reset_world_to_model 保留 player bag + items, 清旧 actor containers, 重建新 actor containers
+## - reset_world_to_model 恢复初始 demo inventory, 清旧 actor containers, 重建新 actor containers
 ## - start/reset battle 后 inventory state 仍一致
 extends Node
 
@@ -36,7 +36,7 @@ func _ready() -> void:
 	var add_remove_ok := await _phase_add_remove_actor_lifecycle()
 	if not add_remove_ok:
 		return
-	var reset_ok := await _phase_reset_keeps_player_bag()
+	var reset_ok := await _phase_reset_restores_demo_inventory()
 	if not reset_ok:
 		return
 	var start_reset_ok := await _phase_start_reset_consistency()
@@ -174,9 +174,8 @@ func _phase_add_remove_actor_lifecycle() -> bool:
 	return true
 
 
-func _phase_reset_keeps_player_bag() -> bool:
+func _phase_reset_restores_demo_inventory() -> bool:
 	var before: Dictionary = _preview.dev_agent_inventory_state()
-	var bag_id := int(before.get("player_bag_id", -1))
 	var sword_id := _find_bag_item(before, &"training_sword", 0)
 	var actor0: Dictionary = (before.get("actors", []) as Array)[0] as Dictionary
 	var old_actor_id := str(actor0.get("actor_id", ""))
@@ -191,12 +190,16 @@ func _phase_reset_keeps_player_bag() -> bool:
 		return _fail("reset_world_to_model failed: %s" % str(reset_res.get("message", "")))
 	await get_tree().process_frame
 	var after: Dictionary = _preview.dev_agent_inventory_state()
-	if int(after.get("player_bag_id", -1)) != bag_id:
-		return _fail("reset should keep same player bag id")
-	if ItemSystem.get_item_location(sword_id).container_id != bag_id:
-		return _fail("reset should unload equipped sword back to player bag")
+	if ItemSystem.item_exists(sword_id):
+		return _fail("reset should destroy old equipped sword item instance")
 	if ItemSystem.get_container(old_eq_id) != null:
 		return _fail("reset should unregister old equipment container")
+	var new_seed_sword_id := _find_bag_item(after, &"training_sword", 0)
+	if new_seed_sword_id <= 0:
+		return _fail("reset should reseed training_sword at initial bag slot 0")
+	var new_seed_orb_id := _find_bag_item(after, &"frost_orb", 1)
+	if new_seed_orb_id <= 0:
+		return _fail("reset should reseed frost_orb at initial bag slot 1")
 	var new_actor0: Dictionary = (after.get("actors", []) as Array)[0] as Dictionary
 	var new_actor_id := str(new_actor0.get("actor_id", ""))
 	if not ActorId.is_valid(new_actor_id):
@@ -206,6 +209,8 @@ func _phase_reset_keeps_player_bag() -> bool:
 	var new_eq_id := int(new_actor0.get("equipment_container_id", -1))
 	if new_eq_id <= 0 or new_eq_id == old_eq_id or ItemSystem.get_container(new_eq_id) == null:
 		return _fail("reset should create a new actor equipment container")
+	if int(_slot_at(after, 0, 0).get("item_id", 0)) != 0:
+		return _fail("reset should leave rebuilt actor equipment slots empty")
 	return true
 
 
@@ -224,8 +229,8 @@ func _phase_start_reset_consistency() -> bool:
 		return _fail("reset_battle failed: %s" % str(reset_res.get("message", "")))
 	await get_tree().process_frame
 	var after: Dictionary = _preview.dev_agent_inventory_state()
-	if (after.get("bag", []) as Array).size() < 5:
-		return _fail("after start/reset, player bag should still contain seeded items")
+	if _find_bag_item(after, &"training_sword", 0) <= 0 or _find_bag_item(after, &"frost_orb", 1) <= 0:
+		return _fail("after start/reset, player bag should be restored to demo seed")
 	for actor_state_v in after.get("actors", []) as Array:
 		var actor_state := actor_state_v as Dictionary
 		var eq_id := int(actor_state.get("equipment_container_id", -1))
