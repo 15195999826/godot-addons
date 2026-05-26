@@ -167,15 +167,21 @@ func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 		# §Phase G equipment ops
 		"equip_item":
 			var item_cfg_id := StringName(str(args.get("item_config_id", "")))
+			var equip_slot_result := _equipment_slot_arg_to_index(args, true)
+			if not bool(equip_slot_result.get("ok", false)):
+				return equip_slot_result
 			return preview.dev_agent_equip_item(
 				int(args.get("actor_idx", -1)),
 				item_cfg_id,
-				int(args.get("slot", -1)),
+				int(equip_slot_result.get("slot_index", -1)),
 			)
 		"unequip_item":
+			var unequip_slot_result := _equipment_slot_arg_to_index(args, false)
+			if not bool(unequip_slot_result.get("ok", false)):
+				return unequip_slot_result
 			return preview.dev_agent_unequip_item(
 				int(args.get("actor_idx", -1)),
-				int(args.get("slot", -1)),
+				int(unequip_slot_result.get("slot_index", -1)),
 			)
 
 		# ----- Observation ops -----
@@ -368,6 +374,36 @@ func _op_load_preset(preview: Node, args: Dictionary) -> Dictionary:
 	if args.has("index"):
 		return preview.dev_agent_load_preset_by_index(int(args["index"]))
 	return {"ok": false, "message": "load_preset requires 'name' or 'index'"}
+
+
+func _equipment_slot_arg_to_index(args: Dictionary, allow_auto: bool) -> Dictionary:
+	var command_slot := int(args.get("slot", -1))
+	if allow_auto and command_slot == -1:
+		return {
+			"ok": true,
+			"message": "auto equipment slot",
+			"slot_index": -1,
+			"data": {"command_slot": command_slot, "slot_index": -1},
+		}
+	if command_slot < 1 or command_slot > HexActorEquipmentContainer.EQUIPMENT_SLOT_COUNT:
+		return {
+			"ok": false,
+			"message": "equipment slot out of range: %d (expect 1..%d%s)" % [
+				command_slot,
+				HexActorEquipmentContainer.EQUIPMENT_SLOT_COUNT,
+				" or -1 for auto" if allow_auto else "",
+			],
+			"data": {"command_slot": command_slot},
+		}
+	return {
+		"ok": true,
+		"message": "equipment slot converted",
+		"slot_index": command_slot - 1,
+		"data": {
+			"command_slot": command_slot,
+			"slot_index": command_slot - 1,
+		},
+	}
 
 
 func _rect_to_dict(rect: Rect2) -> Dictionary:

@@ -1,7 +1,7 @@
 # Hex Item System Sandbox Plan
 
 > 已完成归档。本文最初记录 `item-preview` sandbox 方案，后续 Phase F 已把同一套 `ItemSystem` / `HexPlayerInventory` 接入真实 `skill_preview.tscn` 与 `SkillPreviewWorldGI` lifecycle。
-> 当前不作为下一步开发入口；装备 grant passive、装备属性、Frost Orb / attack effect 的下一轮讨论见 [`equipment-attack-effects-next-stage.md`](equipment-attack-effects-next-stage.md)。
+> 当前不作为下一步开发入口；装备 grant passive、装备属性、Daedalus-like attack effect 已在 Phase G V1 落地，后续扩展见 [`equipment-attack-effects-next-stage.md`](equipment-attack-effects-next-stage.md)。
 
 ## Scope
 
@@ -24,8 +24,8 @@
 - 不把 item / equipment 做成 `Actor`。
 - 不在本轮 grant/revoke LGF `Ability`。
 - 不设计 Affix / 词缀 / 装备触发技能等 skill-related 机制。
-- 不修改 `Strike`、`AttackLandedEvent`、`HexBattleGeneralPassive`。
-- 不实现装备属性、法球、attack effect、durability、affix、cooldown。
+- 不修改 `Strike`、`BasicAttackLandedEvent`、`HexBattleGeneralPassive`。
+- 不实现装备属性、装备攻击特效、durability、affix、cooldown。
 - 不做完整背包经济、掉落、商店、存档。
 - 不做 stack split。V1 只支持整 stack 移动。
 - 不做 swap；occupied equipment slot 直接拒绝。
@@ -54,7 +54,7 @@
 - `item_moved_in` signal 没带 `target_slot_index`，UI 监听时无法知道落到哪个槽。
 - 当前 `ItemSystem.create_item()` 名字过业务化；它实际只是分配 item id、创建 base `ItemInstance`、写入 `_item_map`、通知 container。计划改为底层 `register_item_instance()`。
 - 新的 `ItemSystem.create_item()` 改成业务语义：接收 `container_id`、`config_id`、`count`、`slot_index`，通过 `ItemDomain` / `ItemCatalog` 创建项目级 instance data。
-- 底层注册仍先调用 `can_add_item(-1, slot_index)`；装备容器不适合直接注册新实例。V1 规定 item 只通过 `ItemSystem.create_item()` 创建到 player bag，再 move 到 equipment slot。
+- 底层注册仍先调用 `can_add_item(-1, slot_index)`；装备容器不适合直接注册新实例。V1 规定 item 只通过 `ItemSystem.create_item()` 创建到 player bag，再 move 到 equipment slot；该规则已由 `HexItemDomain.can_create_item()` 对 equipment container 做 reject 防线。
 - 当前 `ItemSystem` 没有 domain / catalog / instance data map / stack hook / snapshot hook，需要在 InventoryKit 层补扩展点。
 - `ItemSystem` 是全局 autoload；sandbox exit / reset 时必须清理本轮创建的 containers/items。
 

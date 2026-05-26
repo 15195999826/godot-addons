@@ -12,7 +12,7 @@
 - Cone AoE：首次系统验证 AoE `TargetSelector`，对比“基于格子的扇形”和“基于真实锥形角度的范围”。
 - skill-preview debug 区域 + facing 前端回归：补齐 AoE 检查区域可视化，以及之前 facing 机制缺失的渲染层回归。
 
-装备系统接入与法球/攻击特效示例移入下一阶段文档：
+装备系统接入与攻击特效示例移入 Phase G / V2+ 文档：
 
 - [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md)
 
@@ -24,7 +24,7 @@
 - 不把 `basic_attack` / `move` 写进 LGF core 概念层。
 - 不用 `config_id == "skill_strike"` 这类硬编码作为长期 contract。
 - 不把 `HexBattleGeneralPassive` 当普通 `passive` 处理；它是角色内建规则桥，不应被 Break 禁用。
-- 不在本轮实现装备系统接入 / 装备法球 / 攻击特效叠加策略。
+- 不在本轮实现装备系统接入 / 装备攻击特效 / 攻击特效叠加策略。
 
 ## Current Baseline
 
@@ -45,9 +45,9 @@
 
 改动面：
 
-- 新增 `AttackLandedEvent`。
-- `Strike` 在标准 damage 结算后发出 `AttackLandedEvent`。
-- `AttackLandedEvent` 至少包含：
+- 新增普攻命中 domain event；Phase G 后代码名统一为 `BasicAttackLandedEvent`。
+- `Strike` 在标准 damage 结算后发出 `BasicAttackLandedEvent`。
+- `BasicAttackLandedEvent` 至少包含：
 
 ```text
 attacker_actor_id
@@ -60,8 +60,8 @@ damage_event
 
 验收：
 
-- `Strike` 命中后出现 `AttackLandedEvent`。
-- Fireball / Poison tick / reflected damage / Fire Tile / Totem passive damage 不产生 `AttackLandedEvent`。
+- `Strike` 命中后出现 `BasicAttackLandedEvent`。
+- Fireball / Poison tick / reflected damage / Fire Tile / Totem passive damage 不产生 `BasicAttackLandedEvent`。
 - `actual_life_damage = 0` 时仍允许事件存在；consumer 自己 no-op。
 
 建议测试：
@@ -78,7 +78,7 @@ damage_event
 
 - 新增 example-local attribute key：`attack_lifesteal_pct`，默认 `0`。
 - 新增 `HexBattleGeneralPassive`，由 `CharacterActor.equip_abilities()` 自动 grant。
-- `HexBattleGeneralPassive` 监听 `AttackLandedEvent`，读取 attacker 当前 `attack_lifesteal_pct`，调用 `HexBattleHealAction` 治疗 attacker。
+- `HexBattleGeneralPassive` 监听 `BasicAttackLandedEvent`，读取 attacker 当前 `attack_lifesteal_pct`，调用 `HexBattleHealAction` 治疗 attacker。
 - 新增最小属性来源示例，例如 `VampiricTraining` passive，只负责给 owner 增加 `attack_lifesteal_pct`。
 - `Break` 不禁用 `HexBattleGeneralPassive`；但可以禁用提供属性的普通 passive。
 
@@ -213,7 +213,7 @@ half_angle_deg
 验收：
 
 - 本文 Open Questions 已处理或明确留作 follow-up。
-- `equipment-attack-effects-next-stage.md` 仍保持下一阶段，不被本轮实现污染。
+- `equipment-attack-effects-next-stage.md` 继续作为 Phase G / V2+ 装备攻击特效记录，不被本轮实现污染。
 - 新增 scenario / frontend smoke 已纳入测试组。
 
 建议测试：
@@ -258,19 +258,19 @@ half_angle_deg
 Strike Ability
   -> DamageAction
   -> DamageEvent(actual_life_damage, ...)
-  -> AttackLandedEvent(attacker, target, source_ability_id, actual_life_damage, damage_event payload)
+  -> BasicAttackLandedEvent(attacker, target, source_ability_id, actual_life_damage, damage_event payload)
 ```
 
 下游消费者：
 
-- `HexBattleGeneralPassive` 监听 `AttackLandedEvent`，读取 `attack_lifesteal_pct` 并调用 `HexBattleHealAction`。
+- `HexBattleGeneralPassive` 监听 `BasicAttackLandedEvent`，读取 `attack_lifesteal_pct` 并调用 `HexBattleHealAction`。
 - 普通技能伤害继续只依赖 `DamageEvent`。
 
 未来消费者：
 
-- 装备 on-hit、法球 / 攻击特效也会监听 `AttackLandedEvent`，但它们属于下一阶段，不纳入本轮交付。
+- 装备后置 on-hit / 攻击特效也会监听 `BasicAttackLandedEvent`，但它们属于下一阶段，不纳入本轮交付。
 
-本轮明确新增 `AttackLandedEvent`，不再把它作为 `DamageEvent` provenance 的可选替代。`AttackLandedEvent` 是普攻命中后的 domain event，后续装备 on-hit / 法球 / 攻击特效也复用这条边界。
+本轮明确新增普攻命中 domain event，不再把它作为 `DamageEvent` provenance 的可选替代。Phase G 后该事件代码名统一为 `BasicAttackLandedEvent`，后续装备后置 on-hit / 攻击特效复用这条边界。
 
 ### HexBattleGeneralPassive
 
@@ -303,7 +303,7 @@ Break contract：
 
 - 新增 example-local attribute key：`attack_lifesteal_pct`。
 - 新增 `HexBattleGeneralPassive`，由 `CharacterActor.equip_abilities()` 自动 grant。
-- `HexBattleGeneralPassive` 使用 `NoInstanceConfig` 监听 `AttackLandedEvent`，读取 attacker 当前 `attack_lifesteal_pct`，调用 `HexBattleHealAction` 治疗 attacker。
+- `HexBattleGeneralPassive` 使用 `NoInstanceConfig` 监听 `BasicAttackLandedEvent`，读取 attacker 当前 `attack_lifesteal_pct`，调用 `HexBattleHealAction` 治疗 attacker。
 - `HexBattleGeneralPassive` 可用 `ActivateInstanceConfig + GRANTED_SELF + periodic timeline` 处理 `hp_regen_per_sec`，未来再接 `mp_regen_per_sec`。
 - 新增被动示例：例如 `VampiricTraining`，只用 stat modifier 给 owner 增加 `attack_lifesteal_pct`，不再自己监听攻击命中。
 - 当前主动 `HexBattleLifesteal` 可以保留为主动技能；它不是普攻吸血属性的实现。

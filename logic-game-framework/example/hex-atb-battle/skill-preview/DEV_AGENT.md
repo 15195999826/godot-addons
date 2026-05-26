@@ -122,6 +122,8 @@ godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-pr
 | `set_keyframe` | `actor_idx`, `kf_idx`, `fields: {time_ms?, skill?, target?}` | 改 keyframe |
 | `reset_world_to_model` | — | 强制按 `_actors` 数据模型重建 world 并恢复初始 demo inventory |
 | `show_inventory` | — | 展开 Workspace drawer 并切到 Inventory tab, 返回 inventory layout |
+| `equip_item` | `actor_idx`, `item_config_id`, `slot?` | 从 player bag 找 matching config 装备到 actor；`slot` 为 UI/command 槽位 `1..6`，缺省或 `-1` 自动找空槽 |
+| `unequip_item` | `actor_idx`, `slot` | 卸下 actor 的 UI/command 槽位 `1..6`，item 回到 player bag |
 
 ### 观察 (只读, 不写场景)
 

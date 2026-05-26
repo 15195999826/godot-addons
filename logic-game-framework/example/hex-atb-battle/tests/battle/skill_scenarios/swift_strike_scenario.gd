@@ -1,4 +1,4 @@
-## SwiftStrike 三连击场景：验证 3 个 HIT tag 各产生一次 10 physical(或 15 crit)
+## SwiftStrike 三连击场景：验证 3 个 HIT tag 各产生一次 10 physical
 class_name SwiftStrikeScenario
 extends SkillScenario
 
@@ -35,5 +35,5 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_eq(hits.size(), 3, "3 hits from SwiftStrike")
 	for i in range(hits.size()):
 		var dmg: float = hits[i].get("damage", 0.0)
-		ctx.assert_float_in(dmg, [HIT_DAMAGE, HIT_DAMAGE * 1.5],
-			"hit #%d damage = 10 or 15 (crit)" % (i + 1))
+		ctx.assert_float_eq(dmg, HIT_DAMAGE,
+			"hit #%d damage = 10" % (i + 1))

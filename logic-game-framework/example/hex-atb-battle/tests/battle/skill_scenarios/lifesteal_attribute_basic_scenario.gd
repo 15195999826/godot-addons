@@ -8,9 +8,9 @@
 ##
 ## 时序:
 ##   t=0   caster atk=40 cast Strike enemy_0 → HIT @ t=300
-##           → damage event actual_life_damage=40 (无 shield, 无 crit) 或 60 (crit)
+##           → damage event actual_life_damage=40 (无 shield, 无 equipment crit)
 ##           → BasicAttackLandedEvent 携 actual_life_damage
-##           → GeneralPassive heal caster 40*0.5=20 (or 60*0.5=30 crit)
+##           → GeneralPassive heal caster 40*0.5=20
 class_name LifestealAttributeBasicScenario
 extends SkillScenario
 
@@ -50,16 +50,12 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"source_actor_id": ctx.caster_id,
 		"target_actor_id": ctx.enemy_id(0),
 	})
-	# 过滤主伤 (>=30, 排除 crit bonus 10)
-	var main_filtered: Array = []
-	for e in main_damages:
-		if (e.get("damage", 0.0) as float) >= 30.0:
-			main_filtered.append(e)
-	ctx.assert_eq(main_filtered.size(), 1, "Expect 1 main damage event")
-	if main_filtered.size() != 1:
+	ctx.assert_eq(main_damages.size(), 1, "Expect 1 main damage event")
+	if main_damages.size() != 1:
 		return
 
-	var actual: float = main_filtered[0].get("actual_life_damage", main_filtered[0].get("damage", 0.0)) as float
+	var actual: float = main_damages[0].get("actual_life_damage", main_damages[0].get("damage", 0.0)) as float
+	ctx.assert_float_eq(actual, CASTER_ATK, "actual_life_damage = caster atk")
 	var expected_heal: float = actual * HexBattleVampiricTraining.LIFESTEAL_PCT
 
 	# 2. heal event on caster, amount = actual * 0.5
@@ -79,7 +75,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"Heal amount = actual_life_damage %.1f * %.2f = %.1f (got %.1f)" % [actual, HexBattleVampiricTraining.LIFESTEAL_PCT, expected_heal, heal_amount],
 		1.0)
 
-	# 3. caster final hp > start hp
+	# 3. caster final hp = start + heal
 	var final_hp := ctx.actor_final_hp(ctx.caster_id)
-	ctx.assert_true(final_hp > CASTER_START_HP,
-		"After lifesteal, caster hp (%.1f) > start hp (%.1f)" % [final_hp, CASTER_START_HP])
+	ctx.assert_float_eq(final_hp, CASTER_START_HP + expected_heal,
+		"After lifesteal, caster hp = start hp + heal")

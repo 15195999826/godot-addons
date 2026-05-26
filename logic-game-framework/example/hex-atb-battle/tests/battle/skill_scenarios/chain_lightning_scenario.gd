@@ -3,9 +3,9 @@
 ## map 7x3, caster[0,0] + enemy_0[1,0] + enemy_1[2,0] + enemy_2[3,0] + enemy_3[6,2] (链外)。
 ##
 ## 期望:
-## - enemy_0 受 60 magical (允许 crit 90)
-## - enemy_1 受 48 magical (允许 crit 72)
-## - enemy_2 受 38.4 magical (允许 crit 57.6)
+## - enemy_0 受 60 magical
+## - enemy_1 受 48 magical
+## - enemy_2 受 38.4 magical
 ## - enemy_3 不应受到伤害 (太远, 链 3 跳后 next chain 找不到它)
 ## - projectileLaunched / projectileHit 各 3 个, customData 带 chain_id / hit_index 0/1/2
 ## - 3 个 damage event 所在 replay frame 严格递增 (证明不是同帧 local loop)
@@ -15,7 +15,6 @@ extends SkillScenario
 
 const BASE_DAMAGE := HexBattleChainLightning.BASE_DAMAGE
 const FALLOFF := HexBattleChainLightning.FALLOFF
-const CRIT_MULT := 1.5  # 与 DamageAction 0.1 crit chance × 1.5 一致
 
 
 func get_name() -> String:
@@ -58,24 +57,24 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		ctx.fail("enemy_0 未收到 damage event")
 	else:
 		var d0: float = d0_arr[0].get("damage", -1.0) as float
-		ctx.assert_float_in(d0, [BASE_DAMAGE, BASE_DAMAGE * CRIT_MULT],
-			"enemy_0 首跳 damage = 60 (允许 crit 90)")
+		ctx.assert_float_eq(d0, BASE_DAMAGE,
+			"enemy_0 首跳 damage = 60")
 
 	if d1_arr.is_empty():
 		ctx.fail("enemy_1 未收到 damage event")
 	else:
 		var d1: float = d1_arr[0].get("damage", -1.0) as float
 		var expected_d1 := BASE_DAMAGE * (1.0 - FALLOFF)
-		ctx.assert_float_in(d1, [expected_d1, expected_d1 * CRIT_MULT],
-			"enemy_1 第二跳 damage = 48 (允许 crit 72)")
+		ctx.assert_float_eq(d1, expected_d1,
+			"enemy_1 第二跳 damage = 48")
 
 	if d2_arr.is_empty():
 		ctx.fail("enemy_2 未收到 damage event")
 	else:
 		var d2: float = d2_arr[0].get("damage", -1.0) as float
 		var expected_d2 := BASE_DAMAGE * pow(1.0 - FALLOFF, 2)
-		ctx.assert_float_in(d2, [expected_d2, expected_d2 * CRIT_MULT],
-			"enemy_2 第三跳 damage = 38.4 (允许 crit 57.6)")
+		ctx.assert_float_eq(d2, expected_d2,
+			"enemy_2 第三跳 damage = 38.4")
 
 	ctx.assert_eq(d3_arr.size(), 0,
 		"enemy_3 (链外远敌) 不应受到伤害 (3 跳上限)")

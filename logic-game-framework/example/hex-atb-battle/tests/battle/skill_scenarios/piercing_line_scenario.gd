@@ -55,7 +55,6 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 			"source_actor_id": ctx.caster_id,
 			"target_actor_id": ctx.enemy_id(enemy_idx),
 		})
-		# 过滤主 damage event (atk 50; crit *1.5 = 75; crit bonus 10 单独)
 		var main: Array = []
 		for e in enemy_damages:
 			if (e.get("damage", 0.0) as float) >= 40.0:
@@ -63,3 +62,6 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		damages.append(main)
 		ctx.assert_eq(main.size(), 1,
 			"Expect 1 main damage on enemy_%d (got %d)" % [enemy_idx, main.size()])
+		if main.size() == 1:
+			ctx.assert_float_eq(main[0].get("damage", 0.0) as float, CASTER_ATK,
+				"enemy_%d damage = caster atk" % enemy_idx)

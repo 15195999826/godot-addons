@@ -29,7 +29,7 @@ func get_scene_config() -> Dictionary:
 		"map": {"rows": 3, "cols": 6},
 		"caster": {"class": "WARRIOR", "pos": [0, 0], "atk": CASTER_ATK, "hp": 1000},
 		"enemies": [
-			# hp=1, 一击必死;max_hp=100 防 crit overflow
+			# hp=1, 一击必死;max_hp=100 保持死亡记录字段稳定
 			{"class": "WARRIOR", "pos": [1, 0], "hp": 1, "max_hp": 100},
 		],
 	}
