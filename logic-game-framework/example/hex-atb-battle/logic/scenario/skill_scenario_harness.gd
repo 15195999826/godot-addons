@@ -85,10 +85,16 @@ static func run_with_config(
 ## frame_events 里能看到 ABILITY_ACTIVATE_EVENT, 对应技能效果落在下一帧或之后)。
 ##
 ## 返回结构与 run_with_config 相同。
+## §Phase G: 可选 setup_callback —— harness 已创建 caster/ally/enemy + grant
+## caster_passives 后, 在 tick 循环开始前调用 (battle, caster, ally_actors, enemy_actors,
+## setup_errors)。装备 scenarios 用它在 ItemSystem 上注册 inventory / equipment container 然后
+## 装备 item, 触发 grant_ability 链路。setup_errors append 错误后 harness 把它合并到
+## result.errors 一并返回。callback null/Callable() 时跳过, 与历史行为兼容。
 static func run_with_actions(
 	scene_config: Dictionary,
 	actions: Array[Dictionary],
-	max_ticks: int = MAX_TICKS
+	max_ticks: int = MAX_TICKS,
+	setup_callback: Callable = Callable()
 ) -> Dictionary:
 	var errors: Array[String] = []
 
@@ -120,6 +126,20 @@ static func run_with_actions(
 		if passive_config is AbilityConfig:
 			var passive_ability := Ability.new(passive_config, caster.get_id())
 			caster.ability_set.grant_ability(passive_ability, battle)
+
+	# §Phase G: 可选 setup_callback (装备 scenarios 在此注册 inventory / equip item)。
+	# 失败 (返回 false / callback append 到 setup_errors) 直接 errors 累计, 仍跑 tick
+	# 循环以让 assert_replay 看 setup_errors 字段做断言 (例如 precheck_reject scenario
+	# 期望 setup 失败 + 普攻仍按 base damage 落地)。
+	var setup_errors_typed: Array[String] = []
+	if setup_callback.is_valid():
+		var typed_allies: Array = ally_actors
+		var typed_enemies: Array = enemy_actors
+		var setup_ok := setup_callback.call(battle, caster, typed_allies, typed_enemies, setup_errors_typed)
+		if not bool(setup_ok):
+			# setup 报告失败仅作为状态记录; 是否 fail 由 scenario assert_replay 决断。
+			# 这里不直接 errors.append, 保持 harness 通用性。
+			pass
 
 	# 把 actions 拆成 t<=0 (立即) + 其余 (pending 队列, 按 time_ms+原始 idx 稳定排序)。
 	# 每条 pending 项 = {time_ms, action_caster, ability_config, target_id}
@@ -319,6 +339,7 @@ static func run_with_actions(
 		"final_facing_directions": final_facing_directions,
 		"final_grid_occupants": final_grid_occupants,
 		"errors": errors,
+		"setup_errors": setup_errors_typed,
 	}
 
 

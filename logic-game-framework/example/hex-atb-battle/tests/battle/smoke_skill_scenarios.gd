@@ -94,8 +94,11 @@ func _run_scenario(path: String) -> void:
 		scene_config = scene_config.duplicate()
 		scene_config["min_ticks"] = min_ticks
 
+	# §Phase G: 装备 scenarios 用 setup_battle 在 tick 前注册 inventory + equip item。
+	# 默认 SkillScenario.setup_battle 是 no-op (return true), 不影响普通 scenarios。
+	var setup_callable := Callable(scenario, "setup_battle")
 	var result := HexBattleSkillScenarioHarness.run_with_actions(
-		scene_config, actions, scenario.get_max_ticks()
+		scene_config, actions, scenario.get_max_ticks(), setup_callable
 	)
 
 	# Phase 04: passive periodic timeline (如 Demon Form) 永不自停, max_ticks 触发 timeout

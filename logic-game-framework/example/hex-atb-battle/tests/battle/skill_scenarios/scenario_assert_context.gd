@@ -34,6 +34,11 @@ var final_facing_directions: Dictionary = {}
 ## "q,r" → occupant actor_id，战斗结束瞬间 grid.occupant 快照
 var final_grid_occupants: Dictionary = {}
 
+## §Phase G: setup_battle hook (装备 scenarios 等) 内 append 的错误列表;
+## scenario assert_replay 通过 ctx.setup_errors 决断 setup 阶段是否符合预期 (例如
+## precheck_reject_move scenario 期望 setup 在装备时失败)。
+var setup_errors: Array[String] = []
+
 var _failures: Array[String] = []
 
 
@@ -47,6 +52,7 @@ func _init(preview_result: Dictionary) -> void:
 	final_actor_attributes = preview_result.get("final_actor_attributes", {}) as Dictionary
 	final_facing_directions = preview_result.get("final_facing_directions", {}) as Dictionary
 	final_grid_occupants = preview_result.get("final_grid_occupants", {}) as Dictionary
+	setup_errors = preview_result.get("setup_errors", []) as Array[String]
 	events = _flatten_events(preview_result.get("replay", {}) as Dictionary)
 
 

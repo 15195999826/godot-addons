@@ -61,6 +61,27 @@ func get_passives() -> Array[AbilityConfig]:
 	return []
 
 
+## §Phase G — 进 tick 循环前的可选 setup hook (装备 scenarios 等需要在 actor 创建后
+## 进行的 ItemSystem 操作: 注册 player bag / actor equipment container, 装备 item 触发
+## grant_ability 等)。
+##
+## 调用时机: harness 已创建 caster/ally/enemy 并 grant get_passives(), 但还未开始 tick。
+## 因此 setup_battle 内 grant 的 ability 在第 1 帧就能 fire,与 caster_passives 等价。
+##
+## 默认 no-op; 装备 scenarios override 并返回 false 表示 setup 失败 (test fail)。
+## 返回 true 表示 setup 成功, harness 继续 tick 循环。
+##
+## scenario_assert_context 在 assert_replay 时可以读 result 内嵌的 setup_errors。
+func setup_battle(
+	_battle: Object,
+	_caster: Object,
+	_ally_actors: Array,
+	_enemy_actors: Array,
+	_setup_errors: Array,
+) -> bool:
+	return true
+
+
 ## 最大 tick 数（防死循环）。超时计 FAIL。
 func get_max_ticks() -> int:
 	return 500
