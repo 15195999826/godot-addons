@@ -64,7 +64,12 @@ func can_create_item(_config_id: StringName, _container_id: int, _slot_index: in
 	return ContainerResult.ok(true)
 
 
-## 目标 = equipment container 时, item 必须 equipable
+## 目标 = equipment container 时, item 必须 equipable 且 granted_abilities 全部可解析。
+##
+## Phase G: granted_abilities[*].ability_config_id 必须由
+## HexEquipmentAbilityResolver 全部解析为已注册 AbilityConfig, 否则 reject move
+## (Plan §"callback 不能承担失败回滚": 进入 container callback 前必须预校验完毕,
+## 防止 grant 一半失败后无法回滚)。
 func can_move_item(item_id: int, target_container_id: int, _target_slot_index: int) -> ContainerResult:
 	if not _equipment_container_ids.has(target_container_id):
 		return ContainerResult.ok(true)
@@ -77,6 +82,13 @@ func can_move_item(item_id: int, target_container_id: int, _target_slot_index: i
 	var cfg := ItemSystem.get_item_config(data.config_id)
 	if not bool(cfg.get("equipable", false)):
 		return ContainerResult.fail("item %s 不可装备" % str(data.config_id))
+
+	# Phase G: granted_abilities 预校验 — 任一 ability_config_id 无法解析 → reject
+	var granted: Variant = cfg.get("granted_abilities", null)
+	if not HexEquipmentAbilityResolver.resolve_all_ok(granted):
+		return ContainerResult.fail(
+			"item %s granted_abilities 含未注册 ability_config_id, 无法装备" % str(data.config_id)
+		)
 
 	return ContainerResult.ok(true)
 

@@ -44,6 +44,36 @@ func _init() -> void:
 		"item_tags": [&"material"],
 		"equipable": false,
 	}
+	# Phase G — 装备攻击特效示范装备 (granted_abilities 由 HexActorEquipmentContainer
+	# 在 grant 阶段消费; granted ability 必须能被 HexEquipmentAbilityResolver 解析)。
+	_configs[&"morbid_mask"] = {
+		"id": &"morbid_mask",
+		"display_name": "腐化面具",
+		"icon_key": "rune",
+		"max_stack": 1,
+		"item_tags": [&"equipment"],
+		"equipable": true,
+		"granted_abilities": [
+			{
+				"ability_config_id": &"passive_vampiric_training",
+				"source": &"equipment",
+			},
+		],
+	}
+	_configs[&"daedalus_charm"] = {
+		"id": &"daedalus_charm",
+		"display_name": "代达罗斯之殇",
+		"icon_key": "rune",
+		"max_stack": 1,
+		"item_tags": [&"equipment"],
+		"equipable": true,
+		"granted_abilities": [
+			{
+				"ability_config_id": &"passive_daedalus_critical_strike",
+				"source": &"equipment",
+			},
+		],
+	}
 
 
 func has_config(config_id: StringName) -> bool:
