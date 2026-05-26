@@ -107,7 +107,7 @@ V1 只支持一个 active item domain / session。`item-preview` 和未来 `skil
 生命周期 API 必须拆开：
 
 - `ItemSystem.reset_session()`：完整 teardown，清理本轮 tracked items、tracked containers、instance data、domain state。用于 `item-preview` exit、整场景销毁、测试清理。
-- `HexPlayerInventory.reset_actor_equipment_keep_player()`：Hex 项目侧 orchestration，只清理 actor equipment containers，把装备 item 先通过 `ItemSystem.move_item()` 移回 player bag，保留 player bag、player-owned items、instance data 和 domain。用于未来 `SkillPreviewWorldGI.reset()`。
+- `HexPlayerInventory.reset_actor_equipment_keep_player()`：Hex 项目侧 orchestration，只清理 actor equipment containers，把装备 item 先通过 `ItemSystem.move_item()` 移回 player bag，保留 player bag、player-owned items、instance data 和 domain。用于需要保留玩家背包的 reset 语义；SkillPreview 当前产品 reset 采用初始 demo 状态重建。
 
 未配置 domain / catalog 的行为：
 
@@ -341,7 +341,7 @@ attack_effect_ids: Array[StringName]
 - 维护 player bag container id 和 player-owned item ids。
 - 提供 `register_actor(actor_id, equipment_container_id)` / `unregister_actor(actor_id)`。
 - 负责 actor equipment container lifecycle：创建、登记、卸回背包、unregister。
-- 提供 `reset_actor_equipment_keep_player()`，用于保留 player bag 时清理并重建 actor equipment containers。
+- 提供 `reset_actor_equipment_keep_player()`，用于保留 player bag 时清理并重建 actor equipment containers；SkillPreview 当前产品 reset 走完整 demo session rebuild。
 - 在 sandbox reset / exit 时清理本轮 containers/items。
 
 不负责：
@@ -777,13 +777,13 @@ Drag bag item to actor slot
 
 - 在 `SkillPreviewWorldGI` / `skill_preview.gd` lifecycle 中接入已验证的 `ItemSystem` + Hex domain model。
 - actor add/remove/reset 时同步管理 equipment containers。
-- 保留 player bag 和 player-owned items，只重建 scene actor equipment。
+- 当前 SkillPreview reset 恢复初始 demo 状态：重建 ItemSystem session、player bag seed、scene actor equipment containers。
 
 - `SkillPreviewWorldGI` / `skill_preview.gd` 启动时配置 `ItemSystem.configure_domain(HexItemDomain, HexItemCatalog)`。
 - `SkillPreviewWorldGI` 持有同一套 `HexPlayerInventory`。
 - `SkillPreviewWorldGI.add_actor()` 后，为所有 scene 内 `HexBattleActor` / `BattleActor` 注册 equipment container。
 - `SkillPreviewWorldGI.remove_actor()` 前，通过 `ItemSystem.move_item()` 把装备 item 移回 player bag 并 unregister container。
-- `SkillPreviewWorldGI.reset()` 调用 `HexPlayerInventory.reset_actor_equipment_keep_player()`，保留 player bag 和 player-owned items，只清理并重建 actor equipment containers。
+- `skill_preview.gd` reset 时重建 preview-local `ItemSystem` session 和 seed inventory；`SkillPreviewWorldGI` 重新绑定新的 `HexPlayerInventory`，随后用新的 runtime actor ids 注册 equipment containers。
 
 边界：
 
