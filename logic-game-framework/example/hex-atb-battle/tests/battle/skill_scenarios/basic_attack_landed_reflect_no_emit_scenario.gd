@@ -1,19 +1,19 @@
-## Phase A · AttackLandedEvent 负面契约：反伤不重复 emit
+## Phase A · BasicAttackLandedEvent 负面契约：反伤不重复 emit
 ##
 ## V1 契约 (per advanced-skills-next-batch.md Phase A):
-##   reflected damage 不产生 AttackLandedEvent
+##   reflected damage 不产生 BasicAttackLandedEvent
 ##
 ## 设定：caster 装 Thorn 被动, enemy_0 用 Strike 攻击 caster。
-##   - enemy_0 Strike → 1 AttackLandedEvent (来自 enemy_0)
+##   - enemy_0 Strike → 1 BasicAttackLandedEvent (来自 enemy_0)
 ##   - Thorn 反伤 → ReflectDamageAction 推 reflected damage event,
-##     不通过 HexBattleDamageAction.on_hit chain → 无 AttackLandedEvent
-## 综合: 总共 1 条 AttackLandedEvent (来自 enemy_0 的 Strike), 不论 crit
-class_name AttackLandedReflectNoEmitScenario
+##     不通过 HexBattleDamageAction.on_hit chain → 无 BasicAttackLandedEvent
+## 综合: 总共 1 条 BasicAttackLandedEvent (来自 enemy_0 的 Strike)
+class_name BasicAttackLandedReflectNoEmitScenario
 extends SkillScenario
 
 
 func get_name() -> String:
-	return "AttackLanded: reflected damage does NOT emit AttackLandedEvent"
+	return "BasicAttackLanded: reflected damage does NOT emit BasicAttackLandedEvent"
 
 
 func get_scene_config() -> Dictionary:
@@ -45,11 +45,11 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	})
 	ctx.assert_true(reflected.size() >= 1, "Thorn did fire reflect damage (sanity)")
 
-	# 核心契约: 只有 enemy_0 Strike 的 1 条 AttackLandedEvent,
-	# Thorn 反伤的 damage event 不复触发 AttackLandedEvent
-	var attack_events := ctx.events_of_kind("attack_landed")
+	# 核心契约: 只有 enemy_0 Strike 的 1 条 BasicAttackLandedEvent,
+	# Thorn 反伤的 damage event 不复触发 BasicAttackLandedEvent
+	var attack_events := ctx.events_of_kind("basic_attack_landed")
 	ctx.assert_eq(attack_events.size(), 1,
-		"Expect exactly 1 AttackLandedEvent — reflected damage must not produce additional one (got %d)" % attack_events.size())
+		"Expect exactly 1 BasicAttackLandedEvent — reflected damage must not produce additional one (got %d)" % attack_events.size())
 	if attack_events.is_empty():
 		return
 	var e: Dictionary = attack_events[0]

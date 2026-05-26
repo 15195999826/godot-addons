@@ -1,18 +1,18 @@
-## Phase A · AttackLandedEvent 基线：Strike 命中后必定 emit 一条事件
+## Phase A · BasicAttackLandedEvent 基线：Strike 命中后必定 emit 一条事件
 ##
 ## V1 契约:
-## - Strike 主伤命中且未被 cancelled / 目标未死 → 一条 AttackLandedEvent
+## - Strike 主伤命中且未被 cancelled / 目标未死 → 一条 BasicAttackLandedEvent
 ## - 字段必含: attacker_actor_id / target_actor_id / source_ability_id /
 ##   source_ability_config_id / actual_life_damage / damage_event
 ## - actual_life_damage > 0 (无 shield 全吸)
-## - 不论 crit 与否, 单次 Strike cast 只触发 1 条 AttackLandedEvent
-##   (crit bonus damage 不携带 attack_landed callback)
+## - 单次 Strike cast 只触发 1 条 BasicAttackLandedEvent (Phase G 起 Strike 不再
+##   自带 crit bonus damage, 暴击改由装备 grant 的 PreBasicAttackEvent passive 决定)
 ##
 ## 时序:
 ##   t=0 caster atk=40 cast Strike target enemy_0 → HIT @ t=300
 ##     → damage event source=caster target=enemy_0
-##     → on_hit callback _EmitAttackLandedAction → AttackLandedEvent
-class_name AttackLandedStrikeEmitsScenario
+##     → on_hit callback _EmitBasicAttackLandedAction → BasicAttackLandedEvent
+class_name BasicAttackLandedStrikeEmitsScenario
 extends SkillScenario
 
 
@@ -20,7 +20,7 @@ const CASTER_ATK := 40.0
 
 
 func get_name() -> String:
-	return "AttackLanded: Strike emits one AttackLandedEvent per cast"
+	return "BasicAttackLanded: Strike emits one BasicAttackLandedEvent per cast"
 
 
 func get_scene_config() -> Dictionary:
@@ -41,9 +41,9 @@ func get_max_ticks() -> int:
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var enemy := ctx.enemy_id(0)
-	var attack_events := ctx.events_of_kind("attack_landed")
+	var attack_events := ctx.events_of_kind("basic_attack_landed")
 	ctx.assert_eq(attack_events.size(), 1,
-		"Expect exactly 1 AttackLandedEvent (got %d)" % attack_events.size())
+		"Expect exactly 1 BasicAttackLandedEvent (got %d)" % attack_events.size())
 	if attack_events.is_empty():
 		return
 	var e: Dictionary = attack_events[0]

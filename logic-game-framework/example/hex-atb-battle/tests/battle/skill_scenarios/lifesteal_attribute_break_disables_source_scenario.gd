@@ -8,8 +8,8 @@
 ## 时序:
 ##   t=0      enemy_0 cast Break caster → caster Break buff 2000ms, VampiricTraining disabled
 ##                                         → caster attack_lifesteal_pct → 0
-##   t=600    caster Strike enemy_0 → AttackLandedEvent → GeneralPassive 读 pct=0 → 早退
-##   t=3000   (Break 已 expire) caster Strike enemy_0 → AttackLandedEvent →
+##   t=600    caster Strike enemy_0 → BasicAttackLandedEvent → GeneralPassive 读 pct=0 → 早退
+##   t=3000   (Break 已 expire) caster Strike enemy_0 → BasicAttackLandedEvent →
 ##                                         VampiricTraining 已 re-enable, pct=0.5 → heal
 ##
 ## 关键: 战斗结束 caster 应仍持有 HexBattleGeneralPassive (Break 不禁它).

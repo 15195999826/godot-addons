@@ -2,14 +2,14 @@
 ##
 ## V1 契约:
 ## - VampiricTraining (passive) 通过 StatModifier 给 owner +0.5 attack_lifesteal_pct
-## - Strike 命中 → AttackLandedEvent → HexBattleGeneralPassive 监听 →
+## - Strike 命中 → BasicAttackLandedEvent → HexBattleGeneralPassive 监听 →
 ##   读 attacker.attack_lifesteal_pct = 0.5 → 调 HexBattleHealAction heal 0.5 * actual_life_damage
 ## - heal event source/target = caster (attacker 自治)
 ##
 ## 时序:
 ##   t=0   caster atk=40 cast Strike enemy_0 → HIT @ t=300
 ##           → damage event actual_life_damage=40 (无 shield, 无 crit) 或 60 (crit)
-##           → AttackLandedEvent 携 actual_life_damage
+##           → BasicAttackLandedEvent 携 actual_life_damage
 ##           → GeneralPassive heal caster 40*0.5=20 (or 60*0.5=30 crit)
 class_name LifestealAttributeBasicScenario
 extends SkillScenario

@@ -5,7 +5,7 @@
 ## 表达"角色固有规则, 与 buff/可选 passive 区分".
 ##
 ## Phase B 实现的子能力:
-##   - attack_lifesteal_pct: AttackLandedEvent → 按 actual_life_damage * pct heal attacker.
+##   - attack_lifesteal_pct: BasicAttackLandedEvent → 按 actual_life_damage * pct heal attacker.
 ##
 ## 未来按需扩展 (本文档列出的 contract):
 ##   - hp_regen_per_sec (Phase C)
@@ -45,7 +45,7 @@ static var _HP_REGEN_PER_SEC_RESOLVER: FloatResolver = Resolvers.float_fn(func(c
 
 ## attack_lifesteal_pct = 0 / actual_life_damage = 0 / source 不在场都走早退,
 ## 不产生 heal event. 健壮性 ge: 不假设 attacker 仍活 (caster mid-cast 死亡仍允许 emit
-## AttackLandedEvent —— consumer 自查).
+## BasicAttackLandedEvent —— consumer 自查).
 class _LifestealAction:
 	extends Action.SkillLocalAction
 
@@ -86,10 +86,10 @@ class _LifestealAction:
 		)
 
 
-## Trigger filter: attacker 必须是 passive owner; attack_landed event 只对"我打出"那一次响应.
+## Trigger filter: attacker 必须是 passive owner; basic_attack_landed event 只对"我打出"那一次响应.
 ## actual_life_damage > 0 检查放在 _LifestealAction 内部, 不进 filter —— 仅作风格选择, NoInstanceComponent
-## 的 filter 对其它 attack_landed 消费者 (Phase B+ 装备 on-hit / 法球) 没有 short-circuit 语义.
-static func _attack_landed_filter() -> Callable:
+## 的 filter 对其它 basic_attack_landed 消费者 (Phase B+ 装备 on-hit / 法球) 没有 short-circuit 语义.
+static func _basic_attack_landed_filter() -> Callable:
 	return func(event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
 		var owner_id := ctx.owner_actor_id
 		if owner_id.is_empty():
@@ -106,7 +106,7 @@ static var ABILITY: AbilityConfig = (
 	.ability_tags(["intrinsic", "character_rules"])
 	.component_config(
 		NoInstanceConfig.builder()
-		.trigger(TriggerConfig.new("attack_landed", _attack_landed_filter()))
+		.trigger(TriggerConfig.new("basic_attack_landed", _basic_attack_landed_filter()))
 		.action(_LifestealAction.new())
 		.build()
 	)
