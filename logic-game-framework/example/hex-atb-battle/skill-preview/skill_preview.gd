@@ -1736,16 +1736,18 @@ func _remove_actor_at(idx: int) -> void:
 	_rebuild_inspector()
 
 
-func _remove_environment_at(idx: int) -> void:
+func _remove_environment_at(idx: int) -> bool:
 	if idx < 0 or idx >= _environments.size():
-		return
+		return false
 	var env_pos: Array = (_environments[idx] as Dictionary).get("pos", [0, 0])
 	var removed_coord := HexCoord.new(int(env_pos[0]), int(env_pos[1]))
 	var removed_selection := _selected_kind == SELECT_ENVIRONMENT and _selected_environment_idx == idx
 	if not _is_playing and idx < _environment_ids.size():
 		var env_id := _environment_ids[idx]
 		if env_id != "":
-			_world.remove_actor(env_id)
+			if not _world.remove_actor(env_id):
+				_set_status("Remove environment failed")
+				return false
 		_environment_ids.remove_at(idx)
 	_environments.remove_at(idx)
 	if _selected_environment_idx > idx:
@@ -1754,6 +1756,7 @@ func _remove_environment_at(idx: int) -> void:
 		_select_hex_at(removed_coord, false)
 	_set_status("StoneWall removed")
 	_rebuild_inspector()
+	return true
 
 
 func _find_actor_idx_at(q: int, r: int) -> int:
@@ -4158,16 +4161,16 @@ func _make_actor_spin(
 ## 的视觉抖动。
 ##
 ## 战斗播放期间 (_is_playing=true) 不 reset, 避免打断正在播的 animator。
-func _reset_world_to_model() -> void:
+func _reset_world_to_model() -> bool:
 	if _is_playing:
-		return
-	_reset_world_to_model_unguarded()
+		return false
+	return _reset_world_to_model_unguarded()
 
 
-func _reset_world_to_model_unguarded() -> void:
+func _reset_world_to_model_unguarded() -> bool:
 	if not _world.reset():
 		_set_inventory_op_result(false, "world reset aborted: failed to unload equipment", "equipment_unload_failed")
-		return
+		return false
 	_role_id_to_actor_id.clear()
 	_actor_ids.clear()
 	_environment_ids.clear()
@@ -4187,6 +4190,7 @@ func _reset_world_to_model_unguarded() -> void:
 		_spawn_one_environment(i)
 	_update_hex_selection_cursor()
 	_refresh_inventory_all()
+	return true
 
 
 func _sanitize_actor_positions() -> bool:
@@ -4940,10 +4944,12 @@ func _on_battle_final_state_ready(state: Dictionary) -> void:
 
 ## 用户主动重置: world 状态归零到 _actors 数据模型对应的"战前"。清 console log
 ## (战斗记录已无对应 world 状态可对照, 留着易误读) + 重置 status + 启用 START。
-func _on_reset_pressed() -> void:
+func _on_reset_pressed() -> bool:
 	if _is_playing:
-		return
-	_reset_world_to_model_unguarded()
+		return false
+	if not _reset_world_to_model_unguarded():
+		_set_status("Reset failed — equipment could not be unloaded")
+		return false
 	_console_log.clear()
 	_set_console_expanded(false)
 	_set_inspector_editable(true)
@@ -4954,6 +4960,7 @@ func _on_reset_pressed() -> void:
 	_last_timeline = {}
 	_refresh_runtime_layout()
 	_frame_stage_camera()
+	return true
 
 
 ## 重播缓存的录像: 不动 world, 仅 animator.reset() (director 内部 _world.reset_to
@@ -6181,7 +6188,8 @@ func dev_agent_start_battle() -> Dictionary:
 func dev_agent_reset_battle() -> Dictionary:
 	if _is_playing:
 		return {"ok": false, "message": "cannot reset while playing"}
-	_on_reset_pressed()
+	if not _on_reset_pressed():
+		return {"ok": false, "message": "battle reset failed: equipment unload failed", "data": dev_agent_inventory_state()}
 	return {"ok": true, "message": "battle reset", "data": dev_agent_inventory_state()}
 
 
@@ -6380,7 +6388,8 @@ func dev_agent_remove_environment(idx: int) -> Dictionary:
 		return {"ok": false, "message": "cannot remove environment while playing"}
 	if idx < 0 or idx >= _environments.size():
 		return {"ok": false, "message": "idx out of range: %d" % idx}
-	_remove_environment_at(idx)
+	if not _remove_environment_at(idx):
+		return {"ok": false, "message": "environment %d remove failed" % idx}
 	return {"ok": true, "message": "environment %d removed" % idx}
 
 
@@ -6439,5 +6448,6 @@ func dev_agent_set_keyframe(actor_idx: int, kf_idx: int, fields: Dictionary) -> 
 func dev_agent_reset_world_to_model() -> Dictionary:
 	if _is_playing:
 		return {"ok": false, "message": "cannot reset while playing"}
-	_reset_world_to_model_unguarded()
+	if not _reset_world_to_model_unguarded():
+		return {"ok": false, "message": "world reset failed: equipment unload failed", "data": dev_agent_inventory_state()}
 	return {"ok": true, "message": "world reset to model", "data": dev_agent_inventory_state()}

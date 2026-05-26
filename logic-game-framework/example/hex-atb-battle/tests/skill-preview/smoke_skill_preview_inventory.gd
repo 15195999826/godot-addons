@@ -85,9 +85,9 @@ func _phase_drag_drop_contract() -> bool:
 	var actor0: Dictionary = (state.get("actors", []) as Array)[0] as Dictionary
 	var eq0 := int(actor0.get("equipment_container_id", -1))
 
-	var sword_id := _find_bag_item(state, &"training_sword")
-	var orb_id := _find_bag_item(state, &"frost_orb")
-	var stone_id := _find_bag_item(state, &"broken_stone")
+	var sword_id := _find_bag_item(state, &"training_sword", 0)
+	var orb_id := _find_bag_item(state, &"frost_orb", 1)
+	var stone_id := _find_bag_item(state, &"broken_stone", 3)
 	if sword_id <= 0 or orb_id <= 0 or stone_id <= 0:
 		return _fail("missing expected seed items sword=%d orb=%d stone=%d" % [sword_id, orb_id, stone_id])
 
@@ -151,7 +151,7 @@ func _phase_add_remove_actor_lifecycle() -> bool:
 	if new_eq_id <= 0 or ItemSystem.get_container(new_eq_id) == null:
 		return _fail("new actor equipment container missing")
 
-	var sword_id := _find_bag_item(after_add, &"training_sword")
+	var sword_id := _find_bag_item(after_add, &"training_sword", 4)
 	if sword_id <= 0:
 		return _fail("no sword left in bag for add/remove lifecycle")
 	_preview.handle_drop({"item_id": sword_id}, new_eq_id, 0)
@@ -177,7 +177,7 @@ func _phase_add_remove_actor_lifecycle() -> bool:
 func _phase_reset_keeps_player_bag() -> bool:
 	var before: Dictionary = _preview.dev_agent_inventory_state()
 	var bag_id := int(before.get("player_bag_id", -1))
-	var sword_id := _find_bag_item(before, &"training_sword")
+	var sword_id := _find_bag_item(before, &"training_sword", 0)
 	var actor0: Dictionary = (before.get("actors", []) as Array)[0] as Dictionary
 	var old_actor_id := str(actor0.get("actor_id", ""))
 	var old_eq_id := int(actor0.get("equipment_container_id", -1))
@@ -234,10 +234,11 @@ func _phase_start_reset_consistency() -> bool:
 	return true
 
 
-func _find_bag_item(state: Dictionary, config_id: StringName) -> int:
+func _find_bag_item(state: Dictionary, config_id: StringName, slot_index: int) -> int:
 	for item_v in state.get("bag", []) as Array:
 		var item := item_v as Dictionary
-		if StringName(item.get("config_id", &"")) == config_id:
+		if StringName(item.get("config_id", &"")) == config_id \
+				and int(item.get("slot_index", -1)) == slot_index:
 			return int(item.get("item_id", 0))
 	return 0
 
