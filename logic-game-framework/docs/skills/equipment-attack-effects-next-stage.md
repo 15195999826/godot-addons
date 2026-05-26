@@ -1,7 +1,7 @@
 # Equipment Attack Effects Next Stage
 
-> 下一阶段目标。本文承接装备系统接入 + 装备法球 / 攻击特效讨论，不纳入当前 `GeneralPassive + Cone AoE` 批次。
-> 前置依赖：当前批次需要先稳定 `AttackLandedEvent`、`HexBattleGeneralPassive`、普攻吸血属性，以及普攻/普通技能的触发边界。
+> 当前准备讨论的 Phase G 候选。本文承接装备系统接入 + 装备法球 / 攻击特效讨论。
+> 前置依赖已经由 `GeneralPassive + Cone AoE` 批次和 SkillPreview inventory integration 提供：`AttackLandedEvent`、`HexBattleGeneralPassive`、普攻吸血属性、普攻/普通技能触发边界，以及可在 SkillPreview 中给 runtime actor 装备物品的基础 UI/lifecycle。
 
 ## Scope
 
@@ -22,7 +22,7 @@
 
 ## Baseline From Current Batch
 
-当前批次应先提供这些基础能力：
+已具备的基础能力：
 
 ```text
 Strike Ability

@@ -1,49 +1,58 @@
-# Skills & Systems — 设计与规划文档
+# Skills & Systems Docs
 
-inkmon 项目层的**技能/战斗系统**设计与持续演进路线图。
+inkmon 项目层的技能 / 战斗系统设计、完成记录和后续路线入口。
 
-## 这里放什么
+## 先看这里
 
-- 系统/机制级的设计方案（护盾、状态、AI 行为树等）
-- 项目层既有流程的事实记录（如伤害管线）
-- 已实现/未实现 feature 状态
-- V2/V3 路线图与优先级
-- 设计决策记录（为什么这样选、为什么不那样）
-- 已知限制与待拍板的边界 case
+| 你要做什么 | 入口 |
+|---|---|
+| 准备下一轮技能 / 装备能力开发 | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
+| 查已经落地了哪些技能和 pattern | [skill-implementation-progress.md](skill-implementation-progress.md) |
+| 查 SkillPreview + ItemSystem 接入历史 | [skill-preview-item-system-plan.md](skill-preview-item-system-plan.md) |
+| 查稳定系统参考 | [damage-pipeline.md](damage-pipeline.md), [shield-system.md](shield-system.md) |
 
-## 这里**不**放什么
+## 信息架构
 
-- LGF 框架层的架构推理 → 去 [`addons/logic-game-framework/docs/design-notes/`](../../addons/logic-game-framework/docs/design-notes/)
-- 单技能的数值/行为细节 → 写在技能 `.gd` 文件头部注释
-- 已修复 bug 的 post-mortem → 走 LGF 的 `design-notes/` 或 commit message
+这里不维护一个巨型“已完成”正文。已完成内容只在 README 和进度文档里做短索引，细节继续留在原计划、progress、scenario 和 commit 里。
+
+| 分类 | 用法 | 维护规则 |
+|---|---|---|
+| Current | 当前正准备讨论 / 开发的目标 | 只能有少数入口，避免并行焦点过多 |
+| Completed | 已完成里程碑索引和 pattern 速查 | 只写摘要 + 链接，不复制长方案正文 |
+| Future | 未来可能做、但还未拍板的 backlog | 写清 open question 和 non-goal，不提前落成实施方案 |
+| Reference | 已稳定系统的事实文档 | 代码 contract 变化后同步更新 |
+
+## Current
+
+| 文档 | 状态 | 内容 |
+|---|---|---|
+| [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) | 🟡 当前准备讨论 | Phase G 候选：装备 grant passive / 属性、Frost Orb / attack effect、Break 与 item source policy 等开放问题 |
+
+## Completed
+
+| 文档 | 状态 | 内容 |
+|---|---|---|
+| [skill-implementation-progress.md](skill-implementation-progress.md) | 🔵 已完成索引，持续维护 | 16 张设计卡 + Phase 2+ + 已落地 pattern 速查 |
+| [remaining-skills-impl-plan.md](remaining-skills-impl-plan.md) | 🔵 历史 Phase 索引 | Chain / Shadow Step / Stance / Demon Form / Summon Totem spike 的旧执行拆分 |
+| [advanced-skills-impl-plan.md](advanced-skills-impl-plan.md) | 🔵 历史规划归档 | Stun / Silence / Break / Fire Tile / Cleanse / Swap / Lifesteal / Line-Cone 的 Phase 2+ 设计来源 |
+| [advanced-skills-next-batch.md](advanced-skills-next-batch.md) | 🔵 已完成批次归档 | `HexBattleGeneralPassive`、`attack_lifesteal_pct`、Cone AoE、SkillPreview debug area / facing 回归 |
+| [skill-preview-item-system-plan.md](skill-preview-item-system-plan.md) | 🔵 已完成归档 | item-preview sandbox 到 SkillPreview Phase F 的 ItemSystem / inventory integration 设计记录 |
+| [shield-system.md](shield-system.md) | 🔵 V1 已落地 | ShieldComponent + ShieldResolver + shield matrix |
+| [damage-pipeline.md](damage-pipeline.md) | 🔵 已落地 | `apply_damage` 9 步流程和 damage event 字段语义 |
+
+## Future
+
+| 主题 | 现在状态 | 放在哪 |
+|---|---|---|
+| Frost Orb / equipment attack effect | 当前最接近下一轮 goal，需要先讨论 contract | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
+| Break post-V1 | accepted descope：late-grant passive、tick duration 短路、AbilityDisabled/Enabled GameEvent、serialize disabled sources | [skill-implementation-progress.md](skill-implementation-progress.md) |
+| Fire Tile post-V1 | placement mode 字段、双线 tick 拆分等设计保留项 | [skill-implementation-progress.md](skill-implementation-progress.md) |
+| 完整装备系统 | affix、durability、cooldown、grant/revoke item ability policy、orb stacking policy | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
 
 ## 文档约定
 
-- 一文件聚焦一个主题，命名 kebab-case `<topic>.md`
-- 状态用 emoji 标识：🟢 已设计 · 🟡 实现中 · 🔵 已落地 · 🟠 V2 规划中 · ⚫ 已废弃
-- 当前不分子目录。文档总数增长到出现明显跨类（如网络同步 / AI 行为树）再考虑拆分
-
-## 文档分类（描述性，不是目录）
-
-| 类型 | 用途 | 长什么样 |
-|---|---|---|
-| **系统设计** | 单一 feature / 机制的设计、消耗顺序、叠加策略、设计决策 Q&A、V2+ 路线图 | `shield-system.md` |
-| **流程参考** | 项目层既有流程的事实记录，描述"现在是怎么跑的"。新增插入式步骤时回来更新 | `damage-pipeline.md` |
-| **进度追踪** | 多技能 / 多系统的实施快照，每完成一个就更新；与 `.lomo-team/reference/` 下的设计文档配套 | `skill-implementation-progress.md` |
-
-新文档落到哪一类靠判断：
-- 在描述一个 **可独立替换 / 配置 / 扩展的子系统** → 系统设计
-- 在描述一个 **多个子系统共用的执行流程或骨架** → 流程参考
-
-## 当前清单
-
-| 文档 | 状态 | 类型 | 内容 |
-|---|---|---|---|
-| [damage-pipeline.md](damage-pipeline.md) | 🔵 已落地 | 流程参考 | `apply_damage` 9 步流程、damage event 字段语义、插入式步骤清单 |
-| [shield-system.md](shield-system.md) | 🔵 V1 已落地 | 系统设计 | 护盾机制、消耗顺序、叠加策略、设计决策 |
-| [skill-implementation-progress.md](skill-implementation-progress.md) | 🟡 持续更新 | 进度追踪 | 16 张技能设计卡的落地状态 + Pattern 速查 + 偏离 design 文档之处 |
-| [remaining-skills-impl-plan.md](remaining-skills-impl-plan.md) | 🟡 Phase 开发入口 | 进度追踪 | 16 张技能设计卡剩余 5 个的 Phase 索引与落码总检查 |
-| [advanced-skills-impl-plan.md](advanced-skills-impl-plan.md) | 🟢 草案 | 进度追踪 | 16 技能完成后的进阶技能候选、优先级、评审门与暂缓项 |
-| [advanced-skills-next-batch.md](advanced-skills-next-batch.md) | 🟢 暂缓设计 | 进度追踪 | 本轮机制：GeneralPassive / 普攻吸血属性 / Cone AoE selector/debug 区域 / facing 前端回归 |
-| [skill-preview-item-system-plan.md](skill-preview-item-system-plan.md) | 🟢 计划中 | 系统设计 | 先做 hex item-preview sandbox + DevAgent 验收，再接入 SkillPreview：`ItemSystem` + `ItemDomain` 扩展点、player bag、actor equipment slots、drag/drop UI、生命周期清理 |
-| [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) | 🟢 暂缓设计 | 系统设计 | 下一阶段：装备系统接入、装备属性、法球 / attack effect 示例与开放问题 |
+- 一文件聚焦一个主题，命名 kebab-case `<topic>.md`。
+- 状态用 emoji 标识：🟡 当前 / 进行中，🔵 已落地 / 归档，🟠 未来规划，⚫ 废弃。
+- Completed 只做短索引。如果某段 completed 内容开始变长，拆成 milestone archive，不要塞进一个总文档。
+- 单技能的数值 / 行为细节优先写在技能 `.gd` 文件头部注释或 scenario 里。
+- LGF 框架层架构推理放到 [`../design-notes/`](../design-notes/)。

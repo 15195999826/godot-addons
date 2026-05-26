@@ -1,7 +1,7 @@
 # Hex Item System Sandbox Plan
 
-> 本轮目标改为：先在 hex 示例中做一个独立 `item-preview` sandbox，验证 `ItemSystem`、player bag、actor equipment slots、drag/drop 和 lifecycle。
-> 暂不改 `skill_preview.gd/.tscn`。等 Claude Code 的新技能开发稳定后，再把同一套 item model 接入 `skill-preview`。
+> 已完成归档。本文最初记录 `item-preview` sandbox 方案，后续 Phase F 已把同一套 `ItemSystem` / `HexPlayerInventory` 接入真实 `skill_preview.tscn` 与 `SkillPreviewWorldGI` lifecycle。
+> 当前不作为下一步开发入口；装备 grant passive、装备属性、Frost Orb / attack effect 的下一轮讨论见 [`equipment-attack-effects-next-stage.md`](equipment-attack-effects-next-stage.md)。
 
 ## Scope
 

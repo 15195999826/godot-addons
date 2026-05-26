@@ -1,7 +1,7 @@
 # Advanced Skills Next Batch - GeneralPassive + Cone AoE
 
-> 本轮目标。Phase 2+ 的主动 `Lifesteal` 与 `Piercing Line` 已落地；本文现在记录下一轮要实现的角色内建规则与 AoE shape 机制。
-> 目标是把“`HexBattleGeneralPassive` / 普攻吸血属性 / Cone AoE selector / skill-preview debug 区域 / facing 前端回归”收敛成可落码的 contract。
+> 已完成批次归档。Phase 2+ 的主动 `Lifesteal` 与 `Piercing Line` 已落地；本文记录随后完成的角色内建规则与 AoE shape 机制。
+> 本批次已把“`HexBattleGeneralPassive` / 普攻吸血属性 / Cone AoE selector / skill-preview debug 区域 / facing 前端回归”收敛为可复用 contract。
 
 ## Scope
 

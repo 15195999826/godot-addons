@@ -3,7 +3,7 @@
 > 实施 [`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md) 16 个示范技能的进度快照。
 > 每完成一个技能就更新本文档。配合 `lgf-new-logic-skill` skill 使用 —— 实现新技能前先读这里的「pattern 速查」找最近的参考实现。
 
-最后更新：2026-05-21
+最后更新：2026-05-26
 
 ---
 
@@ -17,8 +17,8 @@
 | Phase 2+ 进阶 | 🟢 9 / 9 | A Stun / B Silence / B2 Break (改 LGF core) / C0 Summon Totem 正式 / C Fire Tile minimal / D Cleanse / E Swap / F Lifesteal / G Piercing Line |
 | **合计** | **24 / 24 + 1 spike 收口** | |
 
-**当前焦点** ：Phase 2+ 9 phase 全部完成 (2026-05-24). `.claude-goal/lgf-advanced-skills/` 跟踪整个 goal 范围 (主仓 commit f69827d 起 — `git log --oneline f69827d..HEAD`)。
-**下一个建议**：Open Review Findings 中转移到 accepted descope 的 Break post-V1 items (late-grant passive, tick duration 短路, AbilityDisabled/Enabled GameEvent, serialize disabled_sources) — 可以单独开 phase 收口。Fire Tile minimal 留的设计 (placement_mode 字段, 双线 tick 拆分) 同样 post-V1。
+**当前焦点**：技能主体与 SkillPreview inventory integration 都已完成收口；下一轮准备讨论装备触发 / 法球示例，入口见 [`equipment-attack-effects-next-stage.md`](equipment-attack-effects-next-stage.md)。
+**下一个建议**：先拍板 Phase G 的最小 contract：装备如何 grant passive / 属性、Frost Orb 只响应 `AttackLandedEvent` 的边界、Break 是否影响 item-granted passive。Break post-V1 items (late-grant passive, tick duration 短路, AbilityDisabled/Enabled GameEvent, serialize disabled_sources) 与 Fire Tile minimal 留项继续作为 future backlog。
 
 ---
 
@@ -91,7 +91,7 @@
 | 13 | Deathrattle: Explode | 🔵 已落地 | deathrattle_aoe | `skills/deathrattle_aoe.gd` | `deathrattle_aoe_scenario.gd` |
 | 14 | Stance: Wrath/Calm | 🔵 已落地 | skill_stance | `skills/stance.gd` (单 Ability + Wrath/Calm loose tag + 2 PreEventConfig + §0.6 NoInstance lifecycle) | `stance_scenario.gd` |
 | 15 | Demon Form | 🔵 已落地 | passive_demon_form | `skills/demon_form.gd` (passive + GRANTED_SELF periodic tick + 内嵌 `_DemonFormTickAction` SkillLocalAction) + §0.X `StatModifierConfig.scale_by_stacks()` | `demon_form_scenario.gd` |
-| 16 | Summon Totem | 🟠 spike closeout 完成 / 路线 A 待 impl | (未) | (spike: `tests/battle/smoke_summon_spike.tscn` + `phase-05-summon-totem-spike.md` §5.5 结论) | — |
+| 16 | Summon Totem | 🔵 已落地 | skill_summon_totem | `abilities/active/summon_totem.gd` + `abilities/passives/totem_attack.gd` + `totem_lifetime.gd` + `actions/spawn_actor_action.gd` + TOTEM character class | `summon_totem_lifecycle_scenario.gd` |
 
 状态 emoji：🔵 已落地 · 🟡 实现中 · 🟠 已设计未实现 · ⚫ 未做
 
