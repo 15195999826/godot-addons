@@ -15,10 +15,24 @@
 | Tier 2 — 中级 | 🟢 6 / 6 | 多原语组合 |
 | Tier 3 — 高级 | 🟢 4 / 4 | 跨系统; Summon Totem 路线 A 正式 impl 完成 (Phase C0) |
 | Phase 2+ 进阶 | 🟢 9 / 9 | A Stun / B Silence / B2 Break (改 LGF core) / C0 Summon Totem 正式 / C Fire Tile minimal / D Cleanse / E Swap / F Lifesteal / G Piercing Line |
-| **合计** | **24 / 24 + 1 spike 收口** | |
+| **Phase G — Equipment Attack Effects** | 🟢 V1 收口 | 装备 grant/revoke passive + `PreBasicAttackEvent` + Daedalus critical strike |
+| **合计** | **24 / 24 + 1 spike 收口 + Phase G** | |
 
-**当前焦点**：技能主体与 SkillPreview inventory integration 都已完成收口；下一轮准备讨论装备触发 / 法球示例，入口见 [`equipment-attack-effects-next-stage.md`](equipment-attack-effects-next-stage.md)。
-**下一个建议**：先拍板 Phase G 的最小 contract：装备如何 grant passive / 属性、Frost Orb 只响应 `AttackLandedEvent` 的边界、Break 是否影响 item-granted passive。Break post-V1 items (late-grant passive, tick duration 短路, AbilityDisabled/Enabled GameEvent, serialize disabled_sources) 与 Fire Tile minimal 留项继续作为 future backlog。
+**当前焦点**：Phase G (装备攻击特效) V1 已落地, Daedalus / Morbid Mask 作为首批 equipment-granted passive 进入 demo bag, smoke + dev scene 自主验收齐过。下一轮按 `equipment-attack-effects-next-stage.md` V2+ 路线图: 🟠 P1 后置 on-hit 样例 + DevAgent/replay PreBasicAttackEvent 可观测字段; 🟡 P2 多暴击规则叠加策略 + AttackEffectPolicy。
+
+**Phase G 已交付**:
+- `BasicAttackLandedEvent` (rename from `AttackLandedEvent`) + `HexBattlePreEvents.PreBasicAttackEvent`
+- `HexBattleDamageAction.emit_pre_basic_attack()` chainable flag; Strike 走该链路, 普通 active skill / Fireball / Poison / Fire Tile / Totem damage / reflected damage 都不走
+- `HexBattleDamageAction` 自带 `randf < 0.1` / `* 1.5` 硬编码暴击已彻底移除; Strike `CRITICAL_BONUS` + `.on_critical(+10)` 也已移除 (暴击改由装备 grant 的 PreBasicAttackEvent passive 决定)
+- `HexActorEquipmentContainer` add/move-in callback `_grant_item_abilities` → `Ability.new(cfg, owner)` + `metadata.duplicate(true)` + 写 `source=equipment` / `item_id` / `item_config_id` → `ability_set.grant_ability`; remove/move-out 按 instance id 精确 revoke
+- `HexItemDomain.can_move_item` / `HexActorEquipmentContainer.can_add_item` 双层 granted_abilities 解析预校验 (任一 config_id 无法解析 → reject move, 防止 callback 阶段半成功无法回滚)
+- `HexEquipmentAbilityResolver` 从 `HexBattleAllSkills.all_abilities()` 派生 lookup, 与 `HexBattleSkillIndex` (SkillPreview UI 选单) 解耦
+- `HexBattlePassiveDaedalusCriticalStrike` (config_id `passive_daedalus_critical_strike`): `PreEventConfig` on `PRE_BASIC_ATTACK_EVENT`, filter `source_actor_id == owner`, V1 默认 chance=1.0 + multiplier=2.25
+- `morbid_mask` (grant VampiricTraining) + `daedalus_charm` (grant Daedalus) item configs
+- 5 个新 `equipment_*_scenario.gd` + `equipment_scenario_helper.gd` + `SkillScenario.setup_battle` hook + `HexBattleSkillScenarioHarness.run_with_actions(..., setup_callback)`
+- `SkillPreview.dev_agent_equip_item` / `dev_agent_unequip_item` + `SkillPreviewDevAgentOps` 注册; demo bag seed 默认含 morbid_mask + daedalus_charm
+- `/run-dev-scene skill-preview` DS1-DS4 全部 PASS, 留 timeline 数据 + 5 张 capture 截图作凭据
+- smoke_skill_scenarios PASS 65/65; `./tools/run_tests.ps1 -Required` PASS 19/19
 
 ---
 

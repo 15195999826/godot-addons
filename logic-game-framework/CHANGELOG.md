@@ -12,6 +12,147 @@
 
 ---
 
+## [Unreleased] — 2026-05-26 advanced-skills-next-batch Phase G — 装备攻击特效 (Equipment Attack Effects)
+
+落地"装备可以给 owner grant passive ability"的核心管线: item config 声明 granted_abilities →
+HexActorEquipmentContainer 在 add/move-in callback 中 grant, remove/move-out callback 中按
+instance id 精确 revoke。AbilityConfig 解析失败由 can_move_item 阶段 reject。Daedalus 暴击
+作为首个 equipment-granted attack effect 示范, 走新增的 `PreBasicAttackEvent` 链路修改本次
+普攻 `attack_damage` / `is_critical`, 不污染普通技能 / DOT / 反伤等非普攻路径。
+
+### Added
+
+- **`example/hex-atb-battle/core/events/battle_events.gd`** —
+  `BasicAttackLandedEvent` (kind `basic_attack_landed`) —— `AttackLandedEvent` 全量 rename,
+  payload (`attacker_actor_id` / `target_actor_id` / `source_ability_id` /
+  `source_ability_config_id` / `actual_life_damage` / `damage_event`) 与 broadcast 顺序契约不变。
+- **`example/hex-atb-battle/logic/hex_battle_pre_events.gd`** —
+  `PRE_BASIC_ATTACK_EVENT` 常量 + `PreBasicAttackEvent` (字段 `source_actor_id` /
+  `target_actor_id` / `attack_damage` / `source_ability_id` / `source_ability_config_id` /
+  `is_critical: float`)。V1 字段最小化, 服务 Daedalus + 未来"普攻进入 DamageAction 前的
+  通用修改点"; `damage_type` / `can_crit` / `proc_group` 等推到 P2 真实需求出现再加。
+- **`example/hex-atb-battle/logic/actions/damage_action.gd::emit_pre_basic_attack()`** ——
+  chainable flag, Strike (以及未来其它 basic-attack action) 通过 builder 链末尾 `.emit_pre_basic_attack()`
+  打开。打开后 per-target 流程: `PreBasicAttackEvent` → (cancel? skip) → 取 modified
+  `attack_damage` / `is_critical` (`>= 0.5` → bool) → 标准 `PreDamageEvent` 链路。
+- **`example/hex-atb-battle/logic/item/hex_equipment_ability_resolver.gd`** —
+  `HexEquipmentAbilityResolver.resolve(config_id)` + `resolve_all_ok(granted_abilities)` ——
+  从 `HexBattleAllSkills.all_abilities()` 派生 `config_id → AbilityConfig` 查询入口,
+  与 `HexBattleSkillIndex` (SkillPreview 技能选单) 解耦。
+- **`example/hex-atb-battle/logic/abilities/passives/daedalus_critical_strike.gd`** —
+  `HexBattlePassiveDaedalusCriticalStrike` (config_id `passive_daedalus_critical_strike`,
+  tags `["passive","equipment","attack_effect","critical_strike"]`)。`PreEventConfig` filter
+  `source_actor_id == owner` + handler `randf() < chance → Modification.multiply("attack_damage",
+  multiplier)` + `Modification.set_value("is_critical", 1.0)`。`create_config(chance, multiplier)`
+  允许覆盖默认值; V1 dev scene 用 `chance=1.0` / `multiplier=2.25` (避免 RNG flaky)。
+- **`example/hex-atb-battle/logic/item/hex_actor_equipment_container.gd::_granted_abilities`** —
+  `item_id (int) → Array[String] ability_instance_id` runtime 映射。`on_item_added` /
+  `on_item_moved_in` 调用 `_grant_item_abilities`, `Ability.new(cfg, owner)` →
+  `metadata.duplicate(true)` → 写 `source=equipment` / `item_id` / `item_config_id` →
+  `ability_set.grant_ability`。`on_item_removed` / `on_item_moved_out` 按 instance id 精确
+  revoke (不按 config_id 粗暴 revoke, 避免误删 actor 自带 / 其它装备 grant 出来的同 config_id passive)。
+  新增 `get_granted_ability_instance_ids(item_id)` + `snapshot_granted_abilities()` 公有 API。
+- **`example/hex-atb-battle/logic/item/hex_item_catalog.gd`** —
+  `morbid_mask` (granted_abilities → `passive_vampiric_training`) + `daedalus_charm`
+  (granted_abilities → `passive_daedalus_critical_strike`) item configs (`equipable=true`,
+  `item_tags=[equipment]`, `max_stack=1`)。
+- **`example/hex-atb-battle/skill-preview/skill_preview.gd::dev_agent_equip_item /
+  dev_agent_unequip_item`** — DevAgent ops 直调业务 API: 在 demo bag 按 config_id 找
+  item → move 到 selected actor equipment container, 返回 `{ok, item_id,
+  ability_instance_ids, slot}`; unequip 卸下到 bag 并返回 `removed_ability_instance_ids`。
+- **`example/hex-atb-battle/tests/battle/skill_scenarios/skill_scenario.gd::setup_battle(battle, caster, ally_actors, enemy_actors, setup_errors) -> bool`** —
+  SkillScenario 虚方法 hook, harness 在 grant `caster_passives` 之后、tick 循环之前调用。装备 scenarios
+  在此注册 ItemSystem 域 / 创建 inventory / equip item 触发 grant 链路。默认 no-op return true。
+- **`example/hex-atb-battle/logic/scenario/skill_scenario_harness.gd`** —
+  `run_with_actions(..., setup_callback: Callable = Callable())` 多 4-th 参数; 失败信息写到
+  `result["setup_errors"]: Array[String]`。`ScenarioAssertContext.setup_errors` 同步暴露。
+- **`example/hex-atb-battle/tests/battle/skill_scenarios/equipment_*_scenario.gd`** —
+  5 个新 scenario 覆盖装备 grant/revoke 全链路:
+  - `equipment_grant_attribute_morbid_mask_scenario.gd`: equip morbid_mask → caster
+    `attack_lifesteal_pct = 0.5`, Strike 命中 → 1 个 heal event = `actual_life_damage × 0.5`
+  - `equipment_grant_revoke_lifecycle_scenario.gd`: equip → 检查 ability + attribute 生效 →
+    unequip → 检查 instance 精确 revoke + attribute 归零 → 跑 Strike 验证无 heal
+  - `equipment_daedalus_critical_basic_attack_scenario.gd`: equip daedalus_charm (chance=1.0,
+    mult=2.25) → DamageEvent.is_critical=true, damage = base × 2.25
+  - `equipment_daedalus_no_trigger_on_fireball_scenario.gd`: equip daedalus_charm → 释放
+    Fireball → DamageEvent.is_critical=false, 不 emit basic_attack_landed (验证 Daedalus 不
+    污染非普攻路径)
+  - `equipment_grant_precheck_reject_move_scenario.gd`: 自定义 `_BrokenCatalog` 注入
+    granted_abilities 含未注册 ability_config_id 的 item → `ItemSystem.move_item` 返回失败,
+    item 留在 bag, container `_granted_abilities` 空, caster 不持有未注册 ability。
+- **`example/hex-atb-battle/tests/battle/skill_scenarios/equipment_scenario_helper.gd`** —
+  共享 utility: `setup(caster_id, errors)` (reset session + configure domain + create inventory
+  + register equipment container), `equip(ctx, config_id, errors)`, `unequip(ctx, item_id, errors)`。
+- **`example/hex-atb-battle/logic/abilities/shared/all_skills.gd`** — manifest 注册
+  `HexBattlePassiveDaedalusCriticalStrike.ABILITY` (纯 passive 无 timeline), 让 resolver 找到。
+- **`example/hex-atb-battle/skill-preview/skill_preview.gd::INVENTORY_SEED_ITEMS`** — demo bag
+  默认放 `morbid_mask` (slot 4) + `daedalus_charm` (slot 5), 让 `/run-dev-scene skill-preview`
+  开箱即可装备。
+- **`example/hex-atb-battle/skill-preview/skill_preview_dev_agent_ops.gd`** — 注册
+  `equip_item` / `unequip_item` 到 `get_supported_ops` + `run_scene_op` match。
+
+### Changed
+
+- **`example/hex-atb-battle/logic/actions/damage_action.gd::execute`** —
+  per-target 流程在原 PreDamage 链路前面插入 `PreBasicAttackEvent` 阶段 (仅 `_emit_pre_basic_attack`
+  true 时); 文件头 `## 执行流程` 注释同步重写, callback 注释加 "is_critical 来源于 PreBasicAttackEvent"
+  说明。
+- **`example/hex-atb-battle/logic/abilities/active/strike.gd`** —
+  builder chain `HexBattleDamageAction.new(...).emit_pre_basic_attack().on_hit(_EmitBasicAttackLandedAction.new())`;
+  `_EmitAttackLandedAction` → `_EmitBasicAttackLandedAction` 类名 + `type` 字串 +
+  `BasicAttackLandedEvent` 引用同步; `ABILITY.description` 改写。
+- **`example/hex-atb-battle/logic/abilities/passives/general_passive.gd`** —
+  trigger string `"attack_landed"` → `"basic_attack_landed"`; `_attack_landed_filter` →
+  `_basic_attack_landed_filter`; 注释中 `AttackLandedEvent` → `BasicAttackLandedEvent`。
+- **`example/hex-atb-battle/logic/item/hex_item_domain.gd::can_move_item`** — 目标是
+  equipment container 时, 在原 equipable 校验后追加
+  `HexEquipmentAbilityResolver.resolve_all_ok(granted_abilities)` 校验; reject move 阻止 grant
+  半成功无法回滚。
+- **`example/hex-atb-battle/logic/item/hex_actor_equipment_container.gd::can_add_item`** —
+  同上, equipable + granted_abilities 双层防御。
+- **4 个 `attack_landed_*_scenario.gd` → `basic_attack_landed_*_scenario.gd`** —
+  git mv + class_name + 注释中类名 / event kind 字符串同步更新; `.uid` 文件同步重建。
+- **5 个 `lifesteal_attribute_*_scenario.gd` + `cone_grid_vs_angle_distinguishable_scenario.gd`** —
+  `attack_landed` 字符串 / `AttackLandedEvent` 类名引用更新, `lifesteal_attribute_shield_no_heal_scenario.gd`
+  docstring 去掉过时的 crit 路径分支描述。
+- **`example/hex-atb-battle/tests/battle/skill_scenarios/strike_scenario.gd`** —
+  docstring + 标题去掉 "10% crit"; `assert_float_in([atk, atk*1.5])` 收紧为 `assert_float_eq(atk)`
+  (Phase G 起 Strike 自身不暴击, 暴击改由装备 grant)。
+- **`example/hex-atb-battle/skill-preview/skill_preview.gd::INVENTORY_SEED_ITEMS`** — 见 Added。
+
+### Removed
+
+- **`example/hex-atb-battle/logic/actions/damage_action.gd::execute`** —
+  `randf() < 0.1` + `final_damage *= 1.5` 硬编码暴击 (隐藏全局 10% 暴击规则)。is_critical
+  现在由 `PreBasicAttackEvent` 决定 (普攻路径) 或恒为 false (非普攻); 任何对"DamageAction 内部
+  自动暴击"的假设都不再成立。
+- **`example/hex-atb-battle/logic/abilities/active/strike.gd::CRITICAL_BONUS`** 常量 +
+  `.on_critical(HexBattleDamageAction.new(... CRITICAL_BONUS=10 ...))` 链 —— Strike 自带的
+  "暴击时 +10 固定伤害" 已迁移到 equipment-granted attack effect 路径; Strike 现在只负责
+  造成普攻伤害 + emit `BasicAttackLandedEvent`。
+- **4 个 `attack_landed_*_scenario.gd.uid`** — git mv 后 stale .uid (Stage 2 清理)。
+
+### Verification
+
+| 测试 | Before | After |
+|---|---|---|
+| `addons/.../tests/battle/smoke_skill_scenarios.tscn` | PASS 60/60 (Phase F baseline) | **PASS 65/65** (含 5 个新 equipment_* + 4 个 rename 后 basic_attack_landed_* + 5 个既有 lifesteal_attribute_*) |
+| `./tools/run_tests.ps1 -Required` | PASS 19/19 | **PASS 19/19** |
+| `/run-dev-scene skill-preview` DS1-DS4 | — | **DS1-DS4 全 PASS**, timeline + capture 截图作凭据 |
+
+### 命名 / 兼容性
+
+- `AttackLandedEvent` (kind `"attack_landed"`) 直接全量 rename 为 `BasicAttackLandedEvent`
+  (kind `"basic_attack_landed"`), 不保留 alias。historical 旧名仅在本 CHANGELOG 与
+  `docs/skills/equipment-attack-effects-next-stage.md` 中提及。grep `AttackLandedEvent`
+  在 hex 源码中应当 0 命中 (CHANGELOG 除外)。
+- Strike 不再自带 10% 概率 / 1.5x 倍率暴击。`StrikeScenario` 已收紧 assertion;
+  `expose_scenario` / `break_dynamic_stat_disabled_scenario` / `shield_full_absorb_no_thorns_scenario`
+  等用 `assert_float_in([X, X*1.5])` 的 scenarios 继续 PASS (X 在列表中), 它们的旧 crit
+  分支注释已成 stale 但不阻塞测试; 后续 cleanup 推到 Phase G+ 文档 sweep。
+
+---
+
 ## [Unreleased] — 2026-05-25 advanced-skills-next-batch Phase F — Facing 前端回归
 
 补齐既有 `facing_direction` 机制的渲染层. logic side (HexFacing.face_actor_toward + ActorFacingChangedEvent) 已存在多轮; 本轮把这条信息引到 frontend, 让 SkillPreview / dev-scene 能可视化朝向。
