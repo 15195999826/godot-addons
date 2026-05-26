@@ -124,7 +124,10 @@ func _phase_drag_drop_contract() -> bool:
 			return _fail("actor 1 should have empty equipment before equip")
 
 	_preview.dev_agent_select_actor(0)
-	_preview.handle_drop({"item_id": sword_id}, bag_id, 4)
+	var empty_bag_slot := _first_empty_bag_slot(state)
+	if empty_bag_slot < 0:
+		return _fail("no empty bag slot for equipment -> bag")
+	_preview.handle_drop({"item_id": sword_id}, bag_id, empty_bag_slot)
 	await get_tree().process_frame
 	state = _preview.dev_agent_inventory_state()
 	if not bool(state.get("last_op_success", false)):
@@ -151,7 +154,7 @@ func _phase_add_remove_actor_lifecycle() -> bool:
 	if new_eq_id <= 0 or ItemSystem.get_container(new_eq_id) == null:
 		return _fail("new actor equipment container missing")
 
-	var sword_id := _find_bag_item(after_add, &"training_sword", 4)
+	var sword_id := _find_any_bag_item(after_add, &"training_sword")
 	if sword_id <= 0:
 		return _fail("no sword left in bag for add/remove lifecycle")
 	_preview.handle_drop({"item_id": sword_id}, new_eq_id, 0)
@@ -246,6 +249,25 @@ func _find_bag_item(state: Dictionary, config_id: StringName, slot_index: int) -
 				and int(item.get("slot_index", -1)) == slot_index:
 			return int(item.get("item_id", 0))
 	return 0
+
+
+func _find_any_bag_item(state: Dictionary, config_id: StringName) -> int:
+	for item_v in state.get("bag", []) as Array:
+		var item := item_v as Dictionary
+		if StringName(item.get("config_id", &"")) == config_id:
+			return int(item.get("item_id", 0))
+	return 0
+
+
+func _first_empty_bag_slot(state: Dictionary) -> int:
+	var occupied: Dictionary = {}
+	for item_v in state.get("bag", []) as Array:
+		var item := item_v as Dictionary
+		occupied[int(item.get("slot_index", -1))] = true
+	for slot_index in range(80):
+		if not occupied.has(slot_index):
+			return slot_index
+	return -1
 
 
 func _slot_at(state: Dictionary, actor_idx: int, slot_idx: int) -> Dictionary:

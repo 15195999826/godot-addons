@@ -38,19 +38,20 @@ func get_max_ticks() -> int:
 func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var enemy := ctx.enemy_id(0)
 
-	# enemy 的 Strike 命中 caster（atk 50，可能 crit 75）
+	# enemy 的 Strike 命中 caster（atk 50）
 	var dmg_to_caster := ctx.filter_damage_events({"target_actor_id": ctx.caster_id})
-	ctx.assert_true(dmg_to_caster.size() >= 1, "caster received at least 1 hit")
+	ctx.assert_eq(dmg_to_caster.size(), 1, "caster received exactly 1 hit")
+	if dmg_to_caster.size() == 1:
+		ctx.assert_float_eq(dmg_to_caster[0].get("damage", 0.0) as float, 50.0,
+			"Strike damage = enemy atk")
 
 	# Thorn 反弹 PURE 2 给 enemy_0。
-	# 注意:Strike crit 时产生 主伤害 + crit bonus 两个 damage event,Thorn 对每个都触发。
-	# 所以 reflect 次数 = 主伤害次数 + (crit ? 1 : 0),断言范围 [1, 2] 且每次都是 2 PURE。
 	var reflected := ctx.filter_damage_events({
 		"target_actor_id": enemy,
 		"damage_type": "pure",
 	})
-	ctx.assert_true(reflected.size() in [1, 2],
-		"Thorn reflect count 1 (no-crit) or 2 (crit), got %d" % reflected.size())
+	ctx.assert_eq(reflected.size(), 1,
+		"Thorn reflect count = 1")
 	for r in reflected:
 		ctx.assert_float_eq(r.get("damage", 0.0) as float, REFLECT_DAMAGE,
 			"Thorn reflected damage = 2")

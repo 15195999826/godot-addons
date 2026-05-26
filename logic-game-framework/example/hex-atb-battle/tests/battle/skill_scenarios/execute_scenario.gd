@@ -1,8 +1,8 @@
 ## Execute 场景:斩杀阈值分支 + 护盾参与有效血量判定 + 击杀特效
 ##
 ## 4 case(WARRIOR 默认 atk=50;harness 现支持 hp≠max_hp):
-##   1 低血秒杀  enemy_0 hp=15  max=100 (15%<20%)        → 斩杀,dmg=effective+1=16(暴击24),死,execute_kill cue
-##   2 高血普攻  enemy_1 hp=80  max=100 (80%)            → 普攻 caster.atk=50(暴击75),不死,无 execute_kill cue
+##   1 低血秒杀  enemy_0 hp=15  max=100 (15%<20%)        → 斩杀,dmg=effective+1=16,死,execute_kill cue
+##   2 高血普攻  enemy_1 hp=80  max=100 (80%)            → 普攻 caster.atk=50,不死,无 execute_kill cue
 ##   3 临界外侧  enemy_2 hp=20  max=100 (20% 严格 < 不触发) → 普攻 50(非 21)→ 证明 strict <;普攻击杀(语义内,允许 cue)
 ##   4 带 ward 抗斩杀  enemy_3 hp=15 max=100 + 自挂 ward(吸 PURE,cap30)
 ##                      → effective=(15+30)/100=45% → 普攻 50(非 16)→ 证明护盾计入有效血量(你点出的 bug 修复核心)
@@ -13,7 +13,6 @@ extends SkillScenario
 
 
 const CASTER_ATK := 50.0
-const STRIKE_CRIT_MULT := 1.5
 const KILL_CUE := "execute_kill"
 
 
@@ -57,8 +56,8 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		ctx.fail("Case1: enemy_0 未收到 damage event")
 	else:
 		var dmg0: float = d0[0].get("damage", -1.0) as float
-		ctx.assert_float_in(dmg0, [16.0, 16.0 * STRIKE_CRIT_MULT],
-			"Case1: enemy_0(15%) 斩杀伤害 = effective+1=16(暴击24)")
+		ctx.assert_float_eq(dmg0, 16.0,
+			"Case1: enemy_0(15%) 斩杀伤害 = effective+1=16")
 		ctx.assert_eq(str(d0[0].get("damage_type", "")), "pure",
 			"Case1: 斩杀 damage_type = pure")
 	ctx.assert_true(_kill_cue_targets(ctx, ctx.enemy_id(0)),
@@ -70,10 +69,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		ctx.fail("Case2: enemy_1 未收到 damage event")
 	else:
 		var dmg1: float = d1[0].get("damage", -1.0) as float
-		ctx.assert_float_in(dmg1, [CASTER_ATK, CASTER_ATK * STRIKE_CRIT_MULT],
-			"Case2: enemy_1(80%) 普攻 = caster.atk=50(暴击75)")
+		ctx.assert_float_eq(dmg1, CASTER_ATK,
+			"Case2: enemy_1(80%) 普攻 = caster.atk=50")
 	ctx.assert_true(ctx.actor_final_hp(ctx.enemy_id(1)) > 0.0,
-		"Case2: enemy_1 普攻未致死(80hp > 75 暴击上限)")
+		"Case2: enemy_1 普攻未致死(80hp > 50)")
 	ctx.assert_true(not _kill_cue_targets(ctx, ctx.enemy_id(1)),
 		"Case2: enemy_1 未被击杀 → 无 execute_kill 特效")
 
@@ -83,7 +82,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		ctx.fail("Case3: enemy_2 未收到 damage event")
 	else:
 		var dmg2: float = d2[0].get("damage", -1.0) as float
-		ctx.assert_float_in(dmg2, [CASTER_ATK, CASTER_ATK * STRIKE_CRIT_MULT],
+		ctx.assert_float_eq(dmg2, CASTER_ATK,
 			"Case3: enemy_2(=20% 严格 <) 未斩杀,伤害 = caster.atk 50 而非 21")
 
 	# ---- Case 4:ward 计入有效血量 → 不走斩杀分支(核心 bug 修复) ----
@@ -92,7 +91,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		ctx.fail("Case4: enemy_3 未收到 damage event")
 	else:
 		var dmg3: float = d3[0].get("damage", -1.0) as float
-		ctx.assert_float_in(dmg3, [CASTER_ATK, CASTER_ATK * STRIKE_CRIT_MULT],
+		ctx.assert_float_eq(dmg3, CASTER_ATK,
 			"Case4: enemy_3(15hp+ward30→有效45%) 走普攻 50,非斩杀 16 —— 证明护盾计入有效血量判定")
 		ctx.assert_true((d3[0].get("shield_absorbed", 0.0) as float) > 0.0,
 			"Case4: ward 实际参与吸收(确认 ward 在场且被算入)")

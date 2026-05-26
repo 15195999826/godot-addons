@@ -17,7 +17,7 @@ func get_name() -> String:
 
 
 func get_scene_config() -> Dictionary:
-	# caster hp=50,enemy_0 atk=100 一击毙命(不 crit 时);避免 crit 时 ally 也一起被 aoe 死,做成纯的
+	# caster hp=50,enemy_0 atk=100 一击毙命; enemy hp 拉高避免 AoE 误杀。
 	return {
 		"map": {"rows": 5, "cols": 5},
 		"caster":  {"class": "BERSERKER", "pos": [0, 0], "hp": 50},
@@ -45,7 +45,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# caster 应该死了
 	ctx.assert_float_eq(ctx.actor_final_hp(ctx.caster_id), 0.0, "caster dead after kill blow")
 
-	# 每个 enemy 都应有 1 次 PURE 伤害(基础 20,crit 时 30)
+	# 每个 enemy 都应有 1 次 PURE 伤害(基础 20)
 	for i in range(2):
 		var enemy_id := ctx.enemy_id(i)
 		var aoe_hits := ctx.filter_damage_events({
@@ -55,5 +55,5 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		ctx.assert_eq(aoe_hits.size(), 1, "enemy_%d received 1 deathrattle AoE hit" % i)
 		if aoe_hits.size() >= 1:
 			var dmg: float = aoe_hits[0].get("damage", 0.0)
-			ctx.assert_float_in(dmg, [AOE_DAMAGE, AOE_DAMAGE * 1.5],
-				"enemy_%d AoE damage = 20 or 30 (crit)" % i)
+			ctx.assert_float_eq(dmg, AOE_DAMAGE,
+				"enemy_%d AoE damage = 20" % i)

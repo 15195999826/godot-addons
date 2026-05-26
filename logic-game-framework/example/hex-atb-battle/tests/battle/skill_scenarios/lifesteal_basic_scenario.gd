@@ -48,21 +48,17 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
-	# 1. enemy_0 受 damage 主伤害 ~40 (无 shield, actual_life_damage = 40, crit *1.5 = 60)
+	# 1. enemy_0 受 damage 主伤害 40 (无 shield, actual_life_damage = 40)
 	var all_damages := ctx.filter_damage_events({
 		"source_actor_id": ctx.caster_id,
 		"target_actor_id": ctx.enemy_id(0),
 	})
-	# 过滤主 damage event (atk 40 / crit 60; crit bonus damage 10 单独)
-	var main_damages: Array = []
-	for e in all_damages:
-		if (e.get("damage", 0.0) as float) >= 30.0:
-			main_damages.append(e)
-	ctx.assert_eq(main_damages.size(), 1, "Expect 1 main damage event")
-	if main_damages.size() != 1:
+	ctx.assert_eq(all_damages.size(), 1, "Expect 1 main damage event")
+	if all_damages.size() != 1:
 		return
 
-	var actual := main_damages[0].get("actual_life_damage", main_damages[0].get("damage", 0.0)) as float
+	var actual := all_damages[0].get("actual_life_damage", all_damages[0].get("damage", 0.0)) as float
+	ctx.assert_float_eq(actual, CASTER_ATK, "actual_life_damage = caster atk")
 	var expected_heal := actual * LIFESTEAL_RATIO
 
 	# 2. heal event source/target=caster, amount ~= actual * 0.5
@@ -81,7 +77,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 			"Heal amount = actual_life_damage %.1f * 0.5 = %.1f (got %.1f)" % [actual, expected_heal, heal_amount],
 			1.0)
 
-	# 3. caster 期末 hp 升高 (100 + 20 = 120 no_crit, or 100 + 30 = 130 crit)
+	# 3. caster 期末 hp 升高 (100 + 20 = 120)
 	var final_hp := ctx.actor_final_hp(ctx.caster_id)
-	ctx.assert_true(final_hp > CASTER_START_HP,
-		"After lifesteal, caster hp (%.1f) > start hp (%.1f)" % [final_hp, CASTER_START_HP])
+	ctx.assert_float_eq(final_hp, CASTER_START_HP + expected_heal,
+		"After lifesteal, caster hp = start hp + heal")

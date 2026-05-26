@@ -91,7 +91,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"Thorn passive remains on caster (not revoked, just disabled)"
 	)
 
-	# 3. 收集 enemy_0 → caster 的 strike 主伤害事件 (非 reflected, 非 crit bonus)
+	# 3. 收集 enemy_0 → caster 的 strike 主伤害事件 (非 reflected)
 	var all_strikes := ctx.filter_damage_events({
 		"source_actor_id": ctx.enemy_id(0),
 		"target_actor_id": ctx.caster_id,
@@ -102,19 +102,17 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		if (e.get("damage", 0.0) as float) > 30.0:
 			main_strikes.append(e)
 	ctx.assert_eq(main_strikes.size(), 2,
-		"Expect 2 enemy_0 Strike main hits on caster (crit bonus filtered) got %d" % main_strikes.size())
+		"Expect 2 enemy_0 Strike main hits on caster got %d" % main_strikes.size())
 
 	# 4. (KEY contract): Thorn reflect ALL frames must be AT/AFTER break_remove_frame
 	#    即使期内 Strike 命中, 也不该有任何 reflect (Ability.is_disabled() 顶层短路 receive_event)。
-	#    Crit bonus damage 在期后 Strike 命中时也可能触发额外 reflect (1-2 reflect by design),
-	#    但所有这些 reflect 都必须落在 break_remove_frame 之后。
 	var reflects_to_enemy := ctx.filter_damage_events({
 		"source_actor_id": ctx.caster_id,
 		"target_actor_id": ctx.enemy_id(0),
 		"is_reflected": true,
 	})
-	ctx.assert_true(reflects_to_enemy.size() >= 1 and reflects_to_enemy.size() <= 2,
-		"Expect 1-2 Thorn reflects after break expire (main + optional crit bonus); got %d" % reflects_to_enemy.size())
+	ctx.assert_eq(reflects_to_enemy.size(), 1,
+		"Expect 1 Thorn reflect after break expire; got %d" % reflects_to_enemy.size())
 	# 关键: 每个 reflect frame 必须 > break_remove_frame, 验证 break 期内 Thorn.receive_event 真短路
 	for r in reflects_to_enemy:
 		var frame := int(r.get("replay_frame", -1))

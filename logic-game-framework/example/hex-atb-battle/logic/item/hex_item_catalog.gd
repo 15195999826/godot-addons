@@ -83,8 +83,8 @@ func has_config(config_id: StringName) -> bool:
 func get_config(config_id: StringName) -> Dictionary:
 	if not _configs.has(config_id):
 		return {}
-	# 返回 duplicate 避免 caller mutate 内部状态
-	return (_configs[config_id] as Dictionary).duplicate()
+	# 返回 deep duplicate 避免 caller mutate nested granted_abilities 等内部状态
+	return (_configs[config_id] as Dictionary).duplicate(true)
 
 
 func list_config_ids() -> Array[StringName]:

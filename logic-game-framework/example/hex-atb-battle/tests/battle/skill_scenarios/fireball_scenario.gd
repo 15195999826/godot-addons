@@ -35,5 +35,5 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_eq(hits.size(), 1, "exactly 1 Fireball hit")
 	if hits.size() >= 1:
 		var dmg: float = hits[0].get("damage", 0.0)
-		ctx.assert_float_in(dmg, [DAMAGE, DAMAGE * 1.5],
-			"damage = 80 or 120 (crit)")
+		ctx.assert_float_eq(dmg, DAMAGE,
+			"Fireball damage = 80")

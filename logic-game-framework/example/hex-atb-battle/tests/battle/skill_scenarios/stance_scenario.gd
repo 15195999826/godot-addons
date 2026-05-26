@@ -21,7 +21,6 @@ extends SkillScenario
 
 
 const CASTER_ATK := 50.0
-const STRIKE_CRIT_MULT := 1.5
 const WRATH_DMG := CASTER_ATK * HexBattleStance.WRATH_MULT       # 50 * 1.5 = 75
 const CALM_DMG := CASTER_ATK * HexBattleStance.CALM_MULT          # 50 * 0.75 = 37.5
 
@@ -69,8 +68,7 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
-	# Strike 暴击会触发 critical bonus (10 base) 的二段伤害事件;为简化断言, 只看
-	# damage > 25 的主伤事件 (critical bonus 修正后最大 22.5 也排除掉)。
+	# 只看主伤事件。Phase G 起 Strike 没有内建随机暴击 / crit bonus。
 	var caster_to_enemy_all: Array[Dictionary] = ctx.filter_damage_events({
 		"source_actor_id": ctx.caster_id, "target_actor_id": ctx.enemy_id(0)
 	})
@@ -91,29 +89,29 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_true(enemy_main_hits.size() >= 2,
 		"enemy 主伤 ×2 (Wrath + Calm); 实际 %d" % enemy_main_hits.size())
 
-	# Wrath outgoing: caster 第一击 = 75 (crit 112.5)
+	# Wrath outgoing: caster 第一击 = 75
 	if caster_main_hits.size() >= 1:
 		var d_wrath_out: float = caster_main_hits[0].get("damage", -1.0) as float
-		ctx.assert_float_in(d_wrath_out, [WRATH_DMG, WRATH_DMG * STRIKE_CRIT_MULT],
-			"Wrath outgoing: caster→enemy 第一主伤 = 75 (crit 112.5)")
+		ctx.assert_float_eq(d_wrath_out, WRATH_DMG,
+			"Wrath outgoing: caster→enemy 第一主伤 = 75")
 
-	# Wrath incoming: enemy 第一击 = 75 (crit 112.5)
+	# Wrath incoming: enemy 第一击 = 75
 	if enemy_main_hits.size() >= 1:
 		var d_wrath_in: float = enemy_main_hits[0].get("damage", -1.0) as float
-		ctx.assert_float_in(d_wrath_in, [WRATH_DMG, WRATH_DMG * STRIKE_CRIT_MULT],
-			"Wrath incoming: enemy→caster 第一主伤 = 75 (crit 112.5)")
+		ctx.assert_float_eq(d_wrath_in, WRATH_DMG,
+			"Wrath incoming: enemy→caster 第一主伤 = 75")
 
-	# Calm outgoing: caster 第二击 = 37.5 (crit 56.25)
+	# Calm outgoing: caster 第二击 = 37.5
 	if caster_main_hits.size() >= 2:
 		var d_calm_out: float = caster_main_hits[1].get("damage", -1.0) as float
-		ctx.assert_float_in(d_calm_out, [CALM_DMG, CALM_DMG * STRIKE_CRIT_MULT],
-			"Calm outgoing: caster→enemy 第二主伤 = 37.5 (crit 56.25)")
+		ctx.assert_float_eq(d_calm_out, CALM_DMG,
+			"Calm outgoing: caster→enemy 第二主伤 = 37.5")
 
-	# Calm incoming: enemy 第二击 = 37.5 (crit 56.25)
+	# Calm incoming: enemy 第二击 = 37.5
 	if enemy_main_hits.size() >= 2:
 		var d_calm_in: float = enemy_main_hits[1].get("damage", -1.0) as float
-		ctx.assert_float_in(d_calm_in, [CALM_DMG, CALM_DMG * STRIKE_CRIT_MULT],
-			"Calm incoming: enemy→caster 第二主伤 = 37.5 (crit 56.25)")
+		ctx.assert_float_eq(d_calm_in, CALM_DMG,
+			"Calm incoming: enemy→caster 第二主伤 = 37.5")
 
 	# 最终 caster 持 stance ability (passive, 不该被 revoke)
 	ctx.assert_actor_ability_present(ctx.caster_id, HexBattleStance.CONFIG_ID,

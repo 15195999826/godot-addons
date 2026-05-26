@@ -6,7 +6,7 @@ inkmon 项目层的技能 / 战斗系统设计、完成记录和后续路线入�
 
 | 你要做什么 | 入口 |
 |---|---|
-| 准备下一轮技能 / 装备能力开发 | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
+| 讨论后续技能 / 装备能力扩展 | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
 | 查已经落地了哪些技能和 pattern | [skill-implementation-progress.md](skill-implementation-progress.md) |
 | 查 SkillPreview + ItemSystem 接入历史 | [skill-preview-item-system-plan.md](skill-preview-item-system-plan.md) |
 | 查稳定系统参考 | [damage-pipeline.md](damage-pipeline.md), [shield-system.md](shield-system.md) |
@@ -24,9 +24,11 @@ inkmon 项目层的技能 / 战斗系统设计、完成记录和后续路线入�
 
 ## Current
 
+当前没有已确认的新开发 goal；下表只列最近可继续讨论的扩展入口。
+
 | 文档 | 状态 | 内容 |
 |---|---|---|
-| [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) | 🟡 当前准备讨论 | Phase G 候选：装备 grant passive / 属性、Frost Orb / attack effect、Break 与 item source policy 等开放问题 |
+| [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) | 🟠 V2+ 扩展候选 | Phase G V1 已落地；后续只保留 on-hit 样例、DevAgent/replay 可观测字段、多攻击特效策略等扩展入口 |
 
 ## Completed
 
@@ -44,10 +46,10 @@ inkmon 项目层的技能 / 战斗系统设计、完成记录和后续路线入�
 
 | 主题 | 现在状态 | 放在哪 |
 |---|---|---|
-| Frost Orb / equipment attack effect | 当前最接近下一轮 goal，需要先讨论 contract | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
+| Equipment attack effects post-V1 | Phase G V1 已完成 equipment-granted passive + `PreBasicAttackEvent` + Daedalus-like critical strike；下一轮只讨论后置 on-hit / replay observability / 多来源策略 | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
 | Break post-V1 | accepted descope：late-grant passive、tick duration 短路、AbilityDisabled/Enabled GameEvent、serialize disabled sources | [skill-implementation-progress.md](skill-implementation-progress.md) |
 | Fire Tile post-V1 | placement mode 字段、双线 tick 拆分等设计保留项 | [skill-implementation-progress.md](skill-implementation-progress.md) |
-| 完整装备系统 | affix、durability、cooldown、grant/revoke item ability policy、orb stacking policy | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
+| 完整装备系统 | affix、durability、cooldown、grant/revoke item ability policy、多攻击特效 / 多暴击规则来源策略 | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) |
 
 ## 文档约定
 

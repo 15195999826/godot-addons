@@ -8,6 +8,8 @@
 ##  5. unregister_actor: 装备 item 卸回 bag, container 销毁
 ##  6. reset_actor_equipment_keep_player: 装备卸回 bag, actor list 保留, 容器重建
 ##  7. dispose() + reset_session() 后 ItemSystem 不残留本轮 containers/items
+##  8. direct create_item 到 equipment container 被 domain 拒绝
+##  9. catalog 返回 deep copy, nested granted_abilities 不可污染
 extends Node
 
 
@@ -53,6 +55,10 @@ func _ready() -> void:
 	if not _phase_unregister_actor_unload_failure_keeps_equipment():
 		return
 	if not _phase_reset_actor_equipment_unload_failure_keeps_equipment():
+		return
+	if not _phase_reject_direct_create_into_equipment_container():
+		return
+	if not _phase_catalog_returns_deep_copy():
 		return
 
 	print("SMOKE_TEST_RESULT: PASS - all HexItemDomain data-layer checks passed")
@@ -610,6 +616,65 @@ func _phase_reset_actor_equipment_unload_failure_keeps_equipment() -> bool:
 
 	_teardown(ctx)
 	print("  phase15 OK")
+	return true
+
+
+# ============================================================
+# Phase 16: direct create_item into equipment container is rejected
+# ============================================================
+
+func _phase_reject_direct_create_into_equipment_container() -> bool:
+	var ctx := _setup()
+	var inv: HexPlayerInventory = ctx.inv
+	inv.register_actor(ACTOR_A)
+	var eq_a := inv.get_equipment_container_id(ACTOR_A)
+
+	var create_result := ItemSystem.create_item(eq_a, &"training_sword", 1, 0)
+	if create_result.success:
+		return _fail("phase16: direct create_item 到 equipment container 应 fail")
+	if not "不允许直接 create_item" in create_result.error_message:
+		return _fail("phase16: error_message 应说明禁止 direct create, got: %s" % create_result.error_message)
+	if ItemSystem.get_items_in_container(eq_a).size() != 0:
+		return _fail("phase16: direct create fail 后 equipment container 应保持为空")
+
+	_teardown(ctx)
+	print("  phase16 OK")
+	return true
+
+
+# ============================================================
+# Phase 17: HexItemCatalog.get_config returns a deep copy
+# ============================================================
+
+func _phase_catalog_returns_deep_copy() -> bool:
+	var catalog := HexItemCatalogScript.new() as HexItemCatalog
+	var cfg := catalog.get_config(&"morbid_mask")
+	var granted_v: Variant = cfg.get("granted_abilities", [])
+	if not (granted_v is Array):
+		return _fail("phase17 setup: morbid_mask granted_abilities 应是 Array")
+	var granted: Array = granted_v as Array
+	if granted.is_empty() or not (granted[0] is Dictionary):
+		return _fail("phase17 setup: morbid_mask granted_abilities[0] 应是 Dictionary")
+
+	var first_grant := granted[0] as Dictionary
+	first_grant["ability_config_id"] = &"broken_config"
+	granted.append({
+		"ability_config_id": &"also_broken",
+		"source": &"equipment",
+	})
+
+	var fresh := catalog.get_config(&"morbid_mask")
+	var fresh_granted_v: Variant = fresh.get("granted_abilities", [])
+	if not (fresh_granted_v is Array):
+		return _fail("phase17: fresh granted_abilities 应仍是 Array")
+	var fresh_granted: Array = fresh_granted_v as Array
+	if fresh_granted.size() != 1:
+		return _fail("phase17: external append 不应污染 catalog, got size=%d" % fresh_granted.size())
+	var fresh_first := fresh_granted[0] as Dictionary
+	if fresh_first.get("ability_config_id") != &"passive_vampiric_training":
+		return _fail("phase17: nested mutation 不应污染 catalog, got %s" % str(fresh_first.get("ability_config_id")))
+
+	print("  phase17 OK")
 	return true
 
 

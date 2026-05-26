@@ -17,7 +17,7 @@
 ##   - SilenceBuff grant on enemy_0 frame < Crushing Blow damage event frame
 ##     (silence 在 crushing_blow HIT 之前落地)
 ##   - >=1 damage event source=enemy_0 target=caster (Crushing Blow HIT 仍发生)
-##   - damage 数值与 Crushing Blow 基础值 90 一致 (或 crit 后变体, 允许范围)
+##   - damage 数值与 Crushing Blow 基础值 90 一致
 class_name SilenceNoInterruptInflightScenario
 extends SkillScenario
 
@@ -93,7 +93,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 			silence_grant_frame, damage_frame
 		])
 
-	# 4. damage 数值 = Crushing Blow 基础值 90 (允许 crit ×1.5 = 135)
+	# 4. damage 数值 = Crushing Blow 基础值 90
 	var damage_value := crushing_damage[0].get("damage", 0.0) as float
-	ctx.assert_float_in(damage_value, [90.0, 135.0],
-		"Crushing Blow damage should be 90 (or 135 crit), got %.1f" % damage_value)
+	ctx.assert_float_eq(damage_value, 90.0,
+		"Crushing Blow damage should be 90, got %.1f" % damage_value)

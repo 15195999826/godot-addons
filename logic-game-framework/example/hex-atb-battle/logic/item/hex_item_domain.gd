@@ -59,8 +59,11 @@ func merge_stack(existing_data: ItemInstanceData, incoming_count: int, max_stack
 	return incoming_count - to_merge
 
 
-func can_create_item(_config_id: StringName, _container_id: int, _slot_index: int, _count: int) -> ContainerResult:
-	# V1 没有禁止创建的规则; equipable 之类的检查在 move_item 阶段
+func can_create_item(_config_id: StringName, container_id: int, _slot_index: int, _count: int) -> ContainerResult:
+	if _equipment_container_ids.has(container_id):
+		return ContainerResult.fail(
+			"equipment container 不允许直接 create_item; 请先创建到 player bag 再 move_item 装备"
+		)
 	return ContainerResult.ok(true)
 
 

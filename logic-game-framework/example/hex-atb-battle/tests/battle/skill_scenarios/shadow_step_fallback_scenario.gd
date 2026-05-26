@@ -13,9 +13,6 @@ class_name ShadowStepFallbackScenario
 extends SkillScenario
 
 
-const CRIT_MULT := 1.5
-
-
 func get_name() -> String:
 	return "ShadowStep fallback-side: 背侧 [5,2] 阻挡 → 落 SE([4,3])"
 

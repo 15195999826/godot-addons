@@ -4,7 +4,7 @@
 ##
 ## Case 1 (main path): enemy_0 facing WEST 背侧 = EAST([5,2]); 落点 [5,2] 空。
 ##   预期: ActorDisplacedEvent(kind=teleport, source=caster) 出现; caster 终位 [5,2];
-##         enemy_0 受击 atk*1.5 = 75 (允许 crit 112.5)。
+##         enemy_0 受击 atk*1.5 = 75。
 ## Case 2 (fallback-side): 同 Case 1, 但背侧 [5,2] 放一个 wall, 备选 [5,1] (背左) 应当被选。
 ##   测试: caster 终位 [5,1]; ActorDisplacedEvent.to_hex == {5,1}; 仍造伤。
 ##   注: case 2 用独立 scenario instance (本 case 跑独立 setup 困难, 简化为放 case 3/4 后单测)
@@ -19,7 +19,6 @@ extends SkillScenario
 
 
 const SHADOW_STEP_DAMAGE_MULT := HexBattleShadowStep.DAMAGE_MULT
-const CRIT_MULT := 1.5
 
 
 func get_name() -> String:
@@ -73,12 +72,12 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_eq(ctx.actor_final_facing(ctx.enemy_id(0)), HexFacing.DIR_WEST,
 		"target facing 不变 (Shadow Step 不改 target facing)")
 
-	# ---- 伤害 = atk × 1.5 = 75 (允许 crit 112.5) ----
+	# ---- 伤害 = atk × 1.5 = 75 ----
 	var damages := ctx.filter_damage_events({"target_actor_id": ctx.enemy_id(0)})
 	if damages.is_empty():
 		ctx.fail("enemy_0 未收到 damage event")
 	else:
 		var d: float = damages[0].get("damage", -1.0) as float
 		var expected := 50.0 * SHADOW_STEP_DAMAGE_MULT
-		ctx.assert_float_in(d, [expected, expected * CRIT_MULT],
-			"enemy_0 受击 = atk×1.5 = 75 (允许 crit 112.5)")
+		ctx.assert_float_eq(d, expected,
+			"enemy_0 受击 = atk×1.5 = 75")

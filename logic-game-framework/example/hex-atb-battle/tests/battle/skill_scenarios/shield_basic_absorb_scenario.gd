@@ -8,7 +8,7 @@
 ##   5. Thorn 在 actual_life_damage > 0 时仍正常反弹（部分吸收不破坏现有反伤语义）
 ##
 ## 设定：caster 装备 [Thorn + WardBuff]，enemy 用 Strike 攻击 caster。
-## enemy.atk = 100，无暴击 100 / 暴击 150；ward capacity 30，必然破裂。
+## enemy.atk = 100；ward capacity 30，必然破裂。
 class_name ShieldBasicAbsorbScenario
 extends SkillScenario
 
@@ -48,13 +48,14 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var absorbed: float = first.get("shield_absorbed", -1.0) as float
 	var actual_life: float = first.get("actual_life_damage", -1.0) as float
 
-	# damage 100 (no crit) 或 150 (crit)，ward 容量 30 必然全部吸完
+	ctx.assert_float_eq(damage_value, 100.0, "primary damage = enemy atk")
+	# damage 100，ward 容量 30 必然全部吸完
 	ctx.assert_float_eq(absorbed, HexBattleWardBuff.SHIELD_CAPACITY,
 		"shield_absorbed = ward capacity (full broken)")
 	ctx.assert_float_eq(actual_life, damage_value - HexBattleWardBuff.SHIELD_CAPACITY,
 		"actual_life_damage = damage - absorbed")
 
-	# 主伤害 + crit bonus 都应携带正确字段；至少有一个 broken record
+	# 主伤害应携带正确字段；至少有一个 broken record
 	var records: Array = first.get("consumption_records", [])
 	ctx.assert_true(records.size() >= 1, "at least 1 consumption record")
 	if records.size() >= 1:
@@ -73,5 +74,5 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"target_actor_id": enemy,
 		"damage_type": "pure",
 	})
-	ctx.assert_true(reflected.size() >= 1,
-		"thorn reflects when actual_life_damage > 0 (got %d)" % reflected.size())
+	ctx.assert_eq(reflected.size(), 1,
+		"thorn reflects once when actual_life_damage > 0")

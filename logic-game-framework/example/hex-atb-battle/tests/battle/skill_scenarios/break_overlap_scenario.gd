@@ -118,7 +118,6 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"Long Break B should expire (got frame %d)" % remove_b_frame)
 
 	# 3. enemy_0 → caster 的 Strike 主伤害事件 = 2 (期内 + 期后)
-	# 过滤 crit bonus (10 PURE), 只看主伤害 (50 或 75 crit)。
 	var all_strikes := ctx.filter_damage_events({
 		"source_actor_id": ctx.enemy_id(0),
 		"target_actor_id": ctx.caster_id,
@@ -129,9 +128,9 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		if (e.get("damage", 0.0) as float) > 30.0:
 			main_strikes.append(e)
 	ctx.assert_eq(main_strikes.size(), 2,
-		"Expect 2 enemy_0 Strike main hits on caster (crit bonus filtered) got %d" % main_strikes.size())
+		"Expect 2 enemy_0 Strike main hits on caster got %d" % main_strikes.size())
 
-	# 4. Thorn 反伤事件: 1-2 (期后 strike 主 + 可能 crit bonus; 期内 strike 不反伤)
+	# 4. Thorn 反伤事件: 1 (期后 strike 主; 期内 strike 不反伤)
 	#    关键 (multi-source refcount 契约): 每个 reflect frame 必须 > Break B remove frame,
 	#    验证 短 Break A 到期不会过早恢复 Thorn (refcount = 1, B 仍在)。
 	var reflects := ctx.filter_damage_events({
@@ -139,8 +138,8 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"target_actor_id": ctx.enemy_id(0),
 		"is_reflected": true,
 	})
-	ctx.assert_true(reflects.size() >= 1 and reflects.size() <= 2,
-		"Expect 1-2 Thorn reflects (main + optional crit bonus, only after BOTH breaks removed); got %d" % reflects.size())
+	ctx.assert_eq(reflects.size(), 1,
+		"Expect 1 Thorn reflect only after BOTH breaks removed; got %d" % reflects.size())
 	for r in reflects:
 		var frame := int(r.get("replay_frame", -1))
 		ctx.assert_true(frame > remove_b_frame,
