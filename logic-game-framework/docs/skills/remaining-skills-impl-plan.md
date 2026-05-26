@@ -1,10 +1,10 @@
 # 剩余 5 技能可执行级实施方案（Phase 索引）
 
 > 配套 [`skill-implementation-progress.md`](skill-implementation-progress.md) 与 [`.lomo-team/reference/inkmon-skill-design.md`](../../.lomo-team/reference/inkmon-skill-design.md)。
-> 本文 = taxonomy 16 技能剩余 5 个的 **Phase 开发入口**；各 Phase 文档保留可执行级 align 方案正文。
+> 已完成归档。本文曾是 taxonomy 16 技能剩余 5 个的 **Phase 开发入口**；各 Phase 文档保留可执行级 align 方案正文。
 > 创建：2026-05-18 · Opus 4.7；拆分：2026-05-20 · Codex
 
-> 这份文档是开发入口。原 1300+ 行实施方案已经拆到 `remaining-skills-impl-plan/phase-*.md`，按 Phase 打开对应文档开发。
+> 这份文档现在作为历史索引使用。原 1300+ 行实施方案已经拆到 `remaining-skills-impl-plan/phase-*.md`，已完成状态以 [`skill-implementation-progress.md`](skill-implementation-progress.md) 为准。
 
 ## Phase 顺序
 

@@ -1,9 +1,9 @@
 # 进阶技能开发规划（Phase 2+）
 
-> 本文是 16 个示范技能之后的进阶技能讨论入口。
+> 已完成归档。本文曾是 16 个示范技能之后的进阶技能讨论入口，当前只作为 Phase 2+ 设计来源和历史决策索引。
 > 前置假设：[`remaining-skills-impl-plan.md`](remaining-skills-impl-plan.md) 覆盖的 Chain Lightning / Shadow Step / Stance / Demon Form / Summon Totem 已完成并回写 [`skill-implementation-progress.md`](skill-implementation-progress.md)。
 
-> 当前修正：Summon Totem 仍处于 spike closeout / 待正式实现状态。Fire Tile / 地形伤害格必须排在 Summon Totem 正式实现之后；先把占格召唤物的 actor spawn、actor-level lifetime、procedure 驱动与 replay 合同打通，再做 passable board hazard。
+> 历史修正：当时 Summon Totem 仍处于 spike closeout / 待正式实现状态，因此 Fire Tile / 地形伤害格必须排在 Summon Totem 正式实现之后。当前已完成状态以 [`skill-implementation-progress.md`](skill-implementation-progress.md) 为准。
 > 来源：`.lomo-team/reference/inkmon-skill-design.md` 第九节 Phase 2+ 候选 + 当前 hex-atb-battle 已落地 pattern。
 > 创建：2026-05-20 · Codex
 > Gateway 方案：[`2026-05-22-hex-battle-gateway-contract.md`](../design-notes/2026-05-22-hex-battle-gateway-contract.md)。
