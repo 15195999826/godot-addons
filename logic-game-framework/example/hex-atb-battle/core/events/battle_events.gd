@@ -89,24 +89,24 @@ class DamageEvent extends GameEvent.Base:
 		return d.get("kind") == "damage"
 
 
-# ========== AttackLandedEvent ==========
+# ========== BasicAttackLandedEvent ==========
 ##
 ## Basic-attack 命中后的 domain event. Strike (以及未来其它"普攻"类 ability)
 ## 在标准 damage 结算之后通过 on_hit callback emit. 用于:
 ##   - Phase B HexBattleGeneralPassive 触发 attack_lifesteal_pct
-##   - 未来装备 on-hit / 法球 / 攻击特效订阅
+##   - Phase G+ 装备 on-hit / 法球 / 攻击特效订阅
 ##
 ## 不由 Fireball / Poison tick / reflected damage / Fire Tile / Totem passive damage 触发.
 ## 通过 mutable.cancelled 或 target 已死的 damage 同样不触发 (callback 在那两个分支前 skip).
 ## actual_life_damage = 0 (shield 全吸) 时仍 emit, consumer 自行 no-op.
 ##
-## Post-broadcast 顺序: AttackLandedEvent 在 HexBattleDamageAction.on_hit 内 broadcast,
+## Post-broadcast 顺序: BasicAttackLandedEvent 在 HexBattleDamageAction.on_hit 内 broadcast,
 ## 早于 broadcast_post_damage (即"父 damage event 的 post"). 同一帧同时订阅 'damage' 与
-## 'attack_landed' 的 listener 会先收到 attack_landed 再收到 damage post.
+## 'basic_attack_landed' 的 listener 会先收到 basic_attack_landed 再收到 damage post.
 ## attacker_actor_id 可能指向已死 actor (Strike timeline 自 HIT 起 fire-and-forget, 父
 ## DamageAction 没有 caster-alive guard); consumer 自行用 GameWorld.get_actor() 校验.
 
-class AttackLandedEvent extends GameEvent.Base:
+class BasicAttackLandedEvent extends GameEvent.Base:
 	var attacker_actor_id: String = ""
 	var target_actor_id: String = ""
 	var source_ability_id: String = ""
@@ -117,12 +117,12 @@ class AttackLandedEvent extends GameEvent.Base:
 	var damage_event: Dictionary = {}
 
 	func _init() -> void:
-		kind = "attack_landed"
+		kind = "basic_attack_landed"
 
 	## 注意: damage_event 字段保存 caller 传入的 dict 引用本身 (不 duplicate).
 	## 反正 to_dict() 出口会 duplicate(true), 此处再拷一次纯属浪费 (deep array /
 	## consumption_records 在 shield 链长时尤甚). caller 责任: 传入后不再 mutate
-	## 该 dict (Strike._EmitAttackLandedAction 满足此约定).
+	## 该 dict (Strike._EmitBasicAttackLandedAction 满足此约定).
 	static func create(
 		p_attacker_actor_id: String,
 		p_target_actor_id: String,
@@ -130,8 +130,8 @@ class AttackLandedEvent extends GameEvent.Base:
 		p_source_ability_config_id: String,
 		p_actual_life_damage: float,
 		p_damage_event: Dictionary,
-	) -> AttackLandedEvent:
-		var e := AttackLandedEvent.new()
+	) -> BasicAttackLandedEvent:
+		var e := BasicAttackLandedEvent.new()
 		e.attacker_actor_id = p_attacker_actor_id
 		e.target_actor_id = p_target_actor_id
 		e.source_ability_id = p_source_ability_id
@@ -151,8 +151,8 @@ class AttackLandedEvent extends GameEvent.Base:
 			"damage_event": damage_event.duplicate(true),
 		}
 
-	static func from_dict(d: Dictionary) -> AttackLandedEvent:
-		var e := AttackLandedEvent.new()
+	static func from_dict(d: Dictionary) -> BasicAttackLandedEvent:
+		var e := BasicAttackLandedEvent.new()
 		e.attacker_actor_id = d.get("attacker_actor_id", "") as String
 		e.target_actor_id = d.get("target_actor_id", "") as String
 		e.source_ability_id = d.get("source_ability_id", "") as String
@@ -163,7 +163,7 @@ class AttackLandedEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "attack_landed"
+		return d.get("kind") == "basic_attack_landed"
 
 
 # ========== ShieldBrokenEvent ==========

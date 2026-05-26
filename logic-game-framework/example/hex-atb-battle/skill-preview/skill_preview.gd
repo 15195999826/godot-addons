@@ -4300,7 +4300,7 @@ func _spawn_one_actor(idx: int) -> void:
 	if _world.grid != null and _world.grid.has_tile(coord):
 		_world.grid.place_occupant(coord, cchar)
 
-	# Phase B: 角色内建规则桥 (attack_lifesteal_pct → AttackLandedEvent → heal 等).
+	# Phase B: 角色内建规则桥 (attack_lifesteal_pct → BasicAttackLandedEvent → heal 等).
 	# SkillPreview 不走 CharacterActor.equip_abilities (避免注入职业 Move/Strike), 但
 	# GeneralPassive 是每个 CharacterActor 必有的 intrinsic, 不挂会让 attack-lifesteal /
 	# 未来 hp_regen 在 preview 里失效. attribute_set 默认 attack_lifesteal_pct=0 时它 no-op.

@@ -2,7 +2,7 @@
 ##
 ## V1 契约:
 ## - 默认 attack_lifesteal_pct = 0
-## - Strike 触发 AttackLandedEvent (Phase A 已验) → HexBattleGeneralPassive 监听
+## - Strike 触发 BasicAttackLandedEvent (Phase A 已验) → HexBattleGeneralPassive 监听
 ## - GeneralPassive 自检 pct <= 0 → early return, 不调 HexBattleHealAction
 ## - replay 没有 heal event (caster 没被 heal)
 ##
@@ -36,9 +36,9 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
-	# Sanity: Strike emitted AttackLandedEvent (Phase A 契约)
-	var attack_events := ctx.events_of_kind("attack_landed")
-	ctx.assert_true(attack_events.size() >= 1, "Strike emitted at least 1 AttackLandedEvent (sanity)")
+	# Sanity: Strike emitted BasicAttackLandedEvent (Phase A 契约)
+	var attack_events := ctx.events_of_kind("basic_attack_landed")
+	ctx.assert_true(attack_events.size() >= 1, "Strike emitted at least 1 BasicAttackLandedEvent (sanity)")
 
 	# 核心契约: 默认 pct=0, 没有任何 heal_event
 	var heal_events := ctx.events_of_kind("heal")

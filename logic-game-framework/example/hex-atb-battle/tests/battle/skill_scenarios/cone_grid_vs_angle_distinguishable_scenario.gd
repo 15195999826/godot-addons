@@ -50,8 +50,8 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
-	# Collect distinct hit targets per cone type, by ability source_ability_config_id via attack_landed
-	# 但 attack_landed 不由 cone 触发 (只 Strike 走). 这里靠 timeline 顺序: 前半段 damage = grid, 后半段 = angle.
+	# Collect distinct hit targets per cone type, by ability source_ability_config_id via basic_attack_landed
+	# 但 basic_attack_landed 不由 cone 触发 (只 Strike 走). 这里靠 timeline 顺序: 前半段 damage = grid, 后半段 = angle.
 	# 简单做法: 用 replay_frame 分割.
 	var all_hits := ctx.filter_damage_events({
 		"source_actor_id": ctx.caster_id,

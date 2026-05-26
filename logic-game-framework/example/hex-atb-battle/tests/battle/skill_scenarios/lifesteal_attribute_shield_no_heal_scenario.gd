@@ -4,9 +4,9 @@
 ##   shield 全吸收时 actual_life_damage = 0, 不回血
 ##
 ## 设定:
-##   caster atk=20 → 主伤 20 (或 crit 30) ≤ ward cap 30 → 全吸 actual_life_damage=0
-##   crit 路径: 主伤 30 全吸 + crit bonus 10 击穿 = 实际 10 命中, AttackLandedEvent 仍是主伤的 (actual=0)
-##   核心断言: 主伤 attack_landed 的 actual_life_damage=0 → GeneralPassive 早退, 无 heal
+##   caster atk=20 ≤ ward cap 30 → 主伤 20 全吸 actual_life_damage=0
+##   核心断言: 主伤 basic_attack_landed 的 actual_life_damage=0 → GeneralPassive 早退, 无 heal
+##   (Phase G 起 Strike 不再自带 crit bonus damage, 暴击改由装备 grant 的 PreBasicAttackEvent passive 决定)
 class_name LifestealAttributeShieldNoHealScenario
 extends SkillScenario
 
@@ -45,9 +45,9 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
-	# Sanity: 有 AttackLandedEvent (主伤) actual_life_damage = 0
-	var attack_events := ctx.events_of_kind("attack_landed")
-	ctx.assert_true(attack_events.size() >= 1, "Strike emitted at least 1 AttackLandedEvent")
+	# Sanity: 有 BasicAttackLandedEvent (主伤) actual_life_damage = 0
+	var attack_events := ctx.events_of_kind("basic_attack_landed")
+	ctx.assert_true(attack_events.size() >= 1, "Strike emitted at least 1 BasicAttackLandedEvent")
 	ctx.assert_float_eq(attack_events[0].get("actual_life_damage", -1.0) as float, 0.0,
 		"Main strike actual_life_damage=0 (ward fully absorbed)")
 

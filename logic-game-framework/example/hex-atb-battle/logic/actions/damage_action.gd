@@ -12,27 +12,39 @@
 ##
 ## ========== 执行流程 ==========
 ##
-## 1. Pre 阶段：创建 pre_damage 事件
+## 1. §Phase G PreBasicAttackEvent (仅 emit_pre_basic_attack=true 普攻路径):
+##    - Strike 等普攻 action 通过 emit_pre_basic_attack() chain 开启
+##    - 允许装备 grant 的 attack-effect passive 修改 attack_damage / is_critical
+##    - 如果 mutable_basic.cancelled，跳过此目标
+##
+## 2. Pre 阶段：创建 pre_damage 事件
 ##    - 允许减伤/免疫等被动修改或取消伤害
 ##    - 如果 mutable.cancelled，跳过此目标
 ##
-## 2. 产生事件 + 应用状态（原子操作）：
+## 3. 产生事件 + 应用状态（原子操作）：
 ##    - ctx.event_collector.push(damage_event)  ← 事件入队（录像用）
 ##    - target.attribute_set.set_hp_base(target.attribute_set.hp - damage) ← 立即扣血
 ##
-## 3. 死亡检测：
-##    - if check_death(): 
+## 4. 死亡检测：
+##    - if check_death():
 ##        push(death_event) → process_post_event(death_event) → remove_actor()
 ##
-## 4. 处理回调：on_hit / on_critical / on_kill
+## 5. 处理回调：on_hit / on_critical / on_kill
 ##
-## 5. Post 阶段：触发反伤/吸血等被动响应
+## 6. Post 阶段：触发反伤/吸血等被动响应
 ##
 ## ========== 支持的回调 ==========
 ##
 ## - on_hit: 每次命中时触发
-## - on_critical: 暴击时触发
+## - on_critical: 暴击时触发 (is_critical 来源于 PreBasicAttackEvent; 非普攻路径恒为 false)
 ## - on_kill: 击杀时触发
+##
+## ========== §Phase G 暴击规则 ==========
+##
+## DamageAction 自身不再做 randf 暴击；is_critical 由本次的 attack_pipeline 决定：
+## - 普攻路径 (Strike emit_pre_basic_attack()): 由装备 grant 的 PreBasicAttackEvent
+##   handler 决定 (例如 Daedalus passive 写 `Modification.set_value("is_critical", 1.0)`)
+## - 非普攻 (Fireball / Poison / Reflect / Fire Tile / Totem / ...): is_critical 恒为 false
 ##
 class_name HexBattleDamageAction
 extends Action.BaseAction
@@ -40,6 +52,16 @@ extends Action.BaseAction
 
 var _damage_resolver: FloatResolver
 var _damage_type: BattleEvents.DamageType
+## §Phase G: 是否在每个 target 上 emit PreBasicAttackEvent。
+##
+## 仅由"普攻类 action"(目前是 Strike) 通过 emit_pre_basic_attack() 打开。
+## 默认 false: 通用 DamageAction (Fireball/Poison/Reflect/Fire Tile/Totem/...)
+## 不参与普攻特效链路, is_critical 始终为 false。
+##
+## 打开后 per-target 流程:
+##   PreBasicAttackEvent → (cancel? skip : 取 modified attack_damage / is_critical)
+##     → PreDamageEvent → apply_damage → callbacks → broadcast
+var _emit_pre_basic_attack: bool = false
 
 # 回调列表
 var _on_hit_callbacks: Array[Action.BaseAction] = []
@@ -58,6 +80,15 @@ func _init(
 	type = "damage"
 	_damage_resolver = damage_resolver
 	_damage_type = damage_type
+
+
+## §Phase G: 把本 DamageAction 标记为"普攻"路径,使其在每个 target 上先 emit
+## `PreBasicAttackEvent`,让装备 grant 的 attack-effect passive 修改本次 attack_damage
+## 与 is_critical。Strike (以及未来其它 basic-attack ability) 应在 builder chain 末尾调用。
+## 其它伤害源 (skill / DOT / reflect / passive damage) 不调用。
+func emit_pre_basic_attack(p_value: bool = true) -> HexBattleDamageAction:
+	_emit_pre_basic_attack = p_value
+	return self
 
 
 ## 重写 _freeze 以冻结回调 Action
@@ -99,6 +130,8 @@ func on_kill(action: Action.BaseAction) -> HexBattleDamageAction:
 
 func execute(ctx: ExecutionContext) -> ActionResult:
 	var source_actor_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
+	var source_ability_id := ctx.ability_ref.id if ctx.ability_ref != null else ""
+	var source_ability_config_id := ctx.ability_ref.config_id if ctx.ability_ref != null else ""
 	var targets := get_targets(ctx)
 	var battle: HexWorldGameplayInstance = ctx.game_state_provider
 	var event_processor := GameWorld.event_processor
@@ -115,11 +148,31 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		var target_actor: HexBattleActor = battle.get_actor(target_id) if battle != null else null
 		if target_actor == null or target_actor.is_dead():
 			continue
-		# ========== Pre 阶段 ==========
+
+		# ========== §Phase G PreBasicAttackEvent (仅普攻路径) ==========
+		# 普攻特效 (Daedalus critical strike 等) 在此 modify attack_damage / is_critical。
+		# 非普攻 (skill / DOT / reflect / Fire Tile / Totem) 默认 _emit_pre_basic_attack=false,
+		# 跳过此阶段, is_critical 始终 false。
+		var attack_damage: float = base_damage
+		var is_critical: bool = false
+		if _emit_pre_basic_attack:
+			var pre_basic := HexBattlePreEvents.PreBasicAttackEvent.create(
+				source_actor_id, target_id, base_damage,
+				source_ability_id, source_ability_config_id,
+			)
+			var mutable_basic: MutableEvent = event_processor.process_pre_event(pre_basic.to_dict(), battle)
+			if mutable_basic.cancelled:
+				var cancelled_target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
+				print("  [DamageAction] %s 的普攻被 PreBasicAttackEvent 取消" % cancelled_target_name)
+				continue
+			attack_damage = mutable_basic.get_current_value("attack_damage") as float
+			is_critical = (mutable_basic.get_current_value("is_critical") as float) >= 0.5
+
+		# ========== PreDamageEvent (通用伤害修改) ==========
 		var pre_event := HexBattlePreEvents.PreDamageEvent.create(
 			source_actor_id,
 			target_id,
-			base_damage,
+			attack_damage,
 			BattleEvents._damage_type_to_string(_damage_type)
 		)
 
@@ -131,9 +184,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			continue
 
 		var final_damage: float = mutable.get_current_value("damage")
-		var is_critical := randf() < 0.1
-		if is_critical:
-			final_damage *= 1.5
 
 		var source_name := HexBattleGameStateUtils.get_actor_display_name(source_actor_id, battle)
 		var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)

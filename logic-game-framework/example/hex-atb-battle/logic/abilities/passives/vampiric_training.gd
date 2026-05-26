@@ -1,7 +1,7 @@
 ## VampiricTraining · attack_lifesteal_pct 属性来源示例
 ##
 ## 普通被动. 通过 StatModifier 给 owner 增加 attack_lifesteal_pct;
-## 不自己监听 attack_landed —— 监听由 HexBattleGeneralPassive 统一处理.
+## 不自己监听 basic_attack_landed —— 监听由 HexBattleGeneralPassive 统一处理.
 ##
 ## Break 可以禁用本 passive (打 `passive` tag); 属性归零后 HexBattleGeneralPassive
 ## 自然 no-op. 这是 phase B 验证 "Break 禁源不禁规则桥" 的契约样本.

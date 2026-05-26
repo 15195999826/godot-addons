@@ -1,18 +1,16 @@
-## Phase A · AttackLandedEvent 边界契约：actual_life_damage = 0 仍 emit
+## Phase A · BasicAttackLandedEvent 边界契约：actual_life_damage = 0 仍 emit
 ##
 ## V1 契约 (per advanced-skills-next-batch.md Phase A):
 ##   actual_life_damage = 0 时仍允许事件存在；consumer 自己 no-op
 ##
 ## 设定：enemy.atk = 20 (< ward cap 30) → 主伤被 ward 全吸 → actual_life_damage = 0。
-## AttackLandedEvent 仍应当 emit。
-## (crit 路径下 主伤 30 == ward cap 30 也是全吸; crit bonus 10 不带 attack_landed
-##  callback, 所以总是 1 条事件)
-class_name AttackLandedZeroActualDamageScenario
+## BasicAttackLandedEvent 仍应当 emit。
+class_name BasicAttackLandedZeroActualDamageScenario
 extends SkillScenario
 
 
 func get_name() -> String:
-	return "AttackLanded: actual_life_damage = 0 still emits event"
+	return "BasicAttackLanded: actual_life_damage = 0 still emits event"
 
 
 func get_scene_config() -> Dictionary:
@@ -36,9 +34,9 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
-	var attack_events := ctx.events_of_kind("attack_landed")
+	var attack_events := ctx.events_of_kind("basic_attack_landed")
 	ctx.assert_eq(attack_events.size(), 1,
-		"Expect 1 AttackLandedEvent even when shield fully absorbs main damage (got %d)" % attack_events.size())
+		"Expect 1 BasicAttackLandedEvent even when shield fully absorbs main damage (got %d)" % attack_events.size())
 	if attack_events.is_empty():
 		return
 	var e: Dictionary = attack_events[0]

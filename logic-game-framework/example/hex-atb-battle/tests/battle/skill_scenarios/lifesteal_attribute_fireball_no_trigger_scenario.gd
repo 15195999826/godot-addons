@@ -2,10 +2,10 @@
 ##
 ## V1 契约:
 ##   active skill damage (Fireball 等) 不触发普攻吸血
-##   (Fireball 不发 AttackLandedEvent → GeneralPassive 不收 trigger → 不 heal)
+##   (Fireball 不发 BasicAttackLandedEvent → GeneralPassive 不收 trigger → 不 heal)
 ##
 ## 即使 caster 持有 VampiricTraining (attack_lifesteal_pct=0.5), Fireball 命中也不回血,
-## 因为 contract 只走 attack_landed → general_passive 这一条 path.
+## 因为 contract 只走 basic_attack_landed → general_passive 这一条 path.
 class_name LifestealAttributeFireballNoTriggerScenario
 extends SkillScenario
 
@@ -42,9 +42,9 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	})
 	ctx.assert_true(fireballs.size() >= 1, "Fireball did hit (sanity)")
 
-	# Sanity: Fireball 不该产生 AttackLandedEvent (Phase A 已测, 此处复测保险)
-	var attack_events := ctx.events_of_kind("attack_landed")
-	ctx.assert_eq(attack_events.size(), 0, "Fireball produces no AttackLandedEvent")
+	# Sanity: Fireball 不该产生 BasicAttackLandedEvent (Phase A 已测, 此处复测保险)
+	var attack_events := ctx.events_of_kind("basic_attack_landed")
+	ctx.assert_eq(attack_events.size(), 0, "Fireball produces no BasicAttackLandedEvent")
 
 	# 核心契约: 没有 heal event (即使 caster 有 VampiricTraining)
 	var heal_events := ctx.events_of_kind("heal")
