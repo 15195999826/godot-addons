@@ -128,6 +128,10 @@ const INVENTORY_SEED_ITEMS: Array[Dictionary] = [
 	{"config_id": &"frost_orb", "count": 1, "slot": 1},
 	{"config_id": &"minor_rune", "count": 5, "slot": 2},
 	{"config_id": &"broken_stone", "count": 10, "slot": 3},
+	# §Phase G: dev scene 自主验收 (/run-dev-scene skill-preview) 默认放装备物品,
+	# DevAgent equip_item op 直接装备到 selected actor 触发 grant 链路。
+	{"config_id": &"morbid_mask", "count": 1, "slot": 4},
+	{"config_id": &"daedalus_charm", "count": 1, "slot": 5},
 	{"config_id": &"training_sword", "count": 1, "slot": 10},
 ]
 
@@ -5962,6 +5966,135 @@ func dev_agent_show_inventory() -> Dictionary:
 		"ok": true,
 		"message": "inventory tab shown",
 		"data": dev_agent_inventory_layout_state(),
+	}
+
+
+## §Phase G: 把 player bag 内某 config_id 的 item 装备到指定 actor 的 equipment container。
+##
+## DS scenarios (DS1 morbid_mask / DS2 daedalus / DS3 negative fireball / DS4 unequip) 用
+## 这个 op 在 setup 阶段把装备从 demo bag 直接装上 runtime actor, 不走 drag_at UI 路径
+## (UI loop 已在 Phase F inventory drag scenarios 验证过)。
+##
+## args 约定 (`SkillPreviewDevAgentOps.run_scene_op`):
+##   {actor_idx: int, item_config_id: String|StringName, slot: int = -1 (auto)}
+##
+## 返回: {ok: bool, message, data: {item_id, ability_instance_ids, slot}} 或
+##       {ok: false, message: ...}。
+func dev_agent_equip_item(actor_idx: int, item_config_id: StringName, slot: int = -1) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot equip while playing"}
+	if _inventory == null:
+		return {"ok": false, "message": "inventory not initialized"}
+	if actor_idx < 0 or actor_idx >= _actor_ids.size():
+		return {"ok": false, "message": "actor idx out of range: %d" % actor_idx}
+	var actor_id: String = _actor_ids[actor_idx]
+	var eq_cid := _inventory.get_equipment_container_id(actor_id)
+	if eq_cid < 0:
+		return {"ok": false, "message": "actor %s 没有 equipment container" % actor_id}
+
+	# 在 bag 内按 config_id 找一个未装备的 item (任取第一个匹配)
+	var bag_id := _inventory.player_bag_id
+	var found_item_id := -1
+	for item_id in ItemSystem.get_items_in_container(bag_id):
+		var data := ItemSystem.get_item_data(item_id) as ItemInstanceData
+		if data == null:
+			continue
+		if String(data.config_id) == String(item_config_id):
+			found_item_id = item_id
+			break
+	if found_item_id < 0:
+		return {
+			"ok": false,
+			"message": "player bag 没有 config_id=%s 的 item" % str(item_config_id),
+		}
+
+	# slot < 0 → 让 InventoryKit 自动找空槽
+	var move_r := ItemSystem.move_item(found_item_id, eq_cid, slot)
+	if not move_r.success:
+		return {
+			"ok": false,
+			"message": "equip 失败: %s" % move_r.error_message,
+		}
+
+	# 从 container 读 grant 出去的 instance ids (V1 grant 是同步的, 此时已落账)
+	var container := ItemSystem.get_container(eq_cid) as HexActorEquipmentContainer
+	var ability_ids: Array[String] = []
+	if container != null:
+		ability_ids = container.get_granted_ability_instance_ids(found_item_id)
+	# 取实际落槽
+	var instance := ItemSystem.get_item_instance(found_item_id)
+	var landed_slot := -1
+	if instance != null and instance.location != null:
+		landed_slot = instance.location.slot_index
+
+	_refresh_inventory_all()
+	return {
+		"ok": true,
+		"message": "equipped %s to actor idx=%d slot=%d (%d ability instances)" % [
+			str(item_config_id), actor_idx, landed_slot, ability_ids.size()
+		],
+		"data": {
+			"item_id": found_item_id,
+			"ability_instance_ids": ability_ids,
+			"slot": landed_slot,
+		},
+	}
+
+
+## §Phase G: 把指定 actor 的 equipment container 内某槽位的 item 卸回 player bag。
+## 触发 `HexActorEquipmentContainer.on_item_moved_out` → revoke 该 item grant 出去的
+## ability instances。
+func dev_agent_unequip_item(actor_idx: int, slot: int) -> Dictionary:
+	if _is_playing:
+		return {"ok": false, "message": "cannot unequip while playing"}
+	if _inventory == null:
+		return {"ok": false, "message": "inventory not initialized"}
+	if actor_idx < 0 or actor_idx >= _actor_ids.size():
+		return {"ok": false, "message": "actor idx out of range: %d" % actor_idx}
+	if slot < 0 or slot >= HexActorEquipmentContainer.EQUIPMENT_SLOT_COUNT:
+		return {"ok": false, "message": "slot out of range: %d (expect 0..%d)" % [
+			slot, HexActorEquipmentContainer.EQUIPMENT_SLOT_COUNT - 1
+		]}
+	var actor_id: String = _actor_ids[actor_idx]
+	var eq_cid := _inventory.get_equipment_container_id(actor_id)
+	if eq_cid < 0:
+		return {"ok": false, "message": "actor %s 没有 equipment container" % actor_id}
+	var container := ItemSystem.get_container(eq_cid) as HexActorEquipmentContainer
+	if container == null:
+		return {"ok": false, "message": "container 类型不匹配"}
+
+	# 找到 slot 上的 item_id
+	var slot_item_id := -1
+	for item_id in container.get_all_items():
+		var instance := ItemSystem.get_item_instance(item_id)
+		if instance == null or instance.location == null:
+			continue
+		if instance.location.slot_index == slot:
+			slot_item_id = item_id
+			break
+	if slot_item_id < 0:
+		return {"ok": false, "message": "actor %s slot %d 为空" % [actor_id, slot]}
+
+	# 在卸装前抓 grant 出去的 instance ids (revoke 后会被清掉, 返回值要包含它们供 dev scene 验证)
+	var to_revoke: Array[String] = container.get_granted_ability_instance_ids(slot_item_id)
+
+	var move_r := ItemSystem.move_item(slot_item_id, _inventory.player_bag_id, -1)
+	if not move_r.success:
+		return {
+			"ok": false,
+			"message": "unequip 失败: %s" % move_r.error_message,
+		}
+
+	_refresh_inventory_all()
+	return {
+		"ok": true,
+		"message": "unequipped actor idx=%d slot=%d (%d ability instances revoked)" % [
+			actor_idx, slot, to_revoke.size()
+		],
+		"data": {
+			"item_id": slot_item_id,
+			"removed_ability_instance_ids": to_revoke,
+		},
 	}
 
 
