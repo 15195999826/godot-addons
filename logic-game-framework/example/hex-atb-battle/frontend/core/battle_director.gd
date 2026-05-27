@@ -25,6 +25,9 @@ signal playback_ended()
 ## 角色状态变化（转发自 RenderWorld）
 signal actor_state_changed(actor_id: String, state: FrontendActorRenderState)
 
+## Replay 中途 actorSpawned（转发自 RenderWorld）
+signal actor_spawned(actor_id: String, state: FrontendActorRenderState)
+
 ## 飘字创建（转发自 RenderWorld）
 signal floating_text_created(data: FrontendRenderData.FloatingText)
 
@@ -49,11 +52,16 @@ signal projectile_updated(projectile_id: String, position: Vector3, direction: V
 ## 投射物移除（转发自 RenderWorld）
 signal projectile_removed(projectile_id: String)
 
+## Cone debug overlay 创建（转发自 RenderWorld）
+signal cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay)
+
 
 # ========== 常量 ==========
 
 ## 逻辑帧间隔（毫秒）
 const LOGIC_TICK_MS: float = 100.0
+const FRAME_DELTA_WARN_MS: float = 50.0
+const TICK_COST_WARN_MS: float = 8.0
 
 
 # ========== 导出属性 ==========
@@ -113,6 +121,7 @@ func _ready() -> void:
 	
 	# 连接 RenderWorld 信号
 	_world.actor_state_changed.connect(_on_actor_state_changed)
+	_world.actor_spawned.connect(_on_actor_spawned)
 	_world.floating_text_created.connect(_on_floating_text_created)
 	_world.actor_died.connect(_on_actor_died)
 	_world.attack_vfx_created.connect(_on_attack_vfx_created)
@@ -121,6 +130,7 @@ func _ready() -> void:
 	_world.projectile_created.connect(_on_projectile_created)
 	_world.projectile_updated.connect(_on_projectile_updated)
 	_world.projectile_removed.connect(_on_projectile_removed)
+	_world.cone_debug_overlay_created.connect(_on_cone_debug_overlay_created)
 	
 	if auto_play and not _replay_data.is_empty():
 		play()
@@ -130,6 +140,7 @@ func _exit_tree() -> void:
 	# 断开 RenderWorld 信号连接
 	if _world:
 		_world.actor_state_changed.disconnect(_on_actor_state_changed)
+		_world.actor_spawned.disconnect(_on_actor_spawned)
 		_world.floating_text_created.disconnect(_on_floating_text_created)
 		_world.actor_died.disconnect(_on_actor_died)
 		_world.attack_vfx_created.disconnect(_on_attack_vfx_created)
@@ -138,6 +149,7 @@ func _exit_tree() -> void:
 		_world.projectile_created.disconnect(_on_projectile_created)
 		_world.projectile_updated.disconnect(_on_projectile_updated)
 		_world.projectile_removed.disconnect(_on_projectile_removed)
+		_world.cone_debug_overlay_created.disconnect(_on_cone_debug_overlay_created)
 	
 	# 清空 RefCounted 引用，打破循环引用
 	_world = null
@@ -152,7 +164,26 @@ func _process(delta: float) -> void:
 	# delta 是 Godot _process(delta) 传入的，单位是秒（比如 60fps 时 ≈ 0.0167 秒）。
 	# 整个表演层内部的时间单位统一用毫秒（duration、delay、elapsed 全是 ms）。
 	# 转为毫秒后再乘以播放速度。
-	_tick(delta * 1000.0 * _speed)
+	var real_delta_ms := delta * 1000.0
+	var playback_delta_ms := real_delta_ms * _speed
+	if real_delta_ms >= FRAME_DELTA_WARN_MS:
+		print("[Frontend:FrameDiag] long_process_delta frame=%d real_delta_ms=%.2f playback_delta_ms=%.2f speed=%.2f active_actions=%d" % [
+			_current_frame,
+			real_delta_ms,
+			playback_delta_ms,
+			_speed,
+			_scheduler.get_action_count(),
+		])
+	var start_usec := Time.get_ticks_usec()
+	_tick(playback_delta_ms)
+	var tick_cost_ms := float(Time.get_ticks_usec() - start_usec) / 1000.0
+	if tick_cost_ms >= TICK_COST_WARN_MS:
+		print("[Frontend:FrameDiag] tick_cost frame=%d input_delta_ms=%.2f cost_ms=%.2f active_actions=%d" % [
+			_current_frame,
+			playback_delta_ms,
+			tick_cost_ms,
+			_scheduler.get_action_count(),
+		])
 
 
 # ========== 公共方法 ==========
@@ -311,9 +342,11 @@ func _tick(delta_ms: float) -> void:
 			if events.size() > 0:
 				Log.debug("BattleDirector", "帧 %d: %d 个事件" % [next_frame, events.size()])
 			
-			# 翻译事件为动作
-			var context := _world.as_context()
+			# actorSpawned / actorDestroyed 先改 render-state，再用最新 context 翻译表现动作。
 			for event: Dictionary in events:
+				_log_event_frame_diag(next_frame, event)
+				_world.apply_event_side_effects(event)
+				var context := _world.as_context()
 				var actions := _registry.translate(event, context)
 				_scheduler.enqueue(actions)
 		
@@ -347,6 +380,19 @@ func _tick(delta_ms: float) -> void:
 		_is_playing = false
 		playback_state_changed.emit(false)
 		playback_ended.emit()
+
+
+func _log_event_frame_diag(replay_frame: int, event: Dictionary) -> void:
+	var kind: String = event.get("kind", "")
+	if kind == "actorSpawned":
+		var actor: Dictionary = event.get("actor", {}) as Dictionary
+		var config_id: String = actor.get("configId", "") as String
+		if config_id == "fire_tile":
+			print("[Frontend:FrameDiag] fire_tile_actor_spawned replay_frame=%d actor_id=%s position=%s" % [
+				replay_frame,
+				event.get("actorId", ""),
+				actor.get("position", []),
+			])
 
 
 ## 检查是否已结束
@@ -400,6 +446,10 @@ func _on_actor_state_changed(actor_id: String, state: FrontendActorRenderState) 
 	actor_state_changed.emit(actor_id, state)
 
 
+func _on_actor_spawned(actor_id: String, state: FrontendActorRenderState) -> void:
+	actor_spawned.emit(actor_id, state)
+
+
 func _on_floating_text_created(data: FrontendRenderData.FloatingText) -> void:
 	floating_text_created.emit(data)
 
@@ -430,3 +480,7 @@ func _on_projectile_updated(projectile_id: String, pos: Vector3, dir: Vector3) -
 
 func _on_projectile_removed(projectile_id: String) -> void:
 	projectile_removed.emit(projectile_id)
+
+
+func _on_cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay) -> void:
+	cone_debug_overlay_created.emit(data)
