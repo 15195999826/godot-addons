@@ -8,7 +8,7 @@ extends Node
 const MAIN_SCENE := "res://addons/logic-game-framework/example/hex-atb-battle/frontend/demo_random_frontend.tscn"
 const TIMEOUT_SEC := 45.0
 const PLAYBACK_SPEED := 200.0
-const FIXED_SEED := 424242
+const FIXED_SEED := 651143
 const TEAM_SIZE := 3
 const PASSIVES_PER_ACTOR := 1
 
@@ -16,6 +16,7 @@ const PASSIVES_PER_ACTOR := 1
 var _main_scene: Node
 var _world_view: FrontendWorldView
 var _animator: FrontendBattleAnimator
+var _mid_spawned_actor_ids: Array[String] = []
 var _elapsed: float = 0.0
 var _finished: bool = false
 
@@ -63,6 +64,17 @@ func _ready() -> void:
 		return
 	_assert_summary(summary)
 	if _finished:
+		return
+
+	var replay: Dictionary = _main_scene.call("get_random_replay_data") as Dictionary
+	_mid_spawned_actor_ids = _collect_mid_spawned_actor_ids(replay)
+	if _mid_spawned_actor_ids.is_empty():
+		_fail("fixed seed must produce mid-spawn actors for reset coverage")
+		return
+	if not _has_mid_spawned_actor_config(replay, "fire_tile"):
+		_fail("fixed seed must spawn fire_tile for reset coverage")
+		return
+	if not _assert_mid_spawned_views_hidden("loaded frame 0"):
 		return
 
 	var total := _animator.get_total_frames()
@@ -175,6 +187,10 @@ func _on_playback_ended() -> void:
 			report.actor_count, report.settle_time_ms, report.settle_max_drift,
 		])
 
+	var reset_ok := await _assert_reset_hides_mid_spawned_views()
+	if not reset_ok:
+		return
+
 	_pass(tot, cur, unit_count, snapshot.size())
 
 
@@ -194,3 +210,78 @@ func _fail(reason: String) -> void:
 	printerr("SMOKE_TEST_RESULT: FAIL - %s" % reason)
 	GameWorld.destroy()
 	get_tree().quit(1)
+
+
+func _collect_mid_spawned_actor_ids(replay: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	for frame_variant in replay.get("timeline", []) as Array:
+		if not (frame_variant is Dictionary):
+			continue
+		var frame_data := frame_variant as Dictionary
+		for event_variant in frame_data.get("events", []) as Array:
+			if not (event_variant is Dictionary):
+				continue
+			var event := event_variant as Dictionary
+			if str(event.get("kind", "")) != GameEvent.ACTOR_SPAWNED_EVENT:
+				continue
+			var actor_id := str(event.get("actorId", ""))
+			if not actor_id.is_empty():
+				result.append(actor_id)
+	return result
+
+
+func _has_mid_spawned_actor_config(replay: Dictionary, config_id: String) -> bool:
+	for frame_variant in replay.get("timeline", []) as Array:
+		if not (frame_variant is Dictionary):
+			continue
+		var frame_data := frame_variant as Dictionary
+		for event_variant in frame_data.get("events", []) as Array:
+			if not (event_variant is Dictionary):
+				continue
+			var event := event_variant as Dictionary
+			if str(event.get("kind", "")) != GameEvent.ACTOR_SPAWNED_EVENT:
+				continue
+			var actor_data: Dictionary = event.get("actor", {}) as Dictionary
+			if str(actor_data.get("configId", "")) == config_id:
+				return true
+	return false
+
+
+func _assert_reset_hides_mid_spawned_views() -> bool:
+	_animator.reset()
+	await get_tree().process_frame
+	if _animator.get_current_frame() != 0:
+		_fail("reset did not return to frame 0")
+		return false
+	if not _assert_mid_spawned_views_hidden("after reset"):
+		return false
+	print("  + reset cleanup     = PASS (%d mid-spawn views hidden)" % _mid_spawned_actor_ids.size())
+	return true
+
+
+func _assert_mid_spawned_views_hidden(context: String) -> bool:
+	for actor_id in _mid_spawned_actor_ids:
+		var world_view_unit := _world_view.get_unit_view(actor_id)
+		if world_view_unit != null and world_view_unit.visible:
+			_fail("%s left mid-spawn WorldView unit visible: %s" % [context, actor_id])
+			return false
+		var replay_unit := _find_replay_unit_view(actor_id)
+		if replay_unit != null and replay_unit.visible:
+			_fail("%s left mid-spawn replay unit visible: %s" % [context, actor_id])
+			return false
+	return true
+
+
+func _find_replay_unit_view(actor_id: String) -> FrontendUnitView:
+	if _animator == null:
+		return null
+	var replay_root := _animator.get_node_or_null("ReplayUnitsRoot")
+	if replay_root == null:
+		return null
+	for child in replay_root.get_children():
+		var unit_view := child as FrontendUnitView
+		if unit_view == null:
+			continue
+		if unit_view.get_actor_id() == actor_id or unit_view.name == actor_id:
+			return unit_view
+	return null

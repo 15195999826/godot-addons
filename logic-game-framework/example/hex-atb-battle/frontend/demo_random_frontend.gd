@@ -109,3 +109,8 @@ func _on_start_battle_button_pressed() -> void:
 	var summary := get_random_battle_summary()
 	var resolved_seed := int(summary.get("seed", 0))
 	print("[RandomMain] Logic battle completed in %d ticks (seed=%d)" % [_battle.tick_count, resolved_seed])
+
+
+func _on_reset_pressed() -> void:
+	super._on_reset_pressed()
+	_update_status("Reset - %d frames loaded (press Play)" % _animator.get_total_frames())
