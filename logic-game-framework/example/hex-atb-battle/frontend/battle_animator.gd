@@ -28,6 +28,7 @@ var _effects_root: Node3D
 
 var _unit_views: Dictionary = {}            # actor_id -> FrontendUnitView
 var _base_unit_views: Dictionary = {}       # actor_id -> FrontendUnitView, owned by WorldView
+var _excluded_base_unit_views: Dictionary = {} # actor_id -> FrontendUnitView, live-world mid-spawn views hidden during replay
 var _owned_replay_unit_views: Dictionary = {} # actor_id -> FrontendUnitView, owned by animator
 var _attack_vfx_views: Dictionary = {}      # vfx_id -> FrontendAttackVFXView
 var _projectile_views: Dictionary = {}      # projectile_id -> FrontendProjectileView
@@ -84,12 +85,12 @@ func _process(_delta: float) -> void:
 ## unit_views: actor_id -> FrontendUnitView 字典,由 WorldView 管理生命周期。
 ## 反复调用 = 重新加载(老 timeline 被替换,VFX/飘字/投射物清空)。
 func load(record_data: Dictionary, unit_views: Dictionary) -> void:
+	var record := ReplayData.BattleRecord.from_dict(record_data)
 	_clear_replay_unit_views()
-	_base_unit_views = unit_views.duplicate()
+	_base_unit_views = _filter_initial_base_unit_views(record, unit_views)
 	_unit_views = _base_unit_views.duplicate()
 	_clear_effects()
 
-	var record := ReplayData.BattleRecord.from_dict(record_data)
 	_director.load_replay(record)
 	_prebuild_replay_unit_views(record)
 
@@ -125,6 +126,7 @@ func resume() -> void:
 func reset() -> void:
 	_clear_effects()
 	_deactivate_replay_unit_views()
+	_hide_excluded_base_unit_views()
 	_unit_views = _base_unit_views.duplicate()
 	if _director != null:
 		_director.reset()
@@ -363,6 +365,37 @@ func _on_cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay) -
 	overlay_view.name = "ConeDebugOverlay_" + data.id
 	_effects_root.add_child(overlay_view)
 	overlay_view.initialize(data)
+
+
+func _filter_initial_base_unit_views(record: ReplayData.BattleRecord, unit_views: Dictionary) -> Dictionary:
+	_excluded_base_unit_views.clear()
+	var initial_actor_ids := {}
+	for actor_init: ReplayData.ActorInitData in record.initial_actors:
+		if not actor_init.id.is_empty():
+			initial_actor_ids[actor_init.id] = true
+
+	if initial_actor_ids.is_empty():
+		return unit_views.duplicate()
+
+	var result := {}
+	for actor_id_variant in unit_views.keys():
+		var actor_id := str(actor_id_variant)
+		var view: FrontendUnitView = unit_views[actor_id]
+		if not is_instance_valid(view):
+			continue
+		if initial_actor_ids.has(actor_id):
+			result[actor_id] = view
+		else:
+			view.visible = false
+			_excluded_base_unit_views[actor_id] = view
+	return result
+
+
+func _hide_excluded_base_unit_views() -> void:
+	for actor_id: String in _excluded_base_unit_views.keys():
+		var view: FrontendUnitView = _excluded_base_unit_views[actor_id]
+		if is_instance_valid(view):
+			view.visible = false
 
 
 func _clear_effects() -> void:
