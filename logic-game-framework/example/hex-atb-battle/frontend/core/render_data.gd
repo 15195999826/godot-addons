@@ -81,6 +81,26 @@ class Projectile extends RefCounted:
 	var duration: float = 0.0
 
 
+## Cone debug overlay 创建数据
+class ConeDebugOverlay extends RefCounted:
+	## 动作 ID
+	var id: String = ""
+	## cue_id: grid_cone_cast / angle_cone_cast
+	var cue_id: String = ""
+	## 每个 checked cell 的世界坐标多边形
+	var cell_polygons: Array[PackedVector3Array] = []
+	## 边界/guide 线段，每段两个世界坐标点
+	var boundary_segments: Array[PackedVector3Array] = []
+	## 填充颜色
+	var fill_color: Color = Color.WHITE
+	## 边界颜色
+	var boundary_color: Color = Color.WHITE
+	## 创建时的世界时间（毫秒）
+	var start_time: int = 0
+	## 持续时间（毫秒）
+	var duration: float = 0.0
+
+
 ## 程序化特效数据
 class ProceduralEffect extends RefCounted:
 	## 特效 ID

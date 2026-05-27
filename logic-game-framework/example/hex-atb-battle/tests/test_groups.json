@@ -33,6 +33,17 @@
         "skill-preview/smoke_skill_preview_inventory.tscn"
       ]
     },
+    "random-frontend": {
+      "scenes": [
+        "frontend/smoke_random_frontend_main.tscn"
+      ]
+    },
+    "random-frontend-20": {
+      "timeout_ms": 180000,
+      "scenes": [
+        "frontend/smoke_random_frontend_20_runs.tscn"
+      ]
+    },
     "frontend": {
       "scenes": [
         "frontend/smoke_frontend_main.tscn",

@@ -62,18 +62,10 @@ func start(config: Dictionary = {}) -> void:
 	# team_id 必须在 add_actor 之前设置:add_actor emit actor_added signal,
 	# WorldView 收到后立刻 _hydrate_from_actor 读 team_id 决定颜色;晚设会让
 	# view 一律按默认 team=0 染色。
-	left_team = [
-		_create_team_actor(HexBattleClassConfig.CharacterClass.PRIEST, 0),
-		_create_team_actor(HexBattleClassConfig.CharacterClass.WARRIOR, 0),
-		_create_team_actor(HexBattleClassConfig.CharacterClass.ARCHER, 0),
-	]
-	right_team = [
-		_create_team_actor(HexBattleClassConfig.CharacterClass.MAGE, 1),
-		_create_team_actor(HexBattleClassConfig.CharacterClass.BERSERKER, 1),
-		_create_team_actor(HexBattleClassConfig.CharacterClass.ASSASSIN, 1),
-	]
+	_setup_teams(config, grid_config)
 	for actor in get_all_actors():
 		actor.equip_abilities(self)
+	_after_teams_equipped(config)
 
 	var placement_ranges := _calculate_placement_ranges(grid_config)
 	_place_team_randomly(left_team, placement_ranges["left"])
@@ -104,6 +96,23 @@ func _create_team_actor(cls: HexBattleClassConfig.CharacterClass, team_id: int) 
 	var actor := CharacterActor.new(cls)
 	actor.set_team_id(team_id)
 	return add_actor(actor) as CharacterActor
+
+
+func _setup_teams(_config: Dictionary, _grid_config: GridMapConfig) -> void:
+	left_team = [
+		_create_team_actor(HexBattleClassConfig.CharacterClass.PRIEST, 0),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.WARRIOR, 0),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.ARCHER, 0),
+	]
+	right_team = [
+		_create_team_actor(HexBattleClassConfig.CharacterClass.MAGE, 1),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.BERSERKER, 1),
+		_create_team_actor(HexBattleClassConfig.CharacterClass.ASSASSIN, 1),
+	]
+
+
+func _after_teams_equipped(_config: Dictionary) -> void:
+	pass
 
 
 func _create_battle_procedure(_participants: Array[Actor]) -> BattleProcedure:

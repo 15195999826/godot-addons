@@ -29,6 +29,13 @@ while GameWorld.has_running_instances():
 
 UI 控件 `FrontendPlaybackControls` 提供 play/pause/reset/speed,信号转发到 `_animator.resume() / pause() / reset() / set_speed()`。
 
+## 随机技能 Demo
+
+- 场景入口: `frontend/demo_random_frontend.tscn`
+- 目的: 不改 `demo_frontend.tscn` 测试基线, 复用相同 `WorldView + BattleAnimator` wire, 但用 `HexRandomDemoWorldGameplayInstance` 随机组装职业、主技能和额外 passive, 跑一场完整 production battle。
+- UI 参数: `Seed (0=random)` / `Extra Passives`。随机战斗固定 3v3; 固定 seed 可复现同一组 loadout, seed 为 0 时每次 Start 生成新 seed。单位显示名使用 `左方 1` / `右方 1` 这类中性编号, 不暴露底层数值模板名称。
+- Smoke: `./tools/run_tests.ps1 hex/random-frontend`
+
 ## 项目背景
 
 本项目是 **inkmon** 战斗系统的 **Godot 3D 表演层**实现，用于将逻辑层产生的战斗事件可视化为 3D 动画。

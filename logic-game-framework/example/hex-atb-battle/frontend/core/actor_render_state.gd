@@ -14,6 +14,9 @@ var id: String = ""
 ## Actor 类型（如 "Character"）
 var type: String = ""
 
+## Actor 配置 ID（如 "Totem" / "fire_tile"）
+var config_id: String = ""
+
 ## 显示名称
 var display_name: String = ""
 
@@ -94,6 +97,7 @@ func duplicate() -> FrontendActorRenderState:
 	var copy := FrontendActorRenderState.new()
 	copy.id = id
 	copy.type = type
+	copy.config_id = config_id
 	copy.display_name = display_name
 	copy.team = team
 	copy.position = HexCoord.new(position.q, position.r)
