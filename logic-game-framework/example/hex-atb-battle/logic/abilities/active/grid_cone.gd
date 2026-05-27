@@ -1,14 +1,15 @@
-## Grid Cone · 基于 hex 格子方向 sector 的扇形 AoE
+## Grid Cone · 基于 hex 格子固定角度 footprint 的锥形 AoE
 ##
-## V1 行为 (per advanced-skills-next-batch.md Phase D):
+## 行为:
 ## - 释放方式: target_coord (不点 actor; 玩家点格子)
 ## - cast_dir = HexFacing.direction_between(caster, target_coord)
-## - 选区: caster range 内所有 candidate hex; direction_between(caster→candidate)
-##   必须落在 {cast_dir-1, cast_dir, cast_dir+1} 三方向 sector 才算前向命中
-## - target_coord 字段必须存在 (event["target_coord"].has(q,r)); 缺字段 / target_coord == caster
-##   都是 caller contract 错误 → Log.assert_crash (不 fallback 到 facing)
+## - target_coord 是 cone origin; range=3 包含 origin, 共 3 层固定中心锥形 footprint
+## - target_coord == caster.hex_position 时, cast_dir 使用 caster 当前 facing
+## - target_coord 字段必须存在 (event["target_coord"].has(q,r)); 缺字段是 caller contract 错误
+##   → Log.assert_crash
 ## - 命中过滤: 敌方 alive CharacterActor 占该格
-## - 命中顺序确定: distance_to(caster) 升序 → coord (q*1000+r) 升序 二级 (multiplier 需 > 地图半径 diameter)
+## - 命中顺序确定: distance_to(cone_origin) 升序 → coord (q*1000+r) 升序 二级
+##   (multiplier 需 > 地图半径 diameter)
 ## - damage = caster.atk PHYSICAL (复用 HexBattleDamageAction)
 class_name HexBattleGridCone
 
@@ -42,35 +43,79 @@ static var _CASTER_ATK_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: Exec
 
 ## Phase E · debug 检查区域几何 (selector 与 StageCue.params overlay 共用).
 ##
-## 返回所有"selector 会枚举到"的格子 (不含 caster 自身, 不论格内是否有敌人).
-## checked_coords = 完整 sector 区域; targetActorIds = 真正命中的 actor —— 二者
+## 返回所有"selector 会枚举到"的格子 (包含 cone origin, 不论格内是否有敌人).
+## checked_coords = 完整 fixed footprint 区域; targetActorIds = 真正命中的 actor —— 二者
 ## 区别让 frontend overlay 可显示"扫过区域"vs"命中目标"双层 cue.
+static func compute_checked_coords(
+	caster_pos: HexCoord,
+	target_coord: HexCoord,
+	caster_facing_direction: int = HexFacing.DIR_EAST
+) -> Array[Dictionary]:
+	if caster_pos == null or target_coord == null:
+		return []
+	var cast_dir := _resolve_cast_direction(caster_pos, target_coord, caster_facing_direction)
+	return compute_grid_cone_from_origin(target_coord, cast_dir, HexBattleGridCone.CONE_RANGE)
+
+
+## 从 cone origin 出发, 按指定方向计算 grid cone footprint。
+## origin 自身是第 1 层, 也属于 checked area。
 ##
-## caster_pos.equals(target_coord) 在此 helper 返回空; 真正 cast 路径上 selector 自身
-## 仍会 Log.assert_crash, 这层只为 visualizer 提前查询时不崩溃.
-static func compute_checked_coords(caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
+## range=3 时 checked area 为 1+3+5=9 格。cast_dir 是中心线, 两侧边界
+## 固定取相邻方向, 从而得到 grid-locked footprint；动态角度锥形由 angle_cone 处理。
+static func compute_grid_cone_from_origin(
+	origin_coord: HexCoord,
+	cast_dir: int,
+	cone_range: int
+) -> Array[Dictionary]:
 	var coords: Array[Dictionary] = []
-	if caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
+	if origin_coord == null or cone_range <= 0:
 		return coords
-	var cast_dir := HexFacing.direction_between(caster_pos, target_coord)
-	var sector: Array[int] = [
-		posmod(cast_dir - 1, 6),
-		cast_dir,
-		posmod(cast_dir + 1, 6),
-	]
-	for cand in UGridMap.model.get_range(caster_pos, HexBattleGridCone.CONE_RANGE):
-		if cand.equals(caster_pos):
-			continue
-		var cand_dir := HexFacing.direction_between(caster_pos, cand)
-		if not sector.has(cand_dir):
-			continue
-		coords.append({"q": cand.q, "r": cand.r})
+	var center_dir := posmod(cast_dir, 6)
+	var left_row_dir := posmod(center_dir + 2, 6)
+	var right_row_dir := posmod(center_dir - 2, 6)
+	for distance in range(cone_range):
+		var row_center := _offset_coord(origin_coord, center_dir, distance)
+		coords.append({"q": row_center.q, "r": row_center.r})
+		for lateral_steps in range(1, distance + 1):
+			var left_cand := _offset_coord(row_center, left_row_dir, lateral_steps)
+			coords.append({"q": left_cand.q, "r": left_cand.r})
+			var right_cand := _offset_coord(row_center, right_row_dir, lateral_steps)
+			coords.append({"q": right_cand.q, "r": right_cand.r})
 	return coords
+
+
+static func _resolve_cast_direction(
+	caster_pos: HexCoord,
+	target_coord: HexCoord,
+	caster_facing_direction: int
+) -> int:
+	if caster_pos.equals(target_coord):
+		return posmod(caster_facing_direction, 6)
+	return HexFacing.direction_between(caster_pos, target_coord)
+
+
+static func _direction_edges(cast_dir: int) -> Array[int]:
+	return [
+		posmod(cast_dir + 1, 6),
+		posmod(cast_dir - 1, 6),
+	]
+
+
+static func _offset_coord(
+	origin_coord: HexCoord,
+	direction: int,
+	steps: int
+) -> HexCoord:
+	var dir_vec := HexCoord.DIRECTIONS[posmod(direction, 6)]
+	return HexCoord.new(
+		origin_coord.q + dir_vec.x * steps,
+		origin_coord.r + dir_vec.y * steps
+	)
 
 
 ## DictResolver 在 on_timeline_start 解析: 返回 frontend overlay 需要的几何 payload.
 ## payload 字段: shape / origin_coord / target_coord / checked_coords / range /
-## cast_direction / direction_sector.
+## caster_coord / cast_direction / direction_edges.
 static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: ExecutionContext) -> Dictionary:
 	var event := ctx.get_current_event()
 	var target_coord_dict: Dictionary = event.get("target_coord", {}) as Dictionary
@@ -82,28 +127,32 @@ static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: Ex
 	var actor := GameWorld.get_actor(owner_id)
 	if actor == null or not (actor is CharacterActor):
 		return {}
-	var caster_pos: HexCoord = (actor as CharacterActor).hex_position
+	var caster := actor as CharacterActor
+	var caster_pos: HexCoord = caster.hex_position
 	var target_coord := HexCoord.from_dict(target_coord_dict)
-	if caster_pos.equals(target_coord):
-		return {}
-	var cast_dir := HexFacing.direction_between(caster_pos, target_coord)
+	var cast_dir := HexBattleGridCone._resolve_cast_direction(
+		caster_pos,
+		target_coord,
+		caster.get_facing_direction()
+	)
 	return {
 		"shape": "grid_cone",
-		"origin_coord": {"q": caster_pos.q, "r": caster_pos.r},
+		"origin_coord": {"q": target_coord.q, "r": target_coord.r},
+		"caster_coord": {"q": caster_pos.q, "r": caster_pos.r},
 		"target_coord": {"q": target_coord.q, "r": target_coord.r},
-		"checked_coords": HexBattleGridCone.compute_checked_coords(caster_pos, target_coord),
+		"checked_coords": HexBattleGridCone.compute_checked_coords(
+			caster_pos,
+			target_coord,
+			caster.get_facing_direction()
+		),
 		"range": HexBattleGridCone.CONE_RANGE,
 		"cast_direction": cast_dir,
-		"direction_sector": [
-			posmod(cast_dir - 1, 6),
-			cast_dir,
-			posmod(cast_dir + 1, 6),
-		],
+		"direction_edges": HexBattleGridCone._direction_edges(cast_dir),
 	}
 )
 
 
-## TargetSelector 子类: caster range 内, 方向 ∈ {cast_dir-1, cast_dir, cast_dir+1} sector
+## TargetSelector 子类: target_coord 为 origin, 命中 fixed grid cone footprint 内
 ## 的敌方 alive CharacterActor。
 class _GridConeSelector:
 	extends TargetSelector
@@ -127,27 +176,20 @@ class _GridConeSelector:
 			"HexBattleGridCone._GridConeSelector",
 			"activate event missing target_coord.q/r; AI/UI must populate target_coord for cone skills")
 		var target_coord := HexCoord.from_dict(target_coord_dict)
-		# Caller contract: target_coord != caster.hex_position; AI / UI 必须避免传入 own pos.
-		Log.assert_crash(not target_coord.equals(caster_pos),
-			"HexBattleGridCone._GridConeSelector",
-			"target_coord (%d,%d) == caster.hex_position; AI/UI must enforce distinct pos" % [target_coord.q, target_coord.r])
-
-		var cast_dir := HexFacing.direction_between(caster_pos, target_coord)
-		var sector: Array[int] = [
-			posmod(cast_dir - 1, 6),
+		var cast_dir := HexBattleGridCone._resolve_cast_direction(
+			caster_pos,
+			target_coord,
+			caster.get_facing_direction()
+		)
+		var checked_coords := HexBattleGridCone.compute_grid_cone_from_origin(
+			target_coord,
 			cast_dir,
-			posmod(cast_dir + 1, 6),
-		]
-
-		var candidates := UGridMap.model.get_range(caster_pos, HexBattleGridCone.CONE_RANGE)
+			HexBattleGridCone.CONE_RANGE
+		)
 		var caster_team := caster.get_team_id()
 		var hits: Array[Dictionary] = []
-		for cand in candidates:
-			if cand.equals(caster_pos):
-				continue
-			var cand_dir := HexFacing.direction_between(caster_pos, cand)
-			if not sector.has(cand_dir):
-				continue
+		for coord_dict in checked_coords:
+			var cand := HexCoord.from_dict(coord_dict)
 			var occupant = battle.grid.get_occupant(cand)
 			if occupant == null:
 				continue
@@ -160,11 +202,11 @@ class _GridConeSelector:
 				continue
 			hits.append({
 				"actor_id": c.get_id(),
-				"distance": caster_pos.distance_to(cand),
+				"distance": target_coord.distance_to(cand),
 				"sort_key": cand.q * 1000 + cand.r,
 			})
 
-		# 命中顺序确定: distance 升序 → sort_key 升序
+		# 命中顺序确定: cone origin distance 升序 → sort_key 升序
 		hits.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			if a["distance"] != b["distance"]:
 				return a["distance"] < b["distance"]
@@ -180,7 +222,7 @@ static var ABILITY := (
 	AbilityConfig.builder()
 	.config_id(CONFIG_ID)
 	.display_name("格栅锥击")
-	.description("以 caster 当前格为中心, 沿目标方向 3 格扇形 (含 ±1 方向) 命中所有敌方 (atk 物理)")
+	.description("以目标格为锥形起点, 沿 caster→目标格方向展开 3 层固定格子锥形, 命中所有敌方 (atk 物理)")
 	.ability_tags(["skill", "active", "melee", "enemy", "cone", "aoe"])
 	.meta(HexBattleSkillMetaKeys.RANGE, CONE_RANGE)
 	.active_use(

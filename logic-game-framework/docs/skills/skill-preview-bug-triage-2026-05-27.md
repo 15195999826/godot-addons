@@ -51,7 +51,7 @@ DevAgent acceptance:
 | Active Strike facing | `skill-preview-fixes-20260527-111740`, `A07-timeline`: one `actor_facing_changed`, `old_direction=0`, `new_direction=5`, `reason=active_use` |
 | Totem replay view | `S06-timeline`: `actorSpawned` for `configId: "Totem"`; `S11-tree`: `BattleAnimator/ReplayUnitsRoot/skill_preview_world_0_Character_19`; screenshot `S10-capture-capture.jpg` |
 | Fire Tile replay view | `T26-timeline`: `actorSpawned` for `configId: "fire_tile"` / `type: "Environment"`; `T31-tree`: `BattleAnimator/ReplayUnitsRoot/skill_preview_world_0_Environment_38`; screenshot `T30-capture-capture.jpg` |
-| Grid cone overlay | `C07-timeline`: `grid_cone_cast` with 18 `checked_coords`; `C12-tree`: `ConeDebugOverlay_*` with `Fill` and `Boundary`; screenshot `C11-capture-capture.jpg` |
+| Grid cone overlay / selector | Overlay proof: `C12-tree` has `ConeDebugOverlay_*` with `Fill` and `Boundary`; screenshot `C11-capture-capture.jpg`. Current selector proof: `grid-cone-9-footprint-20260527-165130`, `B03-timeline` has range=3 as 9 checked cells `(2,0),(3,0),(3,-1),(2,1),(4,0),(4,-1),(3,1),(4,-2),(2,2)`, `direction_edges=[1,5]`, and no `direction_sector`. |
 | Angle cone overlay | `C26-timeline`: `angle_cone_cast` with 9 `checked_coords`; `C31-tree`: `ConeDebugOverlay_*` with `Fill` and `Boundary`; screenshot `C30-capture-capture.jpg` |
 | Paused replay guard | After paused summon replay, `T00-reset-after-paused-summon` returned `ok=true`; `T00b-enter-setup-after-paused` returned `ok=true` |
 | Totem attack VFX follow-up | `skill-preview-vfx-stutter-fix-113636`, `A10-timeline`: 4 个 `totem_attack` stageCue；`A13-tree`: `AttackVFX_*` with `ArrowMesh` / `TrailMesh`; screenshot `A12-capture-capture.jpg` |
@@ -121,7 +121,7 @@ Expected contract:
 - `HexFacing` documents: active attack / cast should `face toward target`.
 - Move already follows this path through `start_move_action.gd`.
 
-DevAgent reproduction:
+DevAgent reproduction (historical, before fixed-footprint selector correction):
 
 - Session: `skill-preview-bug-hunt-20260527`.
 - Setup: caster at `(0,0)`, enemy at `(0,1)`, `skill_strike @ 0ms`.
@@ -209,7 +209,7 @@ DevAgent reproduction:
 
 - Session: `skill-preview-bug-hunt-cone-20260527`.
 - Setup: `skill_grid_cone @ 0ms`, fixed target coord `(3,0)`.
-- Timeline evidence: `C07-timeline` stageCue `grid_cone_cast` includes `params.checked_coords` with 18 cells, `origin_coord`, `target_coord`, `range`, `cast_direction`, and `direction_sector`.
+- Timeline evidence: `C07-timeline` stageCue `grid_cone_cast` used the old broad-sector selector and included `params.checked_coords` with 18 cells, `origin_coord`, `target_coord`, `range`, `cast_direction`, and `direction_sector`.
 - Visual evidence: `screenshots\C11-cap100-grid-cone-overlay-100ms.png` shows many small `▲` markers on cells, but no filled cell area and no cone boundary.
 - Representative sweep also covered `skill_angle_cone`: timeline loaded with a single cone `stageCue`, but the same visualizer path is used by `angle_cone_cast`, so it shares the marker-only limitation unless the visualizer is redesigned.
 
