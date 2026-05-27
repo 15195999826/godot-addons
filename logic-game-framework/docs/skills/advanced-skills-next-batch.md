@@ -132,9 +132,9 @@ damage_event
 - 新增 `skill_angle_cone`。
 - 支持 active skill 使用 `target_coord` 释放。
 - 如需要，补 example 层 `can_use_skill_at_coord()`；不要把 coord targeting 塞进 actor-only `can_use_skill_on()`。
-- `GridConeSelector`：取 caster range 内所有格，按 `{cast_dir - 1, cast_dir, cast_dir + 1}` 三方向 sector 过滤。
+- `GridConeSelector`：用 `caster.hex_position -> target_coord` 计算方向；以 `target_coord` 为 cone origin，`range=3` 包含 origin，按中心线固定 grid footprint 枚举 `1+3+5` 格；不要用 origin 半径范围再按 `{dir-1, dir, dir+1}` 做 sector 过滤。
 - `AngleConeSelector`：`range=3`、`half_angle_deg=45`，用 `coord_to_world()` 真实角度判断。
-- `target_coord == caster.hex_position` 是 caller contract 错误；实现应暴露 error / assertion，不做保护性 fail/no-op，不 fallback 到 facing。
+- `target_coord == caster.hex_position` 对 grid cone 合法，此时使用 caster 当前 facing 作为方向；angle cone 仍把 forward 近零视为 caller contract 错误。
 
 验收：
 
@@ -164,7 +164,7 @@ origin_coord
 target_coord
 checked_coords
 range
-cast_direction / direction_sector
+cast_direction / direction_edges
 half_angle_deg
 ```
 
@@ -393,14 +393,15 @@ skill_angle_cone
 `GridConeSelector` 是战棋语义：
 
 - 技能使用 `target_coord` 释放，不要求点选 actor。
-- 方向来自 `HexFacing.direction_between(caster.hex_position, target_coord)`。
-- `target_coord == caster.hex_position` 是 caller contract 错误，不在技能里做保护性 fail/no-op，也不 fallback 到 facing；实现应暴露 error / assertion，修 AI 或输入逻辑。
-- 选区不是手写 `[1, 3, 5]` 这种逐层宽度。
-- 选区语义是：以 caster 当前格为中心，取 `range` 内所有 candidate coord；把 `caster -> candidate` 量化到 6 个 hex direction；只保留 direction 属于 `{cast_dir - 1, cast_dir, cast_dir + 1}` 的前向扇区格子。
-- 例如 range=3 时，检查区域就是“3 格半径内朝释放方向的前方格子集合”，实际多少格由 hex 几何自然决定。
+- 方向默认来自 `HexFacing.direction_between(caster.hex_position, target_coord)`。
+- 如果 `target_coord == caster.hex_position`，方向来自 caster 当前 `facing_direction`。
+- 选区不是 origin 半径范围 + `direction_between(candidate)` 过滤。
+- 选区语义是：以 `target_coord` 为第 1 层，沿锁定的 `cast_direction` 作为中心线，两侧边界固定为相邻 hex direction，逐层展开 grid footprint。
+- `range=3` 表示包含目标格自身在内的 3 层，检查区域固定为 `1+3+5=9` 格。
+- 例如 `caster=(0,0), target_coord=(2,0)` 时，`cast_direction=EAST`，边界为 `NORTHEAST/SOUTHEAST`，checked coords 为 `(2,0),(3,0),(3,-1),(2,1),(4,0),(4,-1),(4,-2),(3,1),(2,2)`。
 - 结果不依赖真实像素角度，便于玩家预览与规则解释。
 - 同一 selected target 附近的小偏移不会改变方向，除非跨过 6 向分界。
-- DESKTK 旧项目里 `TargetSelectionType::Cone` 只有配置声明，未落地目标选择逻辑；本轮不照搬旧实现，直接采用上述 grid sector contract。
+- DESKTK 旧项目里 `TargetSelectionType::Cone` 只有配置声明，未落地目标选择逻辑；本轮不照搬旧实现，直接采用上述 fixed footprint contract。
 
 ### Angle Cone Selector
 
@@ -431,11 +432,12 @@ angle(forward, candidate - caster) <= half_angle + epsilon
 {
   "shape": "grid_cone" | "angle_cone",
   "origin_coord": {"q": int, "r": int},
+  "caster_coord": {"q": int, "r": int},  # grid_cone only
   "target_coord": {"q": int, "r": int},
   "checked_coords": [{"q": int, "r": int}, ...],
   "range": int,
   "cast_direction": int,           # grid_cone only, 0..5
-  "direction_sector": [int, ...],  # grid_cone only, e.g. [dir-1, dir, dir+1]
+  "direction_edges": [int, ...],   # grid_cone only, e.g. [dir+1, dir-1] boundary dirs
   "half_angle_deg": float          # angle_cone only
 }
 ```
@@ -450,7 +452,7 @@ angle(forward, candidate - caster) <= half_angle + epsilon
 ### Scenario 覆盖
 
 - 同一组站位分别释放 `skill_grid_cone` 和 `skill_angle_cone`，断言命中集合不同。
-- 至少一个目标在 grid cone 内但 angle cone 外，证明格子扇形比真实 45 度锥形更宽。
+- 至少一个目标在 grid cone 内但 angle cone 外，证明 target-origin fixed footprint 与 caster-origin 真实角度锥形可区分。
 - AOE 同帧多目标受伤，断言多个 enemy 都产生 `DamageEvent`。
 - `stageCue.params.checked_coords` 与 selector 计算出的检查区域一致。
 - 边界目标靠近 `half_angle` 时结果稳定，使用 epsilon 避免浮点抖动。
