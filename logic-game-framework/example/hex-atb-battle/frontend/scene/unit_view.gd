@@ -24,6 +24,9 @@ signal death_animation_finished(actor_id: String)
 ## 单位半径
 @export var unit_radius: float = 0.5
 
+const POSITION_GAP_WARN: float = 0.08
+const MAX_POSITION_GAP_LOGS: int = 5
+
 
 # ========== 节点引用 ==========
 
@@ -51,6 +54,7 @@ var _smoothed_position: Vector3 = Vector3.ZERO
 var _bump_offset: Vector3 = Vector3.ZERO
 var _death_tween: Tween
 var _environment_kind: String = ""
+var _position_gap_log_count: int = 0
 ## 死亡动画 once 策略 flag。play_death() 是 transition event 入口,但同一战斗内
 ## 的非战斗事件(动画系统重入 / debug 重 wire)仍可能触发多次,view 自己挡 once。
 var _death_played: bool = false
@@ -79,6 +83,18 @@ func _process(delta: float) -> void:
 	# 否则会和这里的 lerp 互相覆盖。
 	if _death_played:
 		return
+	var gap_before := _smoothed_position.distance_to(_target_position)
+	if _should_log_position_gap(gap_before, delta):
+		_position_gap_log_count += 1
+		print("[Frontend:FrameDiag] unit_position_gap actor=%s kind=%s delta_ms=%.2f gap=%.3f smoothed=%s target=%s position=%s" % [
+			_actor_id,
+			_environment_kind,
+			delta * 1000.0,
+			gap_before,
+			_smoothed_position,
+			_target_position,
+			position,
+		])
 	# _smoothed_position 朝 _target_position 收敛(原 lerp 行为),
 	# 最终 position = 平滑值 + bump_offset(bump 不走 lerp,避免撞击手感被吃掉)。
 	_smoothed_position = _smoothed_position.lerp(_target_position, delta * 15.0)
@@ -134,18 +150,40 @@ func initialize(
 func set_environment_style(kind: String) -> void:
 	_environment_kind = kind
 	if _mesh_instance != null:
-		var box := BoxMesh.new()
-		box.size = Vector3(0.9, 0.85, 0.9)
-		_mesh_instance.mesh = box
-		_mesh_instance.position = Vector3(0.0, 0.4, 0.0)
+		if kind == "fire_tile":
+			var fire_disk := CylinderMesh.new()
+			fire_disk.top_radius = 0.78
+			fire_disk.bottom_radius = 0.78
+			fire_disk.height = 0.08
+			fire_disk.radial_segments = 32
+			_mesh_instance.mesh = fire_disk
+			_mesh_instance.position = Vector3(0.0, 0.04, 0.0)
+		else:
+			var box := BoxMesh.new()
+			box.size = Vector3(0.9, 0.85, 0.9)
+			_mesh_instance.mesh = box
+			_mesh_instance.position = Vector3(0.0, 0.4, 0.0)
 	if _base_material != null:
-		_base_material.albedo_color = Color(0.45, 0.42, 0.36)
+		if kind == "fire_tile":
+			_base_material.albedo_color = Color(1.0, 0.28, 0.05, 0.72)
+			_base_material.emission_enabled = true
+			_base_material.emission = Color(1.0, 0.18, 0.02)
+			_base_material.emission_energy_multiplier = 0.6
+			_base_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		else:
+			_base_material.albedo_color = Color(0.45, 0.42, 0.36)
+			_base_material.emission_enabled = false
+			_base_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 	if _hp_bar_view != null:
 		_hp_bar_view.set_hidden(true)
 	if _shield_bar_view != null:
 		_shield_bar_view.visible = false
 	if _name_label_view != null:
-		var override := "StoneWall" if kind == "stone_wall" else kind
+		var override := kind
+		if kind == "stone_wall":
+			override = "StoneWall"
+		elif kind == "fire_tile":
+			override = "FireTile"
 		_name_label_view.set_override_text(override)
 	# Phase F: env actor 不显示朝向箭头 (per spec).
 	if _facing_indicator_view != null:
@@ -186,6 +224,15 @@ func set_world_position(new_world_pos: Vector3) -> void:
 	_target_position = new_world_pos
 
 
+## 初始化 / 中途 spawn 时直接落位,避免从默认位置 lerp 到目标格。
+func snap_world_position(new_world_pos: Vector3) -> void:
+	_target_position = new_world_pos
+	_smoothed_position = new_world_pos
+	position = new_world_pos + _bump_offset
+	if _environment_kind == "fire_tile":
+		_position_gap_log_count = 0
+
+
 # ========== 内部方法 ==========
 
 ## team 0 → 蓝, 1 → 红, 其他(含 environment) → 棕。
@@ -219,6 +266,14 @@ func _apply_bump_squish(squish: Vector3) -> void:
 	if _mesh_instance == null:
 		return
 	_mesh_instance.scale = squish
+
+
+func _should_log_position_gap(gap: float, delta: float) -> bool:
+	if _environment_kind != "fire_tile":
+		return false
+	if _position_gap_log_count >= MAX_POSITION_GAP_LOGS:
+		return false
+	return gap >= POSITION_GAP_WARN
 
 
 ## 播放死亡动画(once 策略)。已播过则忽略 — 用于 transition event 入口,调方

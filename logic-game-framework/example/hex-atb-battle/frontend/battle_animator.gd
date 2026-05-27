@@ -23,16 +23,26 @@ signal frame_changed(current_frame: int, total_frames: int)
 # ========== 内部组件 ==========
 
 var _director: FrontendBattleDirector
+var _replay_units_root: Node3D
 var _effects_root: Node3D
 
 var _unit_views: Dictionary = {}            # actor_id -> FrontendUnitView
+var _base_unit_views: Dictionary = {}       # actor_id -> FrontendUnitView, owned by WorldView
+var _owned_replay_unit_views: Dictionary = {} # actor_id -> FrontendUnitView, owned by animator
 var _attack_vfx_views: Dictionary = {}      # vfx_id -> FrontendAttackVFXView
 var _projectile_views: Dictionary = {}      # projectile_id -> FrontendProjectileView
+
+const SPAWN_VIEW_COST_WARN_MS: float = 3.0
+const FLOATING_TEXT_COST_WARN_MS: float = 2.0
 
 
 # ========== 生命周期 ==========
 
 func _ready() -> void:
+	_replay_units_root = Node3D.new()
+	_replay_units_root.name = "ReplayUnitsRoot"
+	add_child(_replay_units_root)
+
 	_effects_root = Node3D.new()
 	_effects_root.name = "EffectsRoot"
 	add_child(_effects_root)
@@ -42,6 +52,7 @@ func _ready() -> void:
 	add_child(_director)
 
 	_director.actor_state_changed.connect(_on_actor_state_changed)
+	_director.actor_spawned.connect(_on_actor_spawned)
 	_director.actor_died.connect(_on_actor_died)
 	_director.floating_text_created.connect(_on_floating_text_created)
 	_director.attack_vfx_created.connect(_on_attack_vfx_created)
@@ -50,6 +61,7 @@ func _ready() -> void:
 	_director.projectile_created.connect(_on_projectile_created)
 	_director.projectile_updated.connect(_on_projectile_updated)
 	_director.projectile_removed.connect(_on_projectile_removed)
+	_director.cone_debug_overlay_created.connect(_on_cone_debug_overlay_created)
 	_director.playback_ended.connect(_on_playback_ended)
 	_director.playback_state_changed.connect(func(p: bool) -> void: playback_state_changed.emit(p))
 	_director.frame_changed.connect(func(c: int, t: int) -> void: frame_changed.emit(c, t))
@@ -72,11 +84,14 @@ func _process(_delta: float) -> void:
 ## unit_views: actor_id -> FrontendUnitView 字典,由 WorldView 管理生命周期。
 ## 反复调用 = 重新加载(老 timeline 被替换,VFX/飘字/投射物清空)。
 func load(record_data: Dictionary, unit_views: Dictionary) -> void:
-	_unit_views = unit_views
+	_clear_replay_unit_views()
+	_base_unit_views = unit_views.duplicate()
+	_unit_views = _base_unit_views.duplicate()
 	_clear_effects()
 
 	var record := ReplayData.BattleRecord.from_dict(record_data)
 	_director.load_replay(record)
+	_prebuild_replay_unit_views(record)
 
 
 ## 启动播放当前已 load 的 timeline;未 load 时 no-op。
@@ -108,9 +123,11 @@ func resume() -> void:
 ## 重置到 frame 0,清空特效,复活所有 view。Reset 是 playback session control
 ## 不是战斗内事件,不走 Director signal — 直接遍历 view 调 revive() 拉回视觉态。
 func reset() -> void:
+	_clear_effects()
+	_deactivate_replay_unit_views()
+	_unit_views = _base_unit_views.duplicate()
 	if _director != null:
 		_director.reset()
-	_clear_effects()
 	for view in _unit_views.values():
 		if is_instance_valid(view):
 			view.revive()
@@ -130,7 +147,7 @@ func step(delta_ms: float) -> void:
 	for actor_id in _unit_views:
 		var view: FrontendUnitView = _unit_views[actor_id]
 		if is_instance_valid(view):
-			view.set_world_position(_director.get_actor_world_position(actor_id))
+			view.snap_world_position(_director.get_actor_world_position(actor_id))
 
 
 func is_playing() -> bool:
@@ -162,6 +179,95 @@ func is_ended() -> bool:
 
 # ========== Director signal → 外部 unit view ==========
 
+func _on_actor_spawned(actor_id: String, state: FrontendActorRenderState) -> void:
+	if _unit_views.has(actor_id):
+		_on_actor_state_changed(actor_id, state)
+		return
+	if _replay_units_root == null:
+		return
+	var start_usec := Time.get_ticks_usec()
+	var view := _get_or_create_replay_unit_view(actor_id, state)
+	if view == null:
+		return
+	view.revive()
+	view.visible = true
+	_initialize_replay_unit_view(view, actor_id, state)
+	var world_position := _director.get_actor_world_position(actor_id)
+	view.snap_world_position(world_position)
+	_owned_replay_unit_views[actor_id] = view
+	_unit_views[actor_id] = view
+	var cost_ms := float(Time.get_ticks_usec() - start_usec) / 1000.0
+	if cost_ms >= SPAWN_VIEW_COST_WARN_MS or state.config_id == "fire_tile":
+		print("[Frontend:FrameDiag] spawn_view actor=%s config=%s type=%s world_pos=%s cost_ms=%.2f" % [
+			actor_id,
+			state.config_id,
+			state.type,
+			world_position,
+			cost_ms,
+		])
+
+
+func _prebuild_replay_unit_views(record: ReplayData.BattleRecord) -> void:
+	for frame_data: ReplayData.FrameData in record.timeline:
+		for event: Dictionary in frame_data.events:
+			if event.get("kind", "") != "actorSpawned":
+				continue
+			var state := _actor_spawn_event_to_state(event)
+			if state.id.is_empty() or _base_unit_views.has(state.id):
+				continue
+			var view := _get_or_create_replay_unit_view(state.id, state)
+			if view == null:
+				continue
+			_initialize_replay_unit_view(view, state.id, state)
+			view.visible = false
+
+
+func _actor_spawn_event_to_state(event: Dictionary) -> FrontendActorRenderState:
+	var actor: Dictionary = event.get("actor", {}) as Dictionary
+	var state := FrontendActorRenderState.new()
+	state.id = actor.get("id", event.get("actorId", "")) as String
+	state.type = actor.get("type", "Character") as String
+	state.config_id = actor.get("configId", "") as String
+	state.display_name = actor.get("displayName", state.config_id) as String
+	state.team = int(actor.get("team", 0))
+	var attributes: Dictionary = actor.get("attributes", {}) as Dictionary
+	state.max_hp = float(attributes.get("max_hp", 100.0))
+	state.visual_hp = float(attributes.get("hp", state.max_hp))
+	state.target_hp = state.visual_hp
+	state.is_alive = state.visual_hp > 0.0
+	return state
+
+
+func _get_or_create_replay_unit_view(actor_id: String, state: FrontendActorRenderState) -> FrontendUnitView:
+	var existing_view: FrontendUnitView = _owned_replay_unit_views.get(actor_id, null)
+	if existing_view != null and is_instance_valid(existing_view):
+		return existing_view
+	var view := FrontendUnitView.new()
+	view.name = actor_id
+	_replay_units_root.add_child(view)
+	_owned_replay_unit_views[actor_id] = view
+	return view
+
+
+func _initialize_replay_unit_view(
+	view: FrontendUnitView,
+	actor_id: String,
+	state: FrontendActorRenderState
+) -> void:
+	view.initialize(
+		actor_id,
+		state.display_name,
+		state.team,
+		state.max_hp,
+		state.visual_hp,
+		state.type,
+		state.facing_direction
+	)
+	if state.type == "Environment":
+		var environment_kind := state.config_id if not state.config_id.is_empty() else state.display_name
+		view.set_environment_style(environment_kind)
+
+
 func _on_actor_state_changed(actor_id: String, state: FrontendActorRenderState) -> void:
 	if not _unit_views.has(actor_id):
 		return
@@ -189,9 +295,18 @@ func _on_playback_ended() -> void:
 # ========== VFX / 投射物 / 飘字（自有节点） ==========
 
 func _on_floating_text_created(data: FrontendRenderData.FloatingText) -> void:
+	var start_usec := Time.get_ticks_usec()
 	var floating_text := FrontendFloatingTextView.new()
 	_effects_root.add_child(floating_text)
 	floating_text.initialize(data.text, data.color, data.position, data.style, data.duration)
+	var cost_ms := float(Time.get_ticks_usec() - start_usec) / 1000.0
+	if cost_ms >= FLOATING_TEXT_COST_WARN_MS:
+		print("[Frontend:FrameDiag] floating_text text='%s' pos=%s duration=%.2f cost_ms=%.2f" % [
+			data.text,
+			data.position,
+			data.duration,
+			cost_ms,
+		])
 
 
 func _on_attack_vfx_created(data: FrontendRenderData.AttackVfx) -> void:
@@ -243,8 +358,33 @@ func _on_projectile_removed(projectile_id: String) -> void:
 		_projectile_views.erase(projectile_id)
 
 
+func _on_cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay) -> void:
+	var overlay_view := FrontendConeDebugOverlayView.new()
+	overlay_view.name = "ConeDebugOverlay_" + data.id
+	_effects_root.add_child(overlay_view)
+	overlay_view.initialize(data)
+
+
 func _clear_effects() -> void:
 	for child in _effects_root.get_children():
 		child.queue_free()
 	_attack_vfx_views.clear()
 	_projectile_views.clear()
+
+
+func _clear_replay_unit_views() -> void:
+	for actor_id: String in _owned_replay_unit_views.keys():
+		var view: FrontendUnitView = _owned_replay_unit_views[actor_id]
+		if is_instance_valid(view):
+			view.queue_free()
+		_unit_views.erase(actor_id)
+	_owned_replay_unit_views.clear()
+
+
+func _deactivate_replay_unit_views() -> void:
+	for actor_id: String in _owned_replay_unit_views.keys():
+		var view: FrontendUnitView = _owned_replay_unit_views[actor_id]
+		if is_instance_valid(view):
+			view.revive()
+			view.visible = false
+		_unit_views.erase(actor_id)
