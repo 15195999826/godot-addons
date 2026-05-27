@@ -26,6 +26,7 @@ enum ActionType {
 	APPLY_SHIELD_STATE, # 瞬时:对 actor.shields 数组做 ADD/UPDATE/REMOVE
 	BUMP,             # 撞墙 / 撞单位的临时位移弹回(view 层叠加 offset + squish,不动 hex_position)
 	APPLY_FACING_STATE, # Phase F: 瞬时更新 actor.facing_direction (0..5), 无 turn-speed/lerp
+	CONE_DEBUG_OVERLAY, # 瞬时:创建 cone checked-cells fill + boundary debug overlay
 }
 
 

@@ -152,6 +152,18 @@ func get_skill_ability() -> Ability:
 	return ability_set.find_ability_by_id(_skill_ability_id)
 
 
+## 替换 AI/战斗流程读取的主技能。保留移动、角色内建 passive 与职业 passive。
+func replace_skill_ability(skill_config: AbilityConfig, game_state_provider: Variant = null) -> Ability:
+	Log.assert_crash(skill_config != null, "CharacterActor", "replace_skill_ability requires a skill_config")
+	var current_skill := get_skill_ability()
+	if current_skill != null:
+		ability_set.revoke_ability(current_skill.id, AbilitySet.REVOKE_REASON_REPLACED)
+	var skill_ability := Ability.new(skill_config, get_id())
+	ability_set.grant_ability(skill_ability, game_state_provider)
+	_skill_ability_id = skill_ability.id
+	return skill_ability
+
+
 ## 获取当前属性快照 (角色专属: 含 atk / def / speed)
 func get_stats() -> Dictionary:
 	return {

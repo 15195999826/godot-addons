@@ -182,7 +182,7 @@ func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 	if actor is EnvironmentActor:
 		view.set_environment_style((actor as EnvironmentActor).environment_kind)
 	if hex_pos != null and hex_pos.is_valid():
-		view.set_world_position(hex_to_world(hex_pos))
+		view.snap_world_position(hex_to_world(hex_pos))
 
 
 # ========== 内部：grid ==========

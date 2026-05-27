@@ -14,6 +14,9 @@ extends RefCounted
 ## 角色状态变化信号
 signal actor_state_changed(actor_id: String, state: FrontendActorRenderState)
 
+## Replay 中途 actorSpawned 时创建角色状态
+signal actor_spawned(actor_id: String, state: FrontendActorRenderState)
+
 ## 飘字创建信号
 signal floating_text_created(data: FrontendRenderData.FloatingText)
 
@@ -38,6 +41,9 @@ signal projectile_updated(projectile_id: String, position: Vector3, direction: V
 ## 投射物移除信号
 signal projectile_removed(projectile_id: String)
 
+## Cone debug overlay 创建信号
+signal cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay)
+
 
 # ========== 内部状态 ==========
 
@@ -58,6 +64,9 @@ var _attack_vfx: Dictionary = {}  # vfx_id -> FrontendRenderData.AttackVfx
 
 ## 活跃的投射物
 var _projectiles: Dictionary = {}  # projectile_id -> FrontendRenderData.Projectile
+
+## 活跃的 cone debug overlay
+var _cone_debug_overlays: Dictionary = {}  # action_id -> FrontendRenderData.ConeDebugOverlay
 
 ## 震屏状态
 var _screen_shake: FrontendRenderData.ScreenShake = FrontendRenderData.ScreenShake.new()
@@ -97,6 +106,9 @@ func initialize_from_replay(record: ReplayData.BattleRecord) -> void:
 	_interpolated_positions.clear()
 	_floating_texts.clear()
 	_procedural_effects.clear()
+	_attack_vfx.clear()
+	_projectiles.clear()
+	_cone_debug_overlays.clear()
 	_screen_shake = FrontendRenderData.ScreenShake.new()
 	
 	# 从 configs 读取 positionFormats
@@ -132,6 +144,7 @@ func _initialize_actor_from_init_data(actor_init: ReplayData.ActorInitData) -> v
 	var actor_state := FrontendActorRenderState.new()
 	actor_state.id = actor_init.id
 	actor_state.type = actor_init.type
+	actor_state.config_id = actor_init.config_id
 	actor_state.display_name = actor_init.display_name
 	actor_state.team = actor_init.team
 	actor_state.position = hex_pos
@@ -147,6 +160,70 @@ func _initialize_actor_from_init_data(actor_init: ReplayData.ActorInitData) -> v
 
 	_actors[actor_init.id] = actor_state
 	_interpolated_positions[actor_init.id] = Vector2(hex_pos.q, hex_pos.r)
+
+
+## 应用 replay 事件带来的状态副作用。Visualizer 仍只负责把事件翻译成视觉动作；
+## actorSpawned / actorDestroyed 属于 render-state lifecycle，必须先落入 world。
+func apply_event_side_effects(event: Dictionary) -> void:
+	var kind := str(event.get("kind", ""))
+	match kind:
+		GameEvent.ACTOR_SPAWNED_EVENT:
+			_apply_actor_spawned_event(event)
+		GameEvent.ACTOR_DESTROYED_EVENT:
+			_apply_actor_destroyed_event(event)
+		GameEvent.ATTRIBUTE_CHANGED_EVENT:
+			_apply_attribute_changed_event(event)
+
+
+func _apply_actor_spawned_event(event: Dictionary) -> void:
+	var actor_data_variant: Variant = event.get("actor", {})
+	if not (actor_data_variant is Dictionary):
+		return
+	var actor_data := actor_data_variant as Dictionary
+	if actor_data.is_empty():
+		return
+	var actor_init := ReplayData.ActorInitData.from_dict(actor_data)
+	if actor_init.id.is_empty():
+		actor_init.id = str(event.get("actorId", ""))
+	if actor_init.id.is_empty() or _actors.has(actor_init.id):
+		return
+
+	_initialize_actor_from_init_data(actor_init)
+	var actor_state: FrontendActorRenderState = _actors.get(actor_init.id)
+	if actor_state == null:
+		return
+	actor_spawned.emit(actor_init.id, actor_state)
+	actor_state_changed.emit(actor_init.id, actor_state)
+
+
+func _apply_actor_destroyed_event(event: Dictionary) -> void:
+	var actor_id := str(event.get("actorId", ""))
+	if actor_id.is_empty():
+		return
+	var actor: FrontendActorRenderState = _actors.get(actor_id)
+	if actor == null:
+		return
+	_set_actor_alive(actor, false)
+	actor.visual_hp = 0.0
+	actor.target_hp = 0.0
+	actor_state_changed.emit(actor_id, actor)
+
+
+func _apply_attribute_changed_event(event: Dictionary) -> void:
+	var attribute := str(event.get("attribute", ""))
+	if attribute != "max_hp" and attribute != "maxHp":
+		return
+	var actor_id := str(event.get("actorId", ""))
+	if actor_id.is_empty():
+		return
+	var actor: FrontendActorRenderState = _actors.get(actor_id)
+	if actor == null:
+		return
+	var new_max_hp := float(event.get("newValue", actor.max_hp))
+	actor.max_hp = maxf(0.0, new_max_hp)
+	actor.visual_hp = clampf(actor.visual_hp, 0.0, actor.max_hp)
+	actor.target_hp = clampf(actor.target_hp, 0.0, actor.max_hp)
+	_dirty_actors[actor_id] = true
 
 
 ## 从位置数组提取六边形坐标
@@ -213,6 +290,8 @@ func _apply_action(active_action: FrontendActionScheduler.ActiveAction) -> void:
 			_apply_bump_action(action, progress)
 		FrontendVisualAction.ActionType.APPLY_FACING_STATE:
 			_apply_apply_facing_state_action(action)
+		FrontendVisualAction.ActionType.CONE_DEBUG_OVERLAY:
+			_apply_cone_debug_overlay_action(action, active_action.id)
 
 
 ## 应用移动动作
@@ -518,6 +597,22 @@ func _apply_projectile_action(action: FrontendProjectileAction, action_id: Strin
 	if progress >= 1.0:
 		_projectiles.erase(action_id)
 		projectile_removed.emit(action_id)
+
+
+func _apply_cone_debug_overlay_action(action: FrontendConeDebugOverlayAction, action_id: String) -> void:
+	if _cone_debug_overlays.has(action_id):
+		return
+	var overlay_data := FrontendRenderData.ConeDebugOverlay.new()
+	overlay_data.id = action_id
+	overlay_data.cue_id = action.cue_id
+	overlay_data.cell_polygons = action.cell_polygons
+	overlay_data.boundary_segments = action.boundary_segments
+	overlay_data.fill_color = action.fill_color
+	overlay_data.boundary_color = action.boundary_color
+	overlay_data.start_time = _world_time_ms
+	overlay_data.duration = action.duration
+	_cone_debug_overlays[action_id] = overlay_data
+	cone_debug_overlay_created.emit(overlay_data)
 
 
 # ========== 清理 ==========

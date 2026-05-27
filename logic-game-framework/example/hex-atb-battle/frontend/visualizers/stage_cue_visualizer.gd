@@ -15,6 +15,7 @@ const MELEE_ATTACK_CUES := [
 	"melee_slash",   # 横扫斩
 	"melee_heavy",   # 毁灭重击
 	"melee_combo",   # 疾风连刺
+	"totem_attack",  # 图腾自动攻击
 ]
 
 # ========== 需要播放治疗特效的 cue_id ==========
@@ -90,13 +91,13 @@ const CONTROL_FLOATING_TEXTS := {
 ## Cone cast cue_id → 是否走 cone 检查区域 overlay path.
 const CONE_DEBUG_CUES := ["grid_cone_cast", "angle_cone_cast"]
 
-## checked_coords 每个 hex 上短暂绘制的 marker. 用 floating text "✦" 复用既有飘字管线
-## (不必新加 RenderWorld grid-overlay action 路径); duration 略长于 attack vfx,
-## 让 dev-scene 截图 / 玩家肉眼都能看清覆盖区域.
-const CONE_DEBUG_MARKER_TEXT := "▲"
-const CONE_DEBUG_MARKER_DURATION_MS := 1500.0
-const CONE_DEBUG_MARKER_COLOR_GRID := Color(0.45, 0.85, 1.0, 0.95)  # 浅青
-const CONE_DEBUG_MARKER_COLOR_ANGLE := Color(1.0, 0.65, 0.2, 0.95)  # 橙黄
+const CONE_DEBUG_DURATION_MS := 1500.0
+const CONE_DEBUG_FILL_Y := 0.06
+const CONE_DEBUG_BOUNDARY_Y := 0.12
+const CONE_DEBUG_FILL_COLOR_GRID := Color(0.18, 0.78, 1.0, 0.24)
+const CONE_DEBUG_BOUNDARY_COLOR_GRID := Color(0.55, 0.95, 1.0, 0.95)
+const CONE_DEBUG_FILL_COLOR_ANGLE := Color(1.0, 0.52, 0.08, 0.24)
+const CONE_DEBUG_BOUNDARY_COLOR_ANGLE := Color(1.0, 0.78, 0.25, 0.95)
 
 
 func _init() -> void:
@@ -130,28 +131,35 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	# 控制状态 cue (Stun / Silence / Break) → 目标头顶飘字 (复用 floating-text pattern)
 	elif cue_id in CONTROL_FLOATING_TEXTS:
 		actions.append_array(_create_control_floating_text(target_ids, cue_id, context))
-	# Phase E: cone debug overlay → 在每个 checked_coord 上短暂绘制 marker
+	# Phase E: cone debug overlay → checked cells fill + geometry boundary
 	elif cue_id in CONE_DEBUG_CUES:
-		actions.append_array(_create_cone_overlay(cue_id, params))
+		actions.append_array(_create_cone_overlay(cue_id, params, context))
 	# 其他 cue_id（如 magic_fireball, ranged_arrow）不需要额外特效
 	# 因为它们有投射物飞行动画
 
 	return actions
 
 
-## Phase E: cone debug overlay —— 把 selector checked_coords 翻译成一组 floating-text marker
+## Phase E: cone debug overlay —— 把 selector checked_coords 翻译成填充区和边界。
 ##
 ## 这是 contract debug overlay,不是 VFX polish: 让玩家 / 测试者看到本次 cone 检查的全部
-## 格子 (包括没有 enemy 占位的). frontend 只消费 params, 不反推 selector 逻辑.
+## 格子 (包括没有 enemy 占位的). angle_cone 使用逻辑层给出的两条 edge_segments
+## 画真实角度边界线; frontend 只消费 params, 不反推 selector 逻辑.
 func _create_cone_overlay(
 	cue_id: String,
 	params: Dictionary,
+	context: FrontendVisualizerContext,
 ) -> Array[FrontendVisualAction]:
 	var actions: Array[FrontendVisualAction] = []
 	var checked_coords: Array = params.get("checked_coords", []) as Array
 	if checked_coords.is_empty():
 		return actions
-	var color: Color = CONE_DEBUG_MARKER_COLOR_GRID if cue_id == "grid_cone_cast" else CONE_DEBUG_MARKER_COLOR_ANGLE
+	var layout := context.get_layout()
+	if layout == null:
+		return actions
+
+	var coords: Array[HexCoord] = []
+	var coord_keys: Dictionary = {}
 	for c_variant in checked_coords:
 		if not (c_variant is Dictionary):
 			continue
@@ -159,19 +167,82 @@ func _create_cone_overlay(
 		if not (c.has("q") and c.has("r")):
 			continue
 		var hex_coord := HexCoord.new(int(c.get("q", 0)), int(c.get("r", 0)))
-		var world_2d: Vector2 = UGridMap.model.coord_to_world(hex_coord)
-		# y=0.5 抬到 grid 上方一段, 与 unit view 同 y 范围, 避开 ground plane culling.
-		var world_pos := Vector3(world_2d.x, 0.5, world_2d.y)
-		# actor_id 留空: floating-text 用绝对世界坐标定位, 不挂 actor.
-		actions.append(FrontendFloatingTextAction.new(
-			"",
-			CONE_DEBUG_MARKER_TEXT,
-			color,
-			world_pos,
-			FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
-			CONE_DEBUG_MARKER_DURATION_MS,
-		))
+		if not coord_keys.has(hex_coord.to_key()):
+			coords.append(hex_coord)
+			coord_keys[hex_coord.to_key()] = true
+	if coords.is_empty():
+		return actions
+
+	var cell_polygons: Array[PackedVector3Array] = []
+	var boundary_segments: Array[PackedVector3Array] = []
+	for coord in coords:
+		var corners_2d := layout.hex_corners(coord.to_axial())
+		var fill_polygon := PackedVector3Array()
+		for corner in corners_2d:
+			fill_polygon.append(Vector3(corner.x, CONE_DEBUG_FILL_Y, corner.y))
+		cell_polygons.append(fill_polygon)
+
+		if cue_id != "angle_cone_cast":
+			for side in range(6):
+				var neighbor := coord.neighbor(side)
+				if coord_keys.has(neighbor.to_key()):
+					continue
+				var segment := PackedVector3Array()
+				var start_2d := corners_2d[side]
+				var end_2d := corners_2d[(side + 1) % corners_2d.size()]
+				segment.append(Vector3(start_2d.x, CONE_DEBUG_BOUNDARY_Y, start_2d.y))
+				segment.append(Vector3(end_2d.x, CONE_DEBUG_BOUNDARY_Y, end_2d.y))
+				boundary_segments.append(segment)
+
+	var fill_color := CONE_DEBUG_FILL_COLOR_GRID
+	var boundary_color := CONE_DEBUG_BOUNDARY_COLOR_GRID
+	if cue_id == "angle_cone_cast":
+		fill_color = CONE_DEBUG_FILL_COLOR_ANGLE
+		boundary_color = CONE_DEBUG_BOUNDARY_COLOR_ANGLE
+		boundary_segments.append_array(_parse_angle_edge_segments(params))
+	actions.append(FrontendConeDebugOverlayAction.new(
+		cue_id,
+		cell_polygons,
+		boundary_segments,
+		fill_color,
+		boundary_color,
+		CONE_DEBUG_DURATION_MS
+	))
 	return actions
+
+
+func _parse_angle_edge_segments(params: Dictionary) -> Array[PackedVector3Array]:
+	var result: Array[PackedVector3Array] = []
+	var edge_segments: Array = params.get("edge_segments", []) as Array
+	for edge_variant in edge_segments:
+		if not (edge_variant is Dictionary):
+			continue
+		var edge := edge_variant as Dictionary
+		var start_variant: Variant = edge.get("start", {})
+		var end_variant: Variant = edge.get("end", {})
+		if not (start_variant is Dictionary) or not (end_variant is Dictionary):
+			continue
+		var start_dict := start_variant as Dictionary
+		var end_dict := end_variant as Dictionary
+		if start_dict.is_empty() or end_dict.is_empty():
+			continue
+		var start_pos := Vector3(
+			float(start_dict.get("x", 0.0)),
+			CONE_DEBUG_BOUNDARY_Y,
+			float(start_dict.get("y", 0.0))
+		)
+		var end_pos := Vector3(
+			float(end_dict.get("x", 0.0)),
+			CONE_DEBUG_BOUNDARY_Y,
+			float(end_dict.get("y", 0.0))
+		)
+		if start_pos.distance_to(end_pos) < 0.001:
+			continue
+		var segment := PackedVector3Array()
+		segment.append(start_pos)
+		segment.append(end_pos)
+		result.append(segment)
+	return result
 
 
 ## 控制状态 floating text (Stun "眩晕!" / Silence "沉默!" / Break "破坏!" 共用 pattern)
@@ -226,7 +297,7 @@ func _create_melee_attack_vfx(
 			target_position,
 			config.attack_vfx_duration,
 			_get_vfx_type_for_cue(cue_id),
-			_get_attack_vfx_color_by_team(source_team, false),  # 暴击信息在 damage 事件中，这里默认非暴击
+			_get_attack_vfx_color(cue_id, source_team, false),  # 暴击信息在 damage 事件中，这里默认非暴击
 			false  # is_critical
 		)
 		actions.append(attack_vfx)
@@ -243,8 +314,16 @@ func _get_vfx_type_for_cue(cue_id: String) -> FrontendAttackVFXAction.AttackVFXT
 			return FrontendAttackVFXAction.AttackVFXType.IMPACT
 		"melee_combo":
 			return FrontendAttackVFXAction.AttackVFXType.THRUST
+		"totem_attack":
+			return FrontendAttackVFXAction.AttackVFXType.IMPACT
 		_:
 			return FrontendAttackVFXAction.AttackVFXType.SLASH
+
+
+func _get_attack_vfx_color(cue_id: String, team: int, is_critical: bool) -> Color:
+	if cue_id == "totem_attack":
+		return Color(0.95, 0.62, 0.24) if team == 0 else Color(1.0, 0.36, 0.16)
+	return _get_attack_vfx_color_by_team(team, is_critical)
 
 
 ## 根据队伍获取攻击特效颜色
