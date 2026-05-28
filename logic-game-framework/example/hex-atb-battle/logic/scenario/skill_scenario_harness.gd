@@ -375,6 +375,7 @@ static func _fire_action(
 		activate_event["target_actor_id"] = target_id
 	if not target_coord.is_empty():
 		activate_event["target_coord"] = target_coord
+	HexFacing.face_actor_for_active_event(action_caster, activate_event, battle, GameWorld.event_collector)
 	action_caster.ability_set.receive_event(activate_event, battle)
 
 

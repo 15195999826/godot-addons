@@ -74,6 +74,46 @@ static func compute_checked_coords(caster_pos: HexCoord, target_coord: HexCoord)
 	return coords
 
 
+## 返回角度锥形的两条真实边界线, 供 frontend 画 left/right guide rays.
+## point 使用 UGridMap 2D world 坐标: {"x": float, "y": float}; frontend 会映射到 X/Z 平面.
+static func compute_edge_segments(caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
+	var segments: Array[Dictionary] = []
+	if caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
+		return segments
+	var caster_world: Vector2 = UGridMap.model.coord_to_world(caster_pos)
+	var target_world: Vector2 = UGridMap.model.coord_to_world(target_coord)
+	var forward := target_world - caster_world
+	if forward.length_squared() == 0.0:
+		return segments
+	var line_length := HexBattleAngleCone._cone_debug_line_length(caster_pos, caster_world)
+	if line_length <= 0.0:
+		return segments
+	var forward_dir := forward.normalized()
+	var left_dir := forward_dir.rotated(-HexBattleAngleCone.HALF_ANGLE_RAD)
+	var right_dir := forward_dir.rotated(HexBattleAngleCone.HALF_ANGLE_RAD)
+	segments.append(HexBattleAngleCone._edge_segment_dict(caster_world, caster_world + left_dir * line_length))
+	segments.append(HexBattleAngleCone._edge_segment_dict(caster_world, caster_world + right_dir * line_length))
+	return segments
+
+
+static func _cone_debug_line_length(caster_pos: HexCoord, caster_world: Vector2) -> float:
+	var max_center_distance := 0.0
+	for cand in UGridMap.model.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE):
+		var cand_world: Vector2 = UGridMap.model.coord_to_world(cand)
+		max_center_distance = maxf(max_center_distance, caster_world.distance_to(cand_world))
+	var layout := UGridMap.model.get_layout()
+	if layout != null:
+		max_center_distance += layout.size
+	return max_center_distance
+
+
+static func _edge_segment_dict(start_pos: Vector2, end_pos: Vector2) -> Dictionary:
+	return {
+		"start": {"x": start_pos.x, "y": start_pos.y},
+		"end": {"x": end_pos.x, "y": end_pos.y},
+	}
+
+
 static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: ExecutionContext) -> Dictionary:
 	var event := ctx.get_current_event()
 	var target_coord_dict: Dictionary = event.get("target_coord", {}) as Dictionary
@@ -94,6 +134,7 @@ static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: Ex
 		"origin_coord": {"q": caster_pos.q, "r": caster_pos.r},
 		"target_coord": {"q": target_coord.q, "r": target_coord.r},
 		"checked_coords": HexBattleAngleCone.compute_checked_coords(caster_pos, target_coord),
+		"edge_segments": HexBattleAngleCone.compute_edge_segments(caster_pos, target_coord),
 		"range": HexBattleAngleCone.CONE_RANGE,
 		"half_angle_deg": HexBattleAngleCone.HALF_ANGLE_DEG,
 	}

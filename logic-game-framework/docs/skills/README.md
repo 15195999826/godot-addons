@@ -24,10 +24,11 @@ inkmon 项目层的技能 / 战斗系统设计、完成记录和后续路线入�
 
 ## Current
 
-当前没有已确认的新开发 goal；下表只列最近可继续讨论的扩展入口。
+当前没有已确认的新实现 goal；下表列最近可继续讨论 / 收口的入口。
 
 | 文档 | 状态 | 内容 |
 |---|---|---|
+| [skill-preview-bug-triage-2026-05-27.md](skill-preview-bug-triage-2026-05-27.md) | 🟡 Bug triage / 下一轮修复入口 | 用户实测 + DevAgent active-skill sweep：active cast facing、mid-spawn unit view、cone debug overlay、demo_frontend basic attack facing |
 | [equipment-attack-effects-next-stage.md](equipment-attack-effects-next-stage.md) | 🟠 V2+ 扩展候选 | Phase G V1 已落地；后续只保留 on-hit 样例、DevAgent/replay 可观测字段、多攻击特效策略等扩展入口 |
 
 ## Completed

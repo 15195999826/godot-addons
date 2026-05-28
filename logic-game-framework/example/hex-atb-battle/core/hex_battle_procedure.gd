@@ -278,6 +278,7 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 		logic_time,
 	)
 
+	HexFacing.face_actor_for_active_event(actor, event, world, GameWorld.event_collector)
 	actor.ability_set.receive_event(event, world)
 	actor.reset_atb()
 
