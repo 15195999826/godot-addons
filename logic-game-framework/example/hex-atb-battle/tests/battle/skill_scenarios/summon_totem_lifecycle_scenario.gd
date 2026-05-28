@@ -81,6 +81,14 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_true(totem_damages.size() >= 1,
 		"Expect TotemAttack to fire >=1 damage on enemy_0 (got %d)" % totem_damages.size())
 
+	var totem_attack_cues: Array = []
+	for e in ctx.events_of_kind(GameEvent.STAGE_CUE_EVENT):
+		if str(e.get("sourceActorId", "")) == totem_actor_id \
+				and str(e.get("cueId", "")) == HexBattleTotemAttack.STAGE_CUE_ID:
+			totem_attack_cues.append(e)
+	ctx.assert_true(totem_attack_cues.size() >= 1,
+		"Expect TotemAttack stageCue for frontend attack VFX (got %d)" % totem_attack_cues.size())
+
 	# 3. TotemLifetime expire → totem actor removed (TotemLifetime ability 在 replay 中 ABILITY_REMOVED)
 	var lifetime_inst := str((totem_lifetime_grants[0].get("ability", {}) as Dictionary).get("id", ""))
 	var lifetime_removes: Array = []

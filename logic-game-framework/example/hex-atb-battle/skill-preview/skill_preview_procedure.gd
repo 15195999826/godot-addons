@@ -283,6 +283,7 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		var target_coord: Dictionary = kf.get("target_coord", {}) as Dictionary
 		if not target_coord.is_empty():
 			event["target_coord"] = target_coord
+		HexFacing.face_actor_for_active_event(actor, event, world, GameWorld.event_collector)
 		actor.ability_set.receive_event(event, world)
 
 

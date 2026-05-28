@@ -116,6 +116,37 @@ static func face_target_action(reason: String = REASON_ACTIVE_USE) -> Action.Pri
 	return _FaceTargetAction.new(HexBattleTargetSelectors.current_target(), reason)
 
 
+## 从 active-use event 读取 target_actor_id / target_coord, 让 caster 面向目标。
+## 放在 example-layer 的 activation 入口调用,避免 core ActiveUseComponent 反向依赖 hex 示例。
+static func face_actor_for_active_event(
+	actor: CharacterActor,
+	event_dict: Dictionary,
+	battle: HexWorldGameplayInstance,
+	event_collector: EventCollector
+) -> Array[Dictionary]:
+	var events: Array[Dictionary] = []
+	if actor == null or battle == null:
+		return events
+
+	var target_hex: HexCoord = null
+	var target_coord_variant: Variant = event_dict.get("target_coord", {})
+	if target_coord_variant is Dictionary:
+		var target_coord_dict := target_coord_variant as Dictionary
+		if not target_coord_dict.is_empty():
+			target_hex = HexCoord.from_dict(target_coord_dict)
+
+	if (target_hex == null or not target_hex.is_valid()) and event_dict.has("target_actor_id"):
+		var target_actor_id := str(event_dict.get("target_actor_id", ""))
+		if not target_actor_id.is_empty():
+			var target_actor := battle.get_actor(target_actor_id)
+			if target_actor is HexBattleActor:
+				target_hex = (target_actor as HexBattleActor).hex_position
+
+	if target_hex == null or not target_hex.is_valid():
+		return events
+	return face_actor_toward(actor, target_hex, REASON_ACTIVE_USE, event_collector)
+
+
 ## 唯一推荐的 setter: 同步更新 actor.facing_direction (source of truth) 并 push
 ## ActorFacingChangedEvent。逻辑读到的 facing 永远是最新值; 事件只作 audit / presentation。
 ##
@@ -131,6 +162,8 @@ static func face_actor_toward(
 	if actor == null or target_hex == null or not target_hex.is_valid():
 		return events
 	if not actor.hex_position.is_valid():
+		return events
+	if actor.hex_position.equals(target_hex):
 		return events
 	var new_dir := direction_between(actor.hex_position, target_hex)
 	var old_dir := actor.get_facing_direction()

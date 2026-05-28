@@ -6360,6 +6360,7 @@ func dev_agent_pause_playback() -> Dictionary:
 	if _animator == null:
 		return {"ok": false, "message": "no animator"}
 	_animator.pause()
+	_is_playing = false
 	return {"ok": true, "message": "playback paused", "data": _playback_state_data()}
 
 

@@ -14,6 +14,7 @@ class_name HexBattleTotemAttack
 const CONFIG_ID := "passive_totem_attack"
 const TICK_TIMELINE_ID := "passive_totem_attack_tick"
 const TICK_INTERVAL_MS := 3000.0
+const STAGE_CUE_ID := "totem_attack"
 
 
 static var TICK_TIMELINE := TimelineData.periodic(TICK_TIMELINE_ID, TICK_INTERVAL_MS)
@@ -58,6 +59,18 @@ class _TotemAttackAction:
 		if best_target == null:
 			return ActionResult.create_success_result([], { "totem_attack_skipped": "no_enemy" })
 
+		var collected: Array[Dictionary] = []
+		var target_ids: Array[String] = [best_target.get_id()]
+		var stage_cue := GameEvent.StageCue.create(
+			owner_id,
+			target_ids,
+			HexBattleTotemAttack.STAGE_CUE_ID,
+		)
+		if ctx.event_collector != null:
+			collected.append(ctx.event_collector.push(stage_cue.to_dict()))
+		else:
+			collected.append(stage_cue.to_dict())
+
 		# 造伤 (PHYSICAL atk damage), source = totem owner (= totem 本身)
 		var damage_value := owner.attribute_set.atk
 		var event := BattleEvents.DamageEvent.create(
@@ -74,7 +87,8 @@ class _TotemAttackAction:
 		HexBattleDamageUtils.broadcast_post_damage(
 			damage_result.damage_event_dict, battle.get_alive_actor_ids(), battle,
 		)
-		return ActionResult.create_success_result(damage_result.all_events, {
+		collected.append_array(damage_result.all_events)
+		return ActionResult.create_success_result(collected, {
 			"totem_attack_target": best_target.get_id(),
 			"totem_attack_damage": damage_value,
 		})

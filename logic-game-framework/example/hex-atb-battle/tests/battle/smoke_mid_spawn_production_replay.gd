@@ -23,9 +23,9 @@ func _ready() -> void:
 
 func _phase_summon_totem() -> bool:
 	var replay := _run_production_skill(
-		HexBattleSummonTotem.create_config(1800.0),
+		HexBattleSummonTotem.create_config(4200.0),
 		"",
-		45,
+		60,
 	)
 	var spawned := _find_spawned_actor_by_config(replay, "Totem")
 	if spawned.is_empty():
@@ -44,6 +44,8 @@ func _phase_summon_totem() -> bool:
 		return _fail("SummonTotem: missing synthesized TotemAttack abilityGranted")
 	if not _has_execution_activated(replay, totem_id, HexBattleTotemAttack.CONFIG_ID):
 		return _fail("SummonTotem: missing TotemAttack executionActivated")
+	if not _has_stage_cue(replay, totem_id, HexBattleTotemAttack.STAGE_CUE_ID):
+		return _fail("SummonTotem: missing TotemAttack stageCue for attack VFX")
 	if not _has_actor_destroyed(replay, totem_id):
 		return _fail("SummonTotem: missing actorDestroyed after TotemLifetime")
 	print("  [PASS] SummonTotem production replay")
@@ -201,6 +203,15 @@ func _has_execution_activated(replay: Dictionary, actor_id: String, config_id: S
 		if str(event.get("actorId", "")) != actor_id:
 			continue
 		if str(event.get("abilityConfigId", "")) == config_id:
+			return true
+	return false
+
+
+func _has_stage_cue(replay: Dictionary, actor_id: String, cue_id: String) -> bool:
+	for event_dict in _flatten_events(replay):
+		if str(event_dict.get("kind", "")) != GameEvent.STAGE_CUE_EVENT:
+			continue
+		if str(event_dict.get("sourceActorId", "")) == actor_id and str(event_dict.get("cueId", "")) == cue_id:
 			return true
 	return false
 
