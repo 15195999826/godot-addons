@@ -65,6 +65,11 @@ class _PiercingLineSelector:
 		if target == null:
 			return []
 		var caster_pos: HexCoord = caster.hex_position
+		# anchor 寻址语义 (known / intentional, 非 fizzle):
+		# anchor 若在 cast→HIT(300ms) 间死亡, 仍留在 world registry 且 hex_position 字段
+		# 保留 (死亡只清 grid occupant, 见 hex_battle_damage_utils._clear_grid_footprint),
+		# 故这里照常用其最后位置定方向 —— 整条线不会因 anchor 死亡而消失。沿线 footprint
+		# 遍历另有 c.is_dead() 跳过, 所以不会结算到尸体本身。
 		var target_pos: HexCoord = target.hex_position
 		if caster_pos == null or target_pos == null:
 			return []

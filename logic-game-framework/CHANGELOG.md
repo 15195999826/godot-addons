@@ -12,6 +12,27 @@
 
 ---
 
+## [Unreleased] — 2026-05-31 hex 技能设计评审 (双模型共识)
+
+一轮对 hex-atb-battle 30 个 active ability 的设计评审 (Claude 多 agent workflow + Codex 静态复核, 逐条对抗式核验后达成共识)。本轮只落地**安全子集**, 其余设计债编目为 design-note 待后续按优先级实现。
+
+### Fixed
+
+- **`example/hex-atb-battle/logic/abilities/active/lifesteal.gd`** —
+  `_LifestealHealAction._execute_local` 读 `actual_life_damage` 前加 `Log.assert_crash(damage_event.has("actual_life_damage"))` schema 合同 guard, 对齐 Strike `_EmitBasicAttackLandedAction` 的既有断言。**why**: 该字段由上游 `HexBattleDamageUtils.apply_damage` 注入, 字段缺失 = schema 违约; 原先静默 `get(..., 0.0)` 会让吸血悄悄变 no-op 而无报错。字段存在但值 ≤ 0 (shield 全吸收) 仍是合法 graceful no-op, 不在 guard 范围。
+
+### Changed
+
+- **`example/hex-atb-battle/logic/abilities/active/piercing_line.gd`** —
+  `_PiercingLineSelector.select` 的 anchor 取位补注释 (仅注释, 无行为变更)。**why**: 澄清评审中的一个误报 —— anchor 在 cast→HIT(300ms) 间死亡**不会**让整条线 fizzle, 因为死者留 world registry 且 `hex_position` 字段保留 (死亡只清 grid occupant, 见 `hex_battle_damage_utils._clear_grid_footprint`); 方向照常用其最后位置算, 沿线另有 `is_dead()` 跳过尸体本身。
+
+### Added (docs)
+
+- **`docs/design-notes/2026-05-31-hex-skill-design-debt.md`** —
+  剩余设计债编目: 默认 demo 未播种 shuffle (P1-3) / cleanse 裸字符串分类 (P1-5a) / damage scaling 混用无原则 (P2-6, 待拍板) / expose 100%+ uptime + 1.5^N (P2-7) / summon_totem whiff 不退费 (P2-8) / coord 技能绕过 can_use_skill_on (P2-10) / grid_cone RANGE 语义不一致 (P2-11, 待拍板) / condition bundle + 三处共享抽象缺失 (P1-2 / P2-12) + nit 汇总。含两个待拍板设计决策 (D1 damage scaling 原则 / D2 grid_cone RANGE 语义) 与已推翻误报清单。
+
+> 主仓侧同轮改动 (不在本 addon): `scripts/SkillValidator.gd` 合同从废弃的 `create_ability_config()` 改读 `static var ABILITY` + 投射物命中伤害可见性修复 + Stage5 advisory; 新增 `tests/skill_validator/` 回归。
+
 ## [Unreleased] — 2026-05-26 advanced-skills-next-batch Phase G — 装备攻击特效 (Equipment Attack Effects)
 
 落地"装备可以给 owner grant passive ability"的核心管线: item config 声明 granted_abilities →
