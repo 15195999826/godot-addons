@@ -52,6 +52,13 @@ class _LifestealHealAction:
 		var damage_event := ctx.get_current_event()
 		if damage_event.is_empty():
 			return ActionResult.create_success_result([], { "lifesteal_skipped": "no_damage_event" })
+		# schema 合同 guard (mirror Strike._EmitBasicAttackLandedAction):
+		# actual_life_damage 字段由上游 HexBattleDamageUtils.apply_damage 注入。字段缺失
+		# = schema 违约 (真 bug), fail-fast 而非静默读 0.0 变 no-op (那会让吸血悄悄失效)。
+		# 字段存在但值 <= 0 (shield 全吸收) 是合法 graceful no-op, 不在 guard 范围内。
+		Log.assert_crash(damage_event.has("actual_life_damage"),
+			"HexBattleLifesteal._LifestealHealAction",
+			"damage_event 缺 actual_life_damage 字段; 上游应通过 HexBattleDamageUtils.apply_damage 注入")
 		var actual := damage_event.get("actual_life_damage", 0.0) as float
 		if actual <= 0.0:
 			return ActionResult.create_success_result([], { "lifesteal_skipped": "no_actual_damage" })
