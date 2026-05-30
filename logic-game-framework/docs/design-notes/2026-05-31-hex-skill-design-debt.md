@@ -1,8 +1,24 @@
-# Hex-ATB-Battle 技能层设计债清单 (Claude × Codex 双审共识)
+# Hex-ATB-Battle 技能层设计债清单 (Claude × Codex 双审共识 → grill 拍板)
 
-> 状态: **未实现, 仅落盘**。本文记录 2026-05-31 一轮"hex 技能设计评审"中识别、经两个独立模型 (Claude 多 agent workflow + Codex 静态复核) 逐条对抗式核验后达成共识的设计债。
-> 已在本轮**实现**的部分不在此文 (见 CHANGELOG `[Unreleased] — 2026-05-31`): A 批 SkillValidator 三连环修复 + Stage5 advisory (主仓 `scripts/SkillValidator.gd`), B 批安全子集 (`lifesteal.gd` schema guard / `piercing_line.gd` anchor 语义注释)。
-> 本文 = 剩余的 P1-3 / P1-5a / P2-* 设计债, 待后续轮次按优先级实现。
+> 本文记录 2026-05-31 一轮"hex 技能设计评审": Claude 多 agent workflow 产出 → Codex 静态复核对抗式核验 → 与用户 grill 逐条拍板。**多数"设计债"经 grill 后被撤销/降级**(详见各条 ❌/🟢 标记), 因为 hex 定位 = **技能展示 + AI 沙盒**, 非可平衡的可玩对战 (见 CONTEXT.md), balance 类问题按"范式一致/可预测/可introspect"验收而非"数值公平"。
+
+## 📌 最终实现状态 (2026-05-31)
+
+**已实现并测过** (commit 见 CHANGELOG):
+- A 批: SkillValidator P0-1 合同 (create_ability_config → static var ABILITY) + 新-1 字段名 + 新-2 projectile 命中伤害可见 + 回归测试。
+- A 批补: SkillValidator **Stage5 advisory** (warn-only: determinism token 扫描 + cooldown 边界 + cant_act/silence 门控存在性, strike/move 具名豁免) + test Part C。
+- B 批: `lifesteal.gd` schema guard; `piercing_line.gd` anchor 语义注释。
+- 可读性: `HexBattleBuffTags` const (P1-5a, cleanse + 6 buff 改引用); `HexBattleSkillHelpers.caster_atk_damage(mult)` (P2-12.1, 9 文件消重复闭包); `cooldown_system` 加 `apply_standard_active_gating` / `apply_basic_attack_gating` helper (P1-2, 仅就位, 28 技能迁移见 [future doc](../future/2026-05-31-condition-bundle-helper-migration.md)); fireball/precise_shot CFG_DAMAGE 双字面量收敛为 DAMAGE const + 巧合注释 (P2-6)。
+- bug 修: precise_shot 命中伤害 MAGICAL → PHYSICAL。
+- nit: stance `.meta(RANGE, 0)`; expose_buff "有意叠加"注释 (P2-7); summon_totem "空放"注释 (P2-8); fireball/grid_cone "投射物/几何模板"注释含为何不抽 factory/AreaGeometry (P2-12.2/.3)。
+
+**grill 后撤销/不做**: D1 damage scaling 统一 (撤销, scaling vs flat 由技能设计自定) / D2+P2-11 grid_cone RANGE 不一致 (误判撤回) / P1-3 未播种 shuffle (沙盒+事件回放, 不修) / P2-9 piercing fizzle (误判) / P2-12.3 projectile factory (不抽, 改注释) / P2-12.2 AreaGeometry (不抽, 改注释)。
+
+**仍待办** (留文档, 未实现): P1-2 的 28 技能迁移到 helper ([future doc](../future/2026-05-31-condition-bundle-helper-migration.md))。
+
+---
+
+> 以下为评审原始清单 (含已撤销项的推翻理由, 保留供追溯)。
 
 ---
 
@@ -22,13 +38,12 @@
 
 ## 设计债清单 (按共识 severity)
 
-### 🟠 P1-3 · 默认 demo 用未播种 `shuffle()` 落子 (high)
+### ❌ P1-3 · 默认 demo 未播种 `shuffle()` 落子 — 确认非问题, 不修 (2026-05-31 grill)
 
-- **现象**: `hex_demo_world_gameplay_instance.gd:240` `available_coords.shuffle()` 用 Godot 全局未播种 RNG。此 base class 是生产入口 —— web `godot_run_battle` (`SimulationManager.gd:68` → 实例化它)、`demo_frontend`、`demo_headless` 全走它。
-- **影响**: 起始 hex 位置喂给所有 nearest/distance/RANGE 决策, 整场战斗从 tick 0 起不确定; `_save_replay` 存了事件但产生它们的 setup 无法从 seed 重放 —— 与项目"bit-identical replay"卖点冲突。
-- **对照**: 子类 `HexRandomDemoWorldGameplayInstance` 已做对 —— `_rng.seed = _resolved_seed` (`:34-35`) + 自写 `_shuffle_hex_coords` (`:65`)。base 没拿到这个待遇。
-- **改法**: 给 base 一个 seeded `RandomNumberGenerator` (`start()`/`_setup_teams` 接 `random_seed`, 默认固定值), 把 `:240` 的 `shuffle()` 换成子类已验证的 `_shuffle_hex_coords` 模式。把 `_resolved_seed` 嵌进 `_save_replay` 的 replay meta。
-- **风险**: 改 base 的 setup RNG 会改变默认 demo 的初始布局 (现有依赖固定布局的 frontend/headless smoke 可能数值漂移)。需跑 `hex/regression` + `hex/frontend` 确认。**这是改 base 契约, 不是机械修复, 故落本文不在 B 批做。**
+> **撤回**: 原标 high, 理由"破坏 bit-identical replay"。两个事实推翻:
+> 1. **hex 是沙盒** (见 CONTEXT.md), 不是要复现的可玩对战。
+> 2. **hex 的 replay = 事件流回放 (录视频), 不是 seed 重模拟 (记菜谱)** —— `_save_replay` 存 event_collector 收集的事件, animator/director 直接回放; 不依赖"同 seed 重跑同一局"。hex **没有** bit-identical replay 测试 (那是 RTS 的契约, `smoke_replay_bit_identical`, P2.7 AC10)。
+> 故未播种 shuffle **不破坏任何现存契约**: 录像照放, 每局布局不同正是 demo 想要的。用户确认 frontend-demo 随机战斗"就是这样, 随便弄弄的"。真需要"可复现随机局"的用 `HexRandomDemoWorldGameplayInstance` (已 seeded)。**不修。**
 
 ### 🟡 P1-5a · cleanse 负面分类全靠未命名空间裸字符串 (medium)
 
@@ -39,36 +54,46 @@
 
 > **P1-5b (lifesteal schema guard) 已在 B 批实现** (`lifesteal.gd:55-61` 加 `Log.assert_crash`)。此处仅留 P1-5a 文档化。
 
-### 🟡 P2-6 · damage scaling 模型混用, 无统一原则 (medium, **需拍板**)
+### 🟢 P2-6 · damage scaling 模型: scaling vs flat = 技能设计自定 (decided 2026-05-31, 降级 low)
 
-- **现象**: 30 个 active 里只有部分随 caster.atk 缩放。逐文件核实 (Codex 仲裁后权威结论):
-  - **atk-scaled** (`Resolvers.float_fn` 读 `attribute_set.atk`, byte-identical 7 份): strike / angle_cone / grid_cone / knockback_punch / lifesteal / piercing_line / wall_breaker; shadow_step 是同闭包 ×1.5; execute fallback 再抄一份。
-  - **flat** (`Resolvers.float_val`): crushing_blow `90.0` (`:37`), fireball `80.0` (`:82`/`:84`), precise_shot `45.0`, holy_heal `40.0`; chain_lightning flat-but-data-carried (customData 60/48/38.4)。
-- **漂移证据**: 同为 melee class-default 普攻核, strike (Warrior) atk-scaled 而 crushing_blow (Berserker) flat 90; `strike.gd:19` 明确点名 CrushingBlow 应复用 atk 模板 —— **documented-but-unfulfilled contract**。fireball flat 80 == Mage atk 80 是巧合, 掩盖了"不缩放"事实 (buff 抬 atk 时 strike 缩放 / fireball 不缩放, 巧合无声破裂)。
-- **待拍板 (政策选择, 见末尾决策表 D1)**: class-default 普攻是否一律随 atk? spell/projectile nuke 是否保留 flat-by-design? CrushingBlow/SwiftStrike 是否对齐?
+> **决议 (grill 拍板)**: **撤销"统一/对齐 scaling"的提法。** 技能用 caster.atk-scaled 还是固定值, 是**技能设计本身的选择, 不立全局规则去拉平** —— 固定伤害的火球 (谁放都 80) 与随 atk 成长的普攻是两种正当设计。原 finding 把"设计选择"误判成"漂移", 撤回。CrushingBlow/SwiftStrike **不需要**改成 atk-scaled (它们就是 flat-by-design)。
 
-### 🟡 P2-7 · expose 100%+ uptime + 乘法叠加 (medium)
+剩下的只是**纯可读性**改动 (不改任何数值 / 行为, 优先级 low):
 
-- **现象**: `expose.gd:12` COOLDOWN 4000ms < `expose_buff.gd:15` DURATION 5000ms → 单施法者可永久 expose。且 `ExposeBuff` 文档 (`expose_buff.gd:5-7`) 明写多实例并存 = `1.5^N` 乘法放大 (每实例挂独立 PreEventComponent), `ApplyBuffAction` 零幂等 (`apply_buff_action.gd:6-7`, 有意但 comment-only)。
-- **对照**: hard-CC (stun/silence/break) 是 ref-counted overlap 安全的 ~33% uptime; 两个 damage-amp/DoT (expose) 却近 100%+ 且指数叠加。
-- **改法**: 把 ExposeBuff cap 成单实例 refresh (overflow_policy = REFRESH, 或 ApplyBuffAction 查重)。需跑 `expose_scenario` 确认单层数值不变。
+- **现状真问题**: 不在"该不该统一", 而在"代码看不出哪个是故意的", 且有 7 份 byte-identical 复制:
+  - atk-scaled `_CASTER_ATK_DAMAGE` 闭包 byte-identical 抄 **7 份** (strike / angle_cone / grid_cone / knockback_punch / lifesteal / piercing_line / wall_breaker); shadow_step 同闭包 `×1.5` (`_ATK_X15`); execute fallback 再抄一份。改 atk 取值方式要动 9 处。
+  - fireball flat `80.0` 恰 == Mage atk 80 (纯巧合), 掩盖"本技能不 scale"事实, 可能误导下个作者/AI 以为"固定值要等于 atk"。
+- **改法 (low, 可读性)**:
+  1. 抽 `HexBattleSkillHelpers.caster_atk_damage(mult := 1.0)` (顺带消 9 处复制; shadow_step 传 1.5) + `flat_damage(x)` 两个具名 helper —— 让"随 atk"和"固定值"各有一个一眼可辨的写法。这同时是 P2-12.1。
+  2. fireball (及任何 flat==某 atk 巧合的技能) 文件头加一行注释: "固定值, 与 X atk 相等是巧合, 不随属性缩放"。
+- **不做**: 不强制任何技能改 scaling 模型; 不立"普攻必须 atk-scaled"规则。
+
+### 🟢 P2-7 · expose 永久 + 1.5^N 指数叠加 — 有意设计, 仅补注释 (decided 2026-05-31)
+
+> **决议 (grill 拍板)**: expose (增伤标记: 目标受伤 ×1.5) 的**可叠加是有意设计** (用户确认要"放多次更强", 选 A)。与 poison 同属框架明文的"多实例并存"范式 (`apply_buff_action.gd:6-7` 明写不合并; `poison_buff.gd:9-11` 同语义)。`grant_ability` 用 `id` 去重而非 `config_id` (`ability_set.gd:63-66`), 所以同 config 多实例正常并存, 各挂一个 +50% PreEvent → N 实例 = 1.5^N; cooldown 4000ms < duration 5000ms → 单施法者可永久续。
+> 沙盒标准三项全过: 一致 (与 poison 同范式) / 可预测 (确定 1.5^N, 无随机) / 数值公平不适用 (沙盒)。**非 bug, 不改行为。**
+- **唯一动作 (low, 纯注释)**: ExposeBuff 抄 poison 的"叠加语义注释" —— 点明"多实例指数叠加 + cooldown<duration 可永久 = 有意设计", 免得下一个 reviewer/AI 再当 bug 提。`expose_buff.gd` 已有部分注释 (`:5-7`), 补一句"这是 intended, 非缺陷"即可。
 
 ### 🟡 P2-8 · summon_totem 付了 8s cooldown 仍可 whiff (medium)
 
 - **现象**: cost 在 activation 付 (`active_use_component.gd:46`), spawn 在 HIT (t=400ms) resolve (`summon_totem.gd:46`); 6 邻格全占满 → `spawn_actor_action.gd:47-49` 返回 success no-op (`spawn_failed:"no_free_neighbor"`), 不 abort 不退费。AI 只查 RANGE+cooldown, 会在拥挤棋盘把图腾烧成保证 no-op。
 - **改法**: `_find_free_neighbor` 加 ring-2 / self fallback, 或把 spawn-feasibility 做成 cast-eligibility predicate (`can_use_skill_*` 阶段查邻格有空)。
 
-### 🟡 P2-10 · coord 技能 (cone/line) 绕过 `can_use_skill_on` (medium)
+### 🟢 P2-10 · coord 技能 (cone/line) 绕过 `can_use_skill_on` (降级 low — 已被 selector 内部 clamp 消解)
 
-- **现象 (Codex 仲裁后真实路径)**: `can_use_skill_at_coord` **从未定义** (grep 0)。`hex_battle_procedure._start_actor_action` (`:273-279`) 把 `decision.get("target_coord", null)` 原样塞进 ABILITY_ACTIVATE 事件, **无任何 coord-aware 资格检查**; cone selector 随后把 target_coord 当 origin 读 (`grid_cone.gd:178` / `angle_cone.gd:163`)。
-- **触发面**: actor-target 技能走 `can_use_skill_on` (查 alive/kind/faction/RANGE); coord 技能这条并行路径无等价门控 → cone/line 可超距施放。默认对战不触发 (`RandomLoadoutStrategy` 是唯一附 coord 的, 且先 `can_use_skill_on` 选 actor 再复制其坐标, `random_loadout_strategy.gd:120/156`); **风险主要在玩家/UI/外部脚本直接传任意 coord**。
-- **改法**: 实现 `can_use_skill_at_coord(actor, skill, coord)` (RANGE = caster→origin 或 caster→最远 footprint cell; faction/kind 适用), 在 `_start_actor_action` 的 coord 分支 + RandomLoadout 发决策前调用。
+- **现象**: `can_use_skill_at_coord` **从未定义** (grep 0)。`hex_battle_procedure._start_actor_action` (`:273-279`) 把 `decision.get("target_coord", null)` 原样塞进 ABILITY_ACTIVATE, 无 coord-aware 资格检查。
+- **风险大幅消解 (2026-05-31 grill 复查)**: grid_cone selector 自带 `防远投` clamp (`grid_cone.gd:64-67`, origin 超 CONE_RANGE → fallback caster_pos) 且扇形从 caster_pos 发出, 即便跳过 proc gate **也不会超距**。angle_cone 同样从 caster apex 量。所以现有 3 个 cone 技能没有实际超距漏洞。
+- **残留 (low)**: 缺的是一个**通用** `can_use_skill_at_coord` 入口 —— 未来若新增 coord 技能而作者忘了自带 clamp, 就没有框架层兜底。这是"未来 authoring 防护"而非现存 bug。触发面仅 `RandomLoadoutStrategy` (demo_random_frontend, 且先 `can_use_skill_on` 选 actor 再复制其坐标) + 假想的玩家/外部脚本直传 coord。
+- **改法 (low, 可选)**: 实现 `can_use_skill_at_coord(actor, skill, coord)` 作为 coord 路径的统一 gate, 把"自带 clamp"从每技能自觉变成框架保证。
 
-### 🟡 P2-11 · grid_cone 的 RANGE 语义与其它技能不一致 (medium, **需拍板**)
+### ❌ P2-11 · grid_cone RANGE 语义"不一致" — 误判, 撤回 (2026-05-31 grill 逐行复查)
 
-- **现象**: `can_use_skill_on` (`hex_world_gameplay_instance.gd:217-219`) 把 RANGE 当 caster→target-**actor** 距离门。但 grid_cone 把 `target_coord` 当 **origin**, footprint 从 origin 再向前展开 `CONE_RANGE-1=2` 格 (`grid_cone.gd:76-77`), 命中距离排序也从 origin 量 (`:205`)。→ 一个 origin 距 caster ~3 格的 cone 会打到距 caster ~5 格的 cell (近声明 RANGE 的两倍)。angle_cone 反而从 caster apex 量 (`get_range(caster_pos, CONE_RANGE)`), RANGE == caster reach。
-- **本质**: 同一个 RANGE meta 被 gate 和 selector 用两种不同距离定义 (origin-depth vs caster-reach); 且 coord 路径 (P2-10) 整个跳过 gate, grid_cone 的 RANGE 实际未被强制。
-- **待拍板 (政策选择, 见末尾决策表 D2)**: RANGE 在每种寻址模式下量的是什么? gate origin 选择 + 文档化"RANGE = cone 深度", 还是把 footprint clamp 到 caster RANGE 内?
+> **撤回**: 原 finding 称"grid_cone footprint 从 origin 展开, 命中可达声明 RANGE 两倍"。**逐行核实为读错代码**:
+> - `grid_cone.gd:69` `_collect_cone_cells(caster_pos, direction)` —— 扇形顶点是 **caster_pos**, 不是 origin。
+> - `:93` `_collect_cone_cells(apex, direction)` + `:101` `for ring in range(1, CONE_RANGE+1)` + `:104` `_step(apex, direction, ring)` —— 格子从 **caster** 出发 1/2/3 步, 最远 = CONE_RANGE。
+> - `:114` `meta(RANGE, CONE_RANGE=3)` —— 声明 RANGE **正好 == 实际最远 reach**。
+> - `target_coord` 只用于 `_resolve_primary_direction` 选方向; `:64-67` 另有 `防远投` guard 把 origin clamp 到 CONE_RANGE 内。
+> 结论: grid_cone 与 angle_cone (`get_range(caster_pos, CONE_RANGE)`) **RANGE 语义一致, 都从 caster 发出、都被 CONE_RANGE 限**。无不一致, 无 D2 决策。
 
 ### 🟢 P1-2 残留 · 无共享 condition+cost bundle helper (medium, DRY)
 
@@ -101,12 +126,12 @@
 
 ## 待拍板的设计决策 (grill-me 讨论项)
 
-| ID | 决策 | 候选 A | 候选 B | 影响面 |
-|---|---|---|---|---|
-| **D1** | damage scaling 原则 (P2-6) | class-default 普攻一律随 atk; spell-nuke 保留 flat 但文件头注释声明"by-design" | 全部统一为 atk-scaled (含 fireball/holy_heal), 删 flat | A: 改 crushing_blow/swift_strike/execute ~3 文件 + 加注释; B: 改所有 flat 技能 + 重新平衡数值 |
-| **D2** | grid_cone RANGE 语义 (P2-11) | gate origin 选择 + 文档化"RANGE = 从 origin 的 cone 深度" (保留远投 origin) | footprint cell clamp 到 caster RANGE 内 (RANGE == 实际最大 reach, 与 angle_cone 对齐) | A: 加 origin gate, 玩法不变; B: 改 grid_cone footprint 计算, cone 实际范围缩小 |
+| ID | 决策 | 状态 |
+|---|---|---|
+| **D1** | damage scaling 原则 (P2-6) | **已定 (2026-05-31 grill)**: 撤销统一; scaling vs flat 由技能设计自定。只做 low 可读性 (具名 helper + 巧合注释)。 |
+| **D2** | grid_cone RANGE 语义 (P2-11) | **作废 (2026-05-31 grill)**: 前提是误判 (读错代码), cone RANGE 语义本就一致。无决策。 |
 
-> 这两条是**纯政策/平衡选择**, 不是对错问题, 需游戏设计意图定夺。其余 P1/P2 是确定性改法, 拍板后按 severity 顺序实现。
+> 两个待拍板决策经 grill 后均无需拍板 (D1 = 设计选择撤销统一, D2 = 误判撤回)。其余 P1/P2 是确定性改法, 按 severity 顺序实现。
 
 ---
 
@@ -126,6 +151,11 @@ P2-nit: 批量收尾 (stance RANGE / 双字面量 / print→Log / 描述插值 /
 - **knockback_punch "dead 局部变量 duration2"**: 捏造; 实为干净 return。`COLLISION_ACTION_LOCK_BONUS_MS := 0.0` 是具名预留 tuning 非 dead code。
 - **cone 常量 (DAMAGE:=35 / COOLDOWN 5000 / cue cone_swing)**: 捏造; 实际无 DAMAGE const (用 atk resolver) / COOLDOWN 8000 / cue `angle_cone_cast`。
 - **P2-9 piercing_line "anchor 死亡 → 整条线 fizzle"**: 推翻 (Codex refute 正确); 死者留 registry + hex_position 保留, 方向照常算, 不 fizzle。降为 low 语义瑕疵, **已在 B 批加注释说明**。
+- **P2-11 grid_cone "RANGE 语义不一致 / footprint 超距"**: 推翻 (grill 逐行复查); 扇形从 caster_pos 发出 (`grid_cone.gd:69` 传 caster_pos 为 apex), 最远 == CONE_RANGE == 声明 RANGE, 与 angle_cone 一致。原 finding 把 `_collect_cone_cells(caster_pos,...)` 读成"从 origin 展开"。connected: P2-10 风险也因此 clamp 大幅消解。
+
+## 方法论补记 (2026-05-31 grill)
+
+本轮 review 的 workflow-generated findings 即便过了对抗式验证, 仍有**"读错代码 → 病理化成设计债"**的系统性误报 (D1 damage scaling 把设计选择当漂移; P2-11/D2 把 caster-apex cone 读成 origin-extended)。教训: **finding 引用具体行为前必须逐行读那段代码**, 尤其涉及"哪个变量当起点/参数传给谁"时 —— 对抗式验证只查"claim 是否自洽", 不一定能抓出"原始读图就错了"。与 [[feedback_verify_field_names_before_use]] 同源 (假设代替核实)。
 
 ## 方法论 (本轮固化)
 

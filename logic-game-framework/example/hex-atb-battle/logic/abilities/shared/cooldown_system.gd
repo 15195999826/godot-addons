@@ -58,3 +58,31 @@ static func create_cooldown_condition() -> CooldownCondition:
 ## 创建定时冷却消耗
 static func create_timed_cooldown_cost(duration: float) -> TimedCooldownCost:
 	return TimedCooldownCost.new(duration)
+
+
+# ========== 标准门控 bundle helper ==========
+#
+# 标准主动技能门控四件套 = NoTagCondition(cant_act) + NoTagCondition(cant_use_skill)
+# + CooldownCondition + TimedCooldownCost(cd_ms)。当前 28 个技能逐文件手抄这 4 行
+# (这正是让 strike 漏 silence 这类漂移无法被结构区分的根因)。新技能应改用下面的
+# helper; 既有技能的迁移留待专门一轮 (见 docs/future/2026-05-31-condition-bundle-helper-migration.md)。
+#
+# 用法: ActiveUseConfig.builder().timeline_id(...).on_tag(...) |> standard_active_conditions(builder, cd_ms)
+# 注意 builder 链式返回 self, helper 直接在传入的 builder 上 apply 后返回它。
+
+## 标准主动技能门控: cant_act + silence + cooldown condition + timed cooldown cost。
+static func apply_standard_active_gating(builder, cooldown_ms: float):
+	return (builder
+		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
+		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
+		.condition(CooldownCondition.new())
+		.cost(TimedCooldownCost.new(cooldown_ms)))
+
+
+## basic-attack 门控 (silence-exempt): cant_act + cooldown, 不含 silence。
+## 普攻不受沉默是 ARPG/MOBA 惯例 (强调: 这是有意豁免, 非遗漏)。Strike 用。
+static func apply_basic_attack_gating(builder, cooldown_ms: float):
+	return (builder
+		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
+		.condition(CooldownCondition.new())
+		.cost(TimedCooldownCost.new(cooldown_ms)))

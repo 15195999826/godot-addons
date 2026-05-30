@@ -66,9 +66,9 @@ class _CleanseAction:
 			idx += 1
 			if ability.is_expired():
 				continue
-			if not ability.has_ability_tag("buff"):
+			if not ability.has_ability_tag(HexBattleBuffTags.TAG_BUFF):
 				continue
-			if not ability.has_ability_tag("negative"):
+			if not ability.has_ability_tag(HexBattleBuffTags.TAG_NEGATIVE):
 				continue
 			var prio := HexBattleCleanse._compute_priority(ability)
 			if prio < best_priority or (prio == best_priority and idx < best_index):
@@ -98,9 +98,9 @@ class _CleanseAction:
 
 
 static func _compute_priority(ability: Ability) -> int:
-	if ability.has_ability_tag("control"):
+	if ability.has_ability_tag(HexBattleBuffTags.TAG_CONTROL):
 		return _PRIORITY_CONTROL
-	if ability.has_ability_tag("passive_break"):
+	if ability.has_ability_tag(HexBattleBuffTags.TAG_PASSIVE_BREAK):
 		return _PRIORITY_PASSIVE_BREAK
 	return _PRIORITY_OTHER
 

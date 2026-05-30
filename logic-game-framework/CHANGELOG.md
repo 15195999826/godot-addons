@@ -12,11 +12,32 @@
 
 ---
 
-## [Unreleased] — 2026-05-31 hex 技能设计评审 (双模型共识)
+## [Unreleased] — 2026-05-31 hex 技能设计评审 (双模型共识 → grill 拍板)
 
-一轮对 hex-atb-battle 30 个 active ability 的设计评审 (Claude 多 agent workflow + Codex 静态复核, 逐条对抗式核验后达成共识)。本轮只落地**安全子集**, 其余设计债编目为 design-note 待后续按优先级实现。
+一轮对 hex-atb-battle 30 个 active ability 的设计评审 (Claude 多 agent workflow + Codex 静态复核 → 与用户 grill 逐条拍板)。多数"设计债"经 grill 撤销/降级 (hex = 技能展示+AI 沙盒, 非可平衡对战); 落地安全子集 + 可读性重构 + nit。完整状态见 [design-note](docs/design-notes/2026-05-31-hex-skill-design-debt.md)。
+
+### Added
+
+- **`example/hex-atb-battle/logic/abilities/buffs/buff_tags.gd`** (新) —
+  `HexBattleBuffTags` const (TAG_BUFF / NEGATIVE / POSITIVE / CONTROL / PASSIVE_BREAK), 集中过去散在各 buff `ability_tags` + cleanse 分类匹配里的裸字符串。cleanse + 6 buff 改引用; break_buff 本地 TAG_BREAK/TAG_CONTROL 改派生自此。**why**: 新 buff typo "negtive" 会让 cleanse 静默漏清, 集中后单一来源。
+- **`example/hex-atb-battle/logic/abilities/shared/skill_helpers.gd::caster_atk_damage(mult)`** —
+  caster.atk 伤害 resolver helper, 消除 9 个技能 (strike/angle_cone/grid_cone/knockback_punch/lifesteal/piercing_line/wall_breaker + shadow_step×1.5) byte-identical 复制的闭包。固定值伤害仍直接 `Resolvers.float_val(x)` (scaling vs flat 由技能设计自定, grill 确认不统一)。
+- **`example/hex-atb-battle/logic/abilities/shared/cooldown_system.gd`** —
+  `apply_standard_active_gating(builder, cd_ms)` + `apply_basic_attack_gating(builder, cd_ms)` 门控 bundle helper (供新技能用; 28 个既有技能迁移见 `docs/future/2026-05-31-condition-bundle-helper-migration.md`)。
+
+### Changed
+
+- **`scripts/SkillValidator.gd`** (主仓) —
+  加 **Stage 5 advisory** (warn-only, 永不 fail success): determinism token 扫描 (`randf`/`Time`/`OS` 等 → 可能破坏 replay)、cooldown 边界、cant_act/silence 门控存在性 (strike/move 具名豁免 `ADVISORY_*_EXEMPT`)。让漏写门控/用非确定性 API 的 AI 技能被拎出。
+- **`example/hex-atb-battle/logic/abilities/active/fireball.gd`** —
+  CFG_DAMAGE 与 hit-timeline 双 `80.0` 字面量收敛为 `const DAMAGE`; 加注释说明"固定值, == 法师 atk 80 是巧合, 不缩放"。
+- nit: stance `.meta(RANGE, 0)` (对齐其它 self 技能); 投射物模板 (fireball) / 几何模板 (grid_cone) 头注释补"四件套手装 + 为何不抽 factory/AreaGeometry"; expose_buff 注释标"1.5^N 指数叠加是有意设计非 bug"; summon_totem 注释标"邻格满时空放是演示可接受局限"。
 
 ### Fixed
+
+- **`example/hex-atb-battle/logic/abilities/active/precise_shot.gd`** —
+  命中伤害 DamageType `MAGICAL` → `PHYSICAL`。skill 4 处声明均 physical, 唯独结算那行是抄 fireball 漏改。
+- **`example/hex-atb-battle/logic/abilities/active/lifesteal.gd`** —
 
 - **`example/hex-atb-battle/logic/abilities/active/lifesteal.gd`** —
   `_LifestealHealAction._execute_local` 读 `actual_life_damage` 前加 `Log.assert_crash(damage_event.has("actual_life_damage"))` schema 合同 guard, 对齐 Strike `_EmitBasicAttackLandedAction` 的既有断言。**why**: 该字段由上游 `HexBattleDamageUtils.apply_damage` 注入, 字段缺失 = schema 违约; 原先静默 `get(..., 0.0)` 会让吸血悄悄变 no-op 而无报错。字段存在但值 ≤ 0 (shield 全吸收) 仍是合法 graceful no-op, 不在 guard 范围。

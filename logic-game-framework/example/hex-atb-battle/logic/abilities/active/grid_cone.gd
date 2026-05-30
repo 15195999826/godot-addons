@@ -11,6 +11,15 @@
 ## - 命中顺序确定: distance_to(cone_origin) 升序 → coord (q*1000+r) 升序 二级
 ##   (multiplier 需 > 地图半径 diameter)
 ## - damage = caster.atk PHYSICAL (复用 HexBattleDamageAction)
+##
+## 【AOE 几何 = 每技能各写一套, cone/line 几何模板】(angle_cone / piercing_line 同类):
+##   三者各自实现 footprint 几何 (grid_cone 走 HexCoord.DIRECTIONS sector; angle_cone 走
+##   world-space angle; piercing_line 走 neighbor walk) + 各自复制"算 footprint → 过滤存活
+##   敌方占格"的 occupant/team/dead 过滤尾巴。曾评估抽 HexBattleAreaGeometry (cone/line/ring
+##   → Array[HexCoord]) + HexBattleAreaSelector (吃 footprint-resolver + origin 统一过滤),
+##   但每个 cone 还各有 ~100 行真正不同的几何, 抽象收益有限且本框架=技能展示沙盒, 故【暂不抽】,
+##   留待未来新增第 4 个 AOE 技能时一并做。RANGE 语义: footprint 从 caster_pos 发出 (此处
+##   target_coord 仅定方向), 最远 == CONE_RANGE == 声明 RANGE, 与 angle_cone 一致。
 class_name HexBattleGridCone
 
 
@@ -30,15 +39,7 @@ static var GRID_CONE_TIMELINE := TimelineData.new(
 )
 
 
-static var _CASTER_ATK_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
-	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-	if owner_id == "":
-		return 0.0
-	var actor := GameWorld.get_actor(owner_id)
-	if actor == null or not (actor is CharacterActor):
-		return 0.0
-	return (actor as CharacterActor).attribute_set.atk
-)
+static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
 
 
 ## Phase E · debug 检查区域几何 (selector 与 StageCue.params overlay 共用).

@@ -5,6 +5,9 @@
 ## - filter 仅"target == owner"维度: 自伤 / 反伤打回攻击者也算 target 收到的伤害, 都吃放大
 ## - 重复施放语义沿用 ApplyBuffAction 默认: 多个独立 ExposeBuff 实例并存,
 ##   各自独立 expire, 各自挂一个 PreEventComponent → 实际伤害放大 = 1.5^N
+##   ⚠️ 这是【有意设计】(2026-05-31 grill 确认: "放多次更强"), 非 bug —— 与 PoisonBuff
+##   同属框架明文的"多实例并存"范式 (apply_buff_action.gd 不合并)。cooldown(4s) < duration(5s)
+##   → 单施法者可永久续 + 指数叠加, 在沙盒里行为完全可预测。审查时勿再当缺陷重提。
 ## - duration 到期由 TimeDurationComponent 自动 ability.expire(EXPIRE_REASON_TIME_DURATION)
 ##
 ## 这是 LGF PreEvent modify_intent 通路的第一个生产用例(ward 已迁到 ShieldComponent)。
