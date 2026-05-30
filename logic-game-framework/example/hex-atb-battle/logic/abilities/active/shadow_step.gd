@@ -32,15 +32,7 @@ static var SHADOW_STEP_TIMELINE := TimelineData.new(TIMELINE_ID, 500.0, {
 # ============================================================
 # Damage resolver: caster.atk × 1.5
 # ============================================================
-static var _ATK_X15: FloatResolver = Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
-	var oid := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-	if oid == "":
-		return 0.0
-	var a := GameWorld.get_actor(oid)
-	if a == null or not (a is CharacterActor):
-		return 0.0
-	return (a as CharacterActor).attribute_set.atk * DAMAGE_MULT
-)
+static var _ATK_X15: FloatResolver = HexBattleSkillHelpers.caster_atk_damage(DAMAGE_MULT)
 
 
 # ============================================================

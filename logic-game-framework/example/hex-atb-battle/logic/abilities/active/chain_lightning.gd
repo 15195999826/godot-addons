@@ -18,6 +18,10 @@
 ##     的其它 chain 释放污染。
 ##   - caster 死亡 / ability 过期 / 不在 alive → 不再链发下一段。
 ##   - visited_actor_ids 防同一敌方重复命中。
+##
+## 投射物伤害四件套 (弹体 0 HP 伤害, 伤害只在 hit-timeline DamageAction; 为何不抽 factory)
+## 见 fireball.gd 头注释的"投射物模板"段。本技能 hit damage 读 projectileHit customData.damage
+## (跳跃衰减), 非 CFG_DAMAGE; 且 _projectile_hit_filter 自带 instance/expired/dead guard。
 class_name HexBattleChainLightning
 
 

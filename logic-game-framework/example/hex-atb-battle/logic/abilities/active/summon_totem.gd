@@ -5,6 +5,12 @@
 ## - spawned totem 自带 HexBattleTotemAttack (每 3s 最近敌方造 atk 伤害) +
 ##   HexBattleTotemLifetime (15s 后自动消失)
 ## - cooldown 8000ms; range=0 (skill 自身不需要 target, 仅以 caster 为锚)
+##
+## 已知局限 (本框架技能=召唤演示, 不求尽善尽美): cost 在 activation 付, spawn 在
+## HIT(t=400ms) resolve; 若 caster 6 邻格全占满, HexBattleSpawnActorAction 返回
+## success no-op (spawn_failed:"no_free_neighbor"), cooldown 照付但图腾不出 ("空放")。
+## AI 只查 RANGE+cooldown, 不预判 spawn 可行性。可玩战斗若需要可加 ring-2 fallback 或
+## spawn-feasibility cast-eligibility predicate; 演示场景下可接受, 不修。
 class_name HexBattleSummonTotem
 
 

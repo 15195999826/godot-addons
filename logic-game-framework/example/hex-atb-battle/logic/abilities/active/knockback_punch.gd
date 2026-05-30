@@ -38,15 +38,7 @@ static var KNOCKBACK_PUNCH_TIMELINE := TimelineData.new(
 
 
 ## 基础伤害 = caster.atk (与 Strike 同模式)
-static var _CASTER_ATK_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
-	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-	if owner_id == "":
-		return 0.0
-	var actor := GameWorld.get_actor(owner_id)
-	if actor == null or not (actor is CharacterActor):
-		return 0.0
-	return (actor as CharacterActor).attribute_set.atk
-)
+static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
 
 
 static var ABILITY := (

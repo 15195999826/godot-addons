@@ -61,6 +61,22 @@ static func owner_position_resolver() -> Vector3Resolver:
 	)
 
 
+## caster.atk 伤害 resolver: 随施法者 atk 缩放 (× mult)。
+## 过去每个 atk-scaled 技能各自抄一份 byte-identical 闭包 (strike/angle_cone/
+## grid_cone/knockback_punch/lifesteal/piercing_line/wall_breaker; shadow_step ×1.5),
+## 集中到此。固定值伤害用 Resolvers.float_val(x) 直接写, 不需 helper。
+static func caster_atk_damage(mult: float = 1.0) -> FloatResolver:
+	return Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
+		var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
+		if owner_id == "":
+			return 0.0
+		var actor := GameWorld.get_actor(owner_id)
+		if actor == null or not (actor is CharacterActor):
+			return 0.0
+		return (actor as CharacterActor).attribute_set.atk * mult
+	)
+
+
 ## 从当前事件目标获取位置（hex 坐标转 Vector3）
 static func target_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:

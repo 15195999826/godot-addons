@@ -15,6 +15,9 @@
 ##   - GridCone 量化到 6 方向 sector, 锥宽 ≈ 60° 三 hex slice
 ##   - AngleCone 真实角度 45° 半角, 锥宽 90° 但比 GridCone 三 hex slice 通常更窄
 ##   - 同站位下 GridCone 通常多命中至少 1 个目标 (corner 上 grid 内 / angle 外的)
+##
+## AOE 几何为何每技能各写一套 / 为何暂不抽 AreaGeometry+AreaSelector, 见 grid_cone.gd
+## 头注释的"cone/line 几何模板"段。
 class_name HexBattleAngleCone
 
 
@@ -38,15 +41,7 @@ static var ANGLE_CONE_TIMELINE := TimelineData.new(
 )
 
 
-static var _CASTER_ATK_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
-	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-	if owner_id == "":
-		return 0.0
-	var actor := GameWorld.get_actor(owner_id)
-	if actor == null or not (actor is CharacterActor):
-		return 0.0
-	return (actor as CharacterActor).attribute_set.atk
-)
+static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
 
 
 ## Phase E · debug 检查区域几何 (selector 与 StageCue.params overlay 共用).
