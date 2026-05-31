@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://b8jrtsgridpath01"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_grid_pathfinding.gd" id="1"]
-
-[node name="SmokeGridPathfinding" type="Node"]
-script = ExtResource("1")

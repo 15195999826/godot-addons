@@ -102,15 +102,6 @@ to `simnav/smoke` after they are expected to pass. New lab behavior smoke scenes
 belong under `examples/0ad-rts-pathfinding-lab/tests/smoke/` and should be added
 to `zeroadlab/smoke` after they are expected to pass.
 
-## Legacy RTS Fixture Boundary
-
-`addons/logic-game-framework/example/rts-auto-battle/tests/test_groups.json`
-still has `rts/pathfinding` and selected regression entries for older RTS
-private pathfinder fixtures. Treat those as archived compatibility coverage for
-the RTS example, not as the active `sim-nav-map` stabilization gate.
-
-New `sim-nav-map` core coverage should not be added to `rts/pathfinding`.
-
 ## Issue Fix Checklist
 
 - `README.md`, `docs/mental-model.md`, `docs/public-api.md`,

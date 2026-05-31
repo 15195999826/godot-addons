@@ -25,7 +25,6 @@ const _PUBLIC_ACTION_DIRS := [
 
 const _EXAMPLE_LOGIC_ACTION_DIRS := [
 	"res://addons/logic-game-framework/example/hex-atb-battle/logic/actions/",
-	"res://addons/logic-game-framework/example/rts-auto-battle/logic/actions/",
 	"res://addons/logic-game-framework/example/dota2-auto-battle/logic/actions/",
 ]
 
@@ -129,10 +128,6 @@ const ALLOWLIST: Dictionary = {
 	"res://addons/logic-game-framework/example/hex-atb-battle/logic/actions/surge_tick_action.gd": {
 		"reason": "skill-specific tick action living in public action dir",
 		"migrate_by": "future cleanup: inline as SkillLocalAction inside surge_buff",
-	},
-	"res://addons/logic-game-framework/example/rts-auto-battle/logic/actions/rts_basic_attack_action.gd": {
-		"reason": "historical RTS primitive",
-		"migrate_by": "future cleanup: convert to extends Action.PrimitiveAction",
 	},
 	"res://addons/logic-game-framework/example/dota2-auto-battle/logic/actions/dota2_attack_started_action.gd": {
 		"reason": "historical dota2 lab primitive",

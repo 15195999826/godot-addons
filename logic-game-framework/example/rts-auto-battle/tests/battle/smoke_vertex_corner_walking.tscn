@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_vertex_corner_walking"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_vertex_corner_walking.gd" id="1_vertex_cw"]
-
-[node name="RtsSmokeVertexCornerWalking" type="Node"]
-script = ExtResource("1_vertex_cw")
