@@ -5,7 +5,7 @@
 ## frontend 非战斗期的 view lifecycle 同步;战斗期间视觉靠 BattleAnimator 消费
 ## event_timeline 回放, 不消费这些 signal。
 ##
-## 详见 docs/design-notes/2026-04-19-world-as-single-instance.md
+## 详见 docs/README.md（World owns Battle + 响应式前端 节）
 class_name WorldGameplayInstance
 extends GameplayInstance
 

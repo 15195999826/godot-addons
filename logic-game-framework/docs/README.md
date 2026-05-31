@@ -43,6 +43,7 @@ var damage_with_callback = HexBattleDamageAction.new(
 | 文档 | 描述 |
 |------|------|
 | [Action 系统](./reference/action-system.md) | Action 基类、构造函数规范、回调系统 |
+| [Action 架构契约](./reference/action-architecture.md) | 四层分层合同（Util / Primitive / Flow / SkillLocal）+ 各机制设计边界 + validator 门禁 |
 | [TargetSelector](./reference/target-selector.md) | 目标选择器的使用方式 |
 
 ### 实践指南
@@ -621,6 +622,43 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
         _show_normal_damage(target_node, damage_text)
 ```
 
+<a id="world-owns-battle"></a>
+## World owns Battle + 响应式前端
+
+本框架的核心心智模型是 **"世界 owns 战斗"**，而非早期实现的 "战斗 owns 世界"。这一翻转源于一个表层现象的深挖：`skill_preview` 点 START 时 3D 场景发生可见的"重建"（格子重渲染、unit view 重 spawn、相机重算）。追到根因，问题不是"视觉跳变"，而是 **"战斗"这个概念错误地承担了"世界"的职责** —— 现代 JRPG 需要的是"世界永续、战斗是过程"，而旧框架里 `UGridMap`、actor 生命周期、recorder 全都成了战斗启停的 side-effect。
+
+### (a) 为什么 GameWorld 持有单一 GameplayInstance
+
+新模型确立：`WorldGameplayInstance`（具体子类 `HexWorldGameplayInstance` / `HexDemoWorldGameplayInstance`）是**完整游戏流程的载体** —— 整局游戏一个 world session，期间发生任意多场战斗。它独占持有 actor registry、`grid`、systems，并通过显式 mutation API（`add_actor` / `remove_actor` / `configure_grid`）广播 signal。战斗本体被降级为短命的 `BattleProcedure`（`core` 层抽象基类）/ `HexBattleProcedure`（hex 特化）：它**借用** world 里的 actor 而非 spawn，tick 期间直接改 `actor.attribute_set.hp` 即等于写 world，结束即 GC。
+
+判别标准：有状态、被外界引用的是 **Instance**；输入 → 输出 → 丢弃、中间无人引用的是 **Procedure**。战斗推进统一走 `WorldGameplayInstance.tick(dt)` —— 有未完成战斗时本帧独占给战斗（`BATTLE_TICKS_PER_WORLD_FRAME` 默认 INT_MAX，退化成一帧跑完），否则推世界 system。参战者打 `in_combat` tag 让未来的 world-level system（回血 / AI）跳过他们。
+
+### (b) 响应式前端如何观察 world 而非消费 events
+
+`FrontendWorldView` 是 state 的 **reactive projection**：`bind_world(world)` 先一次性 hydrate 当前所有 actor，再订阅 mutation signal 自动维护 unit view 与 grid。它**只订阅生命周期 / 结构变化**（`actor_added` → 建 view、`actor_removed` → `queue_free`、`grid_configured` → 重渲染），且只为 `CharacterActor` 建 view（过滤掉 projectile）。
+
+属性变化（HP / tag）**不**走 signal —— 交给叠加层 `FrontendBattleAnimator` 消费 event_timeline 驱动飘字 / 特效 / 死亡动画。这是关键解耦：战斗期间 unit view 停在开战时的视觉状态，signal 只服务非战斗期的 view lifecycle；战斗结束后 WorldGI 里 actor 已是终态，animator 播完 timeline 视觉自然追上。`WorldView` **没有** `load_replay` 这种 destructive API，只有 `bind_world` + 订阅。
+
+### (c) recorder 单 buffer + playback 模型
+
+`BattleProcedure` 持有短命的 `BattleRecorder`，随 procedure 销毁。录像的核心不变量是 **"调用栈真实顺序 = 录像顺序"**：Action 的 `event_collector.push` 与 callback 触发的 AttributeChanged / AbilityGranted 在同一调用栈穿插发生，因此 recorder **不分** `pending_events` / `frame_events` 双容器，而是统一汇入 `GameWorld.event_collector` 单一队列，`record_frame(frame, events)` 每帧只接收 flush 出的一个有序数组。
+
+播放侧钉死两层命名：**A 层 `Playback`（现役）** 只从录像 dict spawn 视觉 view、不重建逻辑层；**B 层 `Replay`（deterministic 重算，未来不一定做）** 仅保留 `BattleReplayPlayer` / `BattleReplaySession` 命名占位。录像格式停在 v2，`PROTOCOL_VERSION` 不升，外部消费方（JS / cloud）不受影响。
+
+## 设计铁律
+
+框架演进中固化下来的不可违反约束（蒸馏自历史架构决策，违反会重新引入已根治的 bug）：
+
+- **Ability lifecycle hook**：框架层只暴露中性的 `is_pre_event_responsive()` 钩子、永不内置"死亡 / 沉默"等领域语义，由项目层 override 决定 PreEvent 是否短路响应 —— 框架不该代管亡语的 `alive_actor_ids` 时序契约。
+- **Ability 状态不随死亡清除**：死亡时绝不 `revoke_ability`（那会清掉冷却 / execution / modifier，破坏复活语义）。三层分离 —— Ability 本体跟 actor 永存、PreEvent handler 跟战斗走（`end()` 时 `remove_handlers_by_owner_id`）、运行时响应跟 `is_dead` 状态走。
+- **Config 驱动跨属性 clamp**：跨属性约束（如 hp ≤ max_hp）必须声明在 attribute config 的 `maxRef` / `minRef`、由生成器产出 `register_cross_attr_clamp` 调用；**禁止**在 Actor 里用 `set_pre_change` 注入 Callable —— lambda 捕获 owner 会形成无法 GC 的闭包循环。
+- **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 `WeakRef`（类型明确时，如 `AbilityComponent._ability`）或调用链参数流（类型是 Variant 接口时，如 `game_state_provider` 不缓存而每次 tick 传入）—— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
+- **测试引擎按场景独立**：两种场景生命周期语义冲突（headless 的 init/destroy vs UI 常驻 world）时各写一条 procedure（`SkillPreviewProcedure` vs `HexBattleProcedure`），而非硬塞兼容签名进一条引擎 —— 兼容参数会把 API 撑胖成坑。
+- **View 是 state 的 reactive projection**：前端只能 `bind_world` + 订阅 mutation signal（`actor_added` / `actor_removed` / `grid_configured`）自动同步，**禁止任何 destructive 的 view 重建 API**（如 `load_replay`）；且只订阅生命周期 / 结构变化，属性变化（HP / tag）交给 timeline 驱动的 Animator。
+- **Playback 不重建逻辑层**：A 层"录像播放"（`Playback`）只从录像 dict spawn 视觉 view、绝不 hydrate 真 Actor / AbilitySet / AttributeSet；B 层"回放"（`Replay`，deterministic 重算）未来不一定做，相关类名仅作命名占位。
+- **录像顺序 = 调用栈真实顺序**：所有录像事件统一走 `GameWorld.event_collector.push()` 单一队列，**禁止**按"入口类型"分两个容器再拼接 —— callback 在同步栈里穿插触发，任何固定拼接顺序都会丢失交错信息（反例：`damage1 → grant → damage2`）。
+- **Action 是共享无状态对象**：Action 执行后必须 `_verify_unchanged()`，child action 必须随父 `_freeze()`，跨 tag 的临时状态放 execution-local state 而非 Action 字段 —— 详见 [Action 架构契约](./reference/action-architecture.md)。
+
 ## 版本历史
 
 - **v0.4.0** - Actor ID 规范化，GameWorld.get_actor() 统一入口，IAbilitySetOwner 接口模式
@@ -727,3 +765,19 @@ if ability_set != null:
 | **GameplayInstance 持有 Actor** | Actor 生命周期绑定到实例 |
 | **ID 自描述归属** | `{instance_id}:{local_id}` 格式 |
 | **接口协议化** | 使用 `IXxx` 静态工具类检测协议 |
+
+## 未来规划 / 已知债务
+
+> 以下条目均为"设计未完全收敛"的挂账，**陈述事实 + 给出选项**，逐项与 owner 对齐后再落地。
+
+### 已知债务
+
+- **core → stdlib 反向依赖 (BattleRecorder)**：依赖图规定 stdlib 建在 core 之上，但 `core/entity/battle_procedure.gd` 直接持有并构造 stdlib 的 `BattleRecorder`（`_recorder` / `get_recorder()`），`Actor.gd` 也多处引用。破坏单向依赖图，阻塞把 core 拆成独立 addon，且替换 recorder 实现（NoopRecorder / NetworkRecorder）必须改 core。候选：core 定义 `IRecorder` interface（A）/ `BattleProcedure` 整体下放 stdlib（B）/ 把 BattleRecorder 物理移进 core（C）。待决断 recorder 是否属于 core 概念。
+- **ProjectileActor / projectile_events 在 core**：`core/entity/projectile_actor.gd` 硬编码玩法常量（`PROJECTILE_TYPE_BULLET / HITSCAN / MOBA`）并反向引用 stdlib 的 `ProjectileSystem`；`core/events/projectile_events.gd` 同理。不做投射物的 example（纯回合卡牌）继承 core 时白带此类型。候选：整体迁 `stdlib/projectile/`，或承认投射物是当前定位的一等公民。与 BattleRecorder 同批讨论 "core 边界"。
+- **强类型事件最后落回 Dictionary**：`core/events/game_event.gd` 定义 ~12 个强类型 class，但所有消费路径（`EventProcessor` / `MutableEvent` / `Ability.receive_event` / `EventCollector` / 各 component 的 `on_event`）仍吃 `Dictionary`，强类型只活在构造（`.to_dict()`）与反序列化（`from_dict()`）两个端点。结果：强类型纯文档、编译器不强制、field 拼错只能等 KeyError。候选：全切强类型签名（A）/ 删 class 只留 kind 常量（B）/ 仅 hot path（damage / attribute_changed）切（C）。需先拍板"这层要不要"。
+- **Replay / Playback / Director 命名混用**：同一概念三套词交叉 —— stdlib 数据类用 **Replay**（`ReplayData` / `replay_data.gd`）、写入器用 **Recorder**（`BattleRecorder`）、frontend signal 用 **playback**、frontend API 又用 **replay 动词**（`load_replay`）、UI 用 **Playback**。立场已定：A 层 = Playback（现役），B 层 = Replay（未来不一定做）；当前命名让"现役 = A 层"在代码里看不出来。计划随 A 层整合那轮捎带 rename（`ReplayData → PlaybackData` / `load_replay → load_playback`）。
+- **28 个 hex 技能未迁移到 condition bundle helper**：标准主动技能门控四件套（`NoTagCondition(cant_act)` + `NoTagCondition(silence)` + `CooldownCondition` + `TimedCooldownCost`）在 ~28 个技能里 byte-identical 手抄，手抄是唯一"正确性保证"。helper 已就位（`HexBattleCooldownSystem.apply_standard_active_gating` / `apply_basic_attack_gating`），`SkillValidator` Stage5 已 advisory 检测漏写（warn-only，strike/move 具名豁免）。待做：~26 个标准技能改用 helper、`strike` 改 `apply_basic_attack_gating`、`move` 不碰。单独成轮：28 文件 diff + 全量 hex 回归面，收益是防漂移而非修 bug。
+
+### 未来规划（触发式重审，当前不修）
+
+- **WorldGameplayInstance 把 hex 概念塞进 core**：`core/entity/world_gameplay_instance.gd` 直接 import `HexCoord` / `GridMapConfig` / `GridMapModel`。当前路线图下**不视为问题** —— 在第二个非 hex example 落地前，把 grid 抽成 `ISpatialBackend` 属过度工程。触发重审条件：立项完全脱离 grid 的 example（纯卡牌 / 文字冒险）、需把 LGF core 单独发布给外部用户、或 `WorldGameplayInstance` 子类增至 3+ 且其中超过一个不用 grid。
