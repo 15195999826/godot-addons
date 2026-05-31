@@ -108,7 +108,7 @@ WorldGI.tick: battle_finished.emit(timeline)
 
 ### 为什么跳 position
 
-`FrontendUnitView.play_death()` ([unit_view.gd](../frontend/scene/unit_view.gd)) 跑 0.5s tween:
+`FrontendUnitView.play_death()` ([unit_view.gd](../../frontend/scene/unit_view.gd)) 跑 0.5s tween:
 - `scale → (0.1, 0.1, 0.1)`
 - `position.y -= 0.5`
 
@@ -132,7 +132,7 @@ WorldGI.tick: battle_finished.emit(timeline)
 
 ### Edge: post-death buff tick
 
-`HexBattleActor.is_pre_event_responsive() = not _is_dead` ([hex_battle_actor.gd:56](../logic/hex_battle_actor.gd)) 决定死者**不响应** PreEvent handler. Poison / Vitality 这类 tick 在死者身上停止. 不是被动 expire — buff 仍挂着, stacks 冻结. 双方依然对称.
+`HexBattleActor.is_pre_event_responsive() = not _is_dead` ([hex_battle_actor.gd:56](../../logic/hex_battle_actor.gd)) 决定死者**不响应** PreEvent handler. Poison / Vitality 这类 tick 在死者身上停止. 不是被动 expire — buff 仍挂着, stacks 冻结. 双方依然对称.
 
 → 唯一需要警惕的: **如果未来加了"死亡时主动 expire 某 buff"的 ability** (例如某个 buff 设计 = "死亡时移除"), 必须同时让 BuffVisualizer 接住对应 ABILITY_REMOVED, 否则双方不对称, oracle 会抓出来. 这是 oracle 帮你提醒的设计完整性, 不是要回避它.
 
@@ -194,7 +194,7 @@ oracle `reconcile()` 收到空 `final_state` → 返回 `ReconcileReport` 标 `s
 ## 扩展点 (follow-up, 不在本轮范围)
 
 ### Buff / Shield 列表对账
-当前不查. 需先把 `FrontendBuffVisualizer.BUFF_REGISTRY` ([buff_visualizer.gd:27](../frontend/visualizers/buff_visualizer.gd)) 的白名单从 visualizer 内部抽出来, 让 oracle 能问"哪些 ability config_id 应该出现在 buffs[]"—— 否则 oracle 不知道该期望多少个 BuffSummary, 容易误报.
+当前不查. 需先把 `FrontendBuffVisualizer.BUFF_REGISTRY` ([buff_visualizer.gd:27](../../frontend/visualizers/buff_visualizer.gd)) 的白名单从 visualizer 内部抽出来, 让 oracle 能问"哪些 ability config_id 应该出现在 buffs[]"—— 否则 oracle 不知道该期望多少个 BuffSummary, 容易误报.
 
 最小做法: 单向检查 — view 显示出来的每个 `BuffSummary.id` 在 logic `actors[id].abilities` 里能找到对应 `instance_id`; 反向 (logic 有 ability 但 view 没显示) 不查 (可能是不显示的 buff).
 
@@ -213,12 +213,12 @@ view 当前不显示这些 — `FrontendActorRenderState` 不持. 若未来加 A
 
 | 关注 | 路径 |
 |---|---|
-| signal 定义 + handler | [`core/hex_world_gameplay_instance.gd`](../core/hex_world_gameplay_instance.gd) `battle_final_state_ready` / `_emit_final_state_if_debug` / `_build_final_state_snapshot` |
-| reconciler 主体 | [`tests/frontend/view_logic_reconciler.gd`](../tests/frontend/view_logic_reconciler.gd) |
-| 接入示例 (headless smoke) | [`tests/frontend/smoke_frontend_main.gd`](../tests/frontend/smoke_frontend_main.gd) |
-| 接入示例 (交互场景) | [`skill-preview/skill_preview.gd`](../skill-preview/skill_preview.gd) (待 Phase 4 加) |
-| view 派生数据来源 | [`frontend/core/actor_render_state.gd`](../frontend/core/actor_render_state.gd) (`FrontendActorRenderState`) |
-| view 位置投影 | [`frontend/world_view.gd`](../frontend/world_view.gd) (`hex_to_world`) |
+| signal 定义 + handler | [`core/hex_world_gameplay_instance.gd`](../../core/hex_world_gameplay_instance.gd) `battle_final_state_ready` / `_emit_final_state_if_debug` / `_build_final_state_snapshot` |
+| reconciler 主体 | [`tests/frontend/view_logic_reconciler.gd`](../../tests/frontend/view_logic_reconciler.gd) |
+| 接入示例 (headless smoke) | [`tests/frontend/smoke_frontend_main.gd`](../../tests/frontend/smoke_frontend_main.gd) |
+| 接入示例 (交互场景) | [`skill-preview/skill_preview.gd`](../../skill-preview/skill_preview.gd) (待 Phase 4 加) |
+| view 派生数据来源 | [`frontend/core/actor_render_state.gd`](../../frontend/core/actor_render_state.gd) (`FrontendActorRenderState`) |
+| view 位置投影 | [`frontend/world_view.gd`](../../frontend/world_view.gd) (`hex_to_world`) |
 
 ---
 

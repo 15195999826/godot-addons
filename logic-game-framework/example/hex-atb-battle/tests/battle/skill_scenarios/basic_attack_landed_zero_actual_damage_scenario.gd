@@ -1,6 +1,6 @@
 ## Phase A · BasicAttackLandedEvent 边界契约：actual_life_damage = 0 仍 emit
 ##
-## V1 契约 (per advanced-skills-next-batch.md Phase A):
+## V1 契约:
 ##   actual_life_damage = 0 时仍允许事件存在；consumer 自己 no-op
 ##
 ## 设定：enemy.atk = 20 (< ward cap 30) → 主伤被 ward 全吸 → actual_life_damage = 0。

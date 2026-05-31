@@ -1,6 +1,6 @@
 ## Phase B · VampiricTraining + target ward 全吸 → 不回血
 ##
-## V1 契约 (per advanced-skills-next-batch.md):
+## V1 契约:
 ##   shield 全吸收时 actual_life_damage = 0, 不回血
 ##
 ## 设定:

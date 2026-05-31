@@ -32,7 +32,7 @@ static var ABILITY := (
 ## 反伤过滤器：受害方是自己 + 有攻击来源 + 来源不是自己 + 非已反弹的伤害 + 实际有生命损伤
 ##
 ## actual_life_damage > 0 过滤：避免「全部被护盾吸收」时仍触发反伤（语义错误，因为
-## 攻击根本没打到肉）。详见 docs/skills/shield-system.md 「on-damage-taken 默认看
+## 攻击根本没打到肉）。详见 docs/reference/shield-system.md 「on-damage-taken 默认看
 ## actual_life_damage > 0」一节。新增其它 on-damage-taken 反应（吸血、受击 buff）时
 ## 必须沿用此 filter 模板。
 static func _thorn_filter() -> Callable:

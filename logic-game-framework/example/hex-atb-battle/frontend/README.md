@@ -1,6 +1,6 @@
 # Hex ATB Battle Frontend (表演层)
 
-> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `main.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。本 README 中"使用方法 / 主调用流程"段落保留作历史参考,API 已不存在;按下面"现状响应式 wire"段为准。详见 [docs/design-notes/2026-04-26-playback-old-path-retirement.md](../../docs/design-notes/2026-04-26-playback-old-path-retirement.md)。
+> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `main.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。本 README 中"使用方法 / 主调用流程"段落保留作历史参考,API 已不存在;按下面"现状响应式 wire"段为准。详见 `addons/logic-game-framework/docs/README.md`（World owns Battle + 响应式前端 节）。
 
 ## 现状响应式 wire(2026-04-26 起)
 
@@ -245,8 +245,7 @@ FrontendBattleDirector._process(delta)
       |      progress=1 立即完成,visual_hp 不在这里改
       |      _dirty_actors[actor_id] = true
       |      (visual_hp 由 RenderWorld.tick_hp_lerp 每帧收敛,
-      |       见 docs/design-notes/2026-04-26-presentation-event-vs-state.md
-      |       「血条迁移到 state」)
+      |       见 ../README.md#event-vs-state「事件 vs 状态边界」)
       |
       |    FLOATING_TEXT:
       |      首次: 加入 _floating_texts 列表

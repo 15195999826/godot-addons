@@ -1,6 +1,6 @@
 ## Angle Cone · 基于真实世界角度的锥形 AoE
 ##
-## V1 行为 (per advanced-skills-next-batch.md Phase D):
+## V1 行为:
 ## - 释放方式: target_coord (不点 actor)
 ## - forward = coord_to_world(target_coord) - coord_to_world(caster.hex_position)
 ## - 命中条件 (per candidate, world coords):

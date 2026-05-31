@@ -65,7 +65,7 @@ static func create_timed_cooldown_cost(duration: float) -> TimedCooldownCost:
 # 标准主动技能门控四件套 = NoTagCondition(cant_act) + NoTagCondition(cant_use_skill)
 # + CooldownCondition + TimedCooldownCost(cd_ms)。当前 28 个技能逐文件手抄这 4 行
 # (这正是让 strike 漏 silence 这类漂移无法被结构区分的根因)。新技能应改用下面的
-# helper; 既有技能的迁移留待专门一轮 (见 docs/future/2026-05-31-condition-bundle-helper-migration.md)。
+# helper; 既有技能的迁移留待专门一轮 (见 docs/README.md 已知债务: 28 技能迁移到 condition bundle helper)。
 #
 # 用法: ActiveUseConfig.builder().timeline_id(...).on_tag(...) |> standard_active_conditions(builder, cd_ms)
 # 注意 builder 链式返回 self, helper 直接在传入的 builder 上 apply 后返回它。

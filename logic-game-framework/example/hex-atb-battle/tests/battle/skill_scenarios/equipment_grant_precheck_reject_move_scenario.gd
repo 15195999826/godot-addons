@@ -1,8 +1,7 @@
 ## Phase G · 预校验拒绝: item config granted_abilities 含未注册 ability_config_id →
 ## HexItemDomain.can_move_item / HexActorEquipmentContainer.can_add_item reject move
 ##
-## V1 契约 (per equipment-attack-effects-next-stage.md §"Equipment Integration"
-## "callback 不能承担失败回滚"):
+## V1 契约（callback 不能承担失败回滚）:
 ##   ItemSystem.move_item
 ##     → HexItemDomain.can_move_item / HexActorEquipmentContainer.can_add_item
 ##     → if target is equipment container:

@@ -39,7 +39,7 @@ var _controls: FrontendPlaybackControls
 
 ## debug-only: 缓存 logic 终态 snapshot, 由 battle_final_state_ready signal 填充。
 ## release build 下 base GI 不 emit, 此字段保持空 — playback_ended 时跑 reconciler
-## 收到空 state 视为 SKIPPED 不 fail。详见 docs/view-logic-reconciliation.md。
+## 收到空 state 视为 SKIPPED 不 fail。详见 docs/reference/view-logic-reconciliation.md。
 ## 同时供 smoke_frontend_main 通过 _main_scene.get("_final_state") 读取。
 var _final_state: Dictionary = {}
 

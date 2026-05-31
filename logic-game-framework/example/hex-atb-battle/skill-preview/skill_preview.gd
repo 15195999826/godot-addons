@@ -197,7 +197,7 @@ var _hex_selection_cursor_material: StandardMaterial3D = null
 ## debug-only: 当前战斗的 logic 终态 snapshot, 由 battle_final_state_ready 填充。
 ## 每次 START 前清空, _on_playback_ended 跑 reconciler 时读取。
 ## release build base GI 不 emit, 此字段保持空 → reconciler SKIPPED 静默。
-## 详见 docs/view-logic-reconciliation.md。
+## 详见 docs/reference/view-logic-reconciliation.md。
 var _final_state: Dictionary = {}
 
 ## true: 战斗 procedure 运行中 / animator 播放中, 禁止编辑 UI 修改 world
