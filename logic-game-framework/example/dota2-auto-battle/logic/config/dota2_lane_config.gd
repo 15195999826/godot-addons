@@ -1,6 +1,6 @@
 ## Dota2LaneConfig - ARAM 单中路 + 队伍常量 + 波次定义
 ##
-## m1-contract.md Scene Goal：一条水平中路，左右两队从两端刷 lane creep 对进。
+## README.md（M1 契约 节） Scene Goal：一条水平中路，左右两队从两端刷 lane creep 对进。
 ## 这是静态布局数据；WaveSpawner 读它定位出生点 / 波次组成，controller 读它拿
 ## march 目标航点。坐标连续 Vector2（像素），无 hex grid、无 ATB。
 class_name Dota2LaneConfig

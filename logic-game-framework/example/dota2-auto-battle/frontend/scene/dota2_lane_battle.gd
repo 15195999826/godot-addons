@@ -1,6 +1,6 @@
 ## dota2_lane_battle - M1 可视场景（F6 直接看 ARAM 对线 + 富 debug 面板）
 ##
-## logic-view-contract.md / tick-model.md：场景**自持**私有 logic clock block（accumulator
+## README.md（Logic / View 契约 节） / README.md（Tick 模型 节）：场景**自持**私有 logic clock block（accumulator
 ## + 有限 catch-up，**不**建独立 Dota2SimulationDriver 类）。view 只消费 Dota2LogicFrame
 ## 快照 + events，**不**mutate 战斗状态。catch-up / debt-drop 帧 Log.warning（含
 ## real_delta_ms / accumulator_before / steps / dropped_debt_ms / tick_index）。
@@ -77,7 +77,7 @@ func _process(delta: float) -> void:
 	_refresh_debug_panel()
 
 
-## tick-model.md 规定形态：accumulator + 有限 catch-up + 超额 debt 丢弃 + 警告遥测。
+## README.md（Tick 模型 节） 规定形态：accumulator + 有限 catch-up + 超额 debt 丢弃 + 警告遥测。
 func _advance_logic_clock(real_delta_ms: float) -> void:
 	if _procedure == null:
 		return
@@ -110,7 +110,7 @@ func _advance_logic_clock(real_delta_ms: float) -> void:
 			_catchup_frames += 1
 		if dropped_debt_ms > 0.0:
 			_debt_drop_frames += 1
-		# Log.warning(module, message)：把遥测拼进 message（含 tick-model.md 要求的全部字段）。
+		# Log.warning(module, message)：把遥测拼进 message（含 README.md（Tick 模型 节） 要求的全部字段）。
 		Log.warning("Dota2AutoBattle", (
 			"catch-up frame real_delta_ms=%.2f accumulator_ms_before=%.2f"
 			+ " logic_steps_executed=%d dropped_debt_ms=%.2f logic_tick_index=%d"

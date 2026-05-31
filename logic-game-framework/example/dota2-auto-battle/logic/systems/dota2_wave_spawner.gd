@@ -1,6 +1,6 @@
 ## Dota2WaveSpawner - 建 actor + 应用 config→AttributeSet + 挂 controller（不发 intent）
 ##
-## controller-intent-model.md「WaveSpawner Boundary」：spawner **不是**命令源，不发 intent。
+## README.md（Controller / Intent 模型 节）「WaveSpawner Boundary」：spawner **不是**命令源，不发 intent。
 ## 只做：建 unit actor → 应用兵种 config / AttributeSet 值 → 放到出生点 → 装基础攻击
 ## Ability → 注册移动体 → 挂 Dota2LaneCreepController → 登记进 procedure/world。
 ## 新 controller 起始无 current intent；其首个 logic tick 自行决策（通常建 LaneMarchIntent）。

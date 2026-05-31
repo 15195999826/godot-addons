@@ -1,12 +1,12 @@
 ## Dota2BattleActor - dota2-auto-battle 战斗 Actor 基类
 ##
-## actor-attributes.md：基类**不**持具体 attribute_set 字段；子类各持强类型字段，
+## README.md（Actor 与属性 节）：基类**不**持具体 attribute_set 字段；子类各持强类型字段，
 ## 经 get_attribute_set() 暴露 hp/max_hp 公共视图。这样专属代码（攻击读 attack_damage）
 ## 仍可走 unit.attribute_set.attack_damage 而不被基类 shadow。
 ##
 ## 基类返回 Dota2BattleActorAttributeSet（非 Unit）是为了不阻塞将来的
 ## Dota2TowerActor / Dota2BuildingActor —— 它们也 take damage、共享 hp/max_hp 视图。
-## 与 hex HexBattleActor / rts RtsBattleActor 同构。
+## 与 hex HexBattleActor 同构。
 class_name Dota2BattleActor
 extends Actor
 
@@ -78,7 +78,7 @@ func mark_dead() -> void:
 	_is_dead = true
 
 
-## 死亡 actor 不再响应 PreEvent handler（与 hex/rts 一致）。
+## 死亡 actor 不再响应 PreEvent handler（与 hex 一致）。
 func is_pre_event_responsive() -> bool:
 	return not _is_dead
 

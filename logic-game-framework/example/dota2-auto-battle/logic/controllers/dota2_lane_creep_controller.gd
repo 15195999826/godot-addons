@@ -1,6 +1,6 @@
 ## Dota2LaneCreepController - 首个具体 controller（小型显式状态机，M1 不引入行为树）
 ##
-## controller-intent-model.md「First Controller Behavior」：
+## README.md（Controller / Intent 模型 节）「First Controller Behavior」：
 ##   无 current intent → 建 LaneMarchIntent
 ##   LaneMarch 到 reconsider tick → aggro 范围内有敌 → interrupt 换 AttackTargetIntent
 ##                                  无敌 → 保持 LaneMarch，排下次 reconsider
@@ -12,7 +12,7 @@ class_name Dota2LaneCreepController
 extends Dota2UnitController
 
 
-## controller-intent-model.md：30Hz 下 lane march 每 5 tick 扫一次 aggro。
+## README.md（Controller / Intent 模型 节）：30Hz 下 lane march 每 5 tick 扫一次 aggro。
 const AGGRO_RESCAN_INTERVAL_TICKS := 5
 const DECISION_STAGGER_MOD := 3
 

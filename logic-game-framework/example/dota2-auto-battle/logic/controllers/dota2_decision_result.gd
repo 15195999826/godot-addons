@@ -1,4 +1,4 @@
-## Dota2DecisionResult - brain decision 的输出（controller-intent-model.md）
+## Dota2DecisionResult - brain decision 的输出（README.md（Controller / Intent 模型 节））
 ##
 ## decision 只在 current intent 需要被 create/replace/complete/fail/interrupt/重新考虑
 ## 时跑（不每 tick 跑）。三种动作：

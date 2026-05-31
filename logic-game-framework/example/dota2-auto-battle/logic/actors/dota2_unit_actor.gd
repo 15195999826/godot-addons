@@ -1,7 +1,7 @@
 ## Dota2UnitActor - lane creep（单位）Actor
 ##
 ## Dota2BattleActor 子类：持兵种 enum + 强类型 Dota2UnitAttributeSet + ability_set。
-## actor-attributes.md：专属代码直接 unit.attribute_set.attack_damage；公共代码走
+## README.md（Actor 与属性 节）：专属代码直接 unit.attribute_set.attack_damage；公共代码走
 ## get_attribute_set() 拿 hp/max_hp 视图。spawn 顺序 max_hp 先于 hp（cross-clamp 不误截）。
 ## 基础攻击 Ability 在 add_actor 后由 equip_basic_attack() 装备（owner id 已就位）。
 class_name Dota2UnitActor

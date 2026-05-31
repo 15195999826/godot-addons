@@ -1,17 +1,17 @@
 ## Dota2BattleEvents - dota2-auto-battle 战斗事件词汇（canonical）
 ##
-## logic-view-contract.md 是事件词汇的 single source of truth；本文件落地那份词汇，
+## README.md（Logic / View 契约 节） 是事件词汇的 single source of truth；本文件落地那份词汇，
 ## 其它代码引用这里的常量而不是各自造别名。事件 = 本 logic tick 内"发生过的事实"，
 ## 过去时命名，actor 用 id: String，坐标用 x/y float（连续 Vector2）。
 ##
-## 与 hex HexBattlePreEvents / rts RtsBattleEvents 平行：pre_damage 是 buff/passive 的
+## 与 hex HexBattlePreEvents 平行：pre_damage 是 buff/passive 的
 ## hook 入口，post_damage 让未来 thorns/lifesteal 之类被动观察伤害结果（M1 留空 handler，
 ## 边界先在）。DOTA2 专属策略不下沉 LGF core。
 class_name Dota2BattleEvents
 extends RefCounted
 
 
-# ========== Canonical 事件 kind（logic-view-contract.md）==========
+# ========== Canonical 事件 kind（README.md（Logic / View 契约 节））==========
 
 const UNIT_SPAWNED := "dota2_unit_spawned"
 const INTENT_STARTED := "dota2_intent_started"

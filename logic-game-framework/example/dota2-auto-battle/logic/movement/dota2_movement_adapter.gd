@@ -1,6 +1,6 @@
 ## Dota2MovementAdapter - battle intent ↔ sim-nav DOTA2 lab 移动原语 的唯一边界
 ##
-## m1-contract.md Movement Contract：接 sim-nav-map，以 dota2-rts-pathfinding-lab 为参考
+## README.md（M1 契约 节） Movement Contract：接 sim-nav-map，以 dota2-rts-pathfinding-lab 为参考
 ## 实现。controller/ability **永不**直接动 pathfinding / motion 内部 —— 只经本 adapter：
 ##   Dota2Intent → Dota2MovementAdapter → Dota2Lab{PathfinderWrapper,MotionController,Unit}
 ##

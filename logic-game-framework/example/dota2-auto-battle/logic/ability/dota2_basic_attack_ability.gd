@@ -1,6 +1,6 @@
 ## Dota2BasicAttackAbility - 基础攻击（首版即 LGF Ability，非 controller 直接掉血）
 ##
-## lgf-skill-model.md / m1-contract.md 的最终边界从 M1 就位：
+## README.md（LGF Skill 模型 节） / README.md（M1 契约 节） 的最终边界从 M1 就位：
 ##   AttackTargetIntent
 ##     → Dota2BasicAttackAbility（AbilitySet.receive_event ABILITY_ACTIVATE_EVENT）
 ##       → on_timeline_start: attack_started 事件

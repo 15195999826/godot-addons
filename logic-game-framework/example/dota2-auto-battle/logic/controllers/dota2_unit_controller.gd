@@ -1,4 +1,4 @@
-## Dota2UnitController - 每单位运行时行为拥有者（controller-intent-model.md）
+## Dota2UnitController - 每单位运行时行为拥有者（README.md（Controller / Intent 模型 节））
 ##
 ## 拥有 behavior_mode / current_intent / current_intent_status / last_decision_result /
 ## next_decision_tick。**不**直接改 position / hp / cooldown / 执行 ability / 删 actor /
@@ -16,7 +16,7 @@ const BEHAVIOR_LANE_CREEP := "lane_creep"
 
 var actor_id: String = ""
 var team_id: int = -1
-## 决策错峰用（controller-intent-model.md：actor_spawn_index % 3，避免同 tick 齐扫）。
+## 决策错峰用（README.md（Controller / Intent 模型 节）：actor_spawn_index % 3，避免同 tick 齐扫）。
 var spawn_index: int = 0
 var behavior_mode: String = BEHAVIOR_LANE_CREEP
 
@@ -40,7 +40,7 @@ func decide(_world: Dota2WorldGameplayInstance, _tick: int) -> Dota2DecisionResu
 	return Dota2DecisionResult.keep()
 
 
-## 决策触发条件（controller-intent-model.md「Decision Triggers」）：
+## 决策触发条件（README.md（Controller / Intent 模型 节）「Decision Triggers」）：
 ## 没有 current intent / 上次 step 终态 / 到达 next_decision_tick。
 ## 不因"新 tick 发生"而决策。
 func _needs_decision(tick: int) -> bool:

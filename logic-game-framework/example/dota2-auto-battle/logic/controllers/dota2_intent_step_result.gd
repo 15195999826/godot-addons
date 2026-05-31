@@ -1,6 +1,6 @@
 ## Dota2IntentStepResult - systems 每 tick 推进 current intent 后返回的执行结果
 ##
-## controller-intent-model.md「Systems report facts. Controller owns lifecycle.」
+## README.md（Controller / Intent 模型 节）「Systems report facts. Controller owns lifecycle.」
 ## movement / ability 系统推进 current intent 后返回此对象（事实），controller 据此
 ## 决定 keep / complete / fail / interrupt / replace。
 class_name Dota2IntentStepResult

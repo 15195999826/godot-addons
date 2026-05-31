@@ -1,7 +1,7 @@
 ## Dota2WorldGameplayInstance - dota2-auto-battle 连续坐标战斗世界 Instance
 ##
 ## WorldGameplayInstance 子类：长期持 actor registry；战斗是临时 Dota2AutoBattleProcedure。
-## 与 hex HexWorldGameplayInstance / rts RtsWorldGameplayInstance 同构。战斗推进由
+## 与 hex HexWorldGameplayInstance 同构。战斗推进由
 ## Dota2AutoBattleProcedure 内化（frontend logic clock / smoke 直接 drive tick_once，
 ## **不**走 WorldGI.tick 的 blocking 循环）。
 class_name Dota2WorldGameplayInstance

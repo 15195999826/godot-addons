@@ -1,6 +1,6 @@
 ## Dota2LogicFrame - 单个固定 logic tick 的只读快照（logic→view 合同）
 ##
-## logic-view-contract.md：snapshot = 当前可观测状态；event = 本 tick 内发生的事；
+## README.md（Logic / View 契约 节）：snapshot = 当前可观测状态；event = 本 tick 内发生的事；
 ## view = 只消费。本对象只持稳定数据（Dictionary / 基础类型），**不**持 live actor 引用，
 ## 这样 frontend 不可能反向 mutate 战斗状态。
 ##
