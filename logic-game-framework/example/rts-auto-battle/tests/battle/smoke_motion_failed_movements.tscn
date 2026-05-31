@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_motion_failed_movements"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_motion_failed_movements.gd" id="1_motion_failed"]
-
-[node name="RtsSmokeMotionFailedMovements" type="Node"]
-script = ExtResource("1_motion_failed")

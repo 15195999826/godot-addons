@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_replay_bit_identical"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/replay/smoke_replay_bit_identical.gd" id="1_smoke"]
-
-[node name="SmokeReplayBitIdentical" type="Node"]
-script = ExtResource("1_smoke")

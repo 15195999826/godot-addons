@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_demo_pathfinding"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/frontend/demo_rts_pathfinding.gd" id="1_pathfind_demo"]
-
-[node name="RtsPathfindingDemo" type="Node"]
-script = ExtResource("1_pathfind_demo")

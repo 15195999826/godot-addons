@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_vertex_virtual_goal"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_vertex_virtual_goal.gd" id="1_vertex_vg"]
-
-[node name="RtsSmokeVertexVirtualGoal" type="Node"]
-script = ExtResource("1_vertex_vg")

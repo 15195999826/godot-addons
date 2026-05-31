@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://perf_hierarchical_synthetic"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/diagnostics/perf_hierarchical_synthetic.gd" id="1_perf_synth"]
-
-[node name="PerfHierarchicalSynthetic" type="Node"]
-script = ExtResource("1_perf_synth")

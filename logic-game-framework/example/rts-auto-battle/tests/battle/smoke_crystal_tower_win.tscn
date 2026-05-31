@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_crystal_tower_win"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_crystal_tower_win.gd" id="1_ct_win"]
-
-[node name="RtsSmokeCrystalTowerWin" type="Node"]
-script = ExtResource("1_ct_win")

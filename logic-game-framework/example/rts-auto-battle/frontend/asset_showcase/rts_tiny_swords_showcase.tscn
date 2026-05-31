@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/frontend/asset_showcase/rts_tiny_swords_showcase.gd" id="1_showcase"]
-
-[node name="RtsTinySwordsShowcase" type="Node2D"]
-script = ExtResource("1_showcase")

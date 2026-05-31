@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_player_command_production"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_player_command_production.gd" id="1_pc_prod"]
-
-[node name="RtsSmokePlayerCommandProduction" type="Node"]
-script = ExtResource("1_pc_prod")

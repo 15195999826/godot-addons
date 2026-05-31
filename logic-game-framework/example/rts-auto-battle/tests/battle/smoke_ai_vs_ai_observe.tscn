@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_ai_vs_ai_observe"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_ai_vs_ai_observe.gd" id="1_observe"]
-
-[node name="RtsSmokeAiVsAiObserve" type="Node"]
-script = ExtResource("1_observe")

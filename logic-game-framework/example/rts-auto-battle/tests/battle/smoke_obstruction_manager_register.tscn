@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://rts_smoke_obstruction_manager_register"]
-
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/rts-auto-battle/tests/battle/smoke_obstruction_manager_register.gd" id="1_om_register"]
-
-[node name="RtsSmokeObstructionManagerRegister" type="Node"]
-script = ExtResource("1_om_register")
