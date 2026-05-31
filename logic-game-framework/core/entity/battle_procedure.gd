@@ -7,7 +7,7 @@
 ## 基类只提供骨架(participants 管理、in_combat tag 钩子、recorder 生命周期),
 ## 具体 ATB / 回合 / 胜负判定由子类 override tick_once / should_end 实现。
 ##
-## 详见 docs/design-notes/2026-04-19-world-as-single-instance.md
+## 详见 docs/README.md（World owns Battle + 响应式前端 节）
 class_name BattleProcedure
 extends RefCounted
 

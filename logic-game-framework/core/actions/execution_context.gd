@@ -29,7 +29,7 @@ extends RefCounted
 ##
 ## §0.4 execution_state: 同一 AbilityExecutionInstance 共享的 transient scratchpad
 ## (CAST 阶段写, HIT 阶段读); ExecutionContext 不拥有这份字典, 只是引用入口。
-## 详见 phase-00-infrastructure.md §0.4。
+## 详见 docs/reference/action-architecture.md（Ability execution-local state 节）。
 
 ## 触发事件链（字典形式），记录从原始触发事件到当前回调事件的完整链路。
 ## 每个元素是 GameEvent.to_dict() 的结果。

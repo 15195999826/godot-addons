@@ -2,7 +2,7 @@
 ##
 ## file-grep + light parse 扫描，把 AI 生成代码的 Action 边界硬化。
 ##
-## 检查项 (按 docs/skills/remaining-skills-impl-plan/phase-00-infrastructure.md §0.0):
+## 检查项 (按 docs/reference/action-architecture.md):
 ## 1. core/actions / stdlib/actions / example/*/logic/actions 下新增 `class_name .*Action`
 ##    视为 public Primitive Action，必须进入 allowlist。
 ## 2. example/** / stdlib/** 新增 Action 不允许直接 extends Action.BaseAction;

@@ -3,7 +3,7 @@ extends RefCounted
 
 ## Action 分层合同
 ##
-## Action 体系按四层理解和约束（详见 docs/skills/remaining-skills-impl-plan/phase-00-infrastructure.md §0.0）:
+## Action 体系按四层理解和约束（详见 docs/reference/action-architecture.md）:
 ##
 ## | 层 | 基类 | 是否可进 timeline | 用途 |
 ## |---|---|---|---|
