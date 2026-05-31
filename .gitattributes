@@ -1,0 +1,24 @@
+# 全部文本文件强制 LF（repo blob + 工作区 checkout）。
+# 根治：此 submodule 此前无 .gitattributes（主仓的 eol=lf 不作用于独立 submodule），
+# 导致 .gd/.tscn/.uid/.md 行尾 CRLF/LF 混合；sed -i / 编辑器整文件改写时会翻转一批，
+# 制造上万行假 diff。统一为 LF 后，任何工具写出的 LF 与 repo 一致（无 flip），写出的
+# CRLF 也在 git add 时被归一回 LF（无 flip）。
+* text=auto eol=lf
+
+# 二进制资产：永不做行尾 / 文本归一（text=auto 通常能自动识别，这里显式兜底）。
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.bmp  binary
+*.gif  binary
+*.ico  binary
+*.ogg  binary
+*.wav  binary
+*.mp3  binary
+*.ttf  binary
+*.otf  binary
+*.exr  binary
+*.hdr  binary
+*.res  binary
+*.scn  binary
