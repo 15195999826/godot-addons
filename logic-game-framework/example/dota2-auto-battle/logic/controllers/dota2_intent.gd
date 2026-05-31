@@ -1,4 +1,4 @@
-## Dota2Intent - 持久 current intent（controller-intent-model.md）
+## Dota2Intent - 持久 current intent（README.md（Controller / Intent 模型 节））
 ##
 ## Brain decision → Dota2Intent → 存为 controller.current_intent → systems 每 tick 推进。
 ## intent_id 让 systems 区分"继续同一 intent"与"开始新 intent"（movement adapter 据此

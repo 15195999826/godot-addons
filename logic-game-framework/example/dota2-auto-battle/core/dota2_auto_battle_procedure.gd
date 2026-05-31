@@ -1,6 +1,6 @@
 ## Dota2AutoBattleProcedure - 单线程固定 tick 自动战斗过程
 ##
-## tick-model.md / controller-intent-model.md 固定相位（顺序是合同，可微调实现不可换边界）：
+## README.md（Tick 模型 节） / README.md（Controller / Intent 模型 节） 固定相位（顺序是合同，可微调实现不可换边界）：
 ##   1 tick AbilitySet cooldown/duration
 ##   2 cleanup 死 actor + 失效不可能的 current intent
 ##   3 update targeting/spatial（M1 on-demand，无独立索引）
@@ -13,14 +13,14 @@
 ## clock block / headless smoke 直接驱动；**不**走 WorldGI.tick 的 blocking 循环，也
 ## **不**覆写基类 tick_once —— 基类签名 `tick_once() -> void` 不兼容带参带返回值的
 ## 固定步进入口，故用独立方法名）。无 command/order 层。DOTA2 策略只在本 example，
-## LGF/sim-nav core 零改动。tick-model.md 设计文档里的 `tick_once(LOGIC_DT_MS)` 即此。
+## LGF/sim-nav core 零改动。README.md（Tick 模型 节） 设计文档里的 `tick_once(LOGIC_DT_MS)` 即此。
 class_name Dota2AutoBattleProcedure
 extends BattleProcedure
 
 
 ## 安全上限：1800 tick @ 33.33ms ≈ 60s；战斗未在此分胜负判 timeout（smoke 记 FAIL）。
 const MAX_TICKS := 1800
-## 30Hz 固定 tick（tick-model.md LOGIC_DT_MS）。
+## 30Hz 固定 tick（README.md（Tick 模型 节） LOGIC_DT_MS）。
 const DOTA2_TICK_INTERVAL_MS := 1000.0 / 30.0
 
 

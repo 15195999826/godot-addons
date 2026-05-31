@@ -1,6 +1,6 @@
 ## Dota2AttackCooldown - 基础攻击冷却（Ability 执行路径，非 controller ad-hoc 状态）
 ##
-## controller-intent-model.md：cooldown / cast timing 是 Ability/AbilitySet 执行状态，
+## README.md（Controller / Intent 模型 节）：cooldown / cast timing 是 Ability/AbilitySet 执行状态，
 ## 不是 controller 自管字段。基础攻击 Ability 用：
 ##   condition = NoTagCondition(COOLDOWN_TAG)  —— cooldown 期间不可再激活
 ##   cost      = TimedCooldownCost             —— 激活时上 attack_interval_ms 时长 tag

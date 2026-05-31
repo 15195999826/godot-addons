@@ -1,13 +1,13 @@
 ## Dota2DamageAction - 基础攻击的伤害 Action（attack point keyframe 触发）
 ##
-## lgf-skill-model.md / m1-contract.md：基础攻击走 Ability/Timeline/Action/Event 路径，
+## README.md（LGF Skill 模型 节） / README.md（M1 契约 节）：基础攻击走 Ability/Timeline/Action/Event 路径，
 ## AttackTargetIntent **不**直接掉血。本 Action 由 Dota2BasicAttackAbility 的 Timeline
 ## 在 attack point tag 处触发：
 ##   pre_damage（buff/passive hook，M1 handler 空）→ 应用伤害（原子：扣 hp + push 事件）
 ##   → attack_landed / damage_applied →（若致死）unit_died → post_damage 广播
 ##
 ## M1 简化：伤害 = attacker.attribute_set.attack_damage（无 armor 公式，见
-## actor-attributes.md armor 待定）。与 hex damage_action / rts basic_attack_action 同构。
+## README.md（Actor 与属性 节） armor 待定）。与 hex damage_action 同构。
 class_name Dota2DamageAction
 extends Action.BaseAction
 

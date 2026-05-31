@@ -1,6 +1,6 @@
 ## Dota2TargetingSystem - aggro 扫描 + 目标有效性（无状态 helper）
 ##
-## controller-intent-model.md「Decision Intervals」：lane creep march 时每隔几 tick
+## README.md（Controller / Intent 模型 节）「Decision Intervals」：lane creep march 时每隔几 tick
 ## 做一次 aggro 扫描；AttackTargetIntent 有效期间**不**周期换目标（不抖）。本系统只
 ## 提供"事实查询"，不持状态、不 mutate —— latch 由 controller 的 intent 生命周期负责。
 ##

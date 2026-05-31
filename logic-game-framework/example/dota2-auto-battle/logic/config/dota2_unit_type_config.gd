@@ -1,11 +1,10 @@
 ## Dota2UnitTypeConfig - lane creep 兵种静态数值表
 ##
-## actor-attributes.md「Static Config Vs Runtime Attributes」：type config 是静态共享数据，
+## README.md（Actor 与属性 节）「Static Config Vs Runtime Attributes」：type config 是静态共享数据，
 ## 定义某 actor 种类的初始值；AttributeSet 是 runtime 可变数据（buff/aura/item 改它）。
 ## 此处只放静态初值 + 不可被 modifier 改的常量（collision_radius / 几何）。
 ##
-## M1 两种 lane creep：近战 melee、远程 ranged。数值 hardcode 在此（参照 rts
-## RtsUnitClassConfig 风格）。Hero/Tower/Building 不在 M1，但加新 UnitType 不破家族形状。
+## M1 两种 lane creep：近战 melee、远程 ranged。数值 hardcode 在此。Hero/Tower/Building 不在 M1，但加新 UnitType 不破家族形状。
 class_name Dota2UnitTypeConfig
 extends RefCounted
 
@@ -19,7 +18,7 @@ class StatBlock:
 	var display_name: String = ""
 	var max_hp: float = 0.0
 	var hp: float = 0.0
-	## 攻击伤害（M1 简化：直接掉血，无 armor 公式 —— 见 actor-attributes.md armor 待定）。
+	## 攻击伤害（M1 简化：直接掉血，无 armor 公式 —— 见 README.md（Actor 与属性 节） armor 待定）。
 	var attack_damage: float = 0.0
 	## 像素；与目标距离 <= attack_range 才允许基础攻击。
 	var attack_range: float = 0.0
