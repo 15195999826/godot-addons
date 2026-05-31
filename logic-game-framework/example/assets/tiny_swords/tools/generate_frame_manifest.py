@@ -319,7 +319,7 @@ def main() -> None:
             entries.append(entry)
 
     payload = {
-        "root": "res://addons/logic-game-framework/example/rts-auto-battle/frontend/assets/tiny_swords",
+        "root": "res://addons/logic-game-framework/example/assets/tiny_swords",
         "asset_count": len(entries),
         "entries": entries,
     }

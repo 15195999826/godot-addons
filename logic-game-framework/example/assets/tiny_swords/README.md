@@ -104,16 +104,12 @@ RTS 示例使用的整理版美术资产目录。来源为 `D:\tmp\Tiny Swords R
 
 ## Preview
 
-动画浏览器场景：
+运行时通过 `TinySwordsAnimationCatalog`（同目录 `../tiny_swords_animation_catalog.gd`）读取两层数据：
 
-`res://addons/logic-game-framework/example/rts-auto-battle/frontend/asset_browser/rts_tiny_swords_animation_browser.tscn`
-
-浏览器会读取两层数据：
-
-- `frame_manifest.json`：自动扫描层，记录所有可切帧资源；未录用的条目在浏览器里归入 `Pending`。
+- `frame_manifest.json`：自动扫描层，记录所有可切帧资源；未录用的条目标记为 `pending`。
 - `animation_library.json`：人工录用层，按 `resource/building/unit` 组织第一版可用动画；单帧图片也按一帧动画处理。
 
-浏览器默认展示 `Accepted`。切到 `Pending` 可以继续检查待合入资源。`ui/` 只整理入库，不进入动画预览。Directional unit 会显示 8 个方向按钮，右侧 sequence 列表只显示当前方向下的动作状态，例如 `idle` / `run` / `attack`。
+`scan()` 同时返回 `accepted` 与 `pending` 条目（`get_asset_status` 区分）。`ui/` 只整理入库，不进入动画预览。Directional unit 的 sequence 按方向组织，动作状态如 `idle` / `run` / `attack`。
 
 `tools/generate_frame_manifest.py` 可生成 `frame_manifest.json`，记录每个多帧资产的网格、有效帧数、每帧 alpha bbox、visual-center offset 和 bottom-center offset。脚本优先使用人工确认的 override 规则；未覆盖资源会用兜底规则标记为 `confidence: "guessed"` 和 `needs_review: true`，方便后续人工复核。
 
