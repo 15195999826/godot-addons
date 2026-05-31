@@ -13,7 +13,7 @@
 ## 包含 passives + track (keyframe 列表)。procedure 在 start() 立即 drain
 ## time_ms<=0 的 keyframe, tick_once 按 logic_time 调度后续。
 ##
-## 详见 docs/design-notes/2026-04-19-world-as-single-instance.md 阶段 3。
+## 详见 docs/README.md（World owns Battle + 响应式前端 节）。
 class_name SkillPreviewWorldGI
 extends HexWorldGameplayInstance
 

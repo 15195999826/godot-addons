@@ -8,7 +8,7 @@
 ## 任一字段漂 → 收集进 mismatches (不 short-circuit) → 返回 ReconcileReport。
 ## 调方决定是否硬 fail (smoke) / push_warning (skill-preview 交互场景)。
 ##
-## 死者特殊处理 — 详见 docs/view-logic-reconciliation.md「死者」一节:
+## 死者特殊处理 — 详见 docs/reference/view-logic-reconciliation.md「死者」一节:
 ##   - 跳过 position (FrontendUnitView.play_death 修改 transform: scale 0.1 + position.y -0.5)
 ##   - hp / max_hp / is_alive 照查 (logic ability_set 不主动清, view BuffVisualizer 也不主动清,
 ##     双方对称)

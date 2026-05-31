@@ -5,8 +5,7 @@
 ## event_timeline 回放，在已有 view 上叠加飘字 / 特效。
 ##
 ## 设计哲学：view 是 state 的 reactive projection，不存在 destructive 重建 API。
-## 详见 docs/design-notes/2026-04-19-world-as-single-instance.md 与
-## docs/design-notes/2026-04-20-world-view.md
+## 详见 docs/README.md（World owns Battle + 响应式前端 节）
 class_name FrontendWorldView
 extends Node3D
 

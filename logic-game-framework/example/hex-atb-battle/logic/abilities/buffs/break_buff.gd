@@ -10,7 +10,7 @@
 ##   只有当最后一个 Break source 移除后 (empty → non-empty 边界) 才恢复; 由 Ability
 ##   层 _disabled_sources Dictionary + _notify_components_enabled hook 自动处理。
 ##
-## Goal Phase B2 关键设计 (per advanced-skills-impl-plan):
+## Goal Phase B2 关键设计:
 ## - Break = cant_use_passive + passive Ability disabled state + duration
 ## - Ability.receive_event() / tick_executions() 顶层短路 (在 core/abilities/core/ability.gd)
 ##   覆盖 triggered passive (Thorn / Deathrattle), periodic passive (DemonForm),

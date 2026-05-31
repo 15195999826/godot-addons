@@ -1,6 +1,6 @@
 ## Piercing Line #G - 沿 caster→target 方向直线穿透
 ##
-## V1 行为 (per advanced-skills-next-batch.md):
+## V1 行为:
 ## - direction: caster.hex_position → target.hex_position 的单位方向
 ## - length: 3 hex
 ## - filter: 敌方 alive CharacterActor (沿线遍历, 每格找 occupant)

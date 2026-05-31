@@ -36,7 +36,7 @@ var position: HexCoord = HexCoord.zero()
 var visual_hp: float = 0.0
 
 ## 目标 HP(damage / heal event apply 后立即累到这里;visual_hp 异步追赶)
-## 设计依据:docs/animation/event-vs-state.md「血条作为 State」
+## 设计依据:README.md#event-vs-state（hex example「事件 vs 状态边界」节）
 var target_hp: float = 0.0
 
 ## 最大 HP

@@ -1,6 +1,6 @@
 ## Phase G · 负面契约: 装备 Daedalus Charm 后, 释放 Fireball 不触发暴击规则
 ##
-## V1 契约 (per equipment-attack-effects-next-stage.md §"Attack Effect Example"):
+## V1 契约:
 ##   普通 active skill (Fireball / Poison / Fire Tile / Totem damage / reflected damage)
 ##   不调用 `emit_pre_basic_attack()` → 不进入 PreBasicAttackEvent → 不读 equipment crit rule
 ##

@@ -18,7 +18,7 @@ extends WorldGameplayInstance
 ## 子类 (HexDemoWorldGI / SkillPreviewWorldGI) 的 _on_battle_finished 跑, 因此 snapshot
 ## 数据是子类 end() / _save_replay 之前的干净终态。
 ##
-## 数据契约见 docs/view-logic-reconciliation.md。
+## 数据契约见 docs/reference/view-logic-reconciliation.md。
 signal battle_final_state_ready(final_state: Dictionary)
 
 

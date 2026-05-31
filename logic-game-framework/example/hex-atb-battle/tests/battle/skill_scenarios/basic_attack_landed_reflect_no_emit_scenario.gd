@@ -1,6 +1,6 @@
 ## Phase A · BasicAttackLandedEvent 负面契约：反伤不重复 emit
 ##
-## V1 契约 (per advanced-skills-next-batch.md Phase A):
+## V1 契约:
 ##   reflected damage 不产生 BasicAttackLandedEvent
 ##
 ## 设定：caster 装 Thorn 被动, enemy_0 用 Strike 攻击 caster。

@@ -8,7 +8,7 @@
 ## 多次伤害的连续性由「单一 target_hp + 连续 lerp」天然保证 — 不会出现两个并行
 ## hp 动画互相覆盖。
 ##
-## 边界依据见 docs/animation/event-vs-state.md「血条迁移到 state」节。
+## 边界依据见 README.md#event-vs-state（hex example「事件 vs 状态边界」节）。
 class_name FrontendApplyHPDeltaAction
 extends FrontendVisualAction
 

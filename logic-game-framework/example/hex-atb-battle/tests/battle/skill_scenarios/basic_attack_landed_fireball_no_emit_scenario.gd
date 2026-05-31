@@ -1,6 +1,6 @@
 ## Phase A · BasicAttackLandedEvent 负面契约：非 Strike 伤害源不 emit
 ##
-## V1 契约 (per advanced-skills-next-batch.md Phase A):
+## V1 契约:
 ##   Fireball / Poison tick / reflected / Fire Tile / Totem passive 不产生 BasicAttackLandedEvent
 ##
 ## 本 scenario 覆盖 Fireball (远程 magical, 不挂 on_hit basic_attack_landed callback)。

@@ -1,6 +1,6 @@
 ## Lifesteal #F - 血怒打击 (主动近战 + 实际生命伤害百分比吸血)
 ##
-## V1 行为 (per advanced-skills-next-batch.md):
+## V1 行为:
 ## - 主动近战技能 (melee, range=1)
 ## - 命中后按 DamageEvent.actual_life_damage * ratio 治疗 caster
 ## - shield 全吸收 (actual=0) → 不吸血

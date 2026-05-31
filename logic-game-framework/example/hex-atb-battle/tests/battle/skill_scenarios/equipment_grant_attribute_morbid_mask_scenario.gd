@@ -1,6 +1,6 @@
 ## Phase G · Morbid Mask 装备 grant VampiricTraining → owner 普攻吸血生效
 ##
-## V1 契约 (per equipment-attack-effects-next-stage.md §"Equipment Integration"):
+## V1 契约:
 ##   - 装备 grant passive 后, owner attack_lifesteal_pct = 0.5 (VampiricTraining 默认值)
 ##   - 普攻命中 → BasicAttackLandedEvent → GeneralPassive 监听 → 按
 ##     actual_life_damage * 0.5 heal caster

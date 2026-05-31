@@ -231,7 +231,7 @@ class ShieldBrokenEvent extends GameEvent.Base:
 ##
 ## Resource 自然恢复 (Phase C: hp_regen_per_sec; 未来 mp_regen_per_sec).
 ##
-## V1 contract (per advanced-skills-next-batch.md):
+## V1 contract:
 ##   - NOT a heal: 不走 HexBattleHealAction, 不产生 HealEvent.
 ##   - 不触发 heal-related passive (on-heal / post-heal / heal amp / overheal).
 ##   - 仍 replay/frontend 可见: 独立 RegenerationEvent.

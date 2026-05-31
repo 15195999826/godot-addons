@@ -8,7 +8,7 @@
 - **Procedure 特化**:`hex_battle_procedure.gd` — ATB 累积、AI 决策、投射物事件广播、胜负判定、MAX_TICKS 安全上限。
 - **共享事件**:`events/battle_events.gd` — 强类型事件定义,frontend 订阅点。
 
-设计背景见 `addons/logic-game-framework/docs/design-notes/2026-04-19-world-as-single-instance.md`。
+设计背景见 `addons/logic-game-framework/docs/README.md`（World owns Battle + 响应式前端 节）。
 
 ## 三层架构(2026-04-20 调整)
 
