@@ -3,15 +3,26 @@ extends RefCounted
 
 # Dota2 RTS Pathfinding Lab — motion controller.
 #
-# Implements the explicit state machine specified in
-# docs/design-notes/motion-controller-design.md. Five states per unit, eight
-# transitions, fixed per-tick phase order, no magic-number-driven implicit
-# transitions. Target LOC ≤300.
+# Implements the explicit state machine of
+# docs/design-notes/movement-feel-policy.md (v2) over the skeleton fixed in
+# motion-controller-design.md: six states per unit, fixed per-tick phase
+# order, no magic-number-driven implicit transitions.
+#
+# v2 feel mechanisms (all lab policy, sim-nav-map core untouched):
+#   M1 tangential slide  — a unit-blocked step tries a validated sideways
+#      step around the blocker before escalating to a detour request.
+#   M2 unit clearance relax — movement validation against unit obstructions
+#      retries with clearance − ½ raster cell (0 A.D. relaxClearanceForUnits).
+#   M3 crowded arrive — a blocked unit already within a body diameter of its
+#      goal completes instead of fighting for the exact point.
+#   M4 HOLDING — recovery budget exhausted: keep the order, hold position,
+#      retry a long path every HOLD_RETRY_INTERVAL_TICKS. FAILED is reachable
+#      only from a statically unreachable long-path result.
 #
 # Critical invariant (NO_SAME_TICK_TAKEOVER): when step_unit() enqueues a
 # short or long detour because of a block, it must NOT take a result, mutate
 # the path, or move in the same tick. The unit transitions to a WAITING_*
-# state and the function returns.
+# state and the function returns. (A slide is a movement, not a takeover.)
 
 const MotionUpdateScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_motion_update.gd")
 
@@ -20,9 +31,23 @@ const ARRIVE_EPSILON := 4.0
 const DOTA2_MOVE_START_ANGLE_RAD := 0.200712864  # 11.5 degrees
 const FACING_DIRECTION_EPSILON_SQ := 0.000001
 # Short-path search range. Conservative single value; 0AD scales by failure
-# count, dota2 lab does not (we instead grow retry_count → FAILED faster).
-const SHORT_PATH_SEARCH_RANGE := 12.0 * 16.0  # 12 navcells * 16 px
+# count, dota2 lab does not (recovery escalates to HOLDING instead).
+const SHORT_PATH_SEARCH_RANGE := 12.0 * 16.0  # 12 navcells (world-scale)
 const SHORT_PATH_SUBGOAL_RADIUS := 2.0 * 16.0
+# M2: unit-vs-unit clearance relax as a fraction of the raster cell
+# (0 A.D. relaxes by ½ navcell — Pathfinding "makes movement smoother").
+const UNIT_CLEARANCE_RELAX_CELL_FACTOR := 0.5
+# M1: consecutive slide ticks before the unit stops orbiting and escalates.
+const SLIDE_STREAK_ESCALATE_TICKS := 20
+# M3: complete when blocked within ARRIVE_EPSILON + radius * this factor.
+# The base factor covers a unit parked directly beside the goal occupant
+# (first ring); the hold factor covers second-ring positions once the
+# recovery budget is spent — a crowd ordered to one point settles as
+# concentric rings, Dota2-style.
+const CROWDED_ARRIVE_RADIUS_FACTOR := 2.0
+const CROWDED_HOLD_RADIUS_FACTOR := 4.0
+# M4: ticks between HOLDING long-path retries (BOUNDED_HOLDING_ACTIVITY).
+const HOLD_RETRY_INTERVAL_TICKS := 30
 
 # Counters surfaced via diagnostics(). Reset only by callers (typically once
 # per test); the controller does not reset on its own.
@@ -33,6 +58,10 @@ var blocked_by_static_count: int = 0
 var move_failed_count: int = 0
 var reached_goal_count: int = 0
 var pending_count_peak: int = 0
+var slide_count: int = 0
+var relaxed_pass_count: int = 0
+var crowded_arrive_count: int = 0
+var holding_entered_count: int = 0
 
 var _motion_updates: Array[Dota2LabMotionUpdate] = []
 
@@ -117,12 +146,14 @@ func step_unit(
 	units: Array[Dota2LabUnit],
 	tick: int
 ) -> void:
+	if unit.state == Dota2LabUnit.STATE_HOLDING:
+		_step_holding(unit, pathfinder, tick)
+		return
 	if unit.state != Dota2LabUnit.STATE_FOLLOWING:
 		return
 
-	# Arrive check before walking. Mirrors 0AD's PossiblyAtDestination but
-	# without the obstructed-branch tolerance — dota2 has no push, so the
-	# unit either reaches move_target or it doesn't.
+	# Arrive check before walking. Exact-arrive only here; the crowded-arrive
+	# tolerance (M3) applies when recovery finds the goal area occupied.
 	if unit.position.distance_to(unit.move_target) <= ARRIVE_EPSILON:
 		_finish_arrived(unit, tick)
 		return
@@ -148,13 +179,55 @@ func step_unit(
 		# unreachable waypoint immediately rather than only after multiple
 		# frames of per-candidate slippage.
 		var line_result := pathfinder.validate_movement_line(unit, unit.position, waypoint, units, false)
-		if not line_result.is_success():
-			_handle_step_block(unit, line_result, waypoint, pathfinder, tick)
+		var step_allowed := line_result.is_success()
+		var unit_blocked := (
+			not step_allowed
+			and line_result.failure_reason == SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED
+		)
+		if unit_blocked:
+			# M2: retry with the ½-cell unit relax — brushing past is not a block.
+			var relaxed := pathfinder.validate_movement_line(
+				unit, unit.position, waypoint, units, false, _relaxed_clearance(unit, pathfinder)
+			)
+			if relaxed.is_success():
+				step_allowed = true
+				relaxed_pass_count += 1
+		# The nav map's dynamic shapes are refreshed once per tick, so units
+		# that already stepped this tick are stale in line_result. Re-check the
+		# actual step segment against LIVE unit positions; a live violation is
+		# treated exactly like a unit block.
+		var live_blocker: Dota2LabUnit = null
+		if step_allowed:
+			live_blocker = _live_unit_violator(unit, unit.position, candidate, units, _relaxed_clearance(unit, pathfinder))
+			if live_blocker != null:
+				step_allowed = false
+				unit_blocked = true
+
+		if not step_allowed:
+			if unit_blocked:
+				blocked_by_unit_count += 1
+				var blocker_center := (
+					live_blocker.position if live_blocker != null
+					else _blocker_center(line_result, units)
+				)
+				# M1: slide tangentially around the blocker and stay FOLLOWING.
+				if (
+					unit.slide_streak_ticks < SLIDE_STREAK_ESCALATE_TICKS
+					and _try_slide(unit, blocker_center, to_waypoint, remaining_distance, pathfinder, units)
+				):
+					unit.slide_streak_ticks += 1
+					slide_count += 1
+					return
+				_escalate_unit_block(unit, waypoint, pathfinder, tick)
+				return
+			blocked_by_static_count += 1
+			_handle_static_block(unit, pathfinder, tick)
 			return
 
 		unit.position = candidate
 		unit.remember_position()
 		unit.waiting_for_facing = false
+		unit.slide_streak_ticks = 0
 		moved = true
 		remaining_distance -= move_distance
 		if reaches_waypoint:
@@ -180,18 +253,17 @@ func _handle_long_result(
 	_pathfinder: Dota2LabPathfinderWrapper,
 	tick: int
 ) -> void:
-	# Accept only paths to the ORIGINAL goal (success or direct_goal).
-	# STATUS_CANONICALIZED means the long pathfinder returned a fallback to
-	# the nearest reachable navcell — accepting that path would loop the
-	# unit toward an inner-cage canonical point forever (start at cage
-	# interior, goal outside cage, canonical = best in-cage substitute).
-	# STATUS_START_RECOVERED similarly means the unit's current position
-	# was unrecoverable; dota2 lab terminates rather than warp.
-	# Design notes §9: trust the long pathfinder's unreachable/no_path
-	# result to drive FAILED.
+	# Accept only paths to the ORIGINAL goal. STATUS_CANONICALIZED (goal
+	# rewritten to a reachable substitute) stays rejected — accepting it would
+	# loop a caged unit toward an in-cage point forever. STATUS_START_RECOVERED
+	# is accepted since v2: a slide may legally park the unit inside the static
+	# raster band (geometry-clear), so a start recovered to the adjacent
+	# passable navcell is normal; the first waypoint is at most a cell away
+	# and the impassable-escape rule covers walking to it.
 	var accepted := (
 		result.status == SimNavLongPathResult.STATUS_SUCCESS
 		or result.status == SimNavLongPathResult.STATUS_DIRECT_GOAL
+		or result.status == SimNavLongPathResult.STATUS_START_RECOVERED
 	)
 	if accepted and result.path != null and not result.path.is_empty():
 		unit.path = result.path
@@ -224,43 +296,190 @@ func _handle_short_result(
 	unit.last_path_result_kind = Dota2LabUnit.PATH_SOURCE_SHORT
 	unit.last_path_result_status = result.status
 	unit.last_path_failure_reason = result.failure_reason
-	# Short detour failed. Budget check, then either retry via long or fail.
+	# Short detour failed. Crowded arrive (M3) first, then budget check:
+	# exhausted budgets hold (M4) instead of terminally failing — other units
+	# being in the way is never a terminal outcome (NEVER_FAILED_BY_UNITS).
+	if _crowded_arrive(unit, tick):
+		return
 	unit.retry_count += 1
 	if unit.retry_count > MAX_RETRY:
-		_terminal_failed(unit, "max_retry_exceeded", tick)
+		_enter_holding(unit, tick)
 		return
 	_enqueue_long(unit, pathfinder, tick)
 
 
-func _handle_step_block(
+# Unit-blocked step whose relax + slide options are spent: crowded arrive,
+# then short detour, then HOLDING once the recovery budget runs out.
+func _escalate_unit_block(
 	unit: Dota2LabUnit,
-	line_result: SimNavMovementLineResult,
 	blocked_waypoint: Vector2,
 	pathfinder: Dota2LabPathfinderWrapper,
 	tick: int
 ) -> void:
-	# Discriminate: unit blocker → short detour; static blocker → long replan.
-	var reason := line_result.failure_reason
-	if reason == SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED:
-		blocked_by_unit_count += 1
-		if unit.last_short_range > 0.0:
-			unit.retry_count += 1
-			if unit.retry_count > MAX_RETRY:
-				_terminal_failed(unit, "max_retry_exceeded", tick)
-				return
-		_enqueue_short(unit, blocked_waypoint, pathfinder, tick)
+	if _crowded_arrive(unit, tick):
 		return
-	# All other failure reasons (PASSABILITY_BLOCKED, STATIC_OBSTRUCTION_BLOCKED,
-	# end_out_of_bounds, ...) → re-enqueue long. Static obstructions don't
-	# change between ticks, so repeated static replans must also be bounded;
-	# out_of_bounds means goal is unreachable and the long pathfinder should
-	# surface that before the retry budget is exhausted.
-	blocked_by_static_count += 1
+	if unit.last_short_range > 0.0:
+		unit.retry_count += 1
+		if unit.retry_count > MAX_RETRY:
+			_enter_holding(unit, tick)
+			return
+	_enqueue_short(unit, blocked_waypoint, pathfinder, tick)
+
+
+# Static block (PASSABILITY_BLOCKED / STATIC_OBSTRUCTION_BLOCKED /
+# out-of-bounds): re-enqueue long. Statics don't move, so exhausted budgets
+# drop to HOLDING's low-frequency retry; a retry whose long result is
+# unreachable still terminates in FAILED via _handle_long_result.
+func _handle_static_block(
+	unit: Dota2LabUnit,
+	pathfinder: Dota2LabPathfinderWrapper,
+	tick: int
+) -> void:
 	unit.retry_count += 1
 	if unit.retry_count > MAX_RETRY:
-		_terminal_failed(unit, "max_retry_exceeded", tick)
+		_enter_holding(unit, tick)
 		return
 	_enqueue_long(unit, pathfinder, tick)
+
+
+# M1: try a validated tangential step around the blocking unit. Chooses the
+# tangent branch that makes progress toward the waypoint; head-on meetings
+# resolve symmetrically (both movers' tangents point to opposite sides), so
+# opposing units brush past each other deterministically.
+func _try_slide(
+	unit: Dota2LabUnit,
+	blocker_center: Vector2,
+	to_waypoint: Vector2,
+	distance: float,
+	pathfinder: Dota2LabPathfinderWrapper,
+	units: Array[Dota2LabUnit]
+) -> bool:
+	if blocker_center == Vector2.INF:
+		return false
+	var radial := unit.position - blocker_center
+	if radial.length_squared() <= 0.000001:
+		return false
+	radial = radial.normalized()
+	var tangent := Vector2(-radial.y, radial.x)
+	if tangent.dot(to_waypoint) < 0.0:
+		tangent = -tangent
+	var relaxed := _relaxed_clearance(unit, pathfinder)
+	var candidates: Array[Vector2] = [
+		unit.position + tangent * distance,
+		unit.position - tangent * distance,
+	]
+	for candidate in candidates:
+		# Unit check runs against LIVE positions (see _slide_clear_of_units);
+		# statics are checked with exact geometry, no raster DDA — a slide may
+		# legally end inside the raster band, the impassable-escape rule walks
+		# it back out (see wrapper.validate_slide_statics).
+		if not _slide_clear_of_units(unit, candidate, units, relaxed):
+			continue
+		if not pathfinder.validate_slide_statics(unit, unit.position, candidate):
+			continue
+		unit.position = candidate
+		unit.remember_position()
+		unit.waiting_for_facing = false
+		return true
+	return false
+
+
+# Unit-vs-unit clearance against LIVE positions. The per-tick dynamic shape
+# snapshot goes stale as soon as one unit moves; two units advancing on stale
+# data can land in the same spot and start overlapping — after which the LOS
+# inside-escape rule would stop constraining them at all. Live checks prevent
+# the overlap from forming; if one somehow exists, movement away from that
+# unit (strictly increasing separation) is still allowed.
+# Returns the first violating unit, or null when the segment is clear.
+func _live_unit_violator(
+	unit: Dota2LabUnit,
+	from_pos: Vector2,
+	to_pos: Vector2,
+	units: Array[Dota2LabUnit],
+	clearance: float
+) -> Dota2LabUnit:
+	for other in units:
+		if other.id == unit.id or not other.blocks_pathfinding:
+			continue
+		var combined := other.radius + clearance
+		var current_distance := from_pos.distance_to(other.position)
+		if current_distance < combined:
+			if to_pos.distance_to(other.position) <= current_distance:
+				return other
+			continue
+		if _segment_point_distance(from_pos, to_pos, other.position) < combined:
+			return other
+	return null
+
+
+func _slide_clear_of_units(
+	unit: Dota2LabUnit,
+	candidate: Vector2,
+	units: Array[Dota2LabUnit],
+	clearance: float
+) -> bool:
+	return _live_unit_violator(unit, unit.position, candidate, units, clearance) == null
+
+
+func _segment_point_distance(a: Vector2, b: Vector2, point: Vector2) -> float:
+	var ab := b - a
+	var length_sq := ab.length_squared()
+	if length_sq <= 0.000001:
+		return a.distance_to(point)
+	var t := clampf((point - a).dot(ab) / length_sq, 0.0, 1.0)
+	return (a + ab * t).distance_to(point)
+
+
+func _blocker_center(
+	line_result: SimNavMovementLineResult,
+	units: Array[Dota2LabUnit]
+) -> Vector2:
+	var entity_id := line_result.blocked_obstruction_entity_id
+	if entity_id == "":
+		return Vector2.INF
+	for other in units:
+		if other.id == entity_id:
+			return other.position
+	return Vector2.INF
+
+
+# M3: a blocked unit already within a crowd ring of its goal treats the goal
+# area as occupied and completes.
+func _crowded_arrive(unit: Dota2LabUnit, tick: int, radius_factor: float = CROWDED_ARRIVE_RADIUS_FACTOR) -> bool:
+	var crowd_radius := ARRIVE_EPSILON + unit.radius * radius_factor
+	if unit.position.distance_to(unit.move_target) > crowd_radius:
+		return false
+	crowded_arrive_count += 1
+	_finish_arrived(unit, tick)
+	return true
+
+
+# M4: enter HOLDING — order retained, position held, periodic long retries.
+# The budget being spent means the first ring is full; accept a second-ring
+# stop before parking.
+func _enter_holding(unit: Dota2LabUnit, tick: int) -> void:
+	if _crowded_arrive(unit, tick, CROWDED_HOLD_RADIUS_FACTOR):
+		return
+	_emit_motion_update(unit, Dota2LabMotionUpdate.TYPE_MOVE_HOLDING, "unit_blocked_hold", tick)
+	unit.hold_position(HOLD_RETRY_INTERVAL_TICKS)
+	holding_entered_count += 1
+
+
+func _step_holding(
+	unit: Dota2LabUnit,
+	pathfinder: Dota2LabPathfinderWrapper,
+	tick: int
+) -> void:
+	if _crowded_arrive(unit, tick, CROWDED_HOLD_RADIUS_FACTOR):
+		return
+	unit.hold_retry_countdown -= 1
+	if unit.hold_retry_countdown > 0:
+		return
+	_enqueue_long(unit, pathfinder, tick)
+
+
+func _relaxed_clearance(unit: Dota2LabUnit, pathfinder: Dota2LabPathfinderWrapper) -> float:
+	return maxf(unit.radius - pathfinder.cell_size * UNIT_CLEARANCE_RELAX_CELL_FACTOR, 1.0)
 
 
 func _enqueue_long(
@@ -404,6 +623,7 @@ func diagnostics(units: Array[Dota2LabUnit]) -> Dictionary:
 		Dota2LabUnit.STATE_WAITING_LONG: 0,
 		Dota2LabUnit.STATE_FOLLOWING: 0,
 		Dota2LabUnit.STATE_WAITING_SHORT: 0,
+		Dota2LabUnit.STATE_HOLDING: 0,
 		Dota2LabUnit.STATE_FAILED: 0,
 	}
 	var retry_count_max := 0
@@ -422,6 +642,10 @@ func diagnostics(units: Array[Dota2LabUnit]) -> Dictionary:
 		"move_failed_count": move_failed_count,
 		"reached_goal_count": reached_goal_count,
 		"pending_count_peak": pending_count_peak,
+		"slide_count": slide_count,
+		"relaxed_pass_count": relaxed_pass_count,
+		"crowded_arrive_count": crowded_arrive_count,
+		"holding_entered_count": holding_entered_count,
 		"state_counts": state_counts,
 		"retry_count_max": retry_count_max,
 		"waiting_for_facing_count": waiting_for_facing_count,

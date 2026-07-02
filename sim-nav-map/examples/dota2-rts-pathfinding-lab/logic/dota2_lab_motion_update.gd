@@ -6,6 +6,7 @@ const TYPE_CLEAR := "clear"
 const TYPE_REACHED_GOAL := "reached_goal"
 const TYPE_OBSTRUCTED := "obstructed"
 const TYPE_MOVE_FAILED := "move_failed"
+const TYPE_MOVE_HOLDING := "move_holding"
 
 
 var actor_id: String = ""

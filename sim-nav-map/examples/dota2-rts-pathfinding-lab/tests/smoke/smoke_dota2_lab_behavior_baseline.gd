@@ -46,13 +46,19 @@ func _test_default_group_move_baseline() -> void:
 		world,
 		unit_ids,
 		DEFAULT_GROUP_TICKS,
-		PackedStringArray(["max_retry_exceeded"])
+		PackedStringArray([])
 	)
 	_reports.append(report)
 	_assert_terminal_report(report)
+	# movement-feel-policy v2 A6: a group move completes for every unit —
+	# blockers are slid around or absorbed by crowded arrive, never FAILED.
 	_assert_true(
-		_state_count(report, Dota2LabUnit.STATE_IDLE) + _state_count(report, Dota2LabUnit.STATE_FAILED) == unit_ids.size(),
-		"default-group: all mobile units should be terminal"
+		_state_count(report, Dota2LabUnit.STATE_IDLE) == unit_ids.size(),
+		"default-group: all mobile units should reach IDLE"
+	)
+	_assert_true(
+		_state_count(report, Dota2LabUnit.STATE_FAILED) == 0,
+		"default-group: unit blockers must never produce FAILED"
 	)
 
 
@@ -73,21 +79,30 @@ func _test_narrow_gap_bounded_terminal() -> void:
 
 	var unit_ids: Array[String] = ["gap_left", "gap_right"]
 	var report := _run_until_terminal(
-		"narrow_gap_bounded_terminal",
+		"narrow_gap_cross_pass",
 		world,
 		unit_ids,
 		NARROW_GAP_TICKS,
-		PackedStringArray(["max_retry_exceeded", "long_path_unreachable:"])
+		PackedStringArray([])
 	)
 	_reports.append(report)
 	_assert_terminal_report(report)
-	_assert_true(
-		_state_count(report, Dota2LabUnit.STATE_FAILED) > 0,
-		"narrow-gap: expected at least one clean FAILED terminal under hard-block policy"
+	# movement-feel-policy v2 A7: opposing units slide past each other inside
+	# the gap and both arrive. FAILED-by-units no longer exists
+	# (NEVER_FAILED_BY_UNITS).
+	_assert_eq(
+		unit_ids.size(),
+		_state_count(report, Dota2LabUnit.STATE_IDLE),
+		"narrow-gap: both units should cross the gap and reach IDLE"
+	)
+	_assert_eq(
+		0,
+		_state_count(report, Dota2LabUnit.STATE_FAILED),
+		"narrow-gap: unit blockers must never produce FAILED"
 	)
 	_assert_true(
-		int(report.get("blocked_by_unit_count", 0)) > 0 or int(report.get("short_path_requests", 0)) > 0,
-		"narrow-gap: expected dynamic unit block evidence"
+		int(report.get("blocked_by_unit_count", 0)) > 0 or int(report.get("slide_count", 0)) > 0,
+		"narrow-gap: expected unit interaction evidence (block or slide)"
 	)
 
 
@@ -190,6 +205,10 @@ func _run_until_terminal(
 		"blocked_by_static_count": int(metrics.get("blocked_by_static_count", 0)),
 		"move_failed_count": int(metrics.get("move_failed_count", 0)),
 		"reached_goal_count": int(metrics.get("reached_goal_count", 0)),
+		"slide_count": int(metrics.get("slide_count", 0)),
+		"relaxed_pass_count": int(metrics.get("relaxed_pass_count", 0)),
+		"crowded_arrive_count": int(metrics.get("crowded_arrive_count", 0)),
+		"holding_entered_count": int(metrics.get("holding_entered_count", 0)),
 		"retry_count_max": int(metrics.get("retry_count_max", 0)),
 		"static_obstacle_count": world.obstacles.size(),
 		"waiting_long_counts": waiting_long_counts.duplicate(true),
@@ -288,6 +307,7 @@ func _state_counts_for_ids(world: Dota2LabWorld, unit_ids: Array[String]) -> Dic
 		Dota2LabUnit.STATE_WAITING_LONG: 0,
 		Dota2LabUnit.STATE_FOLLOWING: 0,
 		Dota2LabUnit.STATE_WAITING_SHORT: 0,
+		Dota2LabUnit.STATE_HOLDING: 0,
 		Dota2LabUnit.STATE_FAILED: 0,
 	}
 	for unit_id in unit_ids:

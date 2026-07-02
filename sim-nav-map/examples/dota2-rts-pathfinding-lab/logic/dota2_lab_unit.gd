@@ -4,11 +4,15 @@ extends RefCounted
 
 const MoveOrderScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_move_order.gd")
 
-# Motion FSM states. See docs/design-notes/motion-controller-design.md §3.1.
+# Motion FSM states. See docs/design-notes/movement-feel-policy.md (v2) and
+# motion-controller-design.md §3.1. HOLDING = recovery budget exhausted while
+# unit-blocked: order retained, position held, periodic long-path retries.
+# FAILED is reachable only from a statically unreachable long-path result.
 const STATE_IDLE := "IDLE"
 const STATE_WAITING_LONG := "WAITING_LONG"
 const STATE_FOLLOWING := "FOLLOWING"
 const STATE_WAITING_SHORT := "WAITING_SHORT"
+const STATE_HOLDING := "HOLDING"
 const STATE_FAILED := "FAILED"
 
 const PATH_SOURCE_NONE := "none"
@@ -53,6 +57,11 @@ var last_short_range: float = 0.0
 var desired_facing_angle_rad: float = 0.0
 var last_turn_delta_rad: float = 0.0
 var waiting_for_facing: bool = false
+# HOLDING: ticks until the next long-path retry (BOUNDED_HOLDING_ACTIVITY).
+var hold_retry_countdown: int = 0
+# Consecutive ticks resolved by a tangential slide; a long streak means the
+# unit is orbiting instead of progressing and must escalate to a detour.
+var slide_streak_ticks: int = 0
 
 # Order tracking.
 var current_order: RefCounted = null
@@ -129,6 +138,19 @@ func fail_order(tick: int, reason: String) -> void:
 	state = STATE_FAILED
 	path = SimNavWaypointPath.new()
 	path_source = PATH_SOURCE_NONE
+	last_turn_delta_rad = 0.0
+	waiting_for_facing = false
+
+
+# Enter HOLDING: keep the current order (a move order never gives up on unit
+# blockers), drop the stale path, and schedule the next long-path retry.
+func hold_position(retry_countdown_ticks: int) -> void:
+	_assert_no_pending_tickets("hold_position")
+	state = STATE_HOLDING
+	path = SimNavWaypointPath.new()
+	path_source = PATH_SOURCE_NONE
+	hold_retry_countdown = retry_countdown_ticks
+	slide_streak_ticks = 0
 	last_turn_delta_rad = 0.0
 	waiting_for_facing = false
 

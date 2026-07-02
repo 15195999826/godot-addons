@@ -38,14 +38,23 @@ It uses the same renderer as the manual lab scene, but starts an automatic
 Layer 2 command-source script on load. The script repeatedly demonstrates lane
 movement, target switching, chase/retreat, and cancel commands, then loops.
 
-## Motion Contract
+## Motion Contract (v2)
 
-- Hard-block all units, including allies.
-- No push pressure, no friendly walk-through, no phasing.
-- Blocked movement stops and asks for a repath.
+Full contract: [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md).
+
+- Units are real obstacles (no phasing), but a unit-blocked step first retries
+  with a ½-cell clearance relax (brush-past margin), then tries a validated
+  **tangential slide** around the blocker — a moving unit never parks against
+  another unit. Only when both fail does it escalate to a short-detour subgoal.
+- **Crowded arrive**: a blocked unit already within a crowd ring of its goal
+  completes; a group ordered to one point settles as concentric rings.
+- **HOLDING**: when the recovery budget is spent, the unit keeps its order,
+  holds position, and retries a long path at a bounded rate. Removing a
+  blocker lets it resume by itself. `FAILED` exists only for statically
+  unreachable goals — other units in the way never terminally fail an order
+  (`max_retry_exceeded` no longer exists).
+- No push pressure: sliding moves only the mover, blockers are never displaced.
 - Commands are individual per unit.
-- Unit-blocked movement asks for a local short-detour subgoal, then returns to
-  long-path movement after the detour.
 - Units keep authoritative facing. They use the Dota2 `11.5°` action cone:
   movement can start once the next waypoint is inside that front cone, then the
   unit keeps rotating while moving. The raw Dota2 `0.6` per `0.03s` turn-rate
@@ -53,8 +62,8 @@ movement, target switching, chase/retreat, and cancel commands, then loops.
   facing arrows do not look like instant turns.
 - Multi-unit commands may fan out one click target into deterministic nearby
   per-unit targets. All independent move orders start on the command tick.
-- `sim-nav-map` core stays policy-free; retry, stop, repath, and failure policy
-  live in this lab.
+- `sim-nav-map` core stays policy-free; slide, relax, crowd-arrive, holding,
+  retry, and repath policy live in this lab.
 
 ## Controls
 
