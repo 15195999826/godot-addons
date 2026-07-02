@@ -95,6 +95,26 @@ right of a blocker's axis rounds right, slightly left rounds left.
   `mobile == false` blockers are truly immovable. Note mover-vs-mover
   contacts normalize to 50/50 regardless of the moving value; the sliders
   really tune who yields in mover-vs-idle contacts.
+  - **Why ratio, not absolute**: `weight_a = push_a / (push_a + push_b)`
+    (both engine and native solver, `_separation_weight_a` /
+    `MotionSolver::_separate_pair`) always sums to exactly `1` across the
+    pair — the *entire* overlap is consumed in one correction no matter
+    which absolute values the sliders hold. An absolute yield amount would
+    need its own cap-and-leftover handling and could stall short of fully
+    separating a pair; the ratio needs none of that, which is what keeps
+    the "residual reads 0.00 at rest" invariant true across the whole
+    `[0, 1]²` tuning range instead of just the two shipped presets.
+  - **Corollary — equal sliders are always indistinguishable**: the pair
+    weight only depends on the *ratio* between `pushability_moving` and
+    `pushability_idle`, so any point on the diagonal (`0%/0%`, `5%/5%`,
+    `50%/50%`, `100%/100%`, ...) reduces to the same 50/50 split — the
+    `total <= 0.0 → 0.5` guard for the `0/0` case is not a special "rigid
+    body" mode, it is the same 50/50 every other equal pair reaches by
+    division. A body that truly never yields needs *asymmetry*: its own
+    pushability at `0` while the contact partner's is `> 0` (e.g. the Hard
+    preset's idle `0.0` against moving `0.35`). The lab panel's hint text
+    calls this out directly since it is the single most common tuning
+    confusion (see `dota2_pathfinding_lab.gd:_build_push_controls`).
 - **Head-on lateral bias**: when a mover is pushing nose-first into the other
   body (`|facing · dir| > 0.85`), the correction direction gains a
   fixed-handedness perpendicular component. This is the deadlock breaker:
