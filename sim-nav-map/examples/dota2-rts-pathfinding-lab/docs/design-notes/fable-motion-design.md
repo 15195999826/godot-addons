@@ -155,18 +155,29 @@ Turning in place is exempt.
   (~0.2 ms — synchronous group commands used to freeze the input frame for
   ~250 ms), units walk a straight-line placeholder, and the engine drains
   ONE query per tick (`PLAN_BUDGET_PER_TICK`).
-- Measured GDScript JPS cost on the default map, using FRESH start cells per
-  query (the realistic case — ray cache entries are keyed by start cell, so
-  real play hits the cache rarely; a repeated-identical-query probe reads
-  10× too fast): ~0.5 ms short/open, **~5-6 ms per cross-map query**,
-  first query after a rebuild ~16 ms (includes the one-off passability
-  bake). Two hot-path fixes got it there from 15-50 ms: an O(1) POINT-goal
-  ray check replacing a per-cell scan on every cardinal probe, and the
-  composed passability grid baked into a flat PackedInt32Array at cache
-  reset so miss-path ray scans do local bit tests instead of three-layer
-  cross-object composition per cell. The remaining cost is diagonal
-  stepping's per-cell probe overhead in GDScript — the next meaningful cut
-  is porting the pathfinding core to C++/GDExtension.
+- Measured GDScript long-path cost on the default map, using FRESH start
+  cells per query (the realistic case; a repeated-identical-query probe
+  reads 10× too fast): ~0.5 ms short/open, **~0.8 ms per cross-map query**
+  (avg 797 µs / max ~1.1 ms over 16 distinct starts, production LOS
+  config; search ~540 µs + LOS refine ~260 µs), first query after a rebuild
+  ~11 ms (one-off bake + ray-table build, ~10 ms in isolation).
+  History: 15-50 ms → 5-6 ms via an O(1) POINT-goal ray check plus the
+  composed passability grid baked into a flat PackedInt32Array; 5-6 ms →
+  0.8 ms via the structural fix — JPS+-style cardinal ray tables
+  (per-cell jump/obstruction/boundary distances precomputed per cache
+  reset, so every query-time cardinal probe is one packed-array read
+  instead of a per-cell scan; the old per-(start,dir) lazy ray cache had a
+  ~0% hit rate in real play because start cells change every tick) — plus
+  POINT-goal jumps running all-int against those tables and the LOS refine
+  pass walking the same baked grid instead of issuing two cross-object
+  calls per crossed cell. Attribution ledger (16-query probe): ~9.5k
+  passability probes + ~4.8k ray-scan cells + ~440 Hit allocations + ~3.1
+  ms LOS refine per query, at GDScript op prices (self call ~83 ns,
+  cross-object call ~700 ns, RefCounted.new ~920 ns) — i.e. an
+  architecture problem (re-deriving static ray facts per query) multiplied
+  by language op cost. The table fix removes the op count; what remains is
+  A* machinery + result DTO assembly, and GDExtension is no longer
+  justified by these numbers.
   `plans_applied` / `plans_waiting` in the step stats plus the HUD's
   `last plan` / rolling 5s peak attribute any spike at a glance.
 - A worker-thread variant (core queue `start_worker`, and a WorkerThreadPool

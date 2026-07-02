@@ -272,8 +272,14 @@ func _refine_waypoint_path(
 	if post_process == SimNavLongPathQuery.POST_PROCESS_RAW:
 		return _clone_waypoint_path(raw_path)
 
+	# Segment checks walk every crossed navcell; the baked-grid twin drops two
+	# cross-object calls per cell. Excluded regions stay on the generic path.
+	var segment_cache: SimNavJumpPointCache = null
+	if query.excluded_regions.is_empty():
+		segment_cache = _jump_point_cache(query.pass_mask)
 	var execution_points := _path_to_execution_points(raw_path)
-	execution_points = _compress_execution_points(query.start_world, execution_points, query.pass_mask, query.excluded_regions)
+	execution_points = _compress_execution_points(
+		query.start_world, execution_points, query.pass_mask, query.excluded_regions, segment_cache)
 	if spacing > 0.0:
 		execution_points = _apply_waypoint_spacing(query.start_world, execution_points, spacing)
 	return _execution_points_to_path(execution_points)
@@ -297,7 +303,8 @@ func _compress_execution_points(
 	start_world: Vector2,
 	points: Array[Vector2],
 	pass_mask: int,
-	excluded_regions: Array[Dictionary]
+	excluded_regions: Array[Dictionary],
+	segment_cache: SimNavJumpPointCache = null
 ) -> Array[Vector2]:
 	if points.is_empty():
 		return []
@@ -307,7 +314,7 @@ func _compress_execution_points(
 	while idx < points.size():
 		var chosen := idx
 		for j in range(points.size() - 1, idx - 1, -1):
-			if _segment_passable_clear(anchor, points[j], pass_mask, excluded_regions):
+			if _segment_passable_clear(anchor, points[j], pass_mask, excluded_regions, segment_cache):
 				chosen = j
 				break
 		result.append(points[chosen])
@@ -334,8 +341,11 @@ func _segment_passable_clear(
 	a: Vector2,
 	b: Vector2,
 	pass_mask: int,
-	excluded_regions: Array[Dictionary]
+	excluded_regions: Array[Dictionary],
+	segment_cache: SimNavJumpPointCache = null
 ) -> bool:
+	if segment_cache != null:
+		return segment_cache.segment_clear(a, b)
 	# Visit every navcell the segment crosses with an Amanatides-Woo voxel
 	# traversal instead of the prior uniform sampling at navcell*0.5. Uniform
 	# sampling can skip a cell whose crossing arc is shorter than the sample
@@ -524,6 +534,10 @@ func _jps_cells(
 	diagnostics: Dictionary = {}
 ) -> Array[Vector2i]:
 	var cache := _jump_point_cache(pass_mask)
+	# POINT goals take the all-int table-jump path: same jump targets, no Hit
+	# allocations and no per-cell goal containment calls on the hot loop.
+	var use_point_jump := goal.type == SimNavPathGoal.Type.POINT
+	var point_goal_cell := _nav_map.world_to_navcell(goal.center) if use_point_jump else Vector2i.ZERO
 	var open_keys: Array = []
 	var came_from: Dictionary = {}
 	var g_score: Dictionary = {}
@@ -569,7 +583,8 @@ func _jps_cells(
 			continue
 		for direction in _successor_directions(current, current_pack, start_pack, came_from, pass_mask):
 			_increment_search_count(diagnostics, "jump_count")
-			var jump := _jump(current, direction, goal, pass_mask, cache)
+			var jump := cache.jump_point(current, direction, point_goal_cell) if use_point_jump \
+					else _jump(current, direction, goal, pass_mask, cache)
 			if jump == current:
 				continue
 			var jump_pack := _pack_cell(jump)

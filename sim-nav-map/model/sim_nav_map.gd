@@ -372,6 +372,16 @@ func get_navcell_data(coord: Vector2i) -> int:
 	return int(_navcell_data[idx]) | int(_terrain_navcell_data[idx]) | int(_obstruction_navcell_data[idx])
 
 
+# Bulk snapshot of get_navcell_data for every cell (static | terrain |
+# obstruction composed). Whole-grid consumers (jump-point ray tables) need
+# one flat pass, not width*height cross-object calls.
+func composed_navcell_data() -> PackedInt32Array:
+	var out := _navcell_data.duplicate()
+	for i in range(out.size()):
+		out[i] = out[i] | int(_terrain_navcell_data[i]) | int(_obstruction_navcell_data[i])
+	return out
+
+
 func set_navcell_data(coord: Vector2i, value: int) -> void:
 	if not is_valid_navcell(coord):
 		return

@@ -8,15 +8,14 @@ extends RefCounted
 # separation solve. That removes the whole class of same-tick-staleness bugs
 # the old dynamic-obstruction refresh had.
 #
-# Planning is deferred and time-sliced: a GDScript JPS query costs 4-40 ms
-# (measured), so an 8-unit cross-map group command computed synchronously
-# used to freeze the input frame for ~250 ms. Commands enqueue instead; the
-# engine drains ONE request per tick through the core queue while units walk
-# a straight-line placeholder for those few ticks. Peak per-frame planning
-# cost is one query (~4-10 ms warm) instead of the whole batch.
-# (A worker-thread variant was tried and reverted: GDScript execution on
-# spawned threads crashed unpredictably on Godot 4.6 rc1 — see the
-# fable-motion design note.)
+# Planning is deferred and time-sliced: commands enqueue, the engine drains
+# ONE request per tick through the core queue while units walk a
+# straight-line placeholder for those few ticks. With the JPS+ ray tables a
+# warm cross-map query is ~0.8 ms (was 5-6 ms; a synchronous 8-unit group
+# command once froze the input frame for ~250 ms), so the queue now mainly
+# smooths the ~11 ms first-plan-after-rebuild spike (bake + table build).
+# (A worker-thread variant was tried and reverted twice — GDScript-level
+# lock contention; see the fable-motion design note.)
 
 const PASSABILITY_CLASS_NAME := "ground"
 const PLAN_BUDGET_PER_TICK := 1
