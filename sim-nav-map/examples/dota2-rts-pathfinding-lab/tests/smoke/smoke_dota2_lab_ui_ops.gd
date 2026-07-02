@@ -103,6 +103,39 @@ func _test_frontend_ui_ops() -> void:
 			else:
 				_assert_export_shape(parsed as Dictionary)
 
+	# Backend switches: don't assume native availability (this group is
+	# cross-platform) — rebuild_context()/_ensure_native_solver() resolve
+	# their own flag when the extension is missing, so only assert the UI
+	# stays in sync with whatever it resolved to, and that the reset-stats
+	# checkbox actually clears counters. Pathfinder and motion are
+	# independent toggles — exercise each on its own.
+	world.pathfinder.plan_count = 5
+	world.pathfinder.line_check_count = 7
+	instance._on_pathfinder_native_toggled(true)
+	if instance._pathfinder_native_toggle.button_pressed != world.pathfinder.use_native:
+		_failures.append("ui-ops: pathfinder toggle UI did not resync with pathfinder.use_native")
+	if instance._reset_stats_on_switch.button_pressed \
+			and (world.pathfinder.plan_count != 0 or world.pathfinder.line_check_count != 0):
+		_failures.append("ui-ops: pathfinder toggle did not reset pathfinder stat counters")
+	if world.motion.use_native_solver:
+		_failures.append("ui-ops: pathfinder toggle leaked into motion.use_native_solver")
+	instance._on_pathfinder_native_toggled(false)
+	if world.pathfinder.use_native:
+		_failures.append("ui-ops: pathfinder toggle did not return to GDScript when disabled")
+	if instance._pathfinder_native_toggle.button_pressed:
+		_failures.append("ui-ops: pathfinder toggle UI did not reflect GDScript state")
+
+	instance._on_motion_native_toggled(true)
+	if instance._motion_native_toggle.button_pressed != world.motion.use_native_solver:
+		_failures.append("ui-ops: motion toggle UI did not resync with motion.use_native_solver")
+	if world.pathfinder.use_native:
+		_failures.append("ui-ops: motion toggle leaked into pathfinder.use_native")
+	instance._on_motion_native_toggled(false)
+	if world.motion.use_native_solver:
+		_failures.append("ui-ops: motion toggle did not return to GDScript when disabled")
+	if instance._motion_native_toggle.button_pressed:
+		_failures.append("ui-ops: motion toggle UI did not reflect GDScript state")
+
 	instance_node.queue_free()
 
 

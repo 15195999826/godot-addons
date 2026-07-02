@@ -16,6 +16,7 @@
       ]
     },
     "native": {
+      "required": true,
       "scenes": [
         "native/smoke_dota2_lab_native_wrapper_ab.tscn",
         "native/smoke_dota2_lab_native_motion_ab.tscn"
