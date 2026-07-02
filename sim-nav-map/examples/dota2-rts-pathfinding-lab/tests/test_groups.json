@@ -6,6 +6,7 @@
       "scenes": [
         "smoke/smoke_dota2_lab_move_basics.tscn",
         "smoke/smoke_dota2_lab_separation.tscn",
+        "smoke/smoke_dota2_lab_separation_hash.tscn",
         "smoke/smoke_dota2_lab_crowd_blockers.tscn",
         "smoke/smoke_dota2_lab_stall_watchdog.tscn",
         "smoke/smoke_dota2_lab_target_fanout.tscn",
