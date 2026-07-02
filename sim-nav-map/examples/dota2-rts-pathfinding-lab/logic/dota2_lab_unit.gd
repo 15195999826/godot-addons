@@ -59,9 +59,17 @@ var last_turn_delta_rad: float = 0.0
 var waiting_for_facing: bool = false
 # HOLDING: ticks until the next long-path retry (BOUNDED_HOLDING_ACTIVITY).
 var hold_retry_countdown: int = 0
-# Consecutive ticks resolved by a tangential slide; a long streak means the
-# unit is orbiting instead of progressing and must escalate to a detour.
-var slide_streak_ticks: int = 0
+# M1 micro-detour: the waypoint inserted to walk around a blocking unit
+# (INF = none). Walking happens through the normal facing/step pipeline —
+# never as a sideways displacement, which reads as ice-drift and fights the
+# turn gate into pirouettes. The blocker id is kept so the detour leg's
+# live check can ignore the unit being rounded (a walk-around necessarily
+# hugs it; checking against it would void every inserted detour).
+var active_detour_point: Vector2 = Vector2.INF
+var active_detour_blocker_id: String = ""
+# Detours inserted since the last real progress; a long run means the unit
+# is circling a crowd instead of getting anywhere and must escalate.
+var detour_streak: int = 0
 
 # Order tracking.
 var current_order: RefCounted = null
@@ -103,6 +111,7 @@ func apply_move_order_data(target: Vector2, tick: int) -> int:
 	state = STATE_IDLE
 	path = SimNavWaypointPath.new()
 	path_source = PATH_SOURCE_NONE
+	clear_detour()
 	retry_count = 0
 	last_path_request_kind = ""
 	last_path_result_kind = ""
@@ -124,6 +133,7 @@ func complete_order(tick: int) -> void:
 	state = STATE_IDLE
 	path = SimNavWaypointPath.new()
 	path_source = PATH_SOURCE_NONE
+	clear_detour()
 	retry_count = 0
 	last_turn_delta_rad = 0.0
 	waiting_for_facing = false
@@ -138,6 +148,7 @@ func fail_order(tick: int, reason: String) -> void:
 	state = STATE_FAILED
 	path = SimNavWaypointPath.new()
 	path_source = PATH_SOURCE_NONE
+	clear_detour()
 	last_turn_delta_rad = 0.0
 	waiting_for_facing = false
 
@@ -150,9 +161,15 @@ func hold_position(retry_countdown_ticks: int) -> void:
 	path = SimNavWaypointPath.new()
 	path_source = PATH_SOURCE_NONE
 	hold_retry_countdown = retry_countdown_ticks
-	slide_streak_ticks = 0
+	clear_detour()
 	last_turn_delta_rad = 0.0
 	waiting_for_facing = false
+
+
+func clear_detour() -> void:
+	active_detour_point = Vector2.INF
+	active_detour_blocker_id = ""
+	detour_streak = 0
 
 
 func active_order_id() -> int:

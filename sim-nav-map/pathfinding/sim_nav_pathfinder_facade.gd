@@ -282,7 +282,17 @@ func _first_blocked_line_navcell(
 				"reason": SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED,
 			}
 		max_steps -= 1
-		if t_max_x < t_max_y:
+		# Axis-convergence guard (0 A.D. CheckLineMovement, Pathfinding.cpp:
+		# 83-91): once one axis has reached the target, only the other axis
+		# may advance. Without it an endpoint sitting exactly on a grid line
+		# makes t_max ties step OFF the target row and the walk never lands.
+		if current.x == target.x:
+			current.y += step_j
+			t_max_y += delta_t_y
+		elif current.y == target.y:
+			current.x += step_i
+			t_max_x += delta_t_x
+		elif t_max_x < t_max_y:
 			current.x += step_i
 			t_max_x += delta_t_x
 		else:

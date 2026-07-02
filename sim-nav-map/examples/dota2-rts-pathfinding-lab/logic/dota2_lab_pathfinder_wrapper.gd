@@ -190,7 +190,7 @@ func _build_short_path_request(
 	request.range_px = search_range
 	request.pass_mask = pass_mask
 	request.avoid_moving_units = true
-	request.obstruction_filter = _movement_filter_for_unit(unit)
+	request.obstruction_filter = _short_path_filter_for_unit(unit)
 	# Keep static outset vertices outside the raster band: unit radius (11) +
 	# outset must exceed class clearance (12) + raster extension (+1 cell) +
 	# half-cell center quantization, or A* edges INTO those vertices are
@@ -199,10 +199,21 @@ func _build_short_path_request(
 	return request
 
 
-# Dota2 paradigm: hard block all units including allies. No control_group
-# carveouts. Only ignore the requesting unit itself so it doesn't block its
-# own queries.
+# Movement-line filter: STATICS ONLY. Unit-vs-unit blocking lives entirely in
+# the motion controller's live checks (movement-feel-policy v2) — the nav
+# map's dynamic snapshot goes stale within a tick, and the mover/idle relax
+# tiers need per-unit state the filter protocol cannot see. Short-path
+# requests keep their own unit-aware filter below.
 func _movement_filter_for_unit(unit: Dota2LabUnit) -> SimNavObstructionFilter:
+	var filter := SimNavObstructionFilter.all()
+	filter.include_units = false
+	filter.ignored_entity_id = unit.id
+	return filter
+
+
+# Short-path graph filter keeps units as obstacles (the detour graph must
+# route around them); only the requester itself is ignored.
+func _short_path_filter_for_unit(unit: Dota2LabUnit) -> SimNavObstructionFilter:
 	var filter := SimNavObstructionFilter.all()
 	filter.ignored_entity_id = unit.id
 	return filter

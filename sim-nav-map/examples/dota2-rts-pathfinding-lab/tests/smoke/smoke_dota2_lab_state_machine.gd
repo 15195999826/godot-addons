@@ -216,6 +216,12 @@ func _test_no_same_tick_takeover_invariant() -> void:
 	_assert_true(has_pending, "no-same-tick: WAITING_* state must have a pending ticket")
 
 
+# movement-feel-policy v2: a lone idle blocker is normally rounded by a
+# micro-detour without any short-path request — the short path is an
+# escalation tool, not the first response. This scenario therefore asserts
+# the OUTCOME (mover gets past the blocker and arrives) and keeps the v1
+# short-subgoal locality rules as conditional checks for runs where the
+# escalation does fire.
 func _test_short_path_uses_local_subgoal_for_far_target() -> void:
 	var world := Dota2LabWorld.new()
 	world.obstacles = []
@@ -224,23 +230,33 @@ func _test_short_path_uses_local_subgoal_for_far_target() -> void:
 		Dota2LabUnit.new("blocker", "red", Vector2(180.0, 200.0), 13.0, 0.0, false),
 	]
 	world._rebuild_navigation()
-	world.issue_move("mover", Vector2(760.0, 200.0))
+	# Goal stays inside the playable bounds (map 720 wide, 12 px border) —
+	# the old 760 sat OUTSIDE the map, which v1 masked by never checking the
+	# terminal state and v2's never-give-up HOLDING would wait on forever.
+	world.issue_move("mover", Vector2(680.0, 200.0))
 	var mover := world.get_unit("mover")
 	var saw_short_request := false
-	var saw_short_result := false
 	var requested_goal := Vector2.ZERO
 	var request_position := Vector2.ZERO
-	for i in range(MAX_TICKS):
+	var saw_block_response := false
+	# ~580 px of travel at ~1.8 px/tick needs its own budget beyond MAX_TICKS.
+	for i in range(600):
 		world.step(TICK_DELTA)
 		if mover.last_path_request_kind == Dota2LabUnit.PATH_SOURCE_SHORT and not saw_short_request:
 			saw_short_request = true
 			requested_goal = mover.last_short_goal
 			request_position = mover.position
-		if mover.last_path_result_kind == Dota2LabUnit.PATH_SOURCE_SHORT:
-			saw_short_result = true
+		if mover.active_detour_point != Vector2.INF or saw_short_request:
+			saw_block_response = true
+		if mover.state == Dota2LabUnit.STATE_IDLE or mover.state == Dota2LabUnit.STATE_FAILED:
 			break
 
-	_assert_true(saw_short_request, "short-subgoal: expected a short request")
+	_assert_true(saw_block_response, "short-subgoal: blocker should trigger a detour or short request")
+	_assert_eq(Dota2LabUnit.STATE_IDLE, mover.state, "short-subgoal: mover should get past the blocker and arrive")
+	_assert_true(
+		mover.position.distance_to(Vector2(680.0, 200.0)) <= 8.0,
+		"short-subgoal: mover should stop at the far target, pos=%s" % str(mover.position)
+	)
 	if saw_short_request:
 		_assert_true(
 			request_position.distance_to(requested_goal) <= Dota2LabMotionController.SHORT_PATH_SEARCH_RANGE + 0.001,
@@ -251,16 +267,6 @@ func _test_short_path_uses_local_subgoal_for_far_target() -> void:
 			requested_goal.distance_to(mover.move_target) > 64.0,
 			"short-subgoal: requested goal should not be the far final target"
 		)
-	_assert_true(saw_short_result, "short-subgoal: expected a short result")
-	_assert_true(
-		mover.last_path_result_status != SimNavShortPathResult.STATUS_OUT_OF_RANGE,
-		"short-subgoal: short result should not be out_of_range"
-	)
-	_assert_eq(
-		Dota2LabUnit.PATH_SOURCE_SHORT,
-		mover.path_source,
-		"short-subgoal: successful short result should mark path_source"
-	)
 
 
 func _test_unreachable_goal_terminates_failed() -> void:
