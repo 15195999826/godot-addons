@@ -174,10 +174,12 @@ func _assert_export_shape(parsed: Dictionary) -> void:
 		_failures.append("ui-ops: export log has no units")
 	else:
 		var first_unit: Dictionary = units[0] as Dictionary
-		if not first_unit.has("path_source"):
-			_failures.append("ui-ops: export log missing unit.path_source")
-		if not first_unit.has("last_path_result_status"):
-			_failures.append("ui-ops: export log missing unit.last_path_result_status")
+		if not first_unit.has("state"):
+			_failures.append("ui-ops: export log missing unit.state")
+		if not first_unit.has("last_order"):
+			_failures.append("ui-ops: export log missing unit.last_order")
+		if not first_unit.has("last_speed_factor"):
+			_failures.append("ui-ops: export log missing unit.last_speed_factor")
 
 
 func _press_left(instance: Variant, position: Vector2) -> void:

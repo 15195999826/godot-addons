@@ -2,29 +2,28 @@
 ##
 ## README.md（M1 契约 节） Movement Contract：接 sim-nav-map，以 dota2-rts-pathfinding-lab 为参考
 ## 实现。controller/ability **永不**直接动 pathfinding / motion 内部 —— 只经本 adapter：
-##   Dota2Intent → Dota2MovementAdapter → Dota2Lab{PathfinderWrapper,MotionController,Unit}
+##   Dota2Intent → Dota2MovementAdapter → Dota2Lab{PathfinderWrapper,MotionEngine,Unit}
 ##
-## DOTA2 移动手感约束（不下沉进 sim-nav core）：硬阻挡 OK、无友军穿插、无编队/打包/
-## 群体寻路、无 push pressure。每 actor 一个 Dota2LabUnit「移动体」，position 双向同步：
-## adapter 推进后把 body.position 写回 actor.position_2d（战斗判定的权威坐标）。
+## Fable 移动模型（lab 同款）：长径只认静态世界，单位间避让 = 引擎内的位置分离求解
+## （commit-then-resolve）——迎面互挤错开、拱开 idle 友军、无 detour waypoint、无重叠残留。
+## 规划同步（issue_move 当场出路径），无请求队列 / ticket / 等待态。
 ##
-## 每 tick 固定相位（Dota2LabWorld.step §motion-controller-design §4，顺序不可错）：
-##   1 apply_path_results(每 body)  2 refresh_dynamic + step_unit(FOLLOWING)
-##   3 drain motion updates         4 process_budget(预算推进 path 请求队列)
+## 每 actor 一个 Dota2LabUnit「移动体」，position 双向同步：adapter 推进后把
+## body.position 写回 actor.position_2d（战斗判定的权威坐标）。
 class_name Dota2MovementAdapter
 extends RefCounted
 
 
 const NAV_CELL_SIZE := 16.0
-## 目标移动超过此距离才重发 follow move order（避免每 tick 重排路径抖动 / 队列爆）。
+## 目标移动超过此距离才重发 move order（避免每 tick 重排路径抖动）。
 const FOLLOW_REISSUE_DISTANCE := 28.0
 
 
 var _pathfinder: Dota2LabPathfinderWrapper = null
-var _motion: Dota2LabMotionController = null
+var _motion: Dota2LabMotionEngine = null
 ## actor_id → Dota2LabUnit（移动体）。
 var _bodies: Dictionary = {}
-## 确定性迭代顺序（register 顺序；refresh_dynamic / step_unit 需要稳定 body 列表）。
+## 确定性迭代顺序（register 顺序；分离求解需要稳定 body 列表）。
 var _body_order: Array[String] = []
 var _tick_count: int = 0
 ## actor_id → 最近一次发出的 follow 目标点（判断是否需要重发 order）。
@@ -33,11 +32,11 @@ var _last_follow_goal: Dictionary = {}
 
 func _init() -> void:
 	_pathfinder = Dota2LabPathfinderWrapper.new(Dota2LaneConfig.MAP_SIZE, NAV_CELL_SIZE, 12.0)
-	# 开阔中路，无静态障碍（M1）：units 之间靠 DOTA2 硬阻挡互相避让。
+	# 开阔中路，无静态障碍（M1）：units 之间靠分离求解互相让行。
 	# rebuild_context 形参是 Array[Dota2LabObstacle]，必须传同元素类型的空 typed 数组。
 	var no_static: Array[Dota2LabObstacle] = []
 	_pathfinder.rebuild_context(no_static)
-	_motion = Dota2LabMotionController.new()
+	_motion = Dota2LabMotionEngine.new()
 
 
 # ========== 注册 / 注销移动体 ==========
@@ -52,7 +51,6 @@ func register_unit(actor: Dota2UnitActor) -> void:
 		actor.attribute_set.move_speed,
 		true,
 	)
-	body.blocks_pathfinding = true
 	_bodies[actor.get_id()] = body
 	_body_order.append(actor.get_id())
 
@@ -61,9 +59,7 @@ func unregister_unit(actor_id: String) -> void:
 	if not _bodies.has(actor_id):
 		return
 	var body: Dota2LabUnit = _bodies[actor_id]
-	# 注销前取消 pending path ticket，否则 Dota2LabUnit 析构 assert 会报。
-	if body.state != Dota2LabUnit.STATE_IDLE and body.state != Dota2LabUnit.STATE_FAILED:
-		_motion.cancel_move_order(body, _pathfinder, _tick_count, "unregister")
+	_motion.cancel_move(body, _tick_count)
 	_bodies.erase(actor_id)
 	_body_order.erase(actor_id)
 	_last_follow_goal.erase(actor_id)
@@ -75,14 +71,15 @@ func has_body(actor_id: String) -> bool:
 
 # ========== Intent → 移动原语 ==========
 
-## LaneMarchIntent：朝 lane 终点航点行进。仅在尚未朝该目标行进时下新 order
-## （intent 持久 —— 不每 tick 重发，靠 body 内部 path runtime 续跑）。
+## LaneMarchIntent：朝 lane 终点航点行进。仅在尚未朝该目标行进时下新 order。
+## 同目标 fail 过（stalled / no_path）不自动重发 —— is_failed 交 intent 层终结；
+## 目标点变化超过重发距离则视为新命令、重新尝试。
 func ensure_march(actor: Dota2UnitActor, goal: Vector2) -> void:
 	var body: Dota2LabUnit = _bodies.get(actor.get_id(), null)
 	if body == null:
 		return
 	if _needs_new_order(body, goal):
-		_motion.begin_new_move_order(body, goal, _pathfinder, _tick_count)
+		_motion.issue_move(body, goal, _pathfinder, _tick_count)
 		_last_follow_goal.erase(actor.get_id())
 
 
@@ -94,13 +91,13 @@ func ensure_chase(actor: Dota2UnitActor, target_pos: Vector2, stop_distance: flo
 		return
 	var dist := actor.position_2d.distance_to(target_pos)
 	if dist <= stop_distance:
-		_stop_body(body)
+		_motion.cancel_move(body, _tick_count)
 		_last_follow_goal.erase(actor.get_id())
 		return
 	var last: Variant = _last_follow_goal.get(actor.get_id(), null)
 	var needs := last == null or (last as Vector2).distance_to(target_pos) > FOLLOW_REISSUE_DISTANCE
-	if needs or body.state == Dota2LabUnit.STATE_IDLE or body.state == Dota2LabUnit.STATE_FAILED:
-		_motion.begin_new_move_order(body, target_pos, _pathfinder, _tick_count)
+	if needs or body.state == Dota2LabUnit.STATE_IDLE:
+		_motion.issue_move(body, target_pos, _pathfinder, _tick_count)
 		_last_follow_goal[actor.get_id()] = target_pos
 
 
@@ -109,27 +106,17 @@ func request_stop(actor_id: String) -> void:
 	var body: Dota2LabUnit = _bodies.get(actor_id, null)
 	if body == null:
 		return
-	_stop_body(body)
+	_motion.cancel_move(body, _tick_count)
 	_last_follow_goal.erase(actor_id)
 
 
-# ========== 每 tick 推进（固定相位）==========
+# ========== 每 tick 推进 ==========
 
-## procedure step 5 调一次：跑 lab 四相位，再把 body.position 写回 actor（权威坐标）。
+## procedure step 5 调一次：引擎 commit-then-resolve 一步，再把 body.position
+## 写回 actor（权威坐标）。
 func advance(dt_seconds: float, units: Array) -> void:
 	var bodies := _ordered_bodies()
-	# 相位 1：收 path 结果（驱动 WAITING_* → FOLLOWING / FAILED）。
-	for body in bodies:
-		_motion.apply_path_results(body, _pathfinder, _tick_count)
-	# 相位 2：刷新动态障碍后步进 FOLLOWING（step_unit 内部对非 FOLLOWING 提前返回）。
-	_pathfinder.refresh_dynamic_units(bodies)
-	for body in bodies:
-		if body.mobile:
-			_motion.step_unit(body, dt_seconds, _pathfinder, bodies, _tick_count)
-	# 相位 3：drain motion 事件（M1 不分发到 view，仅清空缓冲让 lab 不积压）。
-	_motion.drain_motion_updates()
-	# 相位 4：预算推进 path 请求队列（结果落到下 tick 的相位 1）。
-	_pathfinder.process_budget(bodies, _path_budget())
+	_motion.step(bodies, _pathfinder, dt_seconds, _tick_count)
 	_tick_count += 1
 	# 同步权威坐标：body.position → actor.position_2d（战斗 range/aggro 读此）。
 	for actor in units:
@@ -154,34 +141,32 @@ func is_arrived(actor_id: String, goal: Vector2, epsilon: float = 24.0) -> bool:
 	return body.position.distance_to(goal) <= epsilon
 
 
-## body 是否处于不可达终态（FAILED）—— lane march 失败判定用。
+## 最近一单以失败收尾（no_path / stalled / cancelled）且已停 —— lane march
+## 失败判定用。fable 模型没有常驻 FAILED 态：失败记录在 last_order 上。
 func is_failed(actor_id: String) -> bool:
 	var body: Dota2LabUnit = _bodies.get(actor_id, null)
 	if body == null:
 		return false
-	return body.state == Dota2LabUnit.STATE_FAILED
+	return body.state == Dota2LabUnit.STATE_IDLE and body.last_order_failed()
 
 
 ## snapshot / debug 面板用：当前移动状态摘要。
 func get_movement_state(actor_id: String) -> Dictionary:
 	var body: Dota2LabUnit = _bodies.get(actor_id, null)
 	if body == null:
-		return { "state": "none", "goal_x": 0.0, "goal_y": 0.0, "block_reason": "", "path_source": "" }
+		return { "state": "none", "goal_x": 0.0, "goal_y": 0.0, "block_reason": "" }
+	var block_reason := ""
+	if body.last_order_failed():
+		block_reason = body.last_order.reason
 	return {
 		"state": body.state,
 		"goal_x": body.move_target.x,
 		"goal_y": body.move_target.y,
-		"block_reason": body.last_path_failure_reason,
-		"path_source": body.path_source,
+		"block_reason": block_reason,
 	}
 
 
 # ========== 内部 ==========
-
-## 单波最多 4 + 4 = 8 body；预算给足让所有 long-path 同 tick 入队不饿死。
-func _path_budget() -> int:
-	return maxi(6, _bodies.size())
-
 
 func _ordered_bodies() -> Array[Dota2LabUnit]:
 	var result: Array[Dota2LabUnit] = []
@@ -193,12 +178,9 @@ func _ordered_bodies() -> Array[Dota2LabUnit]:
 
 
 func _needs_new_order(body: Dota2LabUnit, goal: Vector2) -> bool:
-	if body.state == Dota2LabUnit.STATE_IDLE or body.state == Dota2LabUnit.STATE_FAILED:
-		return true
-	return body.move_target.distance_to(goal) > FOLLOW_REISSUE_DISTANCE
-
-
-func _stop_body(body: Dota2LabUnit) -> void:
-	if body.state == Dota2LabUnit.STATE_IDLE or body.state == Dota2LabUnit.STATE_FAILED:
-		return
-	_motion.cancel_move_order(body, _pathfinder, _tick_count, "stop_in_range")
+	if body.state == Dota2LabUnit.STATE_MOVING:
+		return body.move_target.distance_to(goal) > FOLLOW_REISSUE_DISTANCE
+	# IDLE：同目标失败过就不自动重发（防 fail → 重发死循环）。
+	if body.last_order_failed() and body.last_order.target.distance_to(goal) <= FOLLOW_REISSUE_DISTANCE:
+		return false
+	return true

@@ -1,15 +1,24 @@
 class_name Dota2LabPathfinderWrapper
 extends RefCounted
 
+# Fable-version navigation wrapper: STATIC WORLD ONLY.
+#
+# Units never enter the nav map. Long paths plan around terrain bounds and
+# static obstacles; unit-vs-unit interaction is entirely the motion engine's
+# separation solve. That removes the whole class of same-tick-staleness bugs
+# the old dynamic-obstruction refresh had.
+#
+# Planning is synchronous — unit counts in this lab (and in dota2-auto-battle)
+# are far below anything that needs the budgeted request queue.
 
 const PASSABILITY_CLASS_NAME := "ground"
 
 
 # 8 px raster cells: after core gained CLEARANCE_EXTENSION_RADIUS (+1 raster
-# cell, CORE-005), 16 px cells inflated static bands to clearance+16 = 28 px
-# per side and sealed the 56 px narrow-gap fixtures outright. 8 px keeps the
-# band at clearance+8 = 20 px per side and halves center quantization.
-var map_size: Vector2 = Vector2(720.0, 420.0)
+# cell), 16 px cells inflated static bands to clearance+16 = 28 px per side and
+# sealed 56 px narrow-gap fixtures outright. 8 px keeps the band at
+# clearance+8 = 20 px per side and halves center quantization.
+var map_size: Vector2 = Vector2(1320.0, 900.0)
 var cell_size: float = 8.0
 var default_clearance: float = 12.0
 var nav_map: SimNavMap = null
@@ -17,23 +26,25 @@ var pass_mask: int = 0
 var hierarchical: SimNavHierarchicalPathfinder = null
 var long_pathfinder: SimNavLongPathfinder = null
 var facade: SimNavPathfinderFacade = null
-var vertex_pathfinder: SimNavVertexPathfinder = null
-var path_queue: SimNavPathRequestQueue = null
+var plan_count: int = 0
+var line_check_count: int = 0
+
+var _line_filter: SimNavObstructionFilter = null
 
 
 func _init(
-	p_map_size: Vector2 = Vector2(720.0, 420.0),
+	p_map_size: Vector2 = Vector2(1320.0, 900.0),
 	p_cell_size: float = 8.0,
 	p_default_clearance: float = 12.0
 ) -> void:
 	map_size = p_map_size
 	cell_size = p_cell_size
 	default_clearance = p_default_clearance
+	_line_filter = SimNavObstructionFilter.all()
+	_line_filter.include_units = false
 
 
 func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
-	if path_queue != null:
-		path_queue.clear()
 	var width := int(ceil(map_size.x / cell_size))
 	var height := int(ceil(map_size.y / cell_size))
 	nav_map = SimNavMap.new(width, height, cell_size, Vector2.ZERO, 1)
@@ -51,172 +62,54 @@ func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
 	nav_map.clear_dirty_navcells()
 	long_pathfinder = SimNavLongPathfinder.new(nav_map)
 	facade = SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
-	vertex_pathfinder = SimNavVertexPathfinder.new(nav_map)
-	path_queue = SimNavPathRequestQueue.new(facade, vertex_pathfinder)
 
 
-func refresh_dynamic_units(units: Array[Dota2LabUnit]) -> void:
-	if nav_map == null:
-		return
-	var shapes: Array[SimNavObstructionShapeUnit] = []
-	for unit in units:
-		if not unit.blocks_pathfinding:
-			continue
-		var shape := SimNavObstructionShapeUnit.new()
-		shape.entity_id = unit.id
-		shape.center = unit.position
-		shape.clearance = unit.radius
-		shape.flags = SimNavObstructionFlags.BLOCK_MOVEMENT
-		if unit.state == Dota2LabUnit.STATE_FOLLOWING:
-			shape.flags |= SimNavObstructionFlags.MOVING
-			shape.moving = true
-		shapes.append(shape)
-	nav_map.replace_dynamic_obstructions(shapes)
-
-
-func enqueue_long_path(unit: Dota2LabUnit, goal: Vector2) -> int:
-	if path_queue == null:
-		return 0
-	return path_queue.enqueue_long_path_query(_build_long_path_query(unit, goal))
-
-
-func enqueue_short_path(
-	unit: Dota2LabUnit,
-	goal: SimNavPathGoal,
-	search_range: float
-) -> int:
-	if path_queue == null:
-		return 0
-	return path_queue.enqueue_short_path(_build_short_path_request(unit, goal, search_range))
-
-
-func take_long_path_result(ticket: int) -> SimNavLongPathResult:
-	if path_queue == null or ticket <= 0:
-		return null
-	return path_queue.take_long_path_result(ticket)
-
-
-func take_short_path_result(ticket: int) -> SimNavShortPathResult:
-	if path_queue == null or ticket <= 0:
-		return null
-	return path_queue.take_short_path_result(ticket)
-
-
-func cancel(ticket: int) -> void:
-	if path_queue == null or ticket <= 0:
-		return
-	path_queue.cancel(ticket)
-
-
-# Process queue. Refreshes dynamic obstructions first so short-path requests
-# see the current unit positions.
-func process_budget(units: Array[Dota2LabUnit], max_requests: int) -> int:
-	if path_queue == null:
-		return 0
-	if path_queue.pending_count() <= 0:
-		return 0
-	refresh_dynamic_units(units)
-	return path_queue.process_budget(max_requests)
-
-
-func validate_movement_line(
-	unit: Dota2LabUnit,
-	start: Vector2,
-	target: Vector2,
-	units: Array[Dota2LabUnit],
-	refresh_dynamic: bool = true,
-	clearance_override: float = -1.0
-) -> SimNavMovementLineResult:
-	# clearance_override < 0 uses the unit's full radius. The motion layer
-	# passes radius minus the ½-cell unit-relax (movement-feel-policy M2) when
-	# re-validating a unit-blocked step; the raster DDA inside stays governed
-	# by pass_mask, so statics keep their full conservative band.
-	if refresh_dynamic:
-		refresh_dynamic_units(units)
-	var clearance := unit.radius if clearance_override < 0.0 else clearance_override
-	return facade.validate_movement_line(start, target, clearance, pass_mask, _movement_filter_for_unit(unit))
-
-
-# Slide-step static validation (movement-feel-policy M1): playable bounds
-# plus EXACT static geometry, deliberately skipping the static raster DDA.
-# The raster band is a long-path conservativeness tool; inside a narrow gap
-# it steals geometrically legal side-step room (band leaves 16 px where
-# geometry allows 34 px), which would make opposing units unable to brush
-# past. This mirrors 0 A.D., where movement checks statics geometrically and
-# only terrain via the grid. A slide may therefore end inside the raster
-# band; the core impassable-escape rule (CORE-020 fix) walks it back out.
-# Unit-vs-unit slide checks live in the motion controller against LIVE unit
-# positions — the nav map's dynamic shapes are refreshed once per tick and
-# would let two units slide into the same spot.
-func validate_slide_statics(
-	unit: Dota2LabUnit,
-	start: Vector2,
-	target: Vector2
-) -> bool:
-	if not _point_inside_playable_bounds(target, unit.radius):
-		return false
-	return SimNavLineOfSight.segment_clear(
-		start, target, nav_map.get_static_obstruction_shapes(), unit.radius
-	)
-
-
-func diagnostics() -> Dictionary:
-	if path_queue == null:
-		return {}
-	return path_queue.get_diagnostics().duplicate(true)
-
-
-func _build_long_path_query(unit: Dota2LabUnit, goal: Vector2) -> SimNavLongPathQuery:
+# Synchronous long-path plan with reachable-goal canonicalization. An
+# unreachable goal comes back as a path to the nearest reachable point
+# (result.canonicalized == true) — callers never need a retry loop for
+# statically bad goals.
+func plan_path(start: Vector2, goal: Vector2) -> SimNavLongPathResult:
+	plan_count += 1
 	var query := SimNavLongPathQuery.from_values(
-		unit.position,
+		start,
 		SimNavPathGoal.point(goal),
 		pass_mask,
 		PASSABILITY_CLASS_NAME
 	)
 	query.post_process = SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT
 	query.waypoint_spacing = cell_size * 12.0 - 1.0
-	return query
+	return facade.compute_path_result(query)
 
 
-func _build_short_path_request(
-	unit: Dota2LabUnit,
-	goal: SimNavPathGoal,
-	search_range: float
-) -> SimNavShortPathRequest:
-	var request := SimNavShortPathRequest.new()
-	request.start = unit.position
-	request.goal = goal
-	request.clearance = unit.radius
-	request.range_px = search_range
-	request.pass_mask = pass_mask
-	request.avoid_moving_units = true
-	request.obstruction_filter = _short_path_filter_for_unit(unit)
-	# Keep static outset vertices outside the raster band: unit radius (11) +
-	# outset must exceed class clearance (12) + raster extension (+1 cell) +
-	# half-cell center quantization, or A* edges INTO those vertices are
-	# rejected by the passable->impassable DDA rule.
-	request.static_vertex_extra_outset = cell_size * 2.0
-	return request
+# Raster LOS against statics only, at class clearance. Used for waypoint
+# shortcutting: conservative (band-inflated) on purpose so a shortcut can
+# never commit the unit to a line the planner would have refused.
+func is_line_walkable(start: Vector2, target: Vector2) -> bool:
+	line_check_count += 1
+	return facade.validate_movement_line(
+		start, target, default_clearance, pass_mask, _line_filter
+	).is_success()
 
 
-# Movement-line filter: STATICS ONLY. Unit-vs-unit blocking lives entirely in
-# the motion controller's live checks (movement-feel-policy v2) — the nav
-# map's dynamic snapshot goes stale within a tick, and the mover/idle relax
-# tiers need per-unit state the filter protocol cannot see. Short-path
-# requests keep their own unit-aware filter below.
-func _movement_filter_for_unit(unit: Dota2LabUnit) -> SimNavObstructionFilter:
-	var filter := SimNavObstructionFilter.all()
-	filter.include_units = false
-	filter.ignored_entity_id = unit.id
-	return filter
+# Exact static geometry for the separation solve's project-out step.
+func static_shapes() -> Array[SimNavObstructionShapeStatic]:
+	if nav_map == null:
+		return []
+	return nav_map.get_static_obstruction_shapes()
 
 
-# Short-path graph filter keeps units as obstacles (the detour graph must
-# route around them); only the requester itself is ignored.
-func _short_path_filter_for_unit(unit: Dota2LabUnit) -> SimNavObstructionFilter:
-	var filter := SimNavObstructionFilter.all()
-	filter.ignored_entity_id = unit.id
-	return filter
+func clamp_to_playable(point: Vector2, radius: float) -> Vector2:
+	return Vector2(
+		clampf(point.x, radius, map_size.x - radius),
+		clampf(point.y, radius, map_size.y - radius)
+	)
+
+
+func diagnostics() -> Dictionary:
+	return {
+		"plan_count": plan_count,
+		"line_check_count": line_check_count,
+	}
 
 
 func _static_shape_for_obstacle(obstacle: Dota2LabObstacle) -> SimNavObstructionShapeStatic:
