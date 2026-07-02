@@ -59,7 +59,7 @@ func unregister_unit(actor_id: String) -> void:
 	if not _bodies.has(actor_id):
 		return
 	var body: Dota2LabUnit = _bodies[actor_id]
-	_motion.cancel_move(body, _tick_count)
+	_motion.cancel_move(body, _pathfinder, _tick_count)
 	_bodies.erase(actor_id)
 	_body_order.erase(actor_id)
 	_last_follow_goal.erase(actor_id)
@@ -91,7 +91,7 @@ func ensure_chase(actor: Dota2UnitActor, target_pos: Vector2, stop_distance: flo
 		return
 	var dist := actor.position_2d.distance_to(target_pos)
 	if dist <= stop_distance:
-		_motion.cancel_move(body, _tick_count)
+		_motion.cancel_move(body, _pathfinder, _tick_count)
 		_last_follow_goal.erase(actor.get_id())
 		return
 	var last: Variant = _last_follow_goal.get(actor.get_id(), null)
@@ -106,7 +106,7 @@ func request_stop(actor_id: String) -> void:
 	var body: Dota2LabUnit = _bodies.get(actor_id, null)
 	if body == null:
 		return
-	_motion.cancel_move(body, _tick_count)
+	_motion.cancel_move(body, _pathfinder, _tick_count)
 	_last_follow_goal.erase(actor_id)
 
 

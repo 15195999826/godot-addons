@@ -151,7 +151,20 @@ Turning in place is exempt.
   (≤ ~50 units); spatial hashing is the known upgrade path if that changes.
 - An idle unit displaced by pushes does not walk back to its spot (Dota2
   behavior; also what keeps the solve stable).
-- Planning is synchronous. Command-time plans happen in the input path; the
-  only in-step plans are watchdog replans, capped at `MAX_REPATHS_PER_STEP`
-  per tick so a co-stalled batch staggers naturally. `plans_this_step` in
-  the step stats attributes any frame spike to planning at a glance.
+- Planning is deferred and time-sliced, not threaded. Measured GDScript JPS
+  cost on the default map: ~0.5 ms short/open, 4-10 ms warm cross-map,
+  15-37 ms on a cold jump-point cache (the cache accumulates lazily per
+  query region — a diagonal warmup does NOT soak it). Synchronous group
+  commands used to cost ~250 ms in one input frame; now commands enqueue
+  (~0.2 ms), units walk a straight-line placeholder, and the engine drains
+  ONE query per tick (`PLAN_BUDGET_PER_TICK`). Worst per-frame planning cost
+  is one query — a cold-cache first query after a map rebuild can still
+  spike one tick to ~40 ms; warm queries fit the frame. `plans_applied` /
+  `plans_waiting` in the step stats attribute any spike at a glance.
+- A worker-thread variant (core queue `start_worker`) was implemented and
+  reverted: GDScript execution on spawned threads crashed unpredictably on
+  Godot 4.6 rc1 (dangling-callable "Nonexistent function" → access
+  violations, both mid-run on world teardown and at engine exit — the
+  ObjectDB force-free does not wait for running threads). True background
+  planning wants core-side C++/GDExtension work or an engine fix; the
+  time-sliced queue is the safe main-thread ceiling until then.
