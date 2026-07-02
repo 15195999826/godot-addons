@@ -18,7 +18,8 @@
 | 8 | 命令目标形状 | ✅ 点（快路径）+ 圆 | 方形等保留可用但不承诺性能 |
 | 9 | 真编队（阵型锁定） | ❌ 暂不支持 | 现有散点 fanout 够用；真编队是独立机制，撞墙再谈 |
 
-## 性能承诺（硬化完成后固化为 budget smoke，跌破即测试红）
+## 性能承诺（已固化为 budget smoke：`smoke_dota2_lab_perf_budget`，绊线阈值 =
+## 开发机实测的 2-3 倍，专抓渐进级回归；跌破即测试红）
 
 - 单条跨图长径规划 < 1 ms（当前实测 ~0.8 ms @ 165×113）
 - 一次地形动态改变的**完整 flush** < 5 ms（当前实测 ~3.5 ms = 表修复 ~0.7 +
@@ -35,7 +36,7 @@
 | ⓪ | hierarchical 窗口化 chunk 重算（地形变更 flush 30→3.5 ms；`smoke_sim_nav_hierarchical_incremental` 焊死）| ✅ 2026-07-02 |
 | ② | `is_line_walkable` 查表化（`movement_line_clear` 布尔快路径：baked 逃逸规则孪生 + 保留形状段；8 单位移动 tick 0.78→0.17 ms）| ✅ 2026-07-02 |
 | ③ | 移动管线三处 O(N²) 全部网格化（分离配对/接触转向/残余重叠统计）+ 静态投影 AABB 预筛；100 单位分散行军 tick ~3.8 ms、死球最坏 ~5.2 ms（原 ~20 ms）；≤16 单位保持原暴力路径（手感零风险）| ✅ 2026-07-02 |
-| ④ | budget smoke 套件（把上面的承诺焊进测试）| ⏳ ②③ 后 |
-| ⑤ | GDExtension 铸模（含分离求解；Web/WASM 构建链）| ⏳ 信封冻结 + ⓪-④ 完成后 |
+| ④ | budget smoke 套件（`smoke_dota2_lab_perf_budget`：规划/预热/地形 flush/100 单位 tick 四条绊线 + 修复路径结构断言）| ✅ 2026-07-02 |
+| ⑤ | GDExtension 铸模（含分离求解；Web/WASM 构建链）| ⏳ 唯一剩余项：等用户专门会话 + 技术简报 |
 
 变更记录：信封条目变化时更新此文件并在 commit message 中注明。
