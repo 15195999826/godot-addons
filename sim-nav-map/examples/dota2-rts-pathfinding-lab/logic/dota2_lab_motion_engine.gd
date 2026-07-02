@@ -120,6 +120,12 @@ var contact_steering_enabled: bool = true
 # (welded bitwise by smoke_dota2_lab_separation_hash). Public so the weld
 # smoke can force either path; gameplay never needs to touch it.
 var separation_brute_force_max: int = 16
+# Knife 5 M4: route Phase A/B through the native SoA solver (one call per
+# tick). Phase 0 plan pump, path shortcutting, and the whole Phase C
+# order/watchdog surface stay in GDScript on the unit objects. Default OFF —
+# GDScript remains the reference implementation.
+var use_native_solver: bool = false
+var _native_solver: Object = null
 
 
 # ───────────────────────────── Command API ───────────────────────────────────
@@ -204,21 +210,26 @@ func step(
 		_apply_plan_result(unit, plan, tick, events)
 		plans_applied += 1
 
-	# Phase A: intent step. Contact steering scans neighbors; above the
-	# brute-force threshold it queries a position hash instead of every unit
-	# (same others, same order — welded by the separation-hash smoke).
-	var steer_cell := 0.0
-	var steer_buckets: Dictionary = {}
-	if contact_steering_enabled and units.size() > separation_brute_force_max:
-		steer_cell = _steering_hash_cell_size(units, delta)
-		steer_buckets = _build_position_buckets(units, steer_cell)
-	for unit in units:
-		unit.prev_tick_position = unit.position
-		if unit.state == Dota2LabUnit.STATE_MOVING:
-			_advance_along_path(unit, wrapper, delta, units, steer_buckets, steer_cell)
+	var stats: Dictionary
+	if use_native_solver and _ensure_native_solver():
+		# Phases A+B as one native SoA call (path pops pre-passed here).
+		stats = _step_native_hot_path(units, wrapper, delta)
+	else:
+		# Phase A: intent step. Contact steering scans neighbors; above the
+		# brute-force threshold it queries a position hash instead of every unit
+		# (same others, same order — welded by the separation-hash smoke).
+		var steer_cell := 0.0
+		var steer_buckets: Dictionary = {}
+		if contact_steering_enabled and units.size() > separation_brute_force_max:
+			steer_cell = _steering_hash_cell_size(units, delta)
+			steer_buckets = _build_position_buckets(units, steer_cell)
+		for unit in units:
+			unit.prev_tick_position = unit.position
+			if unit.state == Dota2LabUnit.STATE_MOVING:
+				_advance_along_path(unit, wrapper, delta, units, steer_buckets, steer_cell)
 
-	# Phase B: separation solve.
-	var stats := _resolve_overlaps(units, wrapper)
+		# Phase B: separation solve.
+		stats = _resolve_overlaps(units, wrapper)
 
 	# Phase C: arrival + watchdog.
 	for unit in units:
@@ -326,6 +337,122 @@ func _apply_plan_result(
 		unit.effective_target = unit.move_target
 	if unit.current_order != null:
 		unit.current_order.effective_target = unit.effective_target
+
+
+# ───────────────────────────── Native hot path (M4) ─────────────────────────
+
+func _ensure_native_solver() -> bool:
+	if _native_solver != null:
+		return true
+	if not ClassDB.class_exists("SimNavNativeMotionSolver"):
+		push_warning("[Dota2LabMotionEngine] use_native_solver requested but simnav_native extension is missing; using GDScript solve")
+		use_native_solver = false
+		return false
+	_native_solver = ClassDB.instantiate("SimNavNativeMotionSolver")
+	return true
+
+
+# One SoA call for Phases A+B. The pre-pass (prev position bookkeeping, path
+# shortcut + waypoint-reach pops) only reads each unit's OWN state and static
+# line checks, so hoisting it out of the per-unit advance loop is
+# order-equivalent to the GDScript twin — welded by the motion A/B smoke.
+func _step_native_hot_path(
+	units: Array[Dota2LabUnit],
+	wrapper: Dota2LabPathfinderWrapper,
+	delta: float
+) -> Dictionary:
+	var count := units.size()
+	for unit in units:
+		unit.prev_tick_position = unit.position
+		if unit.state == Dota2LabUnit.STATE_MOVING:
+			_shortcut_path(unit, wrapper)
+			while unit.has_path() and unit.position.distance_to(unit.path.back()) <= WAYPOINT_REACH:
+				unit.path.pop_back()
+
+	var positions := PackedVector2Array()
+	positions.resize(count)
+	var facing := PackedFloat64Array()
+	facing.resize(count)
+	var radius := PackedFloat64Array()
+	radius.resize(count)
+	var speed := PackedFloat64Array()
+	speed.resize(count)
+	var turn_rate := PackedFloat64Array()
+	turn_rate.resize(count)
+	var moving := PackedByteArray()
+	moving.resize(count)
+	var mobile := PackedByteArray()
+	mobile.resize(count)
+	var has_path_flags := PackedByteArray()
+	has_path_flags.resize(count)
+	var track := PackedVector2Array()
+	track.resize(count)
+	var steer_side := PackedFloat64Array()
+	steer_side.resize(count)
+	# Lexicographic id ranks carry the String tie-break for coincident centers
+	# across the boundary without marshaling strings.
+	var order: Array = range(count)
+	order.sort_custom(func(a: int, b: int) -> bool:
+		return units[a].id < units[b].id
+	)
+	var id_rank := PackedInt32Array()
+	id_rank.resize(count)
+	for k in range(count):
+		id_rank[order[k]] = k
+	for i in range(count):
+		var unit := units[i]
+		positions[i] = unit.position
+		facing[i] = unit.facing_angle_rad
+		radius[i] = unit.radius
+		speed[i] = unit.speed
+		turn_rate[i] = unit.turn_rate_rad_per_sec
+		moving[i] = 1 if unit.state == Dota2LabUnit.STATE_MOVING else 0
+		mobile[i] = 1 if unit.mobile else 0
+		has_path_flags[i] = 1 if unit.has_path() else 0
+		track[i] = unit.current_waypoint()
+		steer_side[i] = unit.steer_side
+
+	var statics := wrapper.static_shapes()
+	var static_centers := PackedVector2Array()
+	static_centers.resize(statics.size())
+	var static_dims := PackedFloat64Array()
+	static_dims.resize(statics.size() * 3)
+	for s in range(statics.size()):
+		static_centers[s] = statics[s].center
+		static_dims[s * 3] = statics[s].width
+		static_dims[s * 3 + 1] = statics[s].height
+		static_dims[s * 3 + 2] = statics[s].rotation_rad
+
+	var result: Dictionary = _native_solver.call(
+		"step", positions, facing, radius, speed, turn_rate, moving, mobile,
+		has_path_flags, track, steer_side, id_rank, static_centers, static_dims,
+		{
+			"delta": delta,
+			"pushability_moving": pushability_moving,
+			"pushability_idle": pushability_idle,
+			"contact_steering_enabled": contact_steering_enabled,
+			"separation_brute_force_max": separation_brute_force_max,
+			"map_size": wrapper.map_size,
+		}
+	)
+
+	var out_positions: PackedVector2Array = result["positions"]
+	var out_facing: PackedFloat64Array = result["facing"]
+	var out_steer: PackedFloat64Array = result["steer_side"]
+	var out_factor: PackedFloat64Array = result["last_speed_factor"]
+	var out_turn: PackedFloat64Array = result["last_turn_delta_rad"]
+	for i in range(count):
+		var unit := units[i]
+		unit.position = out_positions[i]
+		unit.steer_side = out_steer[i]
+		if unit.state == Dota2LabUnit.STATE_MOVING:
+			unit.facing_angle_rad = out_facing[i]
+			unit.last_speed_factor = out_factor[i]
+			unit.last_turn_delta_rad = out_turn[i]
+	return {
+		"separation_rounds": int(result["separation_rounds"]),
+		"max_residual_overlap": float(result["max_residual_overlap"]),
+	}
 
 
 # ───────────────────────────── Phase A ───────────────────────────────────────

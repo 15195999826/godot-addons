@@ -9,6 +9,7 @@
 #include "sim_nav_native_facade.h"
 #include "sim_nav_native_jump_point_cache.h"
 #include "sim_nav_native_map.h"
+#include "sim_nav_native_motion_solver.h"
 #include "sim_nav_native_support.h"
 
 using namespace godot;
@@ -21,6 +22,7 @@ void initialize_simnav_native_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(SimNavNativeMap);
 	GDREGISTER_CLASS(SimNavNativeJumpPointCache);
 	GDREGISTER_CLASS(SimNavNativeFacade);
+	GDREGISTER_CLASS(SimNavNativeMotionSolver);
 }
 
 void uninitialize_simnav_native_module(ModuleInitializationLevel p_level) {
