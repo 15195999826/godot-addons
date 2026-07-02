@@ -24,7 +24,7 @@ void SimNavNativeMap::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_terrain_tile_data", "tile", "value"), &SimNavNativeMap::set_terrain_tile_data);
 	ClassDB::bind_method(D_METHOD("get_navcell_terrain_data", "coord"), &SimNavNativeMap::get_navcell_terrain_data);
 	ClassDB::bind_method(D_METHOD("rebuild_terrain_passability"), &SimNavNativeMap::rebuild_terrain_passability);
-	ClassDB::bind_method(D_METHOD("add_static_obstruction", "entity_id", "center", "width", "height", "rotation_rad", "flags"), &SimNavNativeMap::add_static_obstruction);
+	ClassDB::bind_method(D_METHOD("add_static_obstruction", "entity_id", "center", "width", "height", "rotation_rad", "flags", "control_group", "control_group_2"), &SimNavNativeMap::add_static_obstruction, DEFVAL(String()), DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("remove_obstruction", "tag"), &SimNavNativeMap::remove_obstruction);
 	ClassDB::bind_method(D_METHOD("move_obstruction", "tag", "center", "rotation_rad"), &SimNavNativeMap::move_obstruction, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("mark_obstruction_shape_dirty", "tag"), &SimNavNativeMap::mark_obstruction_shape_dirty);
@@ -98,7 +98,7 @@ int64_t SimNavNativeMap::rebuild_terrain_passability() {
 	return core_map.rebuild_terrain_passability();
 }
 
-int64_t SimNavNativeMap::add_static_obstruction(const String &p_entity_id, const Vector2 &p_center, double p_width, double p_height, double p_rotation_rad, int64_t p_flags) {
+int64_t SimNavNativeMap::add_static_obstruction(const String &p_entity_id, const Vector2 &p_center, double p_width, double p_height, double p_rotation_rad, int64_t p_flags, const String &p_control_group, const String &p_control_group_2) {
 	simnav::StaticShape shape;
 	shape.entity_id = p_entity_id;
 	shape.center = p_center;
@@ -106,6 +106,8 @@ int64_t SimNavNativeMap::add_static_obstruction(const String &p_entity_id, const
 	shape.height = p_height;
 	shape.rotation_rad = p_rotation_rad;
 	shape.flags = (int32_t)p_flags;
+	shape.control_group = p_control_group;
+	shape.control_group_2 = p_control_group_2;
 	return core_map.add_static_obstruction(shape);
 }
 

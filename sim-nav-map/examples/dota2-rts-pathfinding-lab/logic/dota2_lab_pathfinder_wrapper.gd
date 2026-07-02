@@ -42,6 +42,22 @@ var last_plan_usec: int = 0
 
 var _line_filter: SimNavObstructionFilter = null
 
+# ── Native backend (knife 5, opt-in) ─────────────────────────────────────────
+# When true AND the simnav_native extension is present, rebuild_context builds
+# the C++ map/facade instead of the GDScript stack and planning/line checks
+# route through it. Plan results convert back to SimNavLongPathResult at plan
+# granularity, so every consumer type stays unchanged. Plan cadence keeps the
+# same deterministic one-per-tick count cap. Default OFF — GDScript is the
+# reference implementation (approved decision, see docs/gdextension-port-plan.md).
+var use_native: bool = false
+var native_map: Object = null
+var native_facade: Object = null
+var _native_pending: Array[Dictionary] = []
+var _native_results: Dictionary = {}
+var _native_cancelled: Dictionary = {}
+var _native_next_ticket := 1
+var _native_static_shapes: Array[SimNavObstructionShapeStatic] = []
+
 
 func _init(
 	p_map_size: Vector2 = Vector2(1320.0, 900.0),
@@ -56,6 +72,12 @@ func _init(
 
 
 func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
+	if use_native:
+		if SimNavNativeBridge.available():
+			_rebuild_context_native(static_obstacles)
+			return
+		push_warning("[Dota2LabPathfinderWrapper] use_native requested but simnav_native extension is missing; falling back to GDScript")
+		use_native = false
 	if path_queue != null:
 		path_queue.clear()
 	var width := int(ceil(map_size.x / cell_size))
@@ -82,11 +104,58 @@ func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
 	path_queue = SimNavPathRequestQueue.new(facade, vertex_pathfinder)
 
 
+# ── Native backend context ───────────────────────────────────────────────────
+
+func _rebuild_context_native(static_obstacles: Array[Dota2LabObstacle]) -> void:
+	_native_pending.clear()
+	_native_results.clear()
+	_native_cancelled.clear()
+	var width := int(ceil(map_size.x / cell_size))
+	var height := int(ceil(map_size.y / cell_size))
+	native_map = ClassDB.instantiate("SimNavNativeMap")
+	native_map.call("setup", width, height, cell_size, Vector2.ZERO, 1)
+	pass_mask = int(native_map.call("register_passability_class", PASSABILITY_CLASS_NAME, default_clearance, true, 0))
+	for y in range(height):
+		for x in range(width):
+			var coord := Vector2i(x, y)
+			var point: Vector2 = native_map.call("navcell_center_world", coord)
+			if _point_inside_playable_bounds(point, default_clearance):
+				continue
+			native_map.call("or_navcell_data", coord, pass_mask)
+	_native_static_shapes = []
+	for obstacle in static_obstacles:
+		var shape := _static_shape_for_obstacle(obstacle)
+		_native_static_shapes.append(shape)
+		var tag := int(native_map.call("add_static_obstruction", shape.entity_id, shape.center, shape.width, shape.height, shape.rotation_rad, shape.flags))
+		shape.tag = tag
+	native_map.call("rebuild_dirty")
+	native_facade = ClassDB.instantiate("SimNavNativeFacade")
+	native_facade.call("setup", native_map)
+	native_facade.call("recompute", PackedInt32Array([pass_mask]))
+	native_map.call("clear_dirty_navcells")
+	native_facade.call("prewarm_jump_point_cache", pass_mask)
+	nav_map = null
+	hierarchical = null
+	long_pathfinder = null
+	facade = null
+	vertex_pathfinder = null
+	path_queue = null
+
+
 # ── Async plan API (normal engine path) ──────────────────────────────────────
 
 # Enqueue a long-path request for the worker thread. Reachable-goal
 # canonicalization applies as in plan_path.
 func request_plan(start: Vector2, goal: Vector2) -> int:
+	if use_native:
+		plan_count += 1
+		var ticket := _native_next_ticket
+		_native_next_ticket += 1
+		_native_pending.append({
+			"ticket": ticket,
+			"query": SimNavNativeBridge.query_to_dict(_build_long_path_query(start, goal)),
+		})
+		return ticket
 	if path_queue == null:
 		return 0
 	plan_count += 1
@@ -94,7 +163,16 @@ func request_plan(start: Vector2, goal: Vector2) -> int:
 
 
 func cancel_plan(ticket: int) -> void:
-	if path_queue == null or ticket <= 0:
+	if ticket <= 0:
+		return
+	if use_native:
+		_native_cancelled[ticket] = true
+		for i in range(_native_pending.size() - 1, -1, -1):
+			if int(_native_pending[i]["ticket"]) == ticket:
+				_native_pending.remove_at(i)
+		_native_results.erase(ticket)
+		return
+	if path_queue == null:
 		return
 	path_queue.cancel(ticket)
 
@@ -102,6 +180,20 @@ func cancel_plan(ticket: int) -> void:
 # Once per tick: compute at most PLAN_BUDGET_PER_TICK pending requests on
 # the main thread (time-slicing, not threading).
 func pump_async() -> void:
+	if use_native:
+		var processed_count := 0
+		while processed_count < PLAN_BUDGET_PER_TICK and not _native_pending.is_empty():
+			var request: Dictionary = _native_pending[0]
+			_native_pending.remove_at(0)
+			var ticket := int(request["ticket"])
+			if _native_cancelled.has(ticket):
+				continue
+			var compute_start := Time.get_ticks_usec()
+			var result_dict: Dictionary = native_facade.call("compute_path_result", request["query"])
+			last_plan_usec = Time.get_ticks_usec() - compute_start
+			_native_results[ticket] = SimNavNativeBridge.to_long_path_result(result_dict)
+			processed_count += 1
+		return
 	if path_queue == null:
 		return
 	if path_queue.pending_count() <= 0:
@@ -113,12 +205,22 @@ func pump_async() -> void:
 
 
 func take_plan_result(ticket: int) -> SimNavLongPathResult:
-	if path_queue == null or ticket <= 0:
+	if ticket <= 0:
+		return null
+	if use_native:
+		if not _native_results.has(ticket):
+			return null
+		var result: SimNavLongPathResult = _native_results[ticket]
+		_native_results.erase(ticket)
+		return result
+	if path_queue == null:
 		return null
 	return path_queue.take_long_path_result(ticket)
 
 
 func pending_plan_count() -> int:
+	if use_native:
+		return _native_pending.size()
 	if path_queue == null:
 		return 0
 	return path_queue.pending_count()
@@ -129,6 +231,9 @@ func pending_plan_count() -> int:
 # Same query as request_plan, computed immediately.
 func plan_path(start: Vector2, goal: Vector2) -> SimNavLongPathResult:
 	plan_count += 1
+	if use_native:
+		var result_dict: Dictionary = native_facade.call("compute_path_result", SimNavNativeBridge.query_to_dict(_build_long_path_query(start, goal)))
+		return SimNavNativeBridge.to_long_path_result(result_dict)
 	return facade.compute_path_result(_build_long_path_query(start, goal))
 
 
@@ -150,6 +255,10 @@ func _build_long_path_query(start: Vector2, goal: Vector2) -> SimNavLongPathQuer
 # fast path — this runs per tick for every moving unit.
 func is_line_walkable(start: Vector2, target: Vector2) -> bool:
 	line_check_count += 1
+	if use_native:
+		# Statics-only filter is the native default (units never enter the
+		# native map); crossing is a plain bool, no DTO.
+		return bool(native_facade.call("movement_line_clear", start, target, default_clearance, pass_mask, {}))
 	return facade.movement_line_clear(
 		start, target, default_clearance, pass_mask, _line_filter
 	)
@@ -157,6 +266,8 @@ func is_line_walkable(start: Vector2, target: Vector2) -> bool:
 
 # Exact static geometry for the separation solve's project-out step.
 func static_shapes() -> Array[SimNavObstructionShapeStatic]:
+	if use_native:
+		return _native_static_shapes
 	if nav_map == null:
 		return []
 	return nav_map.get_static_obstruction_shapes()

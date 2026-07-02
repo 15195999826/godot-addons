@@ -367,6 +367,23 @@ void CoreMap::get_static_shapes_sorted(std::vector<const StaticShape *> &r_shape
 	}
 }
 
+void CoreMap::get_static_shapes_in_range(const Vector2 &p_center, double p_range, std::vector<const StaticShape *> &r_shapes) const {
+	r_shapes.clear();
+	Vector2 query_min = p_center - Vector2((real_t)p_range, (real_t)p_range);
+	Vector2 query_max = p_center + Vector2((real_t)p_range, (real_t)p_range);
+	std::vector<int32_t> tags;
+	static_index.query(query_min, query_max, tags);
+	for (int32_t tag : tags) {
+		const StaticShape *shape = get_static_shape(tag);
+		if (shape == nullptr) {
+			continue;
+		}
+		if ((double)shape->center.distance_to(p_center) <= p_range + _shape_query_radius(*shape)) {
+			r_shapes.push_back(shape);
+		}
+	}
+}
+
 void CoreMap::mark_obstruction_shape_dirty(int32_t p_tag) {
 	StaticShape *shape = _find_static_shape(p_tag);
 	if (shape != nullptr) {
@@ -566,6 +583,32 @@ void CoreMap::composed_navcell_data(std::vector<int32_t> &r_out) const {
 	r_out.resize(cell_count);
 	for (size_t i = 0; i < cell_count; i++) {
 		r_out[i] = navcell_data[i] | terrain_navcell_data[i] | obstruction_navcell_data[i];
+	}
+}
+
+void CoreMap::composed_navcell_data_rect(const Vector2i &p_origin_cell, const Vector2i &p_size, std::vector<int32_t> &r_out) const {
+	int size_x = std::max(0, p_size.x);
+	int size_y = std::max(0, p_size.y);
+	r_out.assign((size_t)size_x * size_y, 0);
+	for (int row = 0; row < size_y; row++) {
+		int y = p_origin_cell.y + row;
+		size_t out_base = (size_t)row * size_x;
+		if (y < 0 || y >= height) {
+			for (int col = 0; col < size_x; col++) {
+				r_out[out_base + col] = -1;
+			}
+			continue;
+		}
+		size_t src_base = (size_t)y * width;
+		for (int col = 0; col < size_x; col++) {
+			int x = p_origin_cell.x + col;
+			if (x < 0 || x >= width) {
+				r_out[out_base + col] = -1;
+			} else {
+				size_t i = src_base + x;
+				r_out[out_base + col] = navcell_data[i] | terrain_navcell_data[i] | obstruction_navcell_data[i];
+			}
+		}
 	}
 }
 

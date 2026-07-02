@@ -30,7 +30,7 @@ public:
 	int64_t get_navcell_terrain_data(const godot::Vector2i &p_coord) const;
 	int64_t rebuild_terrain_passability();
 
-	int64_t add_static_obstruction(const godot::String &p_entity_id, const godot::Vector2 &p_center, double p_width, double p_height, double p_rotation_rad, int64_t p_flags);
+	int64_t add_static_obstruction(const godot::String &p_entity_id, const godot::Vector2 &p_center, double p_width, double p_height, double p_rotation_rad, int64_t p_flags, const godot::String &p_control_group, const godot::String &p_control_group_2);
 	bool remove_obstruction(int64_t p_tag);
 	bool move_obstruction(int64_t p_tag, const godot::Vector2 &p_center, double p_rotation_rad);
 	void mark_obstruction_shape_dirty(int64_t p_tag);
