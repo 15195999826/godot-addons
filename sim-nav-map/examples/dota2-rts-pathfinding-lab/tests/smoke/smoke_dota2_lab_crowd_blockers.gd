@@ -41,7 +41,7 @@ func _test_group_move_settles_without_overlap() -> void:
 	# Default corridor scene: all 8 blues through the corridor to one point.
 	var world := Dota2LabWorld.new()
 	world.issue_move_all_mobile(world.current_target)
-	var ticks := _run_until_idle(world, 1400, "group")
+	var ticks := _run_until_idle(world, 2200, "group")
 	var completed := 0
 	var failed := 0
 	for unit in world.get_mobile_units():

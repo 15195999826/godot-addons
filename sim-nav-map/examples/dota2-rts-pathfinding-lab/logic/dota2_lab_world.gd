@@ -38,8 +38,16 @@ func _init() -> void:
 	setup_default()
 
 
-# Default scene: 8 mobile blue units on the west, 1 unpushable red blocker
-# mid-map, and three static obstacles forming a legible corridor.
+# Speed tiers for the default scene (body-block probing: fast units catch up
+# to and squeeze past slow ones). Frontend colors by tier.
+const SPEED_SLOW := 70.0
+const SPEED_MID := 110.0
+const SPEED_FAST := 165.0
+
+
+# Default scene: 8 mobile units on the west in three speed tiers
+# (3 slow / 3 mid / 2 fast), 1 unpushable red blocker mid-map, and three
+# static obstacles forming a legible corridor.
 func setup_default() -> void:
 	_obstacle_seq = 0
 	_blocker_seq = 0
@@ -50,14 +58,14 @@ func setup_default() -> void:
 		Dota2LabObstacle.new("south_block", Vector2(690.0, 710.0), Vector2(310.0, 100.0)),
 	]
 	units = [
-		Dota2LabUnit.new("blue_0", "blue", Vector2(110.0, 420.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_1", "blue", Vector2(110.0, 480.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_2", "blue", Vector2(160.0, 365.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_3", "blue", Vector2(160.0, 535.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_4", "blue", Vector2(210.0, 420.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_5", "blue", Vector2(210.0, 480.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_6", "blue", Vector2(260.0, 395.0), 11.0, 110.0, true),
-		Dota2LabUnit.new("blue_7", "blue", Vector2(260.0, 505.0), 11.0, 110.0, true),
+		Dota2LabUnit.new("slow_0", "slow", Vector2(110.0, 420.0), 11.0, SPEED_SLOW, true),
+		Dota2LabUnit.new("slow_1", "slow", Vector2(110.0, 480.0), 11.0, SPEED_SLOW, true),
+		Dota2LabUnit.new("slow_2", "slow", Vector2(160.0, 365.0), 11.0, SPEED_SLOW, true),
+		Dota2LabUnit.new("mid_0", "mid", Vector2(160.0, 535.0), 11.0, SPEED_MID, true),
+		Dota2LabUnit.new("mid_1", "mid", Vector2(210.0, 420.0), 11.0, SPEED_MID, true),
+		Dota2LabUnit.new("mid_2", "mid", Vector2(210.0, 480.0), 11.0, SPEED_MID, true),
+		Dota2LabUnit.new("fast_0", "fast", Vector2(260.0, 395.0), 11.0, SPEED_FAST, true),
+		Dota2LabUnit.new("fast_1", "fast", Vector2(260.0, 505.0), 11.0, SPEED_FAST, true),
 		Dota2LabUnit.new("red_blocker", "red", Vector2(470.0, 450.0), 13.0, 0.0, false),
 	]
 	rebuild_navigation()
