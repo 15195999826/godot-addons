@@ -51,6 +51,14 @@ func _test_realistic_crowd_bitwise() -> void:
 		if not _worlds_equal(world_brute, world_hash):
 			_failures.append("realistic crowd diverged at tick %d" % tick)
 			return
+		# max_overlap_depth weld: identical positions (asserted above), so
+		# this is exactly hashed-vs-brute over the same crowd.
+		var brute_depth: float = world_brute.motion.max_overlap_depth(world_brute.units)
+		var hash_depth: float = world_hash.motion.max_overlap_depth(world_hash.units)
+		if brute_depth != hash_depth:
+			_failures.append("max_overlap_depth hash != brute at tick %d (%f vs %f)" % [
+				tick, hash_depth, brute_depth])
+			return
 
 
 func _test_dense_stack_invariants_and_determinism() -> void:

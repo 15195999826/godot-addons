@@ -210,7 +210,7 @@ func step(
 	var steer_cell := 0.0
 	var steer_buckets: Dictionary = {}
 	if contact_steering_enabled and units.size() > separation_brute_force_max:
-		steer_cell = _steering_hash_cell_size(units)
+		steer_cell = _steering_hash_cell_size(units, delta)
 		steer_buckets = _build_position_buckets(units, steer_cell)
 	for unit in units:
 		unit.prev_tick_position = unit.position
@@ -548,13 +548,18 @@ var _grid_candidates := PackedInt32Array()
 
 
 # Uniform-grid neighbor pass over a flat linked-cell grid, rebuilt every
-# iteration from current positions (a unit pushed across a cell boundary is
-# re-seen next round exactly like the brute loop's next iteration would see
-# it). Produces the same pairs in the same (i, ascending j) order as the
-# all-pairs loop — corrections are order-sensitive (Gauss-Seidel). Units are
-# inserted in DESCENDING index order so every cell chain reads ascending;
-# cross-cell candidates are kept ascending with an insertion sort over the
-# handful of neighbors.
+# iteration from current positions. Candidate order is the all-pairs loop's
+# (i, ascending j) — corrections are order-sensitive (Gauss-Seidel): units
+# are inserted in DESCENDING index order so every cell chain reads
+# ascending, and cross-cell candidates are insertion-sorted.
+#
+# Contract vs the brute loop: bitwise-identical AS LONG AS no unit is
+# displaced across a full hash cell (~one body diameter) within a single
+# iteration — realistic crowds stay far under that, and the weld smoke
+# pins it; a unit shoved further (adversarial stacked spawns) can drop a
+# late-blooming pair for one iteration and is re-seen when the grid is
+# rebuilt next round. Past that boundary the contract is convergence (all
+# overlaps still resolve across iterations), not bit-equality.
 func _separate_pairs_hashed(units: Array[Dota2LabUnit], cell_size: float) -> bool:
 	var count := units.size()
 	if count == 0:
@@ -629,13 +634,17 @@ func _separation_hash_cell_size(units: Array[Dota2LabUnit]) -> float:
 
 
 # Steering looks further than overlap (contact gap range) and runs while
-# units advance one step per tick, so pad the cell by the gap range plus a
-# generous per-tick motion margin.
-func _steering_hash_cell_size(units: Array[Dota2LabUnit]) -> float:
+# units advance one step per tick — earlier-in-array units have already
+# moved when later units query — so pad the cell by the gap range plus the
+# largest single-step displacement this tick can produce (derived from
+# actual speeds and delta, not a hardcoded guess).
+func _steering_hash_cell_size(units: Array[Dota2LabUnit], delta: float) -> float:
 	var max_radius := 0.0
+	var max_speed := 0.0
 	for unit in units:
 		max_radius = maxf(max_radius, unit.radius)
-	return maxf(1.0, max_radius * 2.0 + CONTACT_STEER_GAP_RANGE + 8.0)
+		max_speed = maxf(max_speed, unit.speed)
+	return maxf(1.0, max_radius * 2.0 + CONTACT_STEER_GAP_RANGE + max_speed * delta + 1.0)
 
 
 func _build_position_buckets(units: Array[Dota2LabUnit], cell_size: float) -> Dictionary:
