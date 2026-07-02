@@ -664,6 +664,9 @@ func _jump_point_cache(pass_mask: int) -> SimNavJumpPointCache:
 		var new_cache := SimNavJumpPointCache.new()
 		new_cache.reset(_nav_map, pass_mask)
 		_jump_point_caches[pass_mask] = new_cache
+		# The fresh build already baked the current map data — repairing for
+		# still-uncleared dirty flags here would be pure redundant work.
+		return new_cache
 	var cache: SimNavJumpPointCache = _jump_point_caches[pass_mask]
 	if cache.is_dirty():
 		cache.reset(_nav_map, pass_mask)
