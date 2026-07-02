@@ -60,15 +60,17 @@ func _test_straight_line_arrival() -> void:
 
 func _test_route_around_obstacles() -> void:
 	var world := Dota2LabWorld.new()  # default corridor scene
-	var unit := world.get_unit("blue_0")
+	var unit_id := world.get_mobile_unit_ids()[0]
+	var unit := world.get_unit(unit_id)
 	var goal := Vector2(1160.0, 450.0)
-	world.issue_move("blue_0", goal)
-	var ticks := _run_until_idle(world, [unit], 1000, "route", false)
+	world.issue_move(unit_id, goal)
+	var ticks := _run_until_idle(world, [unit], 1500, "route", false)
 	_assert_order_completed(unit, Dota2LabMoveOrder.REASON_ARRIVED, "route")
 	_assert_true(
 		unit.position.distance_to(goal) <= 9.0,
 		"route: final position near goal, got %.1f px away" % unit.position.distance_to(goal)
 	)
+	_assert_true(ticks < 1500, "route: bounded ticks, ran %d" % ticks)
 	print("MOVE_BASICS route: ticks=%d final=%s" % [ticks, str(unit.position)])
 
 

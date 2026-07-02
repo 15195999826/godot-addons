@@ -29,10 +29,15 @@ const Dota2LabSceneAgentOpsScript := preload("res://addons/sim-nav-map/examples/
 const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
 const AiCommandSourceScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_ai_command_source.gd")
 
-const UNIT_COLOR_BLUE := Color(0.18, 0.55, 0.95)
-const UNIT_COLOR_RED := Color(0.90, 0.26, 0.22)
+# Mobile units are colored by speed tier so body-block interactions between
+# tiers read at a glance.
+const UNIT_COLOR_SLOW := Color(0.87, 0.62, 0.20)
+const UNIT_COLOR_MID := Color(0.18, 0.55, 0.95)
+const UNIT_COLOR_FAST := Color(0.72, 0.40, 0.95)
 const UNIT_COLOR_BLOCKER := Color(0.90, 0.45, 0.25)
 const UNIT_COLOR_SELECTED := Color(0.25, 1.0, 0.70)
+const SPEED_TIER_SLOW_MAX := 85.0
+const SPEED_TIER_FAST_MIN := 140.0
 const UNIT_OUTLINE_COLOR := Color(0.95, 0.95, 0.92)
 const FACING_ARROW_COLOR := Color(1.00, 0.94, 0.42)
 const OBSTACLE_COLOR := Color(0.38, 0.35, 0.30)
@@ -379,9 +384,7 @@ func _draw() -> void:
 
 	# Units.
 	for unit in _world.units:
-		var color := UNIT_COLOR_BLUE if unit.group_id == "blue" else UNIT_COLOR_RED
-		if not unit.mobile:
-			color = UNIT_COLOR_BLOCKER
+		var color := _unit_fill_color(unit)
 		draw_circle(unit.position, unit.radius, color)
 		draw_arc(unit.position, unit.radius, 0.0, TAU, 24, UNIT_OUTLINE_COLOR, 1.5)
 		if _selected_unit_ids.has(unit.id):
@@ -451,6 +454,16 @@ func _draw_failed_glyph(center: Vector2) -> void:
 	var width := 2.0
 	draw_line(center + Vector2(-arm, -arm), center + Vector2(arm, arm), color, width)
 	draw_line(center + Vector2(-arm, arm), center + Vector2(arm, -arm), color, width)
+
+
+func _unit_fill_color(unit: Dota2LabUnit) -> Color:
+	if not unit.mobile:
+		return UNIT_COLOR_BLOCKER
+	if unit.speed <= SPEED_TIER_SLOW_MAX:
+		return UNIT_COLOR_SLOW
+	if unit.speed >= SPEED_TIER_FAST_MIN:
+		return UNIT_COLOR_FAST
+	return UNIT_COLOR_MID
 
 
 func _draw_facing_arrow(unit: Dota2LabUnit) -> void:
@@ -524,6 +537,9 @@ func _update_hud() -> void:
 		"Plans %d   LOS checks %d" % [
 			int(pf.get("plan_count", 0)),
 			int(pf.get("line_check_count", 0)),
+		],
+		"Speed tiers: amber %.0f   blue %.0f   violet %.0f" % [
+			Dota2LabWorld.SPEED_SLOW, Dota2LabWorld.SPEED_MID, Dota2LabWorld.SPEED_FAST,
 		],
 		selected_path_line,
 		"",

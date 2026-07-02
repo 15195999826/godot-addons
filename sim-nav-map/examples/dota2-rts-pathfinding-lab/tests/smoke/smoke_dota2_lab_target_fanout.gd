@@ -6,7 +6,7 @@ extends Node
 # always keeps the latest assignment.
 
 const TICK_DELTA := 1.0 / 60.0
-const DEFAULT_GROUP_TICKS := 1400
+const DEFAULT_GROUP_TICKS := 2200
 const RAPID_SWITCH_TICKS := 700
 
 
@@ -55,9 +55,10 @@ func _test_default_group_move_fanout() -> void:
 func _test_single_unit_command_has_no_fanout() -> void:
 	var world := Dota2LabWorld.new()
 	var target := Vector2(600.0, 200.0)
-	world.issue_move("blue_0", target)
-	var unit := world.get_unit("blue_0")
-	_assert_true(unit != null, "single-unit: missing blue_0")
+	var unit_id := world.get_mobile_unit_ids()[0]
+	world.issue_move(unit_id, target)
+	var unit := world.get_unit(unit_id)
+	_assert_true(unit != null, "single-unit: missing %s" % unit_id)
 	if unit == null:
 		return
 	_assert_eq(target, unit.move_target, "single-unit: move_target should stay exact")
