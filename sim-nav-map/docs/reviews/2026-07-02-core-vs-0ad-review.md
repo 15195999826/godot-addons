@@ -260,10 +260,16 @@ smoke 覆盖。**短期修法各约 5 行，或至少在 public-api.md 钉死并
 ## 六、建议行动清单（1a 只 review 不动手；供后续排期）
 
 **P0——直接对应「单位卡住」类手感，两条都有 repro/issue 实证**：
-1. 修 C1：栅格化补 `CLEARANCE_EXTENSION_RADIUS`（+1 navcell），恢复 005 进 smoke 组；同时校
-   example 层 clearance 倒挂（栅格 10 vs LOS 11）。
-2. 修 C2：两处 DDA 补 `currently_on_impassable` 状态机（直接照 `Pathfinding.cpp:61-75` 语义
-   写），顺带解 CORE-020 的僵死链路（其 fix option E 同域）。
+1. ✅ **已修（2026-07-02，同日）** C1：栅格化补 `CLEARANCE_EXTENSION_RADIUS`（+1 navcell），
+   005 已回归 smoke 组。example 层「倒挂」实为等 +1 落地的前置补偿（0ad 把默认 clearance 降
+   0.8 的同款），不再单独校。
+2. ✅ **已修（2026-07-02，同日）** C2：vertex + facade 两处 DDA 补 `currently_on_impassable`
+   状态机（照 `Pathfinding.cpp:61-75`），并把 step-budget 耗尽改为 fail-closed（顺修 S18）。
+   配套：core 测试按新带宽校准（005/002/dirty/obstruction/vertex-tangent 两段式）；0ad lab
+   默认走廊 42→74px（有效通道与旧世界逐像素一致）、logged-offset-opposing 冻结回放期几何、
+   0ad_budget fixture 自建几何；dota2 lab cell 16→8 + outset 配平。**cell 8 在 0ad lab 的
+   实验被回滚**——所有 logged-* 锚都是 16px 时代 export，重锚归 1b 契约重做。四组 smoke
+   50/50 全绿。
 
 **P1——契约止血（各 ~5 行或纯文档）**：
 3. C4.1/C4.2 两个 queue bug + worker 并发契约写进 public-api.md + S22 补带 hierarchical 的
