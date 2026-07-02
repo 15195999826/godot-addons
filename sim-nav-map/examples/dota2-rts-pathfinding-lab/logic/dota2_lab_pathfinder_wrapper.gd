@@ -12,8 +12,8 @@ extends RefCounted
 # ONE request per tick through the core queue while units walk a
 # straight-line placeholder for those few ticks. With the JPS+ ray tables a
 # warm cross-map query is ~0.8 ms (was 5-6 ms; a synchronous 8-unit group
-# command once froze the input frame for ~250 ms), so the queue now mainly
-# smooths the ~11 ms first-plan-after-rebuild spike (bake + table build).
+# command once froze the input frame for ~250 ms). The bake + table build is
+# prewarmed inside rebuild_context, so every plan runs at warm cost.
 # (A worker-thread variant was tried and reverted twice — GDScript-level
 # lock contention; see the fable-motion design note.)
 
@@ -74,6 +74,9 @@ func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
 	hierarchical.recompute(nav_map, [pass_mask])
 	nav_map.clear_dirty_navcells()
 	long_pathfinder = SimNavLongPathfinder.new(nav_map)
+	# Rebuild already freezes the frame; folding the jump-table build in here
+	# keeps the first plan after it at warm cost (~0.8 ms) instead of ~11 ms.
+	long_pathfinder.prewarm_jump_point_cache(pass_mask)
 	facade = SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
 	vertex_pathfinder = SimNavVertexPathfinder.new(nav_map)
 	path_queue = SimNavPathRequestQueue.new(facade, vertex_pathfinder)

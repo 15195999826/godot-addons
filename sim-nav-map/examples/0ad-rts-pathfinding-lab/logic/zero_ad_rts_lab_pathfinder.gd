@@ -68,6 +68,8 @@ func rebuild_context(static_obstacles: Array[ZeroAdRtsLabObstacle]) -> void:
 	hierarchical.recompute(nav_map, [pass_mask])
 	nav_map.clear_dirty_navcells()
 	long_pathfinder = SimNavLongPathfinder.new(nav_map)
+	# Pay the jump-table build inside the rebuild freeze, not on the first plan.
+	long_pathfinder.prewarm_jump_point_cache(pass_mask)
 	facade = SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
 	vertex_pathfinder = SimNavVertexPathfinder.new(nav_map)
 	path_queue = SimNavPathRequestQueue.new(facade, vertex_pathfinder)

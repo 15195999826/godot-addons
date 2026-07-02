@@ -151,6 +151,15 @@ func invalidate_jump_point_cache() -> void:
 	_jump_point_caches.clear()
 
 
+# Pay the bake + ray-table build (~10 ms on a 165x113 map) at rebuild time
+# instead of on the first plan after it. Optional: queries prewarm lazily
+# either way.
+func prewarm_jump_point_cache(pass_mask: int) -> void:
+	if _nav_map == null or pass_mask == 0:
+		return
+	_jump_point_cache(pass_mask)
+
+
 func _astar_cells(
 	start: Vector2i,
 	goal: SimNavPathGoal,
