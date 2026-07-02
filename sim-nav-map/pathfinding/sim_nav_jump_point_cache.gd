@@ -85,6 +85,20 @@ func _find_goal_before_hit(
 	var max_steps := obstruction_hit.steps
 	if obstruction_hit.kind == SimNavJumpPointHit.Kind.OBSTRUCTION:
 		max_steps -= 1
+	# POINT goals resolve in O(1): the goal is on this cardinal ray iff its
+	# axis projection lands within range and reconstructs the same cell.
+	# This runs on EVERY cardinal probe (diagonal jumps issue two per step),
+	# so the generic per-cell scan below dominated whole-query cost for the
+	# most common goal shape.
+	if goal.type == SimNavPathGoal.Type.POINT:
+		var goal_cell := _nav_map.world_to_navcell(goal.center)
+		var delta := goal_cell - start
+		var step_count := delta.x * direction.x + delta.y * direction.y
+		if step_count < 1 or step_count > max_steps:
+			return SimNavJumpPointHit.new()
+		if start + direction * step_count != goal_cell:
+			return SimNavJumpPointHit.new()
+		return SimNavJumpPointHit.new(SimNavJumpPointHit.Kind.GOAL, goal_cell, step_count)
 	for step in range(1, max_steps + 1):
 		var cell := start + direction * step
 		if goal.navcell_contains_goal(_nav_map, cell):
@@ -117,5 +131,16 @@ func _is_passable(cell: Vector2i) -> bool:
 	return _nav_map.is_passable_navcell(cell, _pass_mask)
 
 
-func _cache_key(start: Vector2i, direction: Vector2i) -> String:
-	return "%d,%d:%d,%d" % [start.x, start.y, direction.x, direction.y]
+# Integer keys: this runs on every cardinal probe, and string formatting +
+# string hashing dominated the cache lookup itself.
+const _KEY_STRIDE := 1 << 17
+
+func _cache_key(start: Vector2i, direction: Vector2i) -> int:
+	var dir_index := 0
+	if direction.x == -1:
+		dir_index = 1
+	elif direction.y == 1:
+		dir_index = 2
+	elif direction.y == -1:
+		dir_index = 3
+	return (start.x * _KEY_STRIDE + start.y) * 4 + dir_index
