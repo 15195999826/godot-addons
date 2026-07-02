@@ -21,8 +21,8 @@
 ## 性能承诺（硬化完成后固化为 budget smoke，跌破即测试红）
 
 - 单条跨图长径规划 < 1 ms（当前实测 ~0.8 ms @ 165×113）
-- 一次地形动态改变的表修复 < 2 ms（当前实测 ~0.7 ms；⚠ 完整 flush 链路当前
-  ~30 ms，大头是 hierarchical 单 chunk 重算 ~29 ms —— 硬化清单 ⓪ 的对象）
+- 一次地形动态改变的**完整 flush** < 5 ms（当前实测 ~3.5 ms = 表修复 ~0.7 +
+  hierarchical 窗口化重算 ~2.5 + 杂项；曾为 ~30 ms）
 - 100 单位移动 tick < 5 ms（依赖清单 ②③）
 - 规划预算每 tick 1-4 条可调（`PLAN_BUDGET_PER_TICK`）
 
@@ -31,7 +31,7 @@
 | 序 | 刀 | 状态 |
 |---|---|---|
 | ① | 路牌表（jump ray tables）增量修复 + "增量==全量"等式 smoke | ✅ 2026-07-02（修复 ~0.7 ms，`smoke_sim_nav_jump_table_repair`）|
-| ⓪ | hierarchical 分区连通性重算增量化（地形变更 flush 的真大头，单 chunk ~29 ms）| ⏳ 地形动态改变进战斗循环前必修 |
+| ⓪ | hierarchical 窗口化 chunk 重算（地形变更 flush 30→3.5 ms；`smoke_sim_nav_hierarchical_incremental` 焊死）| ✅ 2026-07-02 |
 | ② | `is_line_walkable` 视线检查查表化（逃逸规则孪生 + 保留形状段 + 独立 A/B）| ⏳ 单位 30+ 触发 |
 | ③ | 分离求解空间哈希（O(N²) → 近线性）| ⏳ 单位 50+ 触发 |
 | ④ | budget smoke 套件（把上面的承诺焊进测试）| ⏳ ②③ 后 |

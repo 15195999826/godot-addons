@@ -30,6 +30,12 @@ func recompute(nav_map: SimNavMap, passability_masks: Array[int]) -> void:
 	_next_global_region.clear()
 
 	for pass_mask in passability_masks:
+		if pass_mask == 0:
+			# Mask 0 is not a registered passability class; the windowed
+			# snapshot's blocked-out-of-bounds convention (-1) has no bits to
+			# test against it, so reject instead of building nonsense chunks.
+			push_error("[SimNavHierarchicalPathfinder] recompute: pass_mask 0 is invalid")
+			continue
 		var chunks: Array[SimNavHierarchicalChunk] = []
 		chunks.resize(_chunks_w * _chunks_h)
 		for cj in range(_chunks_h):
@@ -57,6 +63,9 @@ func recompute_dirty(nav_map: SimNavMap, passability_masks: Array[int]) -> int:
 		return 0
 
 	for pass_mask in passability_masks:
+		if pass_mask == 0:
+			push_error("[SimNavHierarchicalPathfinder] recompute_dirty: pass_mask 0 is invalid")
+			continue
 		var chunks: Array = _chunks.get(pass_mask, [])
 		if chunks.size() != _chunks_w * _chunks_h:
 			recompute(nav_map, passability_masks)

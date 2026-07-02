@@ -61,6 +61,42 @@ func _run() -> void:
 		nav_map.and_navcell_data(Vector2i(x, 120), mask)
 	_recompute_and_compare(incremental, nav_map, mask, "fissure expiry")
 
+	_test_multi_mask_and_full_recompute_fallbacks()
+
+
+# Coverage for the two full-recompute fallbacks inside recompute_dirty
+# (fresh pathfinder / mask missing from a previous recompute) and for
+# multi-mask incremental rounds where an edit only affects one class.
+func _test_multi_mask_and_full_recompute_fallbacks() -> void:
+	var nav_map := SimNavMap.new(120, 100, 8.0, Vector2.ZERO, 4)
+	var ground_mask := _register_class(nav_map, "ground")
+	var air_mask := _register_class(nav_map, "air")
+	for x in range(20, 90):
+		nav_map.or_navcell_data(Vector2i(x, 50), ground_mask)
+	nav_map.clear_dirty_navcells()
+
+	# Fresh pathfinder straight into recompute_dirty: not-recomputed fallback.
+	var fresh := SimNavHierarchicalPathfinder.new()
+	var rebuilt := fresh.recompute_dirty(nav_map, [ground_mask, air_mask])
+	_assert_true(rebuilt > 0, "fresh recompute_dirty should fall back to a full recompute")
+	_assert_equal_connectivity_masks(fresh, nav_map, [ground_mask, air_mask], "fresh fallback")
+
+	# Mask missing from the previous recompute: missing-mask fallback.
+	var partial := SimNavHierarchicalPathfinder.new()
+	partial.recompute(nav_map, [ground_mask])
+	nav_map.or_navcell_data(Vector2i(30, 30), ground_mask)
+	var rebuilt_partial := partial.recompute_dirty(nav_map, [ground_mask, air_mask])
+	nav_map.clear_dirty_navcells()
+	_assert_true(rebuilt_partial > 0, "missing-mask recompute_dirty should fall back to a full recompute")
+	_assert_equal_connectivity_masks(partial, nav_map, [ground_mask, air_mask], "missing-mask fallback")
+
+	# Multi-mask incremental round: the edit only blocks ground; both masks
+	# must stay welded to their full recomputes.
+	nav_map.or_navcell_data(Vector2i(60, 70), ground_mask)
+	partial.recompute_dirty(nav_map, [ground_mask, air_mask])
+	nav_map.clear_dirty_navcells()
+	_assert_equal_connectivity_masks(partial, nav_map, [ground_mask, air_mask], "multi-mask incremental")
+
 
 func _recompute_and_compare(
 	incremental: SimNavHierarchicalPathfinder,
@@ -91,12 +127,35 @@ func _assert_equal_connectivity(
 			label, int(incremental_export["global_region_count"]), int(truth_export["global_region_count"])])
 
 
+func _assert_equal_connectivity_masks(
+	incremental: SimNavHierarchicalPathfinder,
+	nav_map: SimNavMap,
+	masks: Array,
+	label: String
+) -> void:
+	var truth := SimNavHierarchicalPathfinder.new()
+	var typed_masks: Array[int] = []
+	for mask_value in masks:
+		typed_masks.append(int(mask_value))
+	truth.recompute(nav_map, typed_masks)
+	for mask_value in masks:
+		var mask := int(mask_value)
+		var incremental_export := incremental.export_connectivity(mask)
+		var truth_export := truth.export_connectivity(mask)
+		if incremental_export["regions"] != truth_export["regions"]:
+			_failures.append("%s: mask %d export differs from full recompute" % [label, mask])
+
+
 func _register_ground(nav_map: SimNavMap) -> int:
-	var ground := SimNavPassabilityClassConfig.new()
-	ground.class_name_id = "ground"
-	ground.clearance = 0.0
-	ground.affects_pathfinding = true
-	return nav_map.register_passability_class(ground)
+	return _register_class(nav_map, "ground")
+
+
+func _register_class(nav_map: SimNavMap, class_id: String) -> int:
+	var config := SimNavPassabilityClassConfig.new()
+	config.class_name_id = class_id
+	config.clearance = 0.0
+	config.affects_pathfinding = true
+	return nav_map.register_passability_class(config)
 
 
 func _assert_true(value: bool, message: String) -> void:
