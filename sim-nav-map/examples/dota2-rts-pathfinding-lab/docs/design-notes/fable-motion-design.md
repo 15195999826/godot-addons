@@ -161,9 +161,10 @@ Turning in place is exempt.
   (avg 797 µs / max ~1.1 ms over 16 distinct starts, production LOS
   config; search ~540 µs + LOS refine ~260 µs). The one-off bake +
   ray-table build (~10 ms) is prewarmed inside rebuild_context, so no plan
-  ever pays it; mid-session navcell edits (skill walls) repair only the ray
-  rows/columns around the dirty cells (~0.7 ms fissure-scale, byte-identical
-  to a full rebuild — see capability-envelope.md hardening list).
+  ever pays it; dynamic terrain changes (skill walls, tree clearing, tower
+  death — one abstraction, one pipeline) repair only the ray rows/columns
+  around the dirty cells (~0.7 ms fissure-scale, byte-identical to a full
+  rebuild — see capability-envelope.md hardening list).
   History: 15-50 ms → 5-6 ms via an O(1) POINT-goal ray check plus the
   composed passability grid baked into a flat PackedInt32Array; 5-6 ms →
   0.8 ms via the structural fix — JPS+-style cardinal ray tables
