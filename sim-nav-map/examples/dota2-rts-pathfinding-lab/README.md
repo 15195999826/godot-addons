@@ -25,7 +25,11 @@ Full design: [docs/design-notes/fable-motion-design.md](docs/design-notes/fable-
 
 - **One movement rule**: turn toward the tracking point (turn-rate capped),
   walk along facing with a continuous alignment speed ramp (Dota2 action-cone
-  feel, no binary gate). No sideways displacement exists anywhere.
+  feel, no binary gate). No sideways displacement exists anywhere. Contact
+  steering (default on, panel toggle) extends this to squeezing past
+  non-yielding bodies: the desired heading biases around the contact so the
+  unit walks around it — facing follows the squeeze instead of the body
+  translating sideways.
 - **Commit-then-resolve**: units step by intent, then an iterative separation
   solve splits overlapping pairs (pushability-weighted, head-on lateral bias)
   and projects bodies out of statics/bounds. Overlap cannot persist.

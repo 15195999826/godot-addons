@@ -66,6 +66,7 @@ var _export_button: Button = null
 # re-applied to every freshly built world's engine.
 var _push_moving: float = Dota2LabMotionEngine.DEFAULT_PUSHABILITY_MOVING
 var _push_idle: float = Dota2LabMotionEngine.DEFAULT_PUSHABILITY_IDLE
+var _contact_steering: bool = true
 var _push_moving_slider: HSlider = null
 var _push_idle_slider: HSlider = null
 var _push_moving_value: Label = null
@@ -354,22 +355,31 @@ func _on_export_log_pressed() -> void:
 # ─────────────────────────── Push tuning UI ──────────────────────────────────
 
 func _build_push_controls() -> void:
-	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, 742.0)
+	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, 712.0)
 	_add_panel_label("推挤调参（实时生效）  让步 0% = 刚体，重叠仍强制平摊消解", origin, 15)
 
-	_add_panel_label("移动中让步", origin + Vector2(0.0, 30.0), 14)
-	_push_moving_slider = _add_push_slider(origin + Vector2(96.0, 30.0), _push_moving)
+	_add_panel_label("移动中让步", origin + Vector2(0.0, 28.0), 14)
+	_push_moving_slider = _add_push_slider(origin + Vector2(96.0, 28.0), _push_moving)
 	_push_moving_slider.value_changed.connect(_on_push_moving_changed)
-	_push_moving_value = _add_panel_label("", origin + Vector2(372.0, 30.0), 14)
+	_push_moving_value = _add_panel_label("", origin + Vector2(372.0, 28.0), 14)
 
-	_add_panel_label("停驻让步", origin + Vector2(0.0, 62.0), 14)
-	_push_idle_slider = _add_push_slider(origin + Vector2(96.0, 62.0), _push_idle)
+	_add_panel_label("停驻让步", origin + Vector2(0.0, 58.0), 14)
+	_push_idle_slider = _add_push_slider(origin + Vector2(96.0, 58.0), _push_idle)
 	_push_idle_slider.value_changed.connect(_on_push_idle_changed)
-	_push_idle_value = _add_panel_label("", origin + Vector2(372.0, 62.0), 14)
+	_push_idle_value = _add_panel_label("", origin + Vector2(372.0, 58.0), 14)
+
+	var steering_toggle := CheckButton.new()
+	steering_toggle.text = "贴身绕行转向（挤行时朝向跟着拐，关 = 横移观感）"
+	steering_toggle.button_pressed = _contact_steering
+	steering_toggle.position = origin + Vector2(0.0, 88.0)
+	steering_toggle.z_index = 20
+	steering_toggle.add_theme_font_size_override("font_size", 14)
+	steering_toggle.toggled.connect(_on_contact_steering_toggled)
+	add_child(steering_toggle)
 
 	var soft_button := Button.new()
 	soft_button.text = "软碰撞（LoL 让路）"
-	soft_button.position = origin + Vector2(0.0, 96.0)
+	soft_button.position = origin + Vector2(0.0, 124.0)
 	soft_button.custom_minimum_size = Vector2(160.0, 30.0)
 	soft_button.z_index = 20
 	soft_button.pressed.connect(_on_push_preset_soft)
@@ -377,7 +387,7 @@ func _build_push_controls() -> void:
 
 	var hard_button := Button.new()
 	hard_button.text = "硬碰撞（Dota2 卡位）"
-	hard_button.position = origin + Vector2(172.0, 96.0)
+	hard_button.position = origin + Vector2(172.0, 124.0)
 	hard_button.custom_minimum_size = Vector2(160.0, 30.0)
 	hard_button.z_index = 20
 	hard_button.pressed.connect(_on_push_preset_hard)
@@ -422,6 +432,13 @@ func _on_push_idle_changed(value: float) -> void:
 	_record_event("push_tuning", {"moving": _push_moving, "idle": _push_idle})
 
 
+func _on_contact_steering_toggled(enabled: bool) -> void:
+	_contact_steering = enabled
+	_apply_push_tuning()
+	_last_action = "贴身绕行转向：%s" % ("开" if enabled else "关")
+	_record_event("contact_steering", {"enabled": enabled})
+
+
 func _on_push_preset_soft() -> void:
 	_set_push_sliders(
 		Dota2LabMotionEngine.DEFAULT_PUSHABILITY_MOVING,
@@ -448,6 +465,7 @@ func _apply_push_tuning() -> void:
 	if _world != null:
 		_world.motion.pushability_moving = _push_moving
 		_world.motion.pushability_idle = _push_idle
+		_world.motion.contact_steering_enabled = _contact_steering
 	_refresh_push_value_labels()
 
 

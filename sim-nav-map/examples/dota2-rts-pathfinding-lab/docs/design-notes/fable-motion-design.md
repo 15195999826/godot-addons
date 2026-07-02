@@ -57,6 +57,17 @@ cannot flip a binary walk gate (the v2 pirouette source). Because walking
 happens along facing while still turning, curved approach arcs fall out for
 free.
 
+**Contact steering** (`contact_steering_enabled`, default on, lab UI toggle):
+when a unit closes nose-first on a body that will not yield to it (equal or
+lower pushability, or an immobile blocker), its desired heading gains a
+tangential bias — continuous in gap and frontness, same handedness as the
+solve's head-on lateral bias. The unit then WALKS around the contact through
+the normal turn/walk pipeline, keeping heading, displacement, and visuals
+aligned. Off, squeezing past a non-yielder is driven by Phase B pushes alone
+and reads as sideways translation (facing locked on the path while the body
+slides). Anchored in smoke: rounding a solid idle body keeps the per-tick
+displacement-vs-facing dot above 0.9 (measured ~0.99).
+
 ### Separation solve
 
 - Pair correction is split by **pushability**: `0` for `mobile == false`
