@@ -53,6 +53,16 @@ func configure(config: GridMapConfig) -> void:
 	model_configured.emit(new_model)
 
 
+## 采用一个已构建好的模型（数据驱动地图：如 initialize_from_tiles 的产物）。
+## 单例一次只持一图；场景切换时用新模型重灌。
+func configure_model(new_model: GridMapModel) -> void:
+	if new_model == null:
+		push_error("[GridMap] Cannot configure with null model")
+		return
+	model = new_model
+	model_configured.emit(new_model)
+
+
 ## 清除当前模型
 func clear() -> void:
 	model = null

@@ -149,6 +149,46 @@ func _generate_square_row_column(half_rows: int, half_cols: int) -> void:
 			_tiles[coord.to_key()] = GridTileData.new(coord)
 
 
+## 从瓦片数组初始化地图（数据驱动地图：格子集合与属性由调用方给定，不做程序化生成）。
+## tiles 每项为 Dictionary：
+##   coord: HexCoord 或 Vector2i (axial)          —— 必填
+##   height: float / cost: float / is_blocking: bool —— 可选，缺省用 GridTileData 默认
+##   metadata: Dictionary                          —— 可选，整块并入 tile.metadata
+## 领域概念（地形名 / 资产族等）请放 metadata，框架不认识它们。
+func initialize_from_tiles(config: GridMapConfig, tiles: Array) -> void:
+	_config = config
+	_layout = GridLayout.new(
+		config.grid_type,
+		config.size,
+		config.origin,
+		config.orientation,
+		config.tile_size
+	)
+	_tiles.clear()
+	for entry_value in tiles:
+		var entry := entry_value as Dictionary
+		if entry == null or not entry.has("coord"):
+			push_error("[GridMapModel] initialize_from_tiles: tile entry missing coord: %s" % str(entry_value))
+			continue
+		var coord: HexCoord
+		var raw_coord: Variant = entry["coord"]
+		if raw_coord is HexCoord:
+			coord = raw_coord
+		elif raw_coord is Vector2i:
+			coord = HexCoord.from_axial(raw_coord)
+		else:
+			push_error("[GridMapModel] initialize_from_tiles: coord must be HexCoord or Vector2i, got %s" % str(raw_coord))
+			continue
+		var data := GridTileData.new(coord)
+		data.height = maxf(float(entry.get("height", data.height)), 0.0)
+		data.cost = maxf(float(entry.get("cost", data.cost)), 0.0)
+		data.is_blocking = bool(entry.get("is_blocking", data.is_blocking))
+		var metadata := entry.get("metadata", null) as Dictionary
+		if metadata != null:
+			data.metadata = metadata.duplicate()
+		_tiles[coord.to_key()] = data
+
+
 ## 基于半径生成六边形地图
 func _generate_tiles_radius() -> void:
 	match _config.grid_type:
