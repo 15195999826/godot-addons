@@ -14,6 +14,12 @@ var _navcell_data: PackedInt32Array = PackedInt32Array()
 var _terrain_navcell_data: PackedInt32Array = PackedInt32Array()
 var _obstruction_navcell_data: PackedInt32Array = PackedInt32Array()
 var _dirtiness: PackedByteArray = PackedByteArray()
+# Parallel list of currently-dirty navcells, same pattern as
+# _obstruction_dirty_cell_list below: collect/has/clear run in O(dirty_count)
+# instead of scanning the grid. _dirtiness stays the membership truth; every
+# 0 -> 1 transition goes through _mark_navcell_dirty_idx so the two cannot
+# desync. Incremental jump-table repair depends on this enumeration.
+var _dirty_cell_list: Array[Vector2i] = []
 var _obstruction_dirtiness: PackedByteArray = PackedByteArray()
 # Parallel list of currently-dirty obstruction navcells. Lets collect/has/clear
 # operations run in O(dirty_count) instead of scanning the full grid byte
@@ -328,7 +334,7 @@ func rebuild_dirty() -> void:
 		_obstruction_navcell_data[idx] = _blocked_mask_for_static_obstructions_at(cell)
 		var new_composed := int(_navcell_data[idx]) | int(_terrain_navcell_data[idx]) | int(_obstruction_navcell_data[idx])
 		if old_composed != new_composed:
-			_dirtiness[idx] = 1
+			_mark_navcell_dirty_idx(idx, cell)
 	clear_dirty_obstruction_navcells()
 
 
@@ -342,7 +348,7 @@ func rasterize_dirty_obstructions() -> int:
 		_obstruction_navcell_data[idx] = _blocked_mask_for_static_obstructions_at(coord)
 		var next_value := get_navcell_data(coord)
 		if old_value != next_value:
-			_dirtiness[idx] = 1
+			_mark_navcell_dirty_idx(idx, coord)
 			changed_count += 1
 	clear_dirty_obstruction_navcells()
 	return changed_count
@@ -391,7 +397,7 @@ func set_navcell_data(coord: Vector2i, value: int) -> void:
 		return
 	_navcell_data[idx] = value
 	if old_value != get_navcell_data(coord):
-		_dirtiness[idx] = 1
+		_mark_navcell_dirty_idx(idx, coord)
 
 
 func or_navcell_data(coord: Vector2i, mask: int) -> void:
@@ -404,7 +410,7 @@ func or_navcell_data(coord: Vector2i, mask: int) -> void:
 	var old_value := get_navcell_data(coord)
 	_navcell_data[idx] = next_value
 	if old_value != get_navcell_data(coord):
-		_dirtiness[idx] = 1
+		_mark_navcell_dirty_idx(idx, coord)
 
 
 func and_navcell_data(coord: Vector2i, inverse_mask: int) -> void:
@@ -417,12 +423,12 @@ func and_navcell_data(coord: Vector2i, inverse_mask: int) -> void:
 	var old_value := get_navcell_data(coord)
 	_navcell_data[idx] = next_value
 	if old_value != get_navcell_data(coord):
-		_dirtiness[idx] = 1
+		_mark_navcell_dirty_idx(idx, coord)
 
 
 func mark_dirty_navcell(coord: Vector2i) -> void:
 	if is_valid_navcell(coord):
-		_dirtiness[_index(coord)] = 1
+		_mark_navcell_dirty_idx(_index(coord), coord)
 
 
 func is_dirty_navcell(coord: Vector2i) -> bool:
@@ -432,12 +438,11 @@ func is_dirty_navcell(coord: Vector2i) -> bool:
 
 
 func collect_dirty_navcells() -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
-	for y in range(height):
-		var row_base := y * width
-		for x in range(width):
-			if _dirtiness[row_base + x] != 0:
-				result.append(Vector2i(x, y))
+	# Row-major order, matching the historical full-grid scan — dirty
+	# consumers (hierarchical recompute, jump-table repair) iterate in a
+	# deterministic order regardless of marking order.
+	var result: Array[Vector2i] = _dirty_cell_list.duplicate()
+	result.sort_custom(_navcell_row_major_less)
 	return result
 
 
@@ -446,10 +451,7 @@ func collect_dirty_obstruction_navcells() -> Array[Vector2i]:
 
 
 func has_dirty_navcells() -> bool:
-	for value in _dirtiness:
-		if value != 0:
-			return true
-	return false
+	return not _dirty_cell_list.is_empty()
 
 
 func has_dirty_obstruction_navcells() -> bool:
@@ -457,8 +459,9 @@ func has_dirty_obstruction_navcells() -> bool:
 
 
 func clear_dirty_navcells() -> void:
-	for i in range(_dirtiness.size()):
-		_dirtiness[i] = 0
+	for cell in _dirty_cell_list:
+		_dirtiness[_index(cell)] = 0
+	_dirty_cell_list.clear()
 
 
 func clear_dirty_obstruction_navcells() -> void:
@@ -538,7 +541,8 @@ func is_inside_playable_bounds(world_pos: Vector2) -> bool:
 func _clear_navcell_data(mark_dirty: bool = false) -> void:
 	for i in range(_navcell_data.size()):
 		if mark_dirty and int(_navcell_data[i]) != 0:
-			_dirtiness[i] = 1
+			@warning_ignore("integer_division")
+			_mark_navcell_dirty_idx(i, Vector2i(i % width, i / width))
 		_navcell_data[i] = 0
 
 
@@ -574,7 +578,7 @@ func _set_terrain_navcell_data(coord: Vector2i, value: int, mark_dirty: bool) ->
 	var old_value := get_navcell_data(coord)
 	_terrain_navcell_data[idx] = value
 	if mark_dirty and old_value != get_navcell_data(coord):
-		_dirtiness[idx] = 1
+		_mark_navcell_dirty_idx(idx, coord)
 		return true
 	return false
 
@@ -664,14 +668,27 @@ func _or_obstruction_navcell_data_internal(coord: Vector2i, mask: int, mark_dirt
 		return
 	_obstruction_navcell_data[idx] = next_obstruction_value
 	if mark_dirty and old_value != get_navcell_data(coord):
-		_dirtiness[idx] = 1
+		_mark_navcell_dirty_idx(idx, coord)
 
 
 func _mark_rebuild_changes_dirty(old_data: PackedInt32Array) -> void:
 	for i in range(_navcell_data.size()):
 		var next_value := int(_navcell_data[i]) | int(_terrain_navcell_data[i]) | int(_obstruction_navcell_data[i])
 		if int(old_data[i]) != next_value:
-			_dirtiness[i] = 1
+			@warning_ignore("integer_division")
+			_mark_navcell_dirty_idx(i, Vector2i(i % width, i / width))
+
+
+func _mark_navcell_dirty_idx(idx: int, coord: Vector2i) -> void:
+	if _dirtiness[idx] == 0:
+		_dirtiness[idx] = 1
+		_dirty_cell_list.append(coord)
+
+
+func _navcell_row_major_less(a: Vector2i, b: Vector2i) -> bool:
+	if a.y != b.y:
+		return a.y < b.y
+	return a.x < b.x
 
 
 func _compose_navcell_data() -> PackedInt32Array:

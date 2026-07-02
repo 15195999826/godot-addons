@@ -44,6 +44,12 @@ var _ray_south: PackedInt32Array = PackedInt32Array()
 var _ray_north: PackedInt32Array = PackedInt32Array()
 
 
+# Refresh observability (fissure-style runtime walls): how often this cache
+# repaired locally vs rebuilt from scratch.
+var repair_count: int = 0
+var full_reset_count: int = 0
+
+
 func reset(nav_map: SimNavMap, pass_mask: int) -> void:
 	_nav_map = nav_map
 	_pass_mask = pass_mask
@@ -51,6 +57,59 @@ func reset(nav_map: SimNavMap, pass_mask: int) -> void:
 	_cached_hits.clear()
 	_bake_grid()
 	_build_ray_tables()
+	full_reset_count += 1
+
+
+# Incrementally refresh the baked grid + ray tables for changed navcells.
+# A changed cell only influences ray rows y-1..y+1 (horizontal forced checks
+# read the adjacent rows) and ray columns x-1..x+1; those bands are rebuilt
+# with the same row/col bodies the full build uses, so repair output is
+# byte-identical to a full rebuild by construction (welded by
+# smoke_sim_nav_jump_table_repair). Falls back to reset() when the band
+# approaches half of a full rebuild.
+func repair_dirty_cells(dirty_cells: Array[Vector2i]) -> void:
+	if _nav_map == null:
+		return
+	if _dirty or _baked.is_empty():
+		reset(_nav_map, _pass_mask)
+		return
+	if dirty_cells.is_empty():
+		return
+	var w := _baked_width
+	var h := _baked_height
+	var rows: Dictionary = {}
+	var cols: Dictionary = {}
+	for cell in dirty_cells:
+		if cell.x < 0 or cell.y < 0 or cell.x >= w or cell.y >= h:
+			continue
+		_baked[cell.y * w + cell.x] = _nav_map.get_navcell_data(cell)
+		for dy in range(-1, 2):
+			var y := cell.y + dy
+			if y >= 0 and y < h:
+				rows[y] = true
+		for dx in range(-1, 2):
+			var x := cell.x + dx
+			if x >= 0 and x < w:
+				cols[x] = true
+	if rows.is_empty():
+		return
+	if rows.size() * 2 * w + cols.size() * 2 * h > 2 * w * h:
+		reset(_nav_map, _pass_mask)
+		return
+	_rebuild_ray_rows(rows.keys())
+	_rebuild_ray_cols(cols.keys())
+	_cached_hits.clear()
+	repair_count += 1
+
+
+# Equality weld for the repair smoke: incremental repair must reproduce a
+# full rebuild bit-for-bit.
+func tables_equal(other: SimNavJumpPointCache) -> bool:
+	return _baked == other._baked \
+		and _ray_east == other._ray_east \
+		and _ray_west == other._ray_west \
+		and _ray_south == other._ray_south \
+		and _ray_north == other._ray_north
 
 
 func _bake_grid() -> void:
@@ -277,109 +336,168 @@ func _ray_table_for(direction: Vector2i) -> PackedInt32Array:
 
 func _build_ray_tables() -> void:
 	var size := _baked_width * _baked_height
+	_ray_east = PackedInt32Array()
+	_ray_west = PackedInt32Array()
+	_ray_south = PackedInt32Array()
+	_ray_north = PackedInt32Array()
 	if size <= 0:
-		_ray_east = PackedInt32Array()
-		_ray_west = PackedInt32Array()
-		_ray_south = PackedInt32Array()
-		_ray_north = PackedInt32Array()
 		return
-	_ray_east = _build_ray_table_horizontal(1)
-	_ray_west = _build_ray_table_horizontal(-1)
-	_ray_south = _build_ray_table_vertical(1)
-	_ray_north = _build_ray_table_vertical(-1)
+	_ray_east.resize(size)
+	_ray_west.resize(size)
+	_ray_south.resize(size)
+	_ray_north.resize(size)
+	_rebuild_ray_rows(range(_baked_height))
+	_rebuild_ray_cols(range(_baked_width))
 
 
 # DP sweep against the scan direction: a ray from (x, y) first examines the
 # neighbor cell n = (x + dir, y); if n is passable and not a forced-jump cell
 # the ray continues exactly as the ray from n, one step longer. Forced-cell
-# test matches the runtime scan the tables replace (see _has_forced flags in
+# test matches the runtime scan the tables replace (see
 # SimNavLongPathfinder._has_forced_cardinal_jump).
-func _build_ray_table_horizontal(dir: int) -> PackedInt32Array:
+#
+# A row's horizontal entries are a pure intra-row function of the baked grid
+# (forced checks read baked rows y±1, never other table rows), and columns
+# mirror that — so full build and incremental repair share these bodies and
+# rebuild order cannot matter. All table access goes through the member
+# arrays directly: packed arrays are copy-on-write values in GDScript, so a
+# hoisted local alias would silently detach from the member on first write.
+func _rebuild_ray_rows(rows: Array) -> void:
+	for row_value in rows:
+		var y := int(row_value)
+		_rebuild_ray_row_east(y)
+		_rebuild_ray_row_west(y)
+
+
+func _rebuild_ray_cols(cols: Array) -> void:
+	for col_value in cols:
+		var x := int(col_value)
+		_rebuild_ray_col_south(x)
+		_rebuild_ray_col_north(x)
+
+
+func _rebuild_ray_row_east(y: int) -> void:
 	var w := _baked_width
 	var h := _baked_height
 	var mask := _pass_mask
-	var table := PackedInt32Array()
-	table.resize(w * h)
-	var x_from := w - 1 if dir == 1 else 0
-	var x_to := -1 if dir == 1 else w
-	var x_step := -dir
-	for y in range(h):
-		var row := y * w
-		var x := x_from
-		while x != x_to:
-			var i := row + x
-			if (_baked[i] & mask) != 0:
-				table[i] = _RAY_IMPASSABLE
-				x += x_step
-				continue
-			var nx := x + dir
-			if nx < 0 or nx >= w:
-				table[i] = _RAY_BOUNDARY
-				x += x_step
-				continue
-			var ni := row + nx
-			if (_baked[ni] & mask) != 0:
-				table[i] = (1 << 2) | _RAY_OBSTRUCTION
-				x += x_step
-				continue
-			var forced := false
-			if y > 0:
-				# blocked at (nx - dir, y - 1) with (nx, y - 1) open
-				if (_baked[ni - w - dir] & mask) != 0 and (_baked[ni - w] & mask) == 0:
-					forced = true
-			if not forced and y + 1 < h:
-				if (_baked[ni + w - dir] & mask) != 0 and (_baked[ni + w] & mask) == 0:
-					forced = true
-			if forced:
-				table[i] = (1 << 2) | _RAY_JUMP
-			else:
-				table[i] = table[ni] + 4
-			x += x_step
-	return table
+	var row := y * w
+	for step in range(w):
+		var x := w - 1 - step
+		var i := row + x
+		if (_baked[i] & mask) != 0:
+			_ray_east[i] = _RAY_IMPASSABLE
+			continue
+		if x + 1 >= w:
+			_ray_east[i] = _RAY_BOUNDARY
+			continue
+		var ni := i + 1
+		if (_baked[ni] & mask) != 0:
+			_ray_east[i] = (1 << 2) | _RAY_OBSTRUCTION
+			continue
+		var forced := false
+		if y > 0:
+			# blocked at (x, y - 1) with (x + 1, y - 1) open
+			if (_baked[i - w] & mask) != 0 and (_baked[ni - w] & mask) == 0:
+				forced = true
+		if not forced and y + 1 < h:
+			if (_baked[i + w] & mask) != 0 and (_baked[ni + w] & mask) == 0:
+				forced = true
+		if forced:
+			_ray_east[i] = (1 << 2) | _RAY_JUMP
+		else:
+			_ray_east[i] = _ray_east[ni] + 4
 
 
-func _build_ray_table_vertical(dir: int) -> PackedInt32Array:
+func _rebuild_ray_row_west(y: int) -> void:
 	var w := _baked_width
 	var h := _baked_height
 	var mask := _pass_mask
-	var table := PackedInt32Array()
-	table.resize(w * h)
-	var y_from := h - 1 if dir == 1 else 0
-	var y_to := -1 if dir == 1 else h
-	var y_step := -dir
-	var dir_row := dir * w
+	var row := y * w
 	for x in range(w):
-		var y := y_from
-		while y != y_to:
-			var i := y * w + x
-			if (_baked[i] & mask) != 0:
-				table[i] = _RAY_IMPASSABLE
-				y += y_step
-				continue
-			var ny := y + dir
-			if ny < 0 or ny >= h:
-				table[i] = _RAY_BOUNDARY
-				y += y_step
-				continue
-			var ni := i + dir_row
-			if (_baked[ni] & mask) != 0:
-				table[i] = (1 << 2) | _RAY_OBSTRUCTION
-				y += y_step
-				continue
-			var forced := false
-			if x > 0:
-				# blocked at (x - 1, ny - dir) with (x - 1, ny) open
-				if (_baked[ni - 1 - dir_row] & mask) != 0 and (_baked[ni - 1] & mask) == 0:
-					forced = true
-			if not forced and x + 1 < w:
-				if (_baked[ni + 1 - dir_row] & mask) != 0 and (_baked[ni + 1] & mask) == 0:
-					forced = true
-			if forced:
-				table[i] = (1 << 2) | _RAY_JUMP
-			else:
-				table[i] = table[ni] + 4
-			y += y_step
-	return table
+		var i := row + x
+		if (_baked[i] & mask) != 0:
+			_ray_west[i] = _RAY_IMPASSABLE
+			continue
+		if x - 1 < 0:
+			_ray_west[i] = _RAY_BOUNDARY
+			continue
+		var ni := i - 1
+		if (_baked[ni] & mask) != 0:
+			_ray_west[i] = (1 << 2) | _RAY_OBSTRUCTION
+			continue
+		var forced := false
+		if y > 0:
+			# blocked at (x, y - 1) with (x - 1, y - 1) open
+			if (_baked[i - w] & mask) != 0 and (_baked[ni - w] & mask) == 0:
+				forced = true
+		if not forced and y + 1 < h:
+			if (_baked[i + w] & mask) != 0 and (_baked[ni + w] & mask) == 0:
+				forced = true
+		if forced:
+			_ray_west[i] = (1 << 2) | _RAY_JUMP
+		else:
+			_ray_west[i] = _ray_west[ni] + 4
+
+
+func _rebuild_ray_col_south(x: int) -> void:
+	var w := _baked_width
+	var h := _baked_height
+	var mask := _pass_mask
+	for step in range(h):
+		var y := h - 1 - step
+		var i := y * w + x
+		if (_baked[i] & mask) != 0:
+			_ray_south[i] = _RAY_IMPASSABLE
+			continue
+		if y + 1 >= h:
+			_ray_south[i] = _RAY_BOUNDARY
+			continue
+		var ni := i + w
+		if (_baked[ni] & mask) != 0:
+			_ray_south[i] = (1 << 2) | _RAY_OBSTRUCTION
+			continue
+		var forced := false
+		if x > 0:
+			# blocked at (x - 1, y) with (x - 1, y + 1) open
+			if (_baked[i - 1] & mask) != 0 and (_baked[ni - 1] & mask) == 0:
+				forced = true
+		if not forced and x + 1 < w:
+			if (_baked[i + 1] & mask) != 0 and (_baked[ni + 1] & mask) == 0:
+				forced = true
+		if forced:
+			_ray_south[i] = (1 << 2) | _RAY_JUMP
+		else:
+			_ray_south[i] = _ray_south[ni] + 4
+
+
+func _rebuild_ray_col_north(x: int) -> void:
+	var w := _baked_width
+	var h := _baked_height
+	var mask := _pass_mask
+	for y in range(h):
+		var i := y * w + x
+		if (_baked[i] & mask) != 0:
+			_ray_north[i] = _RAY_IMPASSABLE
+			continue
+		if y - 1 < 0:
+			_ray_north[i] = _RAY_BOUNDARY
+			continue
+		var ni := i - w
+		if (_baked[ni] & mask) != 0:
+			_ray_north[i] = (1 << 2) | _RAY_OBSTRUCTION
+			continue
+		var forced := false
+		if x > 0:
+			# blocked at (x - 1, y) with (x - 1, y - 1) open
+			if (_baked[i - 1] & mask) != 0 and (_baked[ni - 1] & mask) == 0:
+				forced = true
+		if not forced and x + 1 < w:
+			if (_baked[i + 1] & mask) != 0 and (_baked[ni + 1] & mask) == 0:
+				forced = true
+		if forced:
+			_ray_north[i] = (1 << 2) | _RAY_JUMP
+		else:
+			_ray_north[i] = _ray_north[ni] + 4
 
 
 func _find_goal_before_hit(
