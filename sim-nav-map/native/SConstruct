@@ -12,7 +12,7 @@
 env = SConscript("godot-cpp/SConstruct")
 
 env.Append(CPPPATH=["src/"])
-sources = Glob("src/*.cpp")
+sources = Glob("src/*.cpp") + Glob("src/core/*.cpp")
 
 library = env.SharedLibrary(
     "../bin/simnav_native{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
