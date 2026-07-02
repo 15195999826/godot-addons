@@ -42,11 +42,13 @@ const SHORTCUT_MAX_POPS_PER_TICK := 2
 # ── Separation solve ─────────────────────────────────────────────────────────
 const SEPARATION_ITERATIONS := 6
 const SEPARATION_SLACK := 0.01
-# Relative pushability: a mover shoves idle units aside (Dota2 lane courtesy);
-# two movers meeting head-on split the correction evenly. mobile == false is
-# pushability zero — an unpushable round blocker.
-const PUSHABILITY_MOVING := 0.35
-const PUSHABILITY_IDLE := 1.0
+# Relative pushability defaults. Soft (LoL-style): movers shove idle units
+# aside. Hard (Dota2-style): idle pushability 0 — a stopped unit is a solid
+# body (real creep-blocking blocks YOUR OWN creeps too). mobile == false is
+# always pushability zero regardless of tuning.
+const DEFAULT_PUSHABILITY_MOVING := 0.35
+const DEFAULT_PUSHABILITY_IDLE := 1.0
+const HARD_BLOCK_PUSHABILITY_IDLE := 0.0
 # Head-on deadlock breaker: when a mover is pushing nearly nose-first into
 # the other body (opposing mover, idle unit, or unpushable blocker), the pair
 # correction gains a fixed-handedness lateral component. Opposing streams
@@ -76,6 +78,12 @@ const EVENT_ORDER_FAILED := "order_failed"
 
 # Read-only diagnostics from the most recent step() (frontend HUD / smokes).
 var last_step_stats: Dictionary = {}
+
+# Runtime push tuning — integrating projects set these to pick their contact
+# flavor (lab UI drives them live). Keep pushability_moving > 0: two movers
+# meeting head-on rely on it to resolve their overlap; at 0 they clip.
+var pushability_moving: float = DEFAULT_PUSHABILITY_MOVING
+var pushability_idle: float = DEFAULT_PUSHABILITY_IDLE
 
 
 # ───────────────────────────── Command API ───────────────────────────────────
@@ -305,8 +313,8 @@ func _pushability(unit: Dota2LabUnit) -> float:
 	if not unit.mobile:
 		return 0.0
 	if unit.state == Dota2LabUnit.STATE_MOVING:
-		return PUSHABILITY_MOVING
-	return PUSHABILITY_IDLE
+		return pushability_moving
+	return pushability_idle
 
 
 func _head_on_biased(a: Dota2LabUnit, b: Dota2LabUnit, direction: Vector2) -> Vector2:

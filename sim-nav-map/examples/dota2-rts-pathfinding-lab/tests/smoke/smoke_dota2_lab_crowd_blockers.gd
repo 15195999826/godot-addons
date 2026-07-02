@@ -17,6 +17,7 @@ func _ready() -> void:
 	_test_group_move_settles_without_overlap()
 	_test_unpushable_blocker_is_rounded()
 	_test_idle_unit_is_shoved_aside()
+	_test_hard_mode_idle_is_solid()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - dota2 lab crowd blockers")
@@ -93,6 +94,30 @@ func _test_idle_unit_is_shoved_aside() -> void:
 		"idler: idle unit should have been shoved aside, got %s" % str(idler.position)
 	)
 	print("CROWD idler: ticks=%d idler_moved=%.1f" % [
+		ticks, idler.position.distance_to(Vector2(500.0, 450.0))
+	])
+
+
+# Hard (Dota2) push tuning: a stopped unit is a solid body — the mover rounds
+# it via contact sliding and the idler does not move a hair. This is the
+# creep-blocking flavor projects opt into via pushability_idle = 0.
+func _test_hard_mode_idle_is_solid() -> void:
+	var idler := Dota2LabUnit.new("idler", "blue", Vector2(500.0, 450.0), 11.0, 110.0, true)
+	var mover := Dota2LabUnit.new("mover", "blue", Vector2(200.0, 450.0), 11.0, 110.0, true)
+	var world := _open_world([mover, idler])
+	world.motion.pushability_idle = Dota2LabMotionEngine.HARD_BLOCK_PUSHABILITY_IDLE
+	world.issue_move("mover", Vector2(800.0, 450.0))
+	var ticks := _run_until_idle(world, 600, "hard-idle")
+	_assert_completed(mover, "hard-idle mover")
+	_assert_true(
+		mover.position.distance_to(Vector2(800.0, 450.0)) <= 12.0,
+		"hard-idle: mover reaches far side, got %s" % str(mover.position)
+	)
+	_assert_true(
+		idler.position.distance_to(Vector2(500.0, 450.0)) < 0.5,
+		"hard-idle: solid idler must not move, got %s" % str(idler.position)
+	)
+	print("CROWD hard-idle: ticks=%d idler_moved=%.2f" % [
 		ticks, idler.position.distance_to(Vector2(500.0, 450.0))
 	])
 
