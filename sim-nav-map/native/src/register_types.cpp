@@ -6,6 +6,8 @@
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
 
+#include "sim_nav_native_jump_point_cache.h"
+#include "sim_nav_native_map.h"
 #include "sim_nav_native_support.h"
 
 using namespace godot;
@@ -15,6 +17,8 @@ void initialize_simnav_native_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 	GDREGISTER_CLASS(SimNavNativeSupport);
+	GDREGISTER_CLASS(SimNavNativeMap);
+	GDREGISTER_CLASS(SimNavNativeJumpPointCache);
 }
 
 void uninitialize_simnav_native_module(ModuleInitializationLevel p_level) {

@@ -47,7 +47,8 @@
     },
     "native": {
       "scenes": [
-        "native/smoke_sim_nav_native_load.tscn"
+        "native/smoke_sim_nav_native_load.tscn",
+        "native/smoke_sim_nav_native_map_tables_ab.tscn"
       ]
     }
   }
