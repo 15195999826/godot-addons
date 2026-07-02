@@ -388,6 +388,31 @@ func composed_navcell_data() -> PackedInt32Array:
 	return out
 
 
+# Windowed variant for sub-grid consumers (hierarchical chunk rebuilds):
+# cost scales with the window, not the map. Out-of-bounds cells read as -1
+# (all bits set) so masked passability tests treat them as blocked, matching
+# is_passable_navcell's invalid -> false.
+func composed_navcell_data_rect(origin_cell: Vector2i, size: Vector2i) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(maxi(0, size.x) * maxi(0, size.y))
+	for row in range(size.y):
+		var y := origin_cell.y + row
+		var out_base := row * size.x
+		if y < 0 or y >= height:
+			for col in range(size.x):
+				out[out_base + col] = -1
+			continue
+		var src_base := y * width
+		for col in range(size.x):
+			var x := origin_cell.x + col
+			if x < 0 or x >= width:
+				out[out_base + col] = -1
+			else:
+				var i := src_base + x
+				out[out_base + col] = int(_navcell_data[i]) | int(_terrain_navcell_data[i]) | int(_obstruction_navcell_data[i])
+	return out
+
+
 func set_navcell_data(coord: Vector2i, value: int) -> void:
 	if not is_valid_navcell(coord):
 		return

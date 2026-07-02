@@ -248,59 +248,74 @@ func get_diagnostics(passability_masks: Array[int] = []) -> Dictionary:
 	}
 
 
+# Chunk rebuild works against a windowed passability snapshot (one bulk pass,
+# out-of-bounds = -1 = blocked) and fills a function-local regions array —
+# a 96x96 chunk re-flood was ~29 ms when every cell paid a cross-object
+# is_passable_navcell call, and is a few ms as local int ops. Scan order and
+# BFS expansion order are unchanged, so region numbering is bit-identical.
 func _build_chunk(nav_map: SimNavMap, ci: int, cj: int, pass_mask: int) -> SimNavHierarchicalChunk:
 	var chunk := SimNavHierarchicalChunk.new(ci, cj)
 	var chunk_size := SimNavHierarchicalChunk.CHUNK_SIZE
+	var window := nav_map.composed_navcell_data_rect(
+		Vector2i(ci * chunk_size, cj * chunk_size),
+		Vector2i(chunk_size, chunk_size)
+	)
+	var regions := PackedInt32Array()
+	regions.resize(chunk_size * chunk_size)
+	var queue := PackedInt32Array()
 	var next_local_region := 1
-	for local_j in range(chunk_size):
-		var row_base := local_j * chunk_size
-		for local_i in range(chunk_size):
-			var idx := row_base + local_i
-			if chunk.regions[idx] != 0:
-				continue
-			var coord := Vector2i(ci * chunk_size + local_i, cj * chunk_size + local_j)
-			if not nav_map.is_passable_navcell(coord, pass_mask):
-				continue
-			_flood_fill_chunk(nav_map, chunk, coord, next_local_region, pass_mask)
-			chunk.regions_id.append(next_local_region)
-			next_local_region += 1
+	for idx in range(chunk_size * chunk_size):
+		if regions[idx] != 0:
+			continue
+		if (window[idx] & pass_mask) != 0:
+			continue
+		_flood_fill_chunk(window, regions, queue, idx, next_local_region, pass_mask)
+		chunk.regions_id.append(next_local_region)
+		next_local_region += 1
+	chunk.regions = regions
 	return chunk
 
 
 func _flood_fill_chunk(
-	nav_map: SimNavMap,
-	chunk: SimNavHierarchicalChunk,
-	start_coord: Vector2i,
+	window: PackedInt32Array,
+	regions: PackedInt32Array,
+	queue: PackedInt32Array,
+	start_idx: int,
 	local_region: int,
 	pass_mask: int
 ) -> void:
 	var chunk_size := SimNavHierarchicalChunk.CHUNK_SIZE
-	var queue := PackedInt32Array()
-	var start_local_i := start_coord.x - chunk.ci * chunk_size
-	var start_local_j := start_coord.y - chunk.cj * chunk_size
-	queue.append(start_local_j * chunk_size + start_local_i)
+	queue.clear()
+	queue.append(start_idx)
 	var head := 0
+	# Neighbors unrolled in _NEIGHBOR_DI/DJ order (+x, -x, +y, -y) so BFS
+	# expansion — and therefore region numbering — stays bit-identical to the
+	# table-driven loop this replaces.
 	while head < queue.size():
 		var idx := queue[head]
 		head += 1
-		if chunk.regions[idx] != 0:
+		if regions[idx] != 0:
 			continue
-		chunk.regions[idx] = local_region
+		regions[idx] = local_region
 		var local_i := idx % chunk_size
 		@warning_ignore("integer_division")
 		var local_j: int = idx / chunk_size
-		for direction_idx in range(4):
-			var next_local_i := local_i + _NEIGHBOR_DI[direction_idx]
-			var next_local_j := local_j + _NEIGHBOR_DJ[direction_idx]
-			if next_local_i < 0 or next_local_j < 0 or next_local_i >= chunk_size or next_local_j >= chunk_size:
-				continue
-			var next_coord := Vector2i(chunk.ci * chunk_size + next_local_i, chunk.cj * chunk_size + next_local_j)
-			if not nav_map.is_passable_navcell(next_coord, pass_mask):
-				continue
-			var next_idx := next_local_j * chunk_size + next_local_i
-			if chunk.regions[next_idx] != 0:
-				continue
-			queue.append(next_idx)
+		if local_i + 1 < chunk_size:
+			var east := idx + 1
+			if (window[east] & pass_mask) == 0 and regions[east] == 0:
+				queue.append(east)
+		if local_i > 0:
+			var west := idx - 1
+			if (window[west] & pass_mask) == 0 and regions[west] == 0:
+				queue.append(west)
+		if local_j + 1 < chunk_size:
+			var south := idx + chunk_size
+			if (window[south] & pass_mask) == 0 and regions[south] == 0:
+				queue.append(south)
+		if local_j > 0:
+			var north := idx - chunk_size
+			if (window[north] & pass_mask) == 0 and regions[north] == 0:
+				queue.append(north)
 
 
 func _build_edges(pass_mask: int, chunks: Array[SimNavHierarchicalChunk]) -> void:
@@ -321,20 +336,21 @@ func _add_vertical_edges(left: SimNavHierarchicalChunk, right: SimNavHierarchica
 		_add_pair_if_passable(
 			left,
 			right,
-			left.get_region(chunk_size - 1, local_j),
-			right.get_region(0, local_j),
+			left.regions[local_j * chunk_size + chunk_size - 1],
+			right.regions[local_j * chunk_size],
 			edges
 		)
 
 
 func _add_horizontal_edges(top: SimNavHierarchicalChunk, bottom: SimNavHierarchicalChunk, edges: Dictionary) -> void:
 	var chunk_size := SimNavHierarchicalChunk.CHUNK_SIZE
+	var last_row := (chunk_size - 1) * chunk_size
 	for local_i in range(chunk_size):
 		_add_pair_if_passable(
 			top,
 			bottom,
-			top.get_region(local_i, chunk_size - 1),
-			bottom.get_region(local_i, 0),
+			top.regions[last_row + local_i],
+			bottom.regions[local_i],
 			edges
 		)
 
