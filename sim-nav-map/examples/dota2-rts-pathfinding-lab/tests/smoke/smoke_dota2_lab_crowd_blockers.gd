@@ -18,6 +18,7 @@ func _ready() -> void:
 	_test_unpushable_blocker_is_rounded()
 	_test_idle_unit_is_shoved_aside()
 	_test_hard_mode_idle_is_solid()
+	_test_steering_rounds_nearest_side()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - dota2 lab crowd blockers")
@@ -138,6 +139,43 @@ func _test_hard_mode_idle_is_solid() -> void:
 	print("CROWD hard-idle: ticks=%d idler_moved=%.2f facing_dot_avg=%.3f" % [
 		ticks, idler.position.distance_to(Vector2(500.0, 450.0)), facing_dot_avg
 	])
+
+
+# Go-around side follows geometry: starting slightly RIGHT of the blocker's
+# axis must round on the right, slightly LEFT must round on the left.
+func _test_steering_rounds_nearest_side() -> void:
+	_assert_rounding_side(3.0, true, "steer-side right")
+	_assert_rounding_side(-3.0, false, "steer-side left")
+
+
+func _assert_rounding_side(start_offset_x: float, expect_right: bool, label: String) -> void:
+	var blocker := Dota2LabUnit.new("wall", "red", Vector2(500.0, 300.0), 13.0, 0.0, false)
+	var mover := Dota2LabUnit.new("mover", "blue", Vector2(500.0 + start_offset_x, 460.0), 11.0, 110.0, true, -PI * 0.5)
+	var world := _open_world([mover, blocker])
+	world.issue_move("mover", Vector2(500.0 + start_offset_x, 140.0))
+	var max_x := -INF
+	var min_x := INF
+	var settled := false
+	for i in range(600):
+		world.step(TICK_DELTA)
+		max_x = maxf(max_x, mover.position.x)
+		min_x = minf(min_x, mover.position.x)
+		if mover.state != Dota2LabUnit.STATE_MOVING:
+			settled = true
+			break
+	_assert_true(settled, "%s: mover should settle" % label)
+	_assert_completed(mover, label)
+	if expect_right:
+		_assert_true(
+			max_x > 512.0,
+			"%s: should have swung right of the blocker, max_x %.1f" % [label, max_x]
+		)
+	else:
+		_assert_true(
+			min_x < 488.0,
+			"%s: should have swung left of the blocker, min_x %.1f" % [label, min_x]
+		)
+	print("CROWD %s: max_x=%.1f min_x=%.1f" % [label, max_x, min_x])
 
 
 func _run_until_idle(world: Dota2LabWorld, max_ticks: int, label: String) -> int:

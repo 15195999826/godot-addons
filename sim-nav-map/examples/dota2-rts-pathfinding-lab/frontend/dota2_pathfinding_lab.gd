@@ -19,7 +19,9 @@ const OBSTACLE_SIZE: Vector2 = Vector2(64.0, 64.0)
 const LOG_DIR: String = "user://dota2_rts_pathfinding_lab_logs"
 const MAX_EVENT_LOG_ENTRIES: int = 160
 const MAX_SLOW_FRAME_LOG_ENTRIES: int = 80
-const SLOW_FRAME_THRESHOLD_USEC: int = 8000
+# Low enough to catch plan-burst spikes (a synchronous long-path costs
+# fractions of a ms; several in one step show up as a 3-5 ms outlier).
+const SLOW_FRAME_THRESHOLD_USEC: int = 3000
 const TRACE_EXPORT_LIMIT: int = 120
 const PANEL_GAP: float = 24.0
 const PANEL_WIDTH: float = 520.0
@@ -665,9 +667,10 @@ func _update_hud() -> void:
 			int(metrics.get("orders_completed", 0)),
 			int(metrics.get("orders_failed", 0)),
 		],
-		"Overlap residual %.2f   sep rounds %d" % [
+		"Overlap residual %.2f   sep rounds %d   plans/step %d" % [
 			float(step_stats.get("max_residual_overlap", 0.0)),
 			int(step_stats.get("separation_rounds", 0)),
+			int(step_stats.get("plans_this_step", 0)),
 		],
 		"Plans %d   LOS checks %d" % [
 			int(pf.get("plan_count", 0)),

@@ -60,13 +60,22 @@ free.
 **Contact steering** (`contact_steering_enabled`, default on, lab UI toggle):
 when a unit closes nose-first on a body that will not yield to it (equal or
 lower pushability, or an immobile blocker), its desired heading gains a
-tangential bias — continuous in gap and frontness, same handedness as the
-solve's head-on lateral bias. The unit then WALKS around the contact through
-the normal turn/walk pipeline, keeping heading, displacement, and visuals
-aligned. Off, squeezing past a non-yielder is driven by Phase B pushes alone
-and reads as sideways translation (facing locked on the path while the body
-slides). Anchored in smoke: rounding a solid idle body keeps the per-tick
-displacement-vs-facing dot above 0.9 (measured ~0.99).
+tangential bias — continuous in gap and frontness. The unit then WALKS
+around the contact through the normal turn/walk pipeline, keeping heading,
+displacement, and visuals aligned. Off, squeezing past a non-yielder is
+driven by Phase B pushes alone and reads as sideways translation (facing
+locked on the path while the body slides). Anchored in smoke: rounding a
+solid idle body keeps the per-tick displacement-vs-facing dot above 0.9
+(measured ~0.99).
+
+The go-around side follows geometry — whichever side of the contact the
+intended direction already leans toward (nearest side), decided per unit via
+`cross(to_other, intent)`. It is locked on the unit while contact persists
+(no mid-squeeze flip-flops), released when contact breaks, and dead-center
+ties fall back to a fixed handedness deterministically. Phase B's head-on
+lateral push reuses the same side decision (lock first, then the same
+geometry), so intent and push never fight. Smoke-anchored: starting slightly
+right of a blocker's axis rounds right, slightly left rounds left.
 
 ### Separation solve
 
@@ -136,9 +145,13 @@ Turning in place is exempt.
 
 ## Known limits
 
-- Head-on bias handedness is global: a mover always rounds a dead-center
-  blocker the same way. Acceptable (deterministic, invisible in practice).
+- Go-around side is geometric (nearest side) with a fixed-handedness
+  tiebreak only for perfect dead-center contacts.
 - The separation solve is O(n²) per iteration. Fine for lab/adapter scale
   (≤ ~50 units); spatial hashing is the known upgrade path if that changes.
 - An idle unit displaced by pushes does not walk back to its spot (Dota2
   behavior; also what keeps the solve stable).
+- Planning is synchronous. Command-time plans happen in the input path; the
+  only in-step plans are watchdog replans, capped at `MAX_REPATHS_PER_STEP`
+  per tick so a co-stalled batch staggers naturally. `plans_this_step` in
+  the step stats attributes any frame spike to planning at a glance.

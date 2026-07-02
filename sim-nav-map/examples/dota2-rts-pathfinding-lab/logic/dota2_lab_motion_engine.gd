@@ -68,6 +68,17 @@ const HEAD_ON_LATERAL_BIAS := 0.6
 const CONTACT_STEER_GAP_RANGE := 8.0
 const CONTACT_STEER_FRONT_DOT_MIN := 0.3
 const CONTACT_STEER_WEIGHT := 0.9
+# Go-around side is chosen by geometry (which side of the contact the unit's
+# intended direction already leans toward), locked on the unit while contact
+# persists so it cannot flip-flop mid-squeeze. Below the dead-zone (true
+# dead-center) a fixed handedness breaks the tie deterministically.
+const CONTACT_STEER_SIDE_DEADZONE := 0.05
+
+# Same-tick synchronous replans are capped so a batch of units that stalled
+# together (same command, same stall clock) cannot pile N long-path searches
+# into one step — the skipped units keep their stall time and replan on the
+# following ticks (natural stagger).
+const MAX_REPATHS_PER_STEP := 2
 
 # ── Watchdog ─────────────────────────────────────────────────────────────────
 # "Stalled" = net displacement this tick under this fraction of a full step.
@@ -102,6 +113,8 @@ var pushability_idle: float = DEFAULT_PUSHABILITY_IDLE
 # Steer-around-contacts (see constants above). Off = pre-steering behavior:
 # squeezing past a non-yielding body reads as sideways translation.
 var contact_steering_enabled: bool = true
+
+var _repaths_this_step: int = 0
 
 
 # ───────────────────────────── Command API ───────────────────────────────────
@@ -154,6 +167,8 @@ func step(
 	tick: int
 ) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
+	var plans_before := wrapper.plan_count
+	_repaths_this_step = 0
 
 	# Phase A: intent step.
 	for unit in units:
@@ -172,6 +187,7 @@ func step(
 			unit.remember_position()
 
 	stats["events"] = events.size()
+	stats["plans_this_step"] = wrapper.plan_count - plans_before
 	last_step_stats = stats
 	return events
 
@@ -274,6 +290,7 @@ func _contact_steered_heading(
 ) -> float:
 	var my_push := _pushability(unit)
 	var steered := toward_track
+	var any_contact := false
 	for other in units:
 		if other == unit:
 			continue
@@ -290,12 +307,26 @@ func _contact_steered_heading(
 		var frontness_dot := toward_track.dot(to_other)
 		if frontness_dot < CONTACT_STEER_FRONT_DOT_MIN:
 			continue
+		any_contact = true
+		if unit.steer_side == 0.0:
+			unit.steer_side = _pick_steer_side(to_other, toward_track)
 		var proximity := clampf(1.0 - gap / CONTACT_STEER_GAP_RANGE, 0.0, 1.0)
 		var frontness := (frontness_dot - CONTACT_STEER_FRONT_DOT_MIN) \
 			/ (1.0 - CONTACT_STEER_FRONT_DOT_MIN)
-		var around := Vector2(to_other.y, -to_other.x)
+		var around := Vector2(-to_other.y, to_other.x) * unit.steer_side
 		steered += around * (proximity * frontness * CONTACT_STEER_WEIGHT)
+	if not any_contact:
+		unit.steer_side = 0.0
 	return steered.angle()
+
+
+# Which side to walk around: the side the intended direction already leans
+# toward (nearest side). Dead-center falls back to a fixed handedness.
+func _pick_steer_side(to_other: Vector2, intent_dir: Vector2) -> float:
+	var lean := to_other.cross(intent_dir)
+	if absf(lean) <= CONTACT_STEER_SIDE_DEADZONE:
+		return -1.0
+	return signf(lean)
 
 
 func _alignment_factor(heading_error: float) -> float:
@@ -392,18 +423,24 @@ func _pushability(unit: Dota2LabUnit) -> float:
 
 
 func _head_on_biased(a: Dota2LabUnit, b: Dota2LabUnit, direction: Vector2) -> Vector2:
-	var head_on := false
+	var steer_unit: Dota2LabUnit = null
 	if a.state == Dota2LabUnit.STATE_MOVING \
 			and absf(Vector2.from_angle(a.facing_angle_rad).dot(direction)) > HEAD_ON_ALIGN_DOT:
-		head_on = true
+		steer_unit = a
 	elif b.state == Dota2LabUnit.STATE_MOVING \
 			and absf(Vector2.from_angle(b.facing_angle_rad).dot(direction)) > HEAD_ON_ALIGN_DOT:
-		head_on = true
-	if not head_on:
+		steer_unit = b
+	if steer_unit == null:
 		return direction
-	# Same-handed perpendicular for every pair: a and b get opposite lateral
-	# nudges by construction (a -=, b +=), so both sidestep — never mirror-lock.
-	var lateral := Vector2(-direction.y, direction.x)
+	# Push toward the same side the head-on unit is steering around (its
+	# contact-steering lock when present, else the same nearest-side geometry)
+	# so intent and push never fight. `direction` runs a → b; the algebra
+	# below yields the steer unit's chosen side for either member.
+	var side := steer_unit.steer_side
+	if side == 0.0:
+		var to_other := direction if steer_unit == a else -direction
+		side = _pick_steer_side(to_other, Vector2.from_angle(steer_unit.facing_angle_rad))
+	var lateral := Vector2(direction.y, -direction.x) * side
 	return (direction + lateral * HEAD_ON_LATERAL_BIAS).normalized()
 
 
@@ -496,6 +533,9 @@ func _settle_or_watch(
 	if unit.stall_seconds < STALL_REPATH_SEC:
 		return
 	if unit.repath_count < MAX_REPATHS:
+		if _repaths_this_step >= MAX_REPATHS_PER_STEP:
+			return  # keep the stall clock; replan on a following tick
+		_repaths_this_step += 1
 		unit.repath_count += 1
 		unit.stall_seconds = 0.0
 		_plan(unit, wrapper, tick)
