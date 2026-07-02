@@ -382,9 +382,23 @@ func _segment_passable_clear(
 	# pathological FP cases (segment length effectively zero with non-equal
 	# endpoint cells).
 	var max_steps := absi(i1 - i0) + absi(j1 - j0) + 4
-	while (i != i1 or j != j1) and max_steps > 0:
+	while i != i1 or j != j1:
+		# Fail closed on budget exhaustion — an unverified segment must not
+		# be reported as clear.
+		if max_steps <= 0:
+			return false
 		max_steps -= 1
-		if t_max_x < t_max_y:
+		# Axis-convergence guard (0 A.D. CheckLineMovement, Pathfinding.cpp:
+		# 83-91): once one axis has reached the target, only the other axis
+		# may advance — an endpoint on an exact grid line otherwise steps off
+		# the target row on a t_max tie and never lands.
+		if i == i1:
+			j += step_j
+			t_max_y += delta_t_y
+		elif j == j1:
+			i += step_i
+			t_max_x += delta_t_x
+		elif t_max_x < t_max_y:
 			i += step_i
 			t_max_x += delta_t_x
 		else:

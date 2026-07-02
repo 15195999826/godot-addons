@@ -9,12 +9,19 @@ extends RefCounted
 # order, no magic-number-driven implicit transitions.
 #
 # v2 feel mechanisms (all lab policy, sim-nav-map core untouched):
-#   M1 tangential slide  — a unit-blocked step tries a validated sideways
-#      step around the blocker before escalating to a detour request.
-#   M2 unit clearance relax — movement validation against unit obstructions
-#      retries with clearance − ½ raster cell (0 A.D. relaxClearanceForUnits).
-#   M3 crowded arrive — a blocked unit already within a body diameter of its
-#      goal completes instead of fighting for the exact point.
+#   M1 micro-detour waypoint — a step blocked by a PARKED unit inserts a
+#      validated detour waypoint beside the blocker and walks to it through
+#      the normal facing/step pipeline (waypoints inside the blocker's body
+#      are popped first, 0 A.D. PostMove rule). Short path is the escalation
+#      when no detour side validates, not the first response.
+#   M2 two collision tiers — units WITH an active order phase past each
+#      other (Dota2 crossing waves); units WITHOUT an order are solid at the
+#      ½-raster-cell-relaxed radius (0 A.D. relaxClearanceForUnits). All
+#      unit blocking runs against LIVE positions, never the per-tick
+#      dynamic-shape snapshot.
+#   M3 crowded arrive — a blocked unit already within a crowd ring of its
+#      goal completes; the ring widens to a second ring once the recovery
+#      budget is spent (concentric-ring group arrivals).
 #   M4 HOLDING — recovery budget exhausted: keep the order, hold position,
 #      retry a long path every HOLD_RETRY_INTERVAL_TICKS. FAILED is reachable
 #      only from a statically unreachable long-path result.
@@ -22,7 +29,8 @@ extends RefCounted
 # Critical invariant (NO_SAME_TICK_TAKEOVER): when step_unit() enqueues a
 # short or long detour because of a block, it must NOT take a result, mutate
 # the path, or move in the same tick. The unit transitions to a WAITING_*
-# state and the function returns. (A slide is a movement, not a takeover.)
+# state and the function returns. (Walking a detour leg is movement along
+# the unit's own path, not a takeover.)
 
 const MotionUpdateScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_motion_update.gd")
 
@@ -36,9 +44,21 @@ const SHORT_PATH_SEARCH_RANGE := 12.0 * 16.0  # 12 navcells (world-scale)
 const SHORT_PATH_SUBGOAL_RADIUS := 2.0 * 16.0
 # M2: unit-vs-unit clearance relax as a fraction of the raster cell
 # (0 A.D. relaxes by ½ navcell — Pathfinding "makes movement smoother").
+# Applies against stationary blockers. Two units that are BOTH walking do
+# not block each other at all: geometry proves a frontal meeting cannot
+# route around a same-size blocker at any clearance the corridor allows
+# (the approach chord is always shorter than both endpoints), which is why
+# 0 A.D. resolves it with push and Dota 2 lets crossing creep waves press
+# straight through each other. Movers therefore phase past movers; a unit
+# that stops becomes solid again before anyone can stack on it.
 const UNIT_CLEARANCE_RELAX_CELL_FACTOR := 0.5
-# M1: consecutive slide ticks before the unit stops orbiting and escalates.
-const SLIDE_STREAK_ESCALATE_TICKS := 20
+# M1: detours inserted without real progress before escalating (a unit that
+# keeps detouring is circling a crowd, not getting anywhere).
+const DETOUR_STREAK_ESCALATE := 6
+# M1: how far outside the combined radius the detour waypoint sits. Large
+# enough that the approach line to the detour keeps ≥ the relaxed clearance
+# from the blocker (chord math: 22·34/√(22²+34²) ≈ 18.5 > 18).
+const DETOUR_MARGIN := 12.0
 # M3: complete when blocked within ARRIVE_EPSILON + radius * this factor.
 # The base factor covers a unit parked directly beside the goal occupant
 # (first ring); the hold factor covers second-ring positions once the
@@ -58,8 +78,7 @@ var blocked_by_static_count: int = 0
 var move_failed_count: int = 0
 var reached_goal_count: int = 0
 var pending_count_peak: int = 0
-var slide_count: int = 0
-var relaxed_pass_count: int = 0
+var detour_count: int = 0
 var crowded_arrive_count: int = 0
 var holding_entered_count: int = 0
 
@@ -173,64 +192,70 @@ func step_unit(
 		var move_distance := waypoint_distance if reaches_waypoint else remaining_distance
 		var candidate := waypoint if reaches_waypoint else unit.position + to_waypoint / waypoint_distance * move_distance
 
-		# Validate the segment from current position to waypoint (not to
-		# candidate). Matches 0AD's CCmpUnitMotion::PerformMove: anchoring
-		# the LOS target to the planned end-point catches a fundamentally
-		# unreachable waypoint immediately rather than only after multiple
-		# frames of per-candidate slippage.
-		var line_result := pathfinder.validate_movement_line(unit, unit.position, waypoint, units, false)
-		var step_allowed := line_result.is_success()
-		var unit_blocked := (
-			not step_allowed
-			and line_result.failure_reason == SimNavMovementLineResult.FAILURE_UNIT_OBSTRUCTION_BLOCKED
+		# Statics/raster validate anchors on the waypoint (0AD PerformMove:
+		# catching a fundamentally unreachable waypoint immediately beats
+		# per-candidate slippage). Units are NOT in this filter — unit
+		# blocking runs below against LIVE positions with mover/idle tiers,
+		# which the once-per-tick dynamic snapshot cannot express.
+		# A detour leg skips the raster DDA: its endpoint was geometry-
+		# validated at insertion and may legally sit inside the raster band
+		# (walking it through the DDA would reject the leg and loop the unit
+		# forever); exact static geometry still applies.
+		var walking_to_detour := (
+			unit.active_detour_point != Vector2.INF
+			and waypoint.distance_to(unit.active_detour_point) <= 0.01
 		)
-		if unit_blocked:
-			# M2: retry with the ½-cell unit relax — brushing past is not a block.
-			var relaxed := pathfinder.validate_movement_line(
-				unit, unit.position, waypoint, units, false, _relaxed_clearance(unit, pathfinder)
-			)
-			if relaxed.is_success():
-				step_allowed = true
-				relaxed_pass_count += 1
-		# The nav map's dynamic shapes are refreshed once per tick, so units
-		# that already stepped this tick are stale in line_result. Re-check the
-		# actual step segment against LIVE unit positions; a live violation is
-		# treated exactly like a unit block.
-		var live_blocker: Dota2LabUnit = null
-		if step_allowed:
-			live_blocker = _live_unit_violator(unit, unit.position, candidate, units, _relaxed_clearance(unit, pathfinder))
-			if live_blocker != null:
-				step_allowed = false
-				unit_blocked = true
-
-		if not step_allowed:
-			if unit_blocked:
-				blocked_by_unit_count += 1
-				var blocker_center := (
-					live_blocker.position if live_blocker != null
-					else _blocker_center(line_result, units)
-				)
-				# M1: slide tangentially around the blocker and stay FOLLOWING.
-				if (
-					unit.slide_streak_ticks < SLIDE_STREAK_ESCALATE_TICKS
-					and _try_slide(unit, blocker_center, to_waypoint, remaining_distance, pathfinder, units)
-				):
-					unit.slide_streak_ticks += 1
-					slide_count += 1
-					return
-				_escalate_unit_block(unit, waypoint, pathfinder, tick)
+		if walking_to_detour:
+			if not pathfinder.validate_slide_statics(unit, unit.position, waypoint):
+				blocked_by_static_count += 1
+				_handle_static_block(unit, pathfinder, tick)
 				return
-			blocked_by_static_count += 1
-			_handle_static_block(unit, pathfinder, tick)
+		else:
+			var line_result := pathfinder.validate_movement_line(unit, unit.position, waypoint, units, false)
+			if not line_result.is_success():
+				blocked_by_static_count += 1
+				_handle_static_block(unit, pathfinder, tick)
+				return
+
+		# Unit blocking, live positions, checked on the actual step segment.
+		# A detour leg ignores the unit being rounded — the leg necessarily
+		# hugs it and its endpoint clearance was proven at insertion.
+		var leg_ignored_id := unit.active_detour_blocker_id if walking_to_detour else ""
+		var live_blocker := _live_unit_violator(unit, unit.position, candidate, units, pathfinder, leg_ignored_id)
+		if live_blocker != null:
+			blocked_by_unit_count += 1
+			# 0 A.D. PostMove pop rule: a waypoint sitting inside the
+			# blocker's body is physically unreachable — skip it and aim for
+			# the next one instead of orbiting the blocker forever.
+			if (
+				unit.path.size() > 1
+				and waypoint.distance_to(live_blocker.position) < unit.radius + live_blocker.radius
+			):
+				unit.consume_current_waypoint()
+				continue
+			# M1: insert a micro-detour waypoint beside the blocker and let
+			# the NORMAL facing/step pipeline walk to it (turn, then arc
+			# around). Never displace sideways — that reads as ice-drift and
+			# fights the turn gate into pirouettes.
+			if _try_insert_detour(unit, live_blocker, waypoint, pathfinder, units):
+				detour_count += 1
+				continue
+			_escalate_unit_block(unit, waypoint, pathfinder, tick)
 			return
 
 		unit.position = candidate
 		unit.remember_position()
 		unit.waiting_for_facing = false
-		unit.slide_streak_ticks = 0
 		moved = true
 		remaining_distance -= move_distance
 		if reaches_waypoint:
+			# Reaching the detour clears its marker; reaching a REAL waypoint
+			# is progress and resets the detour streak entirely.
+			if unit.active_detour_point != Vector2.INF and waypoint.distance_to(unit.active_detour_point) <= 0.01:
+				unit.active_detour_point = Vector2.INF
+				unit.active_detour_blocker_id = ""
+			else:
+				unit.clear_detour()
 			unit.consume_current_waypoint()
 
 	# Walked the full path without blocking; check arrival or re-request.
@@ -342,66 +367,37 @@ func _handle_static_block(
 	_enqueue_long(unit, pathfinder, tick)
 
 
-# M1: try a validated tangential step around the blocking unit. Chooses the
-# tangent branch that makes progress toward the waypoint; head-on meetings
-# resolve symmetrically (both movers' tangents point to opposite sides), so
-# opposing units brush past each other deterministically.
-func _try_slide(
-	unit: Dota2LabUnit,
-	blocker_center: Vector2,
-	to_waypoint: Vector2,
-	distance: float,
-	pathfinder: Dota2LabPathfinderWrapper,
-	units: Array[Dota2LabUnit]
-) -> bool:
-	if blocker_center == Vector2.INF:
-		return false
-	var radial := unit.position - blocker_center
-	if radial.length_squared() <= 0.000001:
-		return false
-	radial = radial.normalized()
-	var tangent := Vector2(-radial.y, radial.x)
-	if tangent.dot(to_waypoint) < 0.0:
-		tangent = -tangent
-	var relaxed := _relaxed_clearance(unit, pathfinder)
-	var candidates: Array[Vector2] = [
-		unit.position + tangent * distance,
-		unit.position - tangent * distance,
-	]
-	for candidate in candidates:
-		# Unit check runs against LIVE positions (see _slide_clear_of_units);
-		# statics are checked with exact geometry, no raster DDA — a slide may
-		# legally end inside the raster band, the impassable-escape rule walks
-		# it back out (see wrapper.validate_slide_statics).
-		if not _slide_clear_of_units(unit, candidate, units, relaxed):
-			continue
-		if not pathfinder.validate_slide_statics(unit, unit.position, candidate):
-			continue
-		unit.position = candidate
-		unit.remember_position()
-		unit.waiting_for_facing = false
-		return true
-	return false
-
-
-# Unit-vs-unit clearance against LIVE positions. The per-tick dynamic shape
-# snapshot goes stale as soon as one unit moves; two units advancing on stale
-# data can land in the same spot and start overlapping — after which the LOS
-# inside-escape rule would stop constraining them at all. Live checks prevent
-# the overlap from forming; if one somehow exists, movement away from that
-# unit (strictly increasing separation) is still allowed.
+# Unit-vs-unit clearance against LIVE positions (all unit blocking runs
+# here — the movement-line filter excludes units, because the per-tick
+# dynamic snapshot goes stale as soon as one unit moves and stale data lets
+# pairs converge into overlap, after which the LOS inside-escape rule stops
+# constraining them).
+# Two tiers (M2): another MOVER only blocks at a half-body squeeze distance
+# — opposing lane units press past each other, the Dota2 crossing feel; an
+# IDLE unit blocks at the ½-cell-relaxed radius, so parked units are real
+# obstacles. If an overlap somehow exists, movement that strictly increases
+# separation is still allowed.
 # Returns the first violating unit, or null when the segment is clear.
 func _live_unit_violator(
 	unit: Dota2LabUnit,
 	from_pos: Vector2,
 	to_pos: Vector2,
 	units: Array[Dota2LabUnit],
-	clearance: float
+	pathfinder: Dota2LabPathfinderWrapper,
+	ignored_id: String = ""
 ) -> Dota2LabUnit:
+	var idle_relax := pathfinder.cell_size * UNIT_CLEARANCE_RELAX_CELL_FACTOR
 	for other in units:
-		if other.id == unit.id or not other.blocks_pathfinding:
+		if other.id == unit.id or other.id == ignored_id or not other.blocks_pathfinding:
 			continue
-		var combined := other.radius + clearance
+		# Units WITH an active move order phase past each other (see
+		# UNIT_CLEARANCE_RELAX_CELL_FACTOR note). Order-based, not
+		# FOLLOWING-based: a crowd squeezing through a chokepoint cycles
+		# through WAITING/HOLDING states, and treating those as solid turns
+		# three units at a doorway into a mutual-blocking carousel.
+		if other.current_order != null:
+			continue
+		var combined := maxf(unit.radius + other.radius - idle_relax, 1.0)
 		var current_distance := from_pos.distance_to(other.position)
 		if current_distance < combined:
 			if to_pos.distance_to(other.position) <= current_distance:
@@ -410,15 +406,6 @@ func _live_unit_violator(
 		if _segment_point_distance(from_pos, to_pos, other.position) < combined:
 			return other
 	return null
-
-
-func _slide_clear_of_units(
-	unit: Dota2LabUnit,
-	candidate: Vector2,
-	units: Array[Dota2LabUnit],
-	clearance: float
-) -> bool:
-	return _live_unit_violator(unit, unit.position, candidate, units, clearance) == null
 
 
 func _segment_point_distance(a: Vector2, b: Vector2, point: Vector2) -> float:
@@ -430,17 +417,59 @@ func _segment_point_distance(a: Vector2, b: Vector2, point: Vector2) -> float:
 	return (a + ab * t).distance_to(point)
 
 
-func _blocker_center(
-	line_result: SimNavMovementLineResult,
+# M1: insert a micro-detour waypoint beside the blocking unit. The detour
+# sits on the tangent side that makes progress toward the blocked waypoint;
+# head-on meetings resolve symmetrically (both movers pick opposite sides),
+# so opposing units arc past each other deterministically. The unit then
+# WALKS to the detour through the normal facing/step pipeline — never a
+# sideways displacement.
+# The approach line is validated against LIVE unit positions plus exact
+# static geometry (no static raster DDA — the band steals legal side-step
+# room in narrow gaps; a detour may legally sit inside the band and the core
+# impassable-escape rule walks the unit back out).
+func _try_insert_detour(
+	unit: Dota2LabUnit,
+	blocker: Dota2LabUnit,
+	blocked_waypoint: Vector2,
+	pathfinder: Dota2LabPathfinderWrapper,
 	units: Array[Dota2LabUnit]
-) -> Vector2:
-	var entity_id := line_result.blocked_obstruction_entity_id
-	if entity_id == "":
-		return Vector2.INF
-	for other in units:
-		if other.id == entity_id:
-			return other.position
-	return Vector2.INF
+) -> bool:
+	if blocker == null:
+		return false
+	# Blocked again while already walking toward a detour, or detouring
+	# without progress for too long: stop stacking detours and escalate.
+	if unit.active_detour_point != Vector2.INF:
+		return false
+	if unit.detour_streak >= DETOUR_STREAK_ESCALATE:
+		return false
+	var radial := unit.position - blocker.position
+	if radial.length_squared() <= 0.000001:
+		return false
+	radial = radial.normalized()
+	var side := Vector2(-radial.y, radial.x)
+	if side.dot(blocked_waypoint - unit.position) < 0.0:
+		side = -side
+	# Only stationary units reach here (movers phase past movers), so the
+	# detour always gets the full walk-around offset.
+	var offset := unit.radius + blocker.radius + DETOUR_MARGIN
+	var sides: Array[Vector2] = [side, -side]
+	for side_dir in sides:
+		var detour := blocker.position + side_dir * offset
+		# The approach line to the detour is validated ignoring the blocker
+		# being rounded: a walk-around necessarily hugs it (the approach chord
+		# is always shorter than both endpoints — checking it against the
+		# blocker would reject every close-range detour), and the endpoint at
+		# combined + DETOUR_MARGIN guarantees no overlap on arrival.
+		if _live_unit_violator(unit, unit.position, detour, units, pathfinder, blocker.id) != null:
+			continue
+		if not pathfinder.validate_slide_statics(unit, unit.position, detour):
+			continue
+		unit.path.push_back(detour)
+		unit.active_detour_point = detour
+		unit.active_detour_blocker_id = blocker.id
+		unit.detour_streak += 1
+		return true
+	return false
 
 
 # M3: a blocked unit already within a crowd ring of its goal treats the goal
@@ -476,10 +505,6 @@ func _step_holding(
 	if unit.hold_retry_countdown > 0:
 		return
 	_enqueue_long(unit, pathfinder, tick)
-
-
-func _relaxed_clearance(unit: Dota2LabUnit, pathfinder: Dota2LabPathfinderWrapper) -> float:
-	return maxf(unit.radius - pathfinder.cell_size * UNIT_CLEARANCE_RELAX_CELL_FACTOR, 1.0)
 
 
 func _enqueue_long(
@@ -642,8 +667,7 @@ func diagnostics(units: Array[Dota2LabUnit]) -> Dictionary:
 		"move_failed_count": move_failed_count,
 		"reached_goal_count": reached_goal_count,
 		"pending_count_peak": pending_count_peak,
-		"slide_count": slide_count,
-		"relaxed_pass_count": relaxed_pass_count,
+		"detour_count": detour_count,
 		"crowded_arrive_count": crowded_arrive_count,
 		"holding_entered_count": holding_entered_count,
 		"state_counts": state_counts,

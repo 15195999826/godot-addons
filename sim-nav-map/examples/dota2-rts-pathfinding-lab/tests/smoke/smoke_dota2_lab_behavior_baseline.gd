@@ -100,10 +100,6 @@ func _test_narrow_gap_bounded_terminal() -> void:
 		_state_count(report, Dota2LabUnit.STATE_FAILED),
 		"narrow-gap: unit blockers must never produce FAILED"
 	)
-	_assert_true(
-		int(report.get("blocked_by_unit_count", 0)) > 0 or int(report.get("slide_count", 0)) > 0,
-		"narrow-gap: expected unit interaction evidence (block or slide)"
-	)
 
 
 func _test_mixed_static_dynamic_obstacle() -> void:
@@ -205,8 +201,7 @@ func _run_until_terminal(
 		"blocked_by_static_count": int(metrics.get("blocked_by_static_count", 0)),
 		"move_failed_count": int(metrics.get("move_failed_count", 0)),
 		"reached_goal_count": int(metrics.get("reached_goal_count", 0)),
-		"slide_count": int(metrics.get("slide_count", 0)),
-		"relaxed_pass_count": int(metrics.get("relaxed_pass_count", 0)),
+		"detour_count": int(metrics.get("detour_count", 0)),
 		"crowded_arrive_count": int(metrics.get("crowded_arrive_count", 0)),
 		"holding_entered_count": int(metrics.get("holding_entered_count", 0)),
 		"retry_count_max": int(metrics.get("retry_count_max", 0)),

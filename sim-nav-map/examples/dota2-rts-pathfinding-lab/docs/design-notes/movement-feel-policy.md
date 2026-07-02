@@ -33,10 +33,19 @@ Observed Dota 2 behavior, in order of feel importance:
 
 | # | Mechanism | Dota2 behavior it implements |
 |---|---|---|
-| M1 | **Tangential slide**: a `FOLLOWING` unit whose step is unit-blocked first re-validates with relaxed clearance (M2), then tries a validated tangential step around the blocker (branch chosen by progress toward the waypoint), all within the same tick. Only if both fail does it escalate to a short-path detour. | 1, 3 |
-| M2 | **Unit-unit clearance relax**: movement validation against *unit* obstructions relaxes the mover's clearance by ½ raster cell (0 A.D. `pathfindClearance`/`relaxClearanceForUnits`, "makes movement smoother"). Statics keep full clearance and stay guarded by the raster band. | 2 |
-| M3 | **Crowded arrive**: when escalation finds the goal already occupied and the unit is within `ARRIVE_EPSILON + 2 × radius` of `move_target`, the order completes (`REACHED_GOAL`). | 5 |
+| M1 | **Micro-detour waypoint**: a `FOLLOWING` unit blocked by a *stationary* unit inserts a validated detour waypoint beside the blocker and walks to it through the NORMAL facing/step pipeline (turn, then arc around) — never a sideways displacement, which reads as ice-drift and fights the turn gate into pirouettes. A blocked waypoint sitting inside the blocker's body is popped first (0 A.D. PostMove rule) — it is physically unreachable and orbiting it helps nobody. Only when no detour side validates does the unit escalate to a short-path request. | 1, 3 |
+| M2 | **Two collision tiers**: units WITH an active move order phase past each other entirely — geometry proves a frontal meeting cannot route around a same-size blocker at any clearance a corridor allows (the approach chord is always shorter than both endpoints), which is why 0 A.D. resolves crossings with push and Dota 2 lets crossing creep waves press straight through. Units WITHOUT an order (parked, arrived, failed) are solid at the mover's clearance relaxed by ½ raster cell (0 A.D. `relaxClearanceForUnits`). Order-based, not state-based: a crowd squeezing a chokepoint cycles through WAITING/HOLDING and treating those as solid turns a doorway into a mutual-blocking carousel. | 2 |
+| M3 | **Crowded arrive**: when escalation finds the goal already occupied and the unit is within `ARRIVE_EPSILON + 2 × radius` of `move_target`, the order completes (`REACHED_GOAL`); once the recovery budget is spent the acceptance ring widens to `4 × radius` (second ring), so a crowd ordered to one point settles as concentric rings. | 5 |
 | M4 | **HOLDING state**: when the recovery budget is exhausted, the unit enters `HOLDING` — order retained, position held, one long-path retry every `HOLD_RETRY_INTERVAL_TICKS`. It leaves via a successful path (gap opened), crowded arrive, a fresh order, or `FAILED` if a retry proves the goal statically unreachable. Replaces v1's `max_retry_exceeded → FAILED` parking. | 4 |
+
+All unit-vs-unit blocking runs against LIVE unit positions in the motion
+controller (the nav map's per-tick dynamic snapshot goes stale as soon as one
+unit moves — stale data let same-tick pairs converge into overlap). The
+movement-line filter carries statics/raster only; detour legs additionally
+skip the raster DDA (their endpoints are geometry-validated at insertion and
+may legally sit inside the raster band — the core impassable-escape rule
+walks the unit back out) and ignore the unit being rounded (a walk-around
+necessarily hugs it).
 
 `FAILED` remains, but is reachable **only** from a long-path result whose
 status is not `SUCCESS`/`DIRECT_GOAL` (goal statically unreachable, caged
@@ -97,10 +106,10 @@ MAX_ONE_PENDING_TICKET, STATE_REFLECTS_TICKETS) are unchanged. v1 invariant 7
 
 ## Explicit Non-Goals (v2)
 
-- No push pressure / separation force on *other* units: sliding moves only
+- No push pressure / separation force on *other* units: detours move only
   the mover; blockers are never displaced. (0AD-style push stays out.)
-- No friendly walk-through or phasing — the M2 relax is a brush margin, not
-  overlap tolerance.
+- No walk-through of PARKED units — idle/arrived/failed units are solid.
+  (Movers phasing past movers is deliberate M2 policy, not a violation.)
 - No formation movement, destination packing, reservation grids, or
   cluster pathfinding.
 - No pair-aware yield protocols ("lower id passes first") — symmetric

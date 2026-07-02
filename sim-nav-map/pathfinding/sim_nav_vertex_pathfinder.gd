@@ -584,7 +584,17 @@ func _segment_passable_clear(a: Vector2, b: Vector2, pass_mask: int) -> bool:
 		if max_steps <= 0:
 			return false
 		max_steps -= 1
-		if t_max_x < t_max_y:
+		# Axis-convergence guard (0 A.D. CheckLineMovement, Pathfinding.cpp:
+		# 83-91): once one axis has reached the target, only the other axis
+		# may advance — an endpoint on an exact grid line otherwise steps off
+		# the target row on a t_max tie and never lands.
+		if i == i1:
+			j += step_j
+			t_max_y += delta_t_y
+		elif j == j1:
+			i += step_i
+			t_max_x += delta_t_x
+		elif t_max_x < t_max_y:
 			i += step_i
 			t_max_x += delta_t_x
 		else:
