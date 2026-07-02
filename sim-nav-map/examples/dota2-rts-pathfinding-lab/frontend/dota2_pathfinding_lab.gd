@@ -27,6 +27,22 @@ const PANEL_GAP: float = 24.0
 const PANEL_WIDTH: float = 520.0
 const PANEL_PADDING: float = 20.0
 const BACKEND_PANEL_EXTRA_HEIGHT: float = 140.0
+const PANEL_CONTENT_WIDTH: float = 480.0
+const PANEL_PUSH_Y: float = 620.0
+const PANEL_BACKEND_Y: float = 852.0
+const PANEL_DIVIDERS := [76.0, 330.0, 432.0, 596.0, 832.0]
+const PANEL_BG_COLOR := Color(0.025, 0.031, 0.035)
+const PANEL_HEADER_COLOR := Color(0.070, 0.086, 0.092)
+const PANEL_CARD_COLOR := Color(0.060, 0.070, 0.072)
+const PANEL_CARD_ALT_COLOR := Color(0.075, 0.073, 0.066)
+const PANEL_GRID_COLOR := Color(0.27, 0.36, 0.37, 0.12)
+const PANEL_DIVIDER_COLOR := Color(0.27, 0.33, 0.34)
+const PANEL_ACCENT_COLOR := Color(0.20, 0.95, 0.65, 0.86)
+const PANEL_CYAN_COLOR := Color(0.22, 0.74, 0.95, 0.80)
+const PANEL_AMBER_COLOR := Color(0.94, 0.63, 0.22, 0.84)
+const PANEL_VIOLET_COLOR := Color(0.66, 0.45, 0.98, 0.72)
+const PANEL_TEXT_COLOR := Color(0.91, 0.94, 0.91)
+const PANEL_MUTED_TEXT_COLOR := Color(0.58, 0.68, 0.68)
 const AUTO_DEMO_RESET_DELAY_TICKS: int = 120
 const Dota2LabSceneAgentOpsScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_lab_scene_agent_ops.gd")
 const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
@@ -38,7 +54,14 @@ const UNIT_COLOR_SLOW := Color(0.87, 0.62, 0.20)
 const UNIT_COLOR_MID := Color(0.18, 0.55, 0.95)
 const UNIT_COLOR_FAST := Color(0.72, 0.40, 0.95)
 const UNIT_COLOR_BLOCKER := Color(0.90, 0.45, 0.25)
+const UNIT_COLOR_FLYING := Color(0.46, 0.88, 0.99)
 const UNIT_COLOR_SELECTED := Color(0.25, 1.0, 0.70)
+# Air layer rendering: flyers draw above ground bodies with an offset drop
+# shadow for altitude; any ground body a flyer covers gets its covered part
+# re-drawn as a semi-transparent ghost on top of the flyer.
+const FLYER_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.32)
+const FLYER_SHADOW_OFFSET := Vector2(7.0, 11.0)
+const COVERED_GHOST_ALPHA := 0.42
 const SPEED_TIER_SLOW_MAX := 85.0
 const SPEED_TIER_FAST_MIN := 140.0
 const UNIT_OUTLINE_COLOR := Color(0.95, 0.95, 0.92)
@@ -104,22 +127,23 @@ func _ready() -> void:
 	if auto_command_demo:
 		_reset_auto_demo()
 	else:
-		_world = Dota2LabWorld.new()
+		_world = _create_manual_world()
 	_selected_unit_ids = _world.get_mobile_unit_ids()
 	_hud = Label.new()
 	_hud.position = _debug_panel_origin() + Vector2(PANEL_PADDING, PANEL_PADDING)
 	_hud.z_index = 20
-	_hud.add_theme_font_size_override("font_size", 16)
-	_hud.add_theme_color_override("font_color", Color.WHITE)
+	_hud.custom_minimum_size = Vector2(PANEL_CONTENT_WIDTH, 640.0)
+	_hud.add_theme_font_size_override("font_size", 15)
+	_hud.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 	_hud.add_theme_color_override("font_shadow_color", Color.BLACK)
 	_hud.add_theme_constant_override("shadow_offset_x", 1)
 	_hud.add_theme_constant_override("shadow_offset_y", 1)
 	add_child(_hud)
 	_export_button = Button.new()
 	_export_button.text = "导出日志"
-	_export_button.position = _debug_panel_origin() + Vector2(PANEL_WIDTH - 132.0, PANEL_PADDING)
-	_export_button.custom_minimum_size = Vector2(112.0, 32.0)
-	_export_button.z_index = 20
+	_export_button.position = _debug_panel_origin() + Vector2(PANEL_WIDTH - 126.0, PANEL_PADDING)
+	_export_button.custom_minimum_size = Vector2(106.0, 30.0)
+	_style_panel_control(_export_button, 13)
 	_export_button.pressed.connect(_on_export_log_pressed)
 	add_child(_export_button)
 	_build_push_controls()
@@ -368,42 +392,41 @@ func _on_export_log_pressed() -> void:
 # ─────────────────────────── Push tuning UI ──────────────────────────────────
 
 func _build_push_controls() -> void:
-	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, 712.0)
+	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, PANEL_PUSH_Y)
 	_add_panel_label("推挤调参（实时生效）", origin, 15)
-	_add_panel_label("两杆比的是让步比例：等值（含 0%）恒各让一半；钉死一方需对方 > 0%", origin + Vector2(0.0, 20.0), 12)
+	_add_panel_label("两杆比的是让步比例：等值（含 0%）恒各让一半；钉死一方需对方 > 0%", origin + Vector2(0.0, 22.0), 12)
 
-	_add_panel_label("移动中让步", origin + Vector2(0.0, 48.0), 14)
-	_push_moving_slider = _add_push_slider(origin + Vector2(96.0, 48.0), _push_moving)
+	_add_panel_label("移动让步", origin + Vector2(0.0, 72.0), 14)
+	_push_moving_slider = _add_push_slider(origin + Vector2(104.0, 72.0), _push_moving)
 	_push_moving_slider.value_changed.connect(_on_push_moving_changed)
-	_push_moving_value = _add_panel_label("", origin + Vector2(372.0, 48.0), 14)
+	_push_moving_value = _add_panel_label("", origin + Vector2(382.0, 72.0), 14)
 
-	_add_panel_label("停驻让步", origin + Vector2(0.0, 78.0), 14)
-	_push_idle_slider = _add_push_slider(origin + Vector2(96.0, 78.0), _push_idle)
+	_add_panel_label("停驻让步", origin + Vector2(0.0, 104.0), 14)
+	_push_idle_slider = _add_push_slider(origin + Vector2(104.0, 104.0), _push_idle)
 	_push_idle_slider.value_changed.connect(_on_push_idle_changed)
-	_push_idle_value = _add_panel_label("", origin + Vector2(372.0, 78.0), 14)
+	_push_idle_value = _add_panel_label("", origin + Vector2(382.0, 104.0), 14)
 
 	var steering_toggle := CheckButton.new()
 	steering_toggle.text = "贴身绕行转向（挤行时朝向跟着拐，关 = 横移观感）"
 	steering_toggle.button_pressed = _contact_steering
-	steering_toggle.position = origin + Vector2(0.0, 108.0)
-	steering_toggle.z_index = 20
-	steering_toggle.add_theme_font_size_override("font_size", 14)
+	steering_toggle.position = origin + Vector2(0.0, 134.0)
+	_style_panel_control(steering_toggle, 14)
 	steering_toggle.toggled.connect(_on_contact_steering_toggled)
 	add_child(steering_toggle)
 
 	var soft_button := Button.new()
 	soft_button.text = "软碰撞（LoL 让路）"
-	soft_button.position = origin + Vector2(0.0, 144.0)
+	soft_button.position = origin + Vector2(0.0, 170.0)
 	soft_button.custom_minimum_size = Vector2(160.0, 30.0)
-	soft_button.z_index = 20
+	_style_panel_control(soft_button, 13)
 	soft_button.pressed.connect(_on_push_preset_soft)
 	add_child(soft_button)
 
 	var hard_button := Button.new()
 	hard_button.text = "硬碰撞（Dota2 卡位）"
-	hard_button.position = origin + Vector2(172.0, 144.0)
+	hard_button.position = origin + Vector2(174.0, 170.0)
 	hard_button.custom_minimum_size = Vector2(160.0, 30.0)
-	hard_button.z_index = 20
+	_style_panel_control(hard_button, 13)
 	hard_button.pressed.connect(_on_push_preset_hard)
 	add_child(hard_button)
 
@@ -416,7 +439,7 @@ func _add_panel_label(text: String, at: Vector2, font_size: int) -> Label:
 	label.position = at
 	label.z_index = 20
 	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", Color.WHITE)
+	label.add_theme_color_override("font_color", PANEL_TEXT_COLOR if font_size >= 14 else PANEL_MUTED_TEXT_COLOR)
 	add_child(label)
 	return label
 
@@ -429,9 +452,33 @@ func _add_push_slider(at: Vector2, value: float) -> HSlider:
 	slider.value = value
 	slider.position = at
 	slider.custom_minimum_size = Vector2(260.0, 22.0)
-	slider.z_index = 20
+	_style_panel_control(slider, 13)
 	add_child(slider)
 	return slider
+
+
+func _style_panel_control(control: Control, font_size: int) -> void:
+	control.z_index = 20
+	control.add_theme_font_size_override("font_size", font_size)
+	control.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
+	control.add_theme_color_override("font_hover_color", Color.WHITE)
+	control.add_theme_stylebox_override("normal", _panel_stylebox(Color(0.095, 0.097, 0.085), PANEL_DIVIDER_COLOR, 1, 2))
+	control.add_theme_stylebox_override("hover", _panel_stylebox(Color(0.120, 0.114, 0.088), PANEL_AMBER_COLOR, 1, 2))
+	control.add_theme_stylebox_override("pressed", _panel_stylebox(Color(0.065, 0.110, 0.095), PANEL_ACCENT_COLOR, 1, 2))
+	control.add_theme_stylebox_override("focus", _panel_stylebox(Color(0.065, 0.110, 0.095), PANEL_CYAN_COLOR, 1, 2))
+
+
+func _panel_stylebox(fill: Color, border: Color, border_width: int, radius: int) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = border
+	style.set_border_width_all(border_width)
+	style.set_corner_radius_all(radius)
+	style.content_margin_left = 8.0
+	style.content_margin_right = 8.0
+	style.content_margin_top = 4.0
+	style.content_margin_bottom = 4.0
+	return style
 
 
 func _on_push_moving_changed(value: float) -> void:
@@ -499,7 +546,7 @@ func _refresh_push_value_labels() -> void:
 # actually lets you combine, instead of hiding that behind one switch.
 
 func _build_backend_controls() -> void:
-	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, 900.0)
+	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, PANEL_BACKEND_Y)
 	_add_panel_label("Native 后端（C++ GDExtension，关 = GDScript 默认）", origin, 15)
 
 	# Built before the two backend toggles: both toggles assign button_pressed
@@ -509,26 +556,23 @@ func _build_backend_controls() -> void:
 	_reset_stats_on_switch = CheckButton.new()
 	_reset_stats_on_switch.text = "切换后重置统计数据"
 	_reset_stats_on_switch.button_pressed = true
-	_reset_stats_on_switch.position = origin + Vector2(0.0, 20.0)
-	_reset_stats_on_switch.z_index = 20
-	_reset_stats_on_switch.add_theme_font_size_override("font_size", 14)
+	_reset_stats_on_switch.position = origin + Vector2(0.0, 42.0)
+	_style_panel_control(_reset_stats_on_switch, 14)
 	add_child(_reset_stats_on_switch)
 
 	_pathfinder_native_toggle = CheckButton.new()
 	_pathfinder_native_toggle.text = "寻路使用 native"
 	_pathfinder_native_toggle.button_pressed = _world.pathfinder.use_native
-	_pathfinder_native_toggle.position = origin + Vector2(0.0, 48.0)
-	_pathfinder_native_toggle.z_index = 20
-	_pathfinder_native_toggle.add_theme_font_size_override("font_size", 14)
+	_pathfinder_native_toggle.position = origin + Vector2(0.0, 72.0)
+	_style_panel_control(_pathfinder_native_toggle, 14)
 	_pathfinder_native_toggle.toggled.connect(_on_pathfinder_native_toggled)
 	add_child(_pathfinder_native_toggle)
 
 	_motion_native_toggle = CheckButton.new()
 	_motion_native_toggle.text = "运动求解使用 native"
 	_motion_native_toggle.button_pressed = _world.motion.use_native_solver
-	_motion_native_toggle.position = origin + Vector2(0.0, 76.0)
-	_motion_native_toggle.z_index = 20
-	_motion_native_toggle.add_theme_font_size_override("font_size", 14)
+	_motion_native_toggle.position = origin + Vector2(0.0, 102.0)
+	_style_panel_control(_motion_native_toggle, 14)
 	_motion_native_toggle.toggled.connect(_on_motion_native_toggled)
 	add_child(_motion_native_toggle)
 
@@ -627,23 +671,19 @@ func _draw() -> void:
 			continue
 		_draw_waypoint_path(unit.path, unit.position, PATH_COLOR)
 
-	# Units.
+	# Units — ground layer first, then flyers above it (shadow, then body),
+	# then the covered-ghost pass so bodies under a flyer stay readable.
+	var flyers: Array[Dota2LabUnit] = []
 	for unit in _world.units:
-		var color := _unit_fill_color(unit)
-		draw_circle(unit.position, unit.radius, color)
-		draw_arc(unit.position, unit.radius, 0.0, TAU, 24, UNIT_OUTLINE_COLOR, 1.5)
-		if _selected_unit_ids.has(unit.id):
-			draw_arc(unit.position, unit.radius + 5.0, 0.0, TAU, 32, UNIT_COLOR_SELECTED, 2.5)
-		if _order_failed_hard(unit) and unit.state == Dota2LabUnit.STATE_IDLE:
-			draw_arc(unit.position, unit.radius + 4.5, 0.0, TAU, 32, Color(1.0, 0.18, 0.15, 0.90), 2.5)
-			_draw_failed_glyph(unit.position - Vector2(0.0, unit.radius + 9.0))
-		_draw_facing_arrow(unit)
-		# State indicator: a small ring at top-right of unit.
-		var state_color: Color = STATE_COLOR.get(unit.state, Color.WHITE)
-		draw_circle(unit.position + Vector2(unit.radius + 4.0, -unit.radius - 4.0), 3.0, state_color)
-		# Move target marker for active orders.
-		if unit.state == Dota2LabUnit.STATE_MOVING:
-			draw_line(unit.position, unit.effective_target, TARGET_COLOR, 0.8)
+		if unit.flying:
+			flyers.append(unit)
+		else:
+			_draw_unit(unit)
+	for flyer in flyers:
+		draw_circle(flyer.position + FLYER_SHADOW_OFFSET, flyer.radius * 0.9, FLYER_SHADOW_COLOR)
+	for flyer in flyers:
+		_draw_unit(flyer)
+	_draw_covered_ghosts(flyers)
 
 	# Drag selection rectangle.
 	if _is_dragging:
@@ -655,12 +695,73 @@ func _draw() -> void:
 func _draw_debug_panel_chrome() -> void:
 	var panel_origin := _debug_panel_origin()
 	var panel_size := Vector2(PANEL_WIDTH, _world.map_size.y + BACKEND_PANEL_EXTRA_HEIGHT)
-	draw_rect(Rect2(panel_origin, panel_size), Color(0.07, 0.08, 0.10), true)
-	draw_line(panel_origin, panel_origin + Vector2(0.0, panel_size.y), Color(0.18, 0.22, 0.26), 2.0)
-	for y in [76.0, 292.0, 470.0, 620.0]:
-		var start := panel_origin + Vector2(PANEL_PADDING, y)
-		var end := panel_origin + Vector2(PANEL_WIDTH - PANEL_PADDING, y)
-		draw_line(start, end, Color(0.18, 0.21, 0.24), 1.0)
+	draw_rect(Rect2(panel_origin, panel_size), PANEL_BG_COLOR, true)
+	_draw_panel_grid(panel_origin, panel_size)
+	_draw_panel_header(panel_origin)
+	_draw_panel_signal_rail(panel_origin, panel_size.y)
+	_draw_panel_card(panel_origin, 80.0, 86.0, PANEL_CYAN_COLOR, false)
+	_draw_panel_card(panel_origin, 176.0, 144.0, PANEL_ACCENT_COLOR, false)
+	_draw_panel_card(panel_origin, 346.0, 84.0, PANEL_AMBER_COLOR, false)
+	_draw_panel_card(panel_origin, 454.0, 92.0, PANEL_VIOLET_COLOR, false)
+	_draw_panel_card(panel_origin, 612.0, 202.0, PANEL_AMBER_COLOR, true)
+	_draw_panel_card(panel_origin, 842.0, 176.0, PANEL_CYAN_COLOR, true)
+	draw_line(panel_origin, panel_origin + Vector2(0.0, panel_size.y), PANEL_DIVIDER_COLOR, 2.0)
+	for y in PANEL_DIVIDERS:
+		var line_y := float(y)
+		var start := panel_origin + Vector2(PANEL_PADDING, line_y)
+		var end := panel_origin + Vector2(PANEL_WIDTH - PANEL_PADDING, line_y)
+		draw_line(start, end, PANEL_DIVIDER_COLOR, 1.0)
+
+
+func _draw_panel_grid(panel_origin: Vector2, panel_size: Vector2) -> void:
+	var x := panel_origin.x + 28.0
+	while x < panel_origin.x + panel_size.x:
+		draw_line(Vector2(x, panel_origin.y), Vector2(x, panel_origin.y + panel_size.y), PANEL_GRID_COLOR, 1.0)
+		x += 32.0
+	var y := panel_origin.y + 28.0
+	while y < panel_origin.y + panel_size.y:
+		draw_line(Vector2(panel_origin.x, y), Vector2(panel_origin.x + panel_size.x, y), PANEL_GRID_COLOR, 1.0)
+		y += 32.0
+
+
+func _draw_panel_header(panel_origin: Vector2) -> void:
+	var header_points := PackedVector2Array([
+		panel_origin,
+		panel_origin + Vector2(PANEL_WIDTH, 0.0),
+		panel_origin + Vector2(PANEL_WIDTH, 64.0),
+		panel_origin + Vector2(74.0, 64.0),
+		panel_origin + Vector2(56.0, 76.0),
+		panel_origin + Vector2(0.0, 76.0),
+	])
+	draw_polygon(header_points, PackedColorArray([
+		PANEL_HEADER_COLOR,
+		PANEL_HEADER_COLOR,
+		PANEL_HEADER_COLOR,
+		PANEL_HEADER_COLOR,
+		PANEL_HEADER_COLOR,
+		PANEL_HEADER_COLOR,
+	]))
+	draw_rect(Rect2(panel_origin + Vector2(PANEL_WIDTH - 126.0, 20.0), Vector2(106.0, 30.0)), Color(0.105, 0.095, 0.065), true)
+	draw_line(panel_origin + Vector2(0.0, 76.0), panel_origin + Vector2(PANEL_WIDTH, 76.0), PANEL_DIVIDER_COLOR, 1.0)
+
+
+func _draw_panel_signal_rail(panel_origin: Vector2, panel_height: float) -> void:
+	draw_rect(Rect2(panel_origin, Vector2(5.0, panel_height)), Color(0.02, 0.025, 0.027), true)
+	var y := 0.0
+	for color in [PANEL_ACCENT_COLOR, PANEL_CYAN_COLOR, PANEL_AMBER_COLOR, PANEL_VIOLET_COLOR]:
+		draw_rect(Rect2(panel_origin + Vector2(0.0, y), Vector2(5.0, 82.0)), color, true)
+		y += 82.0
+
+
+func _draw_panel_card(panel_origin: Vector2, y: float, height: float, accent: Color, warm: bool) -> void:
+	var x := panel_origin.x + 14.0
+	var width := PANEL_WIDTH - 28.0
+	var fill := PANEL_CARD_ALT_COLOR if warm else PANEL_CARD_COLOR
+	var rect := Rect2(Vector2(x, panel_origin.y + y), Vector2(width, height))
+	draw_rect(rect, fill, true)
+	draw_rect(rect, Color(accent.r, accent.g, accent.b, 0.12), true)
+	draw_rect(Rect2(rect.position, Vector2(3.0, rect.size.y)), accent, true)
+	draw_rect(rect, Color(accent.r, accent.g, accent.b, 0.34), false, 1.0)
 
 
 func _draw_target_marker(center: Vector2) -> void:
@@ -704,11 +805,87 @@ func _draw_failed_glyph(center: Vector2) -> void:
 func _unit_fill_color(unit: Dota2LabUnit) -> Color:
 	if not unit.mobile:
 		return UNIT_COLOR_BLOCKER
+	if unit.flying:
+		return UNIT_COLOR_FLYING
 	if unit.speed <= SPEED_TIER_SLOW_MAX:
 		return UNIT_COLOR_SLOW
 	if unit.speed >= SPEED_TIER_FAST_MIN:
 		return UNIT_COLOR_FAST
 	return UNIT_COLOR_MID
+
+
+func _draw_unit(unit: Dota2LabUnit) -> void:
+	var color := _unit_fill_color(unit)
+	draw_circle(unit.position, unit.radius, color)
+	draw_arc(unit.position, unit.radius, 0.0, TAU, 24, UNIT_OUTLINE_COLOR, 1.5)
+	if _selected_unit_ids.has(unit.id):
+		draw_arc(unit.position, unit.radius + 5.0, 0.0, TAU, 32, UNIT_COLOR_SELECTED, 2.5)
+	if _order_failed_hard(unit) and unit.state == Dota2LabUnit.STATE_IDLE:
+		draw_arc(unit.position, unit.radius + 4.5, 0.0, TAU, 32, Color(1.0, 0.18, 0.15, 0.90), 2.5)
+		_draw_failed_glyph(unit.position - Vector2(0.0, unit.radius + 9.0))
+	_draw_facing_arrow(unit)
+	# State indicator: a small ring at top-right of unit.
+	var state_color: Color = STATE_COLOR.get(unit.state, Color.WHITE)
+	draw_circle(unit.position + Vector2(unit.radius + 4.0, -unit.radius - 4.0), 3.0, state_color)
+	# Move target marker for active orders.
+	if unit.state == Dota2LabUnit.STATE_MOVING:
+		draw_line(unit.position, unit.effective_target, TARGET_COLOR, 0.8)
+
+
+func _draw_covered_ghosts(flyers: Array[Dota2LabUnit]) -> void:
+	for flyer in flyers:
+		for unit in _world.units:
+			if unit.flying:
+				continue
+			var lens := _circle_intersection_polygon(unit.position, unit.radius, flyer.position, flyer.radius)
+			if lens.size() < 3:
+				continue
+			var ghost := _unit_fill_color(unit)
+			ghost.a = COVERED_GHOST_ALPHA
+			draw_colored_polygon(lens, ghost)
+
+
+# Lens-shaped intersection of circle A (ground body) with circle B (flyer) —
+# the exact covered region. Empty when apart; full containment degenerates to
+# the smaller disc.
+func _circle_intersection_polygon(
+	ca: Vector2, ra: float,
+	cb: Vector2, rb: float
+) -> PackedVector2Array:
+	var d := ca.distance_to(cb)
+	if d >= ra + rb:
+		return PackedVector2Array()
+	if d + ra <= rb:
+		return _arc_points(ca, ra, 0.0, TAU, true)
+	if d + rb <= ra:
+		return _arc_points(cb, rb, 0.0, TAU, true)
+	var axis := (cb - ca).angle()
+	var half_a := acos(clampf((d * d + ra * ra - rb * rb) / (2.0 * d * ra), -1.0, 1.0))
+	var half_b := acos(clampf((d * d + rb * rb - ra * ra) / (2.0 * d * rb), -1.0, 1.0))
+	var points := _arc_points(ca, ra, axis - half_a, axis + half_a)
+	# The B arc starts and ends on the chord points the A arc already
+	# contributed — skip both so the triangulator never sees duplicates.
+	points.append_array(_arc_points(cb, rb, axis + PI - half_b, axis + PI + half_b, true, true))
+	return points
+
+
+# Packed arrays pass by value in GDScript, so this returns points for the
+# caller to append_array instead of filling an out-param.
+func _arc_points(
+	center: Vector2,
+	radius: float,
+	from_angle: float,
+	to_angle: float,
+	skip_first: bool = false,
+	skip_last: bool = false
+) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var span := to_angle - from_angle
+	var segments := maxi(3, int(ceil(absf(span) / 0.22)))
+	var last_index := segments - 1 if skip_last else segments
+	for i in range(1 if skip_first else 0, last_index + 1):
+		points.append(center + Vector2.from_angle(from_angle + span * float(i) / float(segments)) * radius)
+	return points
 
 
 func _draw_facing_arrow(unit: Dota2LabUnit) -> void:
@@ -750,26 +927,30 @@ func _update_hud() -> void:
 	var title := "Dota2 RTS 寻路 Lab（Layer 2 演示）" if auto_command_demo else "Dota2 RTS 寻路 Lab（Fable Motion）"
 	var subtitle := "自动指令源演示" if auto_command_demo else "手动运动调试面板"
 	var auto_line := _format_auto_demo_line()
-	var lines := [
+	var lines: Array[String] = [
 		title,
 		subtitle,
-		"模式：%s   %s" % [_mode_name(), "[已暂停]" if _paused else ""],
+		"状态：%s   模式：%s   Tick %d   选中 %d" % [
+			"PAUSED" if _paused else "RUN",
+			_mode_name(),
+			metrics.get("tick_count", 0),
+			_selected_unit_ids.size(),
+		],
+		"地图：%dx%d   %s" % [
+			int(_world.map_size.x),
+			int(_world.map_size.y),
+			_format_backend_line(),
+		],
 		"动作：%s%s" % [
 			_last_action,
 			" | 已导出 %s" % _last_export_path if _last_export_path != "" else "",
 		],
-		"已选：%d   Tick: %d   地图：%dx%d" % [
-			_selected_unit_ids.size(),
-			metrics.get("tick_count", 0),
-			int(_world.map_size.x),
-			int(_world.map_size.y),
-		],
-		auto_line,
 		"",
 		"运动",
-		"IDLE %d   MOVING %d" % [
+		"IDLE %d   MOVING %d   飞行 %d" % [
 			int(state_counts.get("IDLE", 0)),
 			int(state_counts.get("MOVING", 0)),
+			int(metrics.get("flying_count", 0)),
 		],
 		"指令完成 %d   失败 %d" % [
 			int(metrics.get("orders_completed", 0)),
@@ -792,27 +973,28 @@ func _update_hud() -> void:
 		selected_path_line,
 		"",
 		"性能",
-		"单步 %.2fms   均值 %.2fms   峰值 %.2fms @ tick %d   5s峰值 %.2fms" % [
+		"单步 %.2fms   均值 %.2fms   5s峰值 %.2fms" % [
 			float(_last_step_usec) / 1000.0,
 			avg_step_msec,
-			float(_max_step_usec) / 1000.0,
-			_max_step_tick,
 			float(_recent_max_step_usec()) / 1000.0,
 		],
-		"慢帧 %d   事件 %d   运动更新 %d" % [
+		"峰值 %.2fms @ tick %d   慢帧 %d   事件 %d   运动更新 %d" % [
+			float(_max_step_usec) / 1000.0,
+			_max_step_tick,
 			_slow_frame_log.size(),
 			_event_log.size(),
 			_world.recent_motion_updates.size(),
 		],
-		failed_line,
 		"",
 		"操作",
-		"1 指令/选择   右键移动",
+		"1 指令/选择   左键框选   右键移动",
 		"2 障碍物   3 阻挡单位   4 擦除",
 		"A 全选   C 清轨迹   E 导出   R 重置   空格 暂停",
 	]
-	if auto_line == "":
-		lines.remove_at(5)
+	if auto_line != "":
+		lines.insert(5, auto_line)
+	if failed_line != "":
+		lines.insert(lines.find("操作") - 1, failed_line)
 	_hud.text = "\n".join(lines)
 
 
@@ -866,6 +1048,13 @@ func _format_auto_demo_line() -> String:
 	]
 
 
+func _format_backend_line() -> String:
+	return "后端 PF:%s / Motion:%s" % [
+		"native" if _world.pathfinder.use_native else "GDScript",
+		"native" if _world.motion.use_native_solver else "GDScript",
+	]
+
+
 # A cancel is a deliberate stop, not an error — only no_path/stalled orders
 # get the red failure treatment.
 func _order_failed_hard(unit: Dota2LabUnit) -> bool:
@@ -889,7 +1078,7 @@ func _reset_scene() -> void:
 	if auto_command_demo:
 		_reset_auto_demo()
 	else:
-		_world = Dota2LabWorld.new()
+		_world = _create_manual_world()
 		_ai_command_source = null
 		_selected_unit_ids = _world.get_mobile_unit_ids()
 		_apply_push_tuning()
@@ -910,6 +1099,20 @@ func _reset_auto_demo() -> void:
 	_reset_perf_metrics()
 	_last_action = "自动演示第 %d 轮" % _auto_demo_run_index
 	_record_event("auto_demo_reset", {"selected_unit_ids": _selected_unit_ids})
+
+
+# Manual lab world = the default fixture plus an air wing. Composed here
+# (not in setup_default) so smoke fixtures built on the default world keep
+# their exact pre-air unit cast.
+func _create_manual_world() -> Dota2LabWorld:
+	var world := Dota2LabWorld.new()
+	# East side, mirroring the ground crowd: command them west over units and
+	# obstacles to watch the straight overfly + covered-ghost rendering.
+	world.units.append(Dota2LabUnit.new_flying("hawk_0", "air", Vector2(1180.0, 250.0), 12.0, 150.0))
+	world.units.append(Dota2LabUnit.new_flying("hawk_1", "air", Vector2(1220.0, 450.0), 12.0, 150.0))
+	world.units.append(Dota2LabUnit.new_flying("hawk_2", "air", Vector2(1180.0, 650.0), 12.0, 150.0))
+	world.clear_traces()
+	return world
 
 
 func _create_auto_demo_world() -> Dota2LabWorld:
@@ -1104,6 +1307,7 @@ func _snapshot_units() -> Array[Dictionary]:
 			"id": unit.id,
 			"group_id": unit.group_id,
 			"mobile": unit.mobile,
+			"flying": unit.flying,
 			"position": _vector_snapshot(unit.position),
 			"move_target": _vector_snapshot(unit.move_target),
 			"effective_target": _vector_snapshot(unit.effective_target),
