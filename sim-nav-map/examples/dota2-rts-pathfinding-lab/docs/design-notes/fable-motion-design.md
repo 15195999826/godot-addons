@@ -152,15 +152,19 @@ Turning in place is exempt.
 - An idle unit displaced by pushes does not walk back to its spot (Dota2
   behavior; also what keeps the solve stable).
 - Planning is deferred and time-sliced, not threaded. Measured GDScript JPS
-  cost on the default map: ~0.5 ms short/open, 4-10 ms warm cross-map,
-  15-37 ms on a cold jump-point cache (the cache accumulates lazily per
-  query region — a diagonal warmup does NOT soak it). Synchronous group
-  commands used to cost ~250 ms in one input frame; now commands enqueue
-  (~0.2 ms), units walk a straight-line placeholder, and the engine drains
-  ONE query per tick (`PLAN_BUDGET_PER_TICK`). Worst per-frame planning cost
-  is one query — a cold-cache first query after a map rebuild can still
-  spike one tick to ~40 ms; warm queries fit the frame. `plans_applied` /
-  `plans_waiting` in the step stats attribute any spike at a glance.
+  cost on the default map after the jump-cache hot-path fix (O(1) POINT-goal
+  ray check + integer cache keys — the per-cell goal scan on every cardinal
+  probe used to dominate whole-query cost): ~0.5 ms short/open, ~3 ms warm
+  cross-map, ~33 ms on a cold jump-point cache (cache accumulates lazily per
+  query region — a diagonal warmup does NOT soak it; the cold cost IS the
+  cache build). Synchronous group commands used to cost ~250 ms in one input
+  frame; now commands enqueue (~0.2 ms), units walk a straight-line
+  placeholder, and the engine drains ONE query per tick
+  (`PLAN_BUDGET_PER_TICK`). Worst per-frame planning cost is one query — a
+  cold-cache first query after a map rebuild can spike one tick to ~35 ms
+  once; warm queries fit the frame. `plans_applied` / `plans_waiting` in the
+  step stats plus the HUD's `last plan` / rolling 5s peak attribute any
+  spike at a glance.
 - A worker-thread variant (core queue `start_worker`, and a WorkerThreadPool
   rewrite of it) was implemented and reverted — twice:
   - Godot 4.6 rc1: GDScript on spawned threads crashed unpredictably
