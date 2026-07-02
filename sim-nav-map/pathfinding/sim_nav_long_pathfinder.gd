@@ -176,9 +176,8 @@ func movement_raster_clear(a: Vector2, b: Vector2, pass_mask: int) -> bool:
 func repair_jump_point_caches() -> void:
 	if _nav_map == null or not _nav_map.has_dirty_navcells():
 		return
-	var dirty_cells := _nav_map.collect_dirty_navcells()
 	for cache_value in _jump_point_caches.values():
-		(cache_value as SimNavJumpPointCache).repair_dirty_cells(dirty_cells)
+		_repair_cache_for_current_dirty(cache_value as SimNavJumpPointCache)
 
 
 func _astar_cells(
@@ -681,10 +680,19 @@ func _jump_point_cache(pass_mask: int) -> SimNavJumpPointCache:
 		cache.reset(_nav_map, pass_mask)
 	elif _nav_map != null and _nav_map.has_dirty_navcells():
 		# Uncleared dirty flags (integrations that never flush through the
-		# facade): repair per query — idempotent, and strictly cheaper than
-		# the full reset this path used to pay.
-		cache.repair_dirty_cells(_nav_map.collect_dirty_navcells())
+		# facade): repair once per dirty revision — idempotent, and the
+		# revision guard keeps per-tick hot entries (movement line checks)
+		# from re-repairing an unchanged dirty set on every call.
+		_repair_cache_for_current_dirty(cache)
 	return cache
+
+
+func _repair_cache_for_current_dirty(cache: SimNavJumpPointCache) -> void:
+	var revision := _nav_map.dirty_navcell_revision()
+	if cache.repaired_dirty_revision == revision:
+		return
+	cache.repair_dirty_cells(_nav_map.collect_dirty_navcells())
+	cache.repaired_dirty_revision = revision
 
 
 func _successor_directions(

@@ -131,8 +131,10 @@ func _test_facade_flush_repairs_and_replans_like_fresh() -> void:
 
 
 # Query-side dirty handling without a facade flush: a fresh cache build must
-# not pay a redundant repair, uncleared flags repair idempotently on the next
-# touch, and clean maps touch nothing.
+# not pay a redundant repair, repeat touches of an UNCHANGED dirty set must
+# not re-repair (dirty-revision guard — this path runs per tick per moving
+# unit via movement_raster_clear), new dirt repairs exactly once, and clean
+# maps touch nothing.
 func _test_query_side_dirty_handling() -> void:
 	var nav_map := SimNavMap.new(24, 12, 8.0, Vector2.ZERO, 4)
 	var mask := _register_ground(nav_map)
@@ -146,7 +148,17 @@ func _test_query_side_dirty_handling() -> void:
 	)
 	var cache_again: SimNavJumpPointCache = pathfinder._jump_point_cache(mask)
 	_assert_true(cache_again == cache, "cache instance should be reused per pass mask")
-	_assert_true(cache.repair_count == 1, "uncleared dirty flags should repair on the next touch")
+	_assert_true(
+		cache.repair_count == 0,
+		"repeat touch of the dirty set the fresh build already covers should not repair"
+	)
+	nav_map.or_navcell_data(Vector2i(4, 4), mask)
+	pathfinder._jump_point_cache(mask)
+	pathfinder._jump_point_cache(mask)
+	_assert_true(
+		cache.repair_count == 1,
+		"new dirt should repair exactly once across repeat touches"
+	)
 	var truth := SimNavJumpPointCache.new()
 	truth.reset(nav_map, mask)
 	_assert_true(cache.tables_equal(truth), "query-side repair should equal a full rebuild")
