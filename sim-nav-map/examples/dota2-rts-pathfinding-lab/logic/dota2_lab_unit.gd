@@ -58,6 +58,11 @@ var best_goal_distance: float = INF
 var last_speed_factor: float = 0.0
 var last_turn_delta_rad: float = 0.0
 
+# Contact-steering side lock (+1 / -1, 0 = unlocked): the go-around side is
+# chosen geometrically on first contact and held while contact persists, so
+# a unit never flip-flops sides mid-squeeze.
+var steer_side: float = 0.0
+
 # Frontend / debug.
 var trace: PackedVector2Array = PackedVector2Array()
 
@@ -100,6 +105,7 @@ func begin_order(goal: Vector2, tick: int) -> Dota2LabMoveOrder:
 	best_goal_distance = INF
 	last_speed_factor = 0.0
 	last_turn_delta_rad = 0.0
+	steer_side = 0.0
 	return order
 
 
@@ -116,6 +122,7 @@ func finish_order(tick: int, completed: bool, reason: String) -> void:
 	stall_seconds = 0.0
 	last_speed_factor = 0.0
 	last_turn_delta_rad = 0.0
+	steer_side = 0.0
 
 
 func is_moving() -> bool:
