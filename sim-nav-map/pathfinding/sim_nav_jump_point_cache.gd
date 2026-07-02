@@ -6,6 +6,15 @@ var _nav_map: SimNavMap = null
 var _pass_mask: int = 0
 var _dirty: bool = true
 var _cached_hits: Dictionary = {}
+# Composed passability baked into a flat array at reset. Ray scans are the
+# hot path of every cache miss — and misses are the common case in real play
+# (rays are keyed by start cell, which changes whenever units move). Reading
+# a local packed array beats three-layer composition through two levels of
+# cross-object calls per cell by a wide margin. Rebaked on reset; dirty
+# navcells already invalidate the whole cache, so staleness cannot leak.
+var _baked: PackedInt32Array = PackedInt32Array()
+var _baked_width: int = 0
+var _baked_height: int = 0
 
 
 func reset(nav_map: SimNavMap, pass_mask: int) -> void:
@@ -13,6 +22,23 @@ func reset(nav_map: SimNavMap, pass_mask: int) -> void:
 	_pass_mask = pass_mask
 	_dirty = false
 	_cached_hits.clear()
+	_bake_grid()
+
+
+func _bake_grid() -> void:
+	if _nav_map == null:
+		_baked = PackedInt32Array()
+		_baked_width = 0
+		_baked_height = 0
+		return
+	_baked_width = _nav_map.width
+	_baked_height = _nav_map.height
+	_baked.resize(_baked_width * _baked_height)
+	var i := 0
+	for y in range(_baked_height):
+		for x in range(_baked_width):
+			_baked[i] = _nav_map.get_navcell_data(Vector2i(x, y))
+			i += 1
 
 
 func invalidate_all() -> void:
@@ -54,25 +80,41 @@ func _find_cached_jump_obstruction_or_boundary(start: Vector2i, direction: Vecto
 	var key := _cache_key(start, direction)
 	if _cached_hits.has(key):
 		return _cached_hits[key] as SimNavJumpPointHit
-	var current := start
+	var cx := start.x
+	var cy := start.y
+	var dx := direction.x
+	var dy := direction.y
+	var last_x := cx
+	var last_y := cy
 	var steps := 0
-	var last_passable := start
 	while true:
-		current += direction
+		cx += dx
+		cy += dy
 		steps += 1
-		if not _nav_map.is_valid_navcell(current):
-			var boundary_hit := SimNavJumpPointHit.new(SimNavJumpPointHit.Kind.BOUNDARY, last_passable, steps - 1)
+		if cx < 0 or cy < 0 or cx >= _baked_width or cy >= _baked_height:
+			var boundary_hit := SimNavJumpPointHit.new(
+				SimNavJumpPointHit.Kind.BOUNDARY, Vector2i(last_x, last_y), steps - 1)
 			_cached_hits[key] = boundary_hit
 			return boundary_hit
-		if not _nav_map.is_passable_navcell(current, _pass_mask):
-			var obstruction_hit := SimNavJumpPointHit.new(SimNavJumpPointHit.Kind.OBSTRUCTION, current, steps)
+		if (_baked[cy * _baked_width + cx] & _pass_mask) != 0:
+			var obstruction_hit := SimNavJumpPointHit.new(
+				SimNavJumpPointHit.Kind.OBSTRUCTION, Vector2i(cx, cy), steps)
 			_cached_hits[key] = obstruction_hit
 			return obstruction_hit
-		if _has_forced_cardinal_jump(current, direction):
-			var jump_hit := SimNavJumpPointHit.new(SimNavJumpPointHit.Kind.JUMP, current, steps)
+		var forced: bool
+		if dx != 0:
+			forced = (not _baked_passable(cx - dx, cy - 1) and _baked_passable(cx, cy - 1)) \
+				or (not _baked_passable(cx - dx, cy + 1) and _baked_passable(cx, cy + 1))
+		else:
+			forced = (not _baked_passable(cx - 1, cy - dy) and _baked_passable(cx - 1, cy)) \
+				or (not _baked_passable(cx + 1, cy - dy) and _baked_passable(cx + 1, cy))
+		if forced:
+			var jump_hit := SimNavJumpPointHit.new(
+				SimNavJumpPointHit.Kind.JUMP, Vector2i(cx, cy), steps)
 			_cached_hits[key] = jump_hit
 			return jump_hit
-		last_passable = current
+		last_x = cx
+		last_y = cy
 	return SimNavJumpPointHit.new()
 
 
@@ -115,20 +157,10 @@ func _is_cardinal_direction(direction: Vector2i) -> bool:
 	)
 
 
-func _has_forced_cardinal_jump(cell: Vector2i, direction: Vector2i) -> bool:
-	if direction.x != 0:
-		return (
-			(not _is_passable(Vector2i(cell.x - direction.x, cell.y - 1)) and _is_passable(Vector2i(cell.x, cell.y - 1)))
-			or (not _is_passable(Vector2i(cell.x - direction.x, cell.y + 1)) and _is_passable(Vector2i(cell.x, cell.y + 1)))
-		)
-	return (
-		(not _is_passable(Vector2i(cell.x - 1, cell.y - direction.y)) and _is_passable(Vector2i(cell.x - 1, cell.y)))
-		or (not _is_passable(Vector2i(cell.x + 1, cell.y - direction.y)) and _is_passable(Vector2i(cell.x + 1, cell.y)))
-	)
-
-
-func _is_passable(cell: Vector2i) -> bool:
-	return _nav_map.is_passable_navcell(cell, _pass_mask)
+func _baked_passable(x: int, y: int) -> bool:
+	if x < 0 or y < 0 or x >= _baked_width or y >= _baked_height:
+		return false
+	return (_baked[y * _baked_width + x] & _pass_mask) == 0
 
 
 # Integer keys: this runs on every cardinal probe, and string formatting +
