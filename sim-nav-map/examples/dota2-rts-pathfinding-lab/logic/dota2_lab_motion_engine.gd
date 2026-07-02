@@ -80,8 +80,11 @@ const EVENT_ORDER_FAILED := "order_failed"
 var last_step_stats: Dictionary = {}
 
 # Runtime push tuning — integrating projects set these to pick their contact
-# flavor (lab UI drives them live). Keep pushability_moving > 0: two movers
-# meeting head-on rely on it to resolve their overlap; at 0 they clip.
+# flavor (lab UI drives them live). Any value in [0, 1] is safe: overlap
+# between mobile bodies is always resolved, 0 just means "yields nothing in
+# mixed contacts" (both-zero pairs split evenly — rigid, not ghost). Note
+# mover-vs-mover contacts normalize to 50/50 regardless of the moving value;
+# the sliders really tune WHO yields in mover-vs-idle contacts.
 var pushability_moving: float = DEFAULT_PUSHABILITY_MOVING
 var pushability_idle: float = DEFAULT_PUSHABILITY_IDLE
 
@@ -290,10 +293,8 @@ func _separate_pair(a: Dota2LabUnit, b: Dota2LabUnit) -> bool:
 	var distance := offset.length()
 	if distance >= min_distance - SEPARATION_SLACK:
 		return false
-	var push_a := _pushability(a)
-	var push_b := _pushability(b)
-	var total := push_a + push_b
-	if total <= 0.0:
+	var weight_a := _separation_weight_a(a, b)
+	if weight_a < 0.0:
 		return false
 	var direction: Vector2
 	if distance > 0.001:
@@ -303,10 +304,28 @@ func _separate_pair(a: Dota2LabUnit, b: Dota2LabUnit) -> bool:
 		direction = Vector2.RIGHT if a.id < b.id else Vector2.LEFT
 	direction = _head_on_biased(a, b, direction)
 	var overlap := min_distance - distance
-	var weight_a := push_a / total
 	a.position -= direction * overlap * weight_a
 	b.position += direction * overlap * (1.0 - weight_a)
 	return true
+
+
+# a's share of the pair correction, or -1 to skip the pair. Overlap between
+# mobile bodies is ALWAYS resolved — when both sides claim pushability 0
+# ("rigid"), physics wins and the correction splits evenly. Only immobile
+# blockers are truly immovable (both immobile: user-placed overlap, leave it).
+func _separation_weight_a(a: Dota2LabUnit, b: Dota2LabUnit) -> float:
+	if not a.mobile and not b.mobile:
+		return -1.0
+	if not a.mobile:
+		return 0.0
+	if not b.mobile:
+		return 1.0
+	var push_a := _pushability(a)
+	var push_b := _pushability(b)
+	var total := push_a + push_b
+	if total <= 0.0:
+		return 0.5
+	return push_a / total
 
 
 func _pushability(unit: Dota2LabUnit) -> float:

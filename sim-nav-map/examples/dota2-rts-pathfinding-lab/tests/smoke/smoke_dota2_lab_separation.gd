@@ -21,6 +21,7 @@ func _ready() -> void:
 	_test_opposing_squads_cross()
 	_test_coincident_spawn_splits()
 	_test_unit_inside_static_is_pushed_out()
+	_test_zero_pushability_is_rigid_not_ghost()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - dota2 lab separation")
@@ -113,6 +114,23 @@ func _test_unit_inside_static_is_pushed_out() -> void:
 		"static-project: unit pushed out of obstacle body, got %s" % str(unit.position)
 	)
 	print("SEPARATION static-project: final=%s" % str(unit.position))
+
+
+# pushability 0 means rigid, never ghost: with BOTH sliders at zero a head-on
+# pair must still resolve overlap (forced even split) and pass — regression
+# anchor for the total==0 skip that used to let movers clip through.
+func _test_zero_pushability_is_rigid_not_ghost() -> void:
+	var a := Dota2LabUnit.new("a", "blue", Vector2(200.0, 450.0), 11.0, 110.0, true)
+	var b := Dota2LabUnit.new("b", "red", Vector2(600.0, 450.0), 11.0, 110.0, true, PI)
+	var world := _open_world([a, b])
+	world.motion.pushability_moving = 0.0
+	world.motion.pushability_idle = 0.0
+	world.issue_move("a", Vector2(600.0, 450.0))
+	world.issue_move("b", Vector2(200.0, 450.0))
+	var ticks := _run_until_idle_with_invariant(world, 600, "rigid-zero")
+	_assert_completed(a, "rigid-zero a")
+	_assert_completed(b, "rigid-zero b")
+	print("SEPARATION rigid-zero: ticks=%d a=%s b=%s" % [ticks, str(a.position), str(b.position)])
 
 
 func _run_until_idle_with_invariant(world: Dota2LabWorld, max_ticks: int, label: String) -> int:
