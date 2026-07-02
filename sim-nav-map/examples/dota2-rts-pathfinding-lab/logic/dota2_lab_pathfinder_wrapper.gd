@@ -124,11 +124,40 @@ func validate_movement_line(
 	start: Vector2,
 	target: Vector2,
 	units: Array[Dota2LabUnit],
-	refresh_dynamic: bool = true
+	refresh_dynamic: bool = true,
+	clearance_override: float = -1.0
 ) -> SimNavMovementLineResult:
+	# clearance_override < 0 uses the unit's full radius. The motion layer
+	# passes radius minus the ½-cell unit-relax (movement-feel-policy M2) when
+	# re-validating a unit-blocked step; the raster DDA inside stays governed
+	# by pass_mask, so statics keep their full conservative band.
 	if refresh_dynamic:
 		refresh_dynamic_units(units)
-	return facade.validate_movement_line(start, target, unit.radius, pass_mask, _movement_filter_for_unit(unit))
+	var clearance := unit.radius if clearance_override < 0.0 else clearance_override
+	return facade.validate_movement_line(start, target, clearance, pass_mask, _movement_filter_for_unit(unit))
+
+
+# Slide-step static validation (movement-feel-policy M1): playable bounds
+# plus EXACT static geometry, deliberately skipping the static raster DDA.
+# The raster band is a long-path conservativeness tool; inside a narrow gap
+# it steals geometrically legal side-step room (band leaves 16 px where
+# geometry allows 34 px), which would make opposing units unable to brush
+# past. This mirrors 0 A.D., where movement checks statics geometrically and
+# only terrain via the grid. A slide may therefore end inside the raster
+# band; the core impassable-escape rule (CORE-020 fix) walks it back out.
+# Unit-vs-unit slide checks live in the motion controller against LIVE unit
+# positions — the nav map's dynamic shapes are refreshed once per tick and
+# would let two units slide into the same spot.
+func validate_slide_statics(
+	unit: Dota2LabUnit,
+	start: Vector2,
+	target: Vector2
+) -> bool:
+	if not _point_inside_playable_bounds(target, unit.radius):
+		return false
+	return SimNavLineOfSight.segment_clear(
+		start, target, nav_map.get_static_obstruction_shapes(), unit.radius
+	)
 
 
 func diagnostics() -> Dictionary:

@@ -5,6 +5,7 @@ const TICK_DELTA := 1.0 / 60.0
 const QUEUE_LATENCY_BOUND_TICKS := 8
 const SOLO_MOVE_TICKS := 700
 const STATIC_REPLAN_TICKS := 900
+const ARRIVE_TOLERANCE := 8.0
 
 
 var _failures: Array[String] = []
@@ -15,6 +16,7 @@ func _ready() -> void:
 	_test_long_path_delivery_bound()
 	_test_solo_no_false_failed()
 	_test_static_blocker_midpath_replans()
+	_test_walled_in_unit_holds_then_resumes()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - dota2 lab movement feel contract")
@@ -102,6 +104,60 @@ func _test_static_blocker_midpath_replans() -> void:
 	_assert_true(saw_following_after_replan, "a5-static: should resume FOLLOWING after blocker replan")
 	_assert_eq(Dota2LabUnit.STATE_IDLE, unit.state, "a5-static: reachable route around blocker should reach IDLE")
 	_assert_true(_queue_is_drained(world), "a5-static: queue should drain after terminal settle")
+
+
+# movement-feel-policy v2 A9: a unit boxed in by idle units enters HOLDING
+# (order retained, bounded request rate) instead of FAILED, and resumes to
+# the goal on its own once a blocker is removed.
+func _test_walled_in_unit_holds_then_resumes() -> void:
+	var world := Dota2LabWorld.new()
+	world.obstacles = []
+	var center := Vector2(400.0, 450.0)
+	var wall_units: Array[Dota2LabUnit] = [
+		Dota2LabUnit.new("walled", "blue", center, 11.0, 110.0, true),
+	]
+	# Six stationary blockers on a tight ring: adjacent-gap chord ≈ 26 px,
+	# below the relaxed pass requirement (11 + 7 = 18 per side), so the
+	# center unit cannot slide or detour out.
+	for i in range(6):
+		var angle := TAU * float(i) / 6.0
+		wall_units.append(Dota2LabUnit.new(
+			"ring_%d" % i, "red", center + Vector2.RIGHT.rotated(angle) * 26.0, 11.0, 0.0, false
+		))
+	world.units = wall_units
+	world._rebuild_navigation()
+	world.clear_traces()
+	var unit := world.get_unit("walled")
+	world.issue_move("walled", Vector2(700.0, 450.0))
+
+	var entered_holding := false
+	var holding_ticks := 0
+	for i in range(600):
+		world.step(TICK_DELTA)
+		if unit.state == Dota2LabUnit.STATE_HOLDING:
+			entered_holding = true
+			holding_ticks += 1
+	_assert_true(entered_holding, "a9-hold: walled-in unit should enter HOLDING")
+	_assert_eq(Dota2LabUnit.STATE_HOLDING, unit.state, "a9-hold: unit should still be HOLDING while walled in")
+	var metrics := world.get_metrics()
+	var request_total := int(metrics.get("long_path_requests", 0)) + int(metrics.get("short_path_requests", 0))
+	_assert_true(
+		request_total <= 600 / 30 + 12,
+		"a9-hold: holding activity should stay bounded, requests=%d" % request_total
+	)
+
+	# Open the ring toward the goal; the held order must resume by itself.
+	for i in range(world.units.size() - 1, -1, -1):
+		if world.units[i].id == "ring_0":
+			world.units.remove_at(i)
+	var unit_ids: Array[String] = ["walled"]
+	var settled := _run_until_terminal(world, unit_ids, 900)
+	_assert_true(settled, "a9-hold: unit should settle after the ring opens")
+	_assert_eq(Dota2LabUnit.STATE_IDLE, unit.state, "a9-hold: resumed order should reach IDLE")
+	_assert_true(
+		unit.position.distance_to(Vector2(700.0, 450.0)) <= ARRIVE_TOLERANCE,
+		"a9-hold: unit should reach the goal after release, pos=%s" % str(unit.position)
+	)
 
 
 func _single_unit_world(start: Vector2) -> Dota2LabWorld:

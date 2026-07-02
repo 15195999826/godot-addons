@@ -1,6 +1,31 @@
 # Dota2 Lab Development Plan
 
-> Active document. Updated 2026-05-15.
+> Active document. Updated 2026-07-02.
+
+## Movement Feel v2 (2026-07-02)
+
+The user verdict on v1 was that its accepted baseline (group moves ending
+mostly `FAILED`, narrow-gap crossings giving up) was itself the poor feel.
+`docs/design-notes/movement-feel-policy.md` was rewritten as **v2**, defined
+forward from Dota 2 behavior; the motion controller now implements:
+
+- M1 tangential slide (validated against LIVE unit positions plus exact
+  static geometry — deliberately not the static raster DDA, which steals
+  legal side-step room in narrow gaps; the core impassable-escape rule
+  walks slid units back out of the raster band);
+- M2 ½-cell unit-vs-unit clearance relax (0 A.D. relaxClearanceForUnits);
+- M3 crowded arrive with a second-ring radius once the budget is spent;
+- M4 `HOLDING` state replacing `max_retry_exceeded → FAILED` parking, plus
+  `STATUS_START_RECOVERED` long results now accepted (slides may legally
+  end inside the raster band).
+
+Result deltas (smoke-pinned): default 8-unit group move `IDLE 8 / FAILED 0`
+(was `IDLE 3 / FAILED 5`); narrow-gap cross-pass both units arrive in ~222
+ticks via ~27 slides (was both `FAILED`); mixed static+dynamic all arrive;
+walled-in unit holds at a bounded request rate and resumes when released
+(new A9 smoke). All six `dota2lab/smoke` scenes and the full 50-scene
+regression pass. Phases A–C and Layer 2 notes below predate v2 and remain
+as history.
 
 ## Baseline
 
