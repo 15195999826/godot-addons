@@ -69,8 +69,12 @@ free.
     round it via contact sliding. This is the creep-blocking flavor (real
     Dota2 blocks friend and foe alike — opening creep-blocking blocks your
     OWN creeps).
-  Keep `pushability_moving > 0`: two movers meeting head-on rely on it to
-  resolve their mutual overlap; at 0 they clip through each other.
+  Any value in `[0, 1]` is safe — overlap between mobile bodies is always
+  resolved. Pushability decides *who yields*, physics decides *that they
+  separate*: a both-zero pair splits evenly (rigid, never ghost), and only
+  `mobile == false` blockers are truly immovable. Note mover-vs-mover
+  contacts normalize to 50/50 regardless of the moving value; the sliders
+  really tune who yields in mover-vs-idle contacts.
 - **Head-on lateral bias**: when a mover is pushing nose-first into the other
   body (`|facing · dir| > 0.85`), the correction direction gains a
   fixed-handedness perpendicular component. This is the deadlock breaker:
