@@ -70,7 +70,11 @@ public:
 	// C++-side access for sibling native classes (cache, pathfinders).
 	const simnav::CoreMap &core() const { return core_map; }
 	simnav::CoreMap &core() { return core_map; }
+	// Set by SimNavNativeQueue while a background batch is in flight; every
+	// mutating entry point refuses until collect().
+	void set_mutation_frozen(bool p_frozen) { mutation_frozen = p_frozen; }
 
 private:
 	simnav::CoreMap core_map;
+	bool mutation_frozen = false;
 };

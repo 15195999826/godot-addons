@@ -111,6 +111,11 @@ public:
 	static constexpr int64_t PACK_LIMIT = 65536;
 
 	void setup(const CoreMap *p_map) { map = p_map; }
+	// Frozen = a background batch is in flight: every table access must be a
+	// pure read. Lazy build/repair paths are refused (loud error) instead of
+	// mutating shared state under a concurrent reader.
+	void set_frozen(bool p_frozen) { frozen = p_frozen; }
+	bool is_frozen() const { return frozen; }
 	LongPathResult compute_path_result(const LongPathQuery &p_query);
 	void invalidate_jump_point_cache() { caches.clear(); }
 	void prewarm_jump_point_cache(int32_t p_pass_mask);
@@ -133,6 +138,11 @@ private:
 
 	const CoreMap *map = nullptr;
 	std::unordered_map<int32_t, JumpTables> caches;
+	bool frozen = false;
+
+	// Read-only variant of tables_for: returns nullptr (with an error)
+	// whenever serving the mask would mutate the cache.
+	const JumpTables *_tables_for_frozen(int32_t p_pass_mask) const;
 
 	using HeapKey = std::array<int64_t, 5>;
 
@@ -162,10 +172,13 @@ private:
 	static std::vector<Vector2i> _expand_sparse_navcell_path(const std::vector<Vector2i> &p_cells);
 	static void _expand_navcell_segment(const Vector2i &p_from, const Vector2i &p_to, std::vector<Vector2i> &r_segment);
 	std::vector<Vector2> _waypoint_path_from_cells(const std::vector<Vector2i> &p_cells, const PathGoal &p_goal) const;
-	std::vector<Vector2> _refine_waypoint_path(const std::vector<Vector2> &p_raw_path, const LongPathQuery &p_query, const String &p_post_process, double p_spacing, JumpTables *p_segment_tables);
-	std::vector<Vector2> _compress_execution_points(const Vector2 &p_start_world, const std::vector<Vector2> &p_points, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, JumpTables *p_segment_tables) const;
+	// Returns the tables for a mask honoring the frozen contract, or nullptr
+	// when the mask cannot be served without mutation while frozen.
+	const JumpTables *_tables_for_query(int32_t p_pass_mask);
+	std::vector<Vector2> _refine_waypoint_path(const std::vector<Vector2> &p_raw_path, const LongPathQuery &p_query, const String &p_post_process, double p_spacing, const JumpTables *p_segment_tables);
+	std::vector<Vector2> _compress_execution_points(const Vector2 &p_start_world, const std::vector<Vector2> &p_points, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, const JumpTables *p_segment_tables) const;
 	static std::vector<Vector2> _apply_waypoint_spacing(const Vector2 &p_start_world, const std::vector<Vector2> &p_points, double p_spacing);
-	bool _segment_passable_clear(const Vector2 &p_a, const Vector2 &p_b, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, JumpTables *p_segment_tables) const;
+	bool _segment_passable_clear(const Vector2 &p_a, const Vector2 &p_b, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, const JumpTables *p_segment_tables) const;
 	static int64_t _path_cost_for_cells(const std::vector<Vector2i> &p_cells);
 	static String _normalized_post_process(const String &p_post_process);
 	static double _effective_waypoint_spacing(const LongPathQuery &p_query);
