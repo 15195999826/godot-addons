@@ -17,6 +17,7 @@
         "smoke_sim_nav_reachability_query.tscn",
         "smoke_sim_nav_hierarchical_dirty_recompute.tscn",
         "smoke_sim_nav_jump_point_cache.tscn",
+        "smoke_sim_nav_jump_table_repair.tscn",
         "smoke_sim_nav_long_pathfinder.tscn",
         "smoke_sim_nav_vertex_pathfinder.tscn",
         "smoke_sim_nav_line_validation.tscn",

@@ -160,6 +160,18 @@ func prewarm_jump_point_cache(pass_mask: int) -> void:
 	_jump_point_cache(pass_mask)
 
 
+# Dirty-flush entry (facade): incrementally repair every built cache for the
+# currently-dirty navcells instead of discarding them. Must run BEFORE the
+# dirty flags are cleared. invalidate_jump_point_cache() stays as the nuclear
+# path for full rebuilds.
+func repair_jump_point_caches() -> void:
+	if _nav_map == null or not _nav_map.has_dirty_navcells():
+		return
+	var dirty_cells := _nav_map.collect_dirty_navcells()
+	for cache_value in _jump_point_caches.values():
+		(cache_value as SimNavJumpPointCache).repair_dirty_cells(dirty_cells)
+
+
 func _astar_cells(
 	start: Vector2i,
 	goal: SimNavPathGoal,
@@ -653,9 +665,13 @@ func _jump_point_cache(pass_mask: int) -> SimNavJumpPointCache:
 		new_cache.reset(_nav_map, pass_mask)
 		_jump_point_caches[pass_mask] = new_cache
 	var cache: SimNavJumpPointCache = _jump_point_caches[pass_mask]
-	cache.invalidate_dirty_navcells(_nav_map)
 	if cache.is_dirty():
 		cache.reset(_nav_map, pass_mask)
+	elif _nav_map != null and _nav_map.has_dirty_navcells():
+		# Uncleared dirty flags (integrations that never flush through the
+		# facade): repair per query — idempotent, and strictly cheaper than
+		# the full reset this path used to pay.
+		cache.repair_dirty_cells(_nav_map.collect_dirty_navcells())
 	return cache
 
 

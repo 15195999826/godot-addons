@@ -32,7 +32,10 @@ func recompute_dirty(passability_masks: Array[int], clear_dirty_navcells: bool =
 	if dirty_navcells > 0 and _hierarchical != null:
 		rebuilt_chunks = _hierarchical.recompute_dirty(_nav_map, passability_masks)
 	if dirty_navcells > 0 and _long != null:
-		_long.invalidate_jump_point_cache()
+		# Incremental: built jump tables are repaired for the dirty band, not
+		# discarded (runtime walls stay cheap). Reads the dirty list, so it
+		# must precede clear_dirty_navcells below.
+		_long.repair_jump_point_caches()
 	if clear_dirty_navcells and dirty_navcells > 0:
 		_nav_map.clear_dirty_navcells()
 	return {

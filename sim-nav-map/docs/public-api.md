@@ -221,10 +221,12 @@ Projection DTOs:
    `next_global_region()`, and `get_diagnostics()` are diagnostics/test support
    and should not become game logic dependencies.
 - `SimNavLongPathfinder` exposes `compute_path_immediate()` and
-  `compute_path_result()`, plus `invalidate_jump_point_cache()` and
+  `compute_path_result()`, plus `invalidate_jump_point_cache()` (nuclear),
   `prewarm_jump_point_cache(pass_mask)` (optional: pays the bake + ray-table
-  build at rebuild time instead of on the first query). Dirty navcells
-  invalidate the jump-point cache before subsequent queries.
+  build at rebuild time instead of on the first query), and
+  `repair_jump_point_caches()` (incremental: rebuilds only the ray rows and
+  columns around dirty navcells; called by the facade dirty flush). Dirty
+  navcells are repaired into the jump tables before subsequent queries.
   `compute_path_immediate()` is the compatibility path-only API.
   `compute_path_result()` is the Feature 5 contract API and returns
   `SimNavLongPathResult`.
