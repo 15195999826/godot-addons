@@ -20,6 +20,7 @@ var _dirtiness: PackedByteArray = PackedByteArray()
 # 0 -> 1 transition goes through _mark_navcell_dirty_idx so the two cannot
 # desync. Incremental jump-table repair depends on this enumeration.
 var _dirty_cell_list: Array[Vector2i] = []
+var _dirty_navcell_revision: int = 0
 var _obstruction_dirtiness: PackedByteArray = PackedByteArray()
 # Parallel list of currently-dirty obstruction navcells. Lets collect/has/clear
 # operations run in O(dirty_count) instead of scanning the full grid byte
@@ -708,6 +709,15 @@ func _mark_navcell_dirty_idx(idx: int, coord: Vector2i) -> void:
 	if _dirtiness[idx] == 0:
 		_dirtiness[idx] = 1
 		_dirty_cell_list.append(coord)
+		_dirty_navcell_revision += 1
+
+
+# Monotonic counter bumped whenever a navcell first turns dirty. Consumers
+# that repair against the dirty set (jump tables) remember the revision they
+# repaired at and skip repeat repairs while the set is unchanged — repairs
+# are idempotent, so equal revision means nothing new to do.
+func dirty_navcell_revision() -> int:
+	return _dirty_navcell_revision
 
 
 func _navcell_row_major_less(a: Vector2i, b: Vector2i) -> bool:

@@ -48,6 +48,10 @@ var _ray_north: PackedInt32Array = PackedInt32Array()
 # repaired locally vs rebuilt from scratch.
 var repair_count: int = 0
 var full_reset_count: int = 0
+# Dirty revision this cache last repaired/rebuilt against (see
+# SimNavMap.dirty_navcell_revision) — lets per-tick hot entries skip repeat
+# repairs while the dirty set is unchanged.
+var repaired_dirty_revision: int = -1
 
 
 func reset(nav_map: SimNavMap, pass_mask: int) -> void:
@@ -58,6 +62,8 @@ func reset(nav_map: SimNavMap, pass_mask: int) -> void:
 	_bake_grid()
 	_build_ray_tables()
 	full_reset_count += 1
+	if _nav_map != null:
+		repaired_dirty_revision = _nav_map.dirty_navcell_revision()
 
 
 # Incrementally refresh the baked grid + ray tables for changed navcells.

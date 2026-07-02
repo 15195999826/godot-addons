@@ -22,6 +22,7 @@
         "smoke_sim_nav_long_pathfinder.tscn",
         "smoke_sim_nav_vertex_pathfinder.tscn",
         "smoke_sim_nav_line_validation.tscn",
+        "smoke_sim_nav_movement_line_fast_path.tscn",
         "smoke_sim_nav_path_request_queue.tscn",
         "smoke_sim_nav_diagnostics_exports.tscn",
         "repro/repro_core_001_vertex_obb_outset.tscn",
