@@ -84,6 +84,9 @@ var _max_step_usec: int = 0
 var _max_step_tick: int = 0
 var _total_step_usec: int = 0
 var _measured_step_count: int = 0
+# Rolling window (~5 s at 60 Hz) so a one-off cold-cache spike does not
+# permanently mask later anomalies the way the all-time max does.
+var _recent_step_usecs: Array[int] = []
 var _event_log: Array[Dictionary] = []
 var _slow_frame_log: Array[Dictionary] = []
 var _last_export_path: String = ""
@@ -135,6 +138,9 @@ func _process(delta: float) -> void:
 			_max_step_tick = step_tick
 		_total_step_usec += _last_step_usec
 		_measured_step_count += 1
+		_recent_step_usecs.append(_last_step_usec)
+		while _recent_step_usecs.size() > 300:
+			_recent_step_usecs.pop_front()
 		if _last_step_usec >= SLOW_FRAME_THRESHOLD_USEC:
 			_record_slow_frame(step_tick, _last_step_usec, minf(delta, 0.05))
 		_update_auto_demo_loop()
@@ -673,9 +679,10 @@ func _update_hud() -> void:
 			int(step_stats.get("plans_applied", 0)),
 			int(step_stats.get("plans_waiting", 0)),
 		],
-		"Plans %d   LOS checks %d" % [
+		"Plans %d   LOS checks %d   last plan %.1fms" % [
 			int(pf.get("plan_count", 0)),
 			int(pf.get("line_check_count", 0)),
+			float(pf.get("last_plan_usec", 0)) / 1000.0,
 		],
 		"Speed tiers: amber %.0f   blue %.0f   violet %.0f" % [
 			Dota2LabWorld.SPEED_SLOW, Dota2LabWorld.SPEED_MID, Dota2LabWorld.SPEED_FAST,
@@ -683,11 +690,12 @@ func _update_hud() -> void:
 		selected_path_line,
 		"",
 		"Performance",
-		"step %.2fms   avg %.2fms   max %.2fms @ tick %d" % [
+		"step %.2fms   avg %.2fms   max %.2fms @ tick %d   5s-max %.2fms" % [
 			float(_last_step_usec) / 1000.0,
 			avg_step_msec,
 			float(_max_step_usec) / 1000.0,
 			_max_step_tick,
+			float(_recent_max_step_usec()) / 1000.0,
 		],
 		"slow %d   events %d   motion updates %d" % [
 			_slow_frame_log.size(),
@@ -874,12 +882,20 @@ func _rect_from_points(a: Vector2, b: Vector2) -> Rect2:
 	return Rect2(topleft, size)
 
 
+func _recent_max_step_usec() -> int:
+	var peak := 0
+	for value in _recent_step_usecs:
+		peak = maxi(peak, value)
+	return peak
+
+
 func _reset_perf_metrics() -> void:
 	_last_step_usec = 0
 	_max_step_usec = 0
 	_max_step_tick = 0
 	_total_step_usec = 0
 	_measured_step_count = 0
+	_recent_step_usecs.clear()
 	_slow_frame_log.clear()
 	_last_export_path = ""
 
