@@ -39,6 +39,24 @@
 | ② | `is_line_walkable` 查表化（`movement_line_clear` 布尔快路径：baked 逃逸规则孪生 + 保留形状段；8 单位移动 tick 0.78→0.17 ms）| ✅ 2026-07-02 |
 | ③ | 移动管线三处 O(N²) 全部网格化（分离配对/接触转向/残余重叠统计）+ 静态投影 AABB 预筛；100 单位分散行军 tick ~3.8 ms、死球最坏 ~5.2 ms（原 ~20 ms）；≤16 单位保持原暴力路径（手感零风险）| ✅ 2026-07-02 |
 | ④ | budget smoke 套件（`smoke_dota2_lab_perf_budget`：规划/预热/地形 flush/100 单位 tick 四条绊线 + 修复路径结构断言）| ✅ 2026-07-02 |
-| ⑤ | GDExtension 铸模（含分离求解；Web/WASM 构建链）| ⏳ 唯一剩余项：等用户专门会话 + 技术简报 |
+| ⑤ | GDExtension 铸模（含分离求解；Web/WASM 构建链）| ✅ 2026-07-03（M0-M5 全落地，方案/拍板/pin 见 `gdextension-port-plan.md`）|
+
+## Native 后端（刀⑤ 产物，可切换）
+
+**GDScript 是永久默认实现与参照真值机；C++ 后端按项目选配**（`use_native` /
+`use_native_solver`，默认关）。行为经 A/B 焊死：表逐字节、查询逐字段、600 tick
+轨迹逐位（trig 用 double-then-narrow 精确复刻引擎，零 ε 妥协）。二进制
+（win dll + web wasm）随 submodule 入库，消费项目免工具链。
+
+Native 实测（同一 165×113 lab 图，2026-07-03）：
+
+- 单条跨图规划 ~0.07-0.11 ms（含 GDScript↔native DTO 转换往返）；后台批内纯计算 ~0.012 ms/条
+- 一次地形动态改变完整 flush ~0.44 ms（GDScript ~3.5 ms）
+- `movement_line_clear` ~0.9 µs/条（GDScript ~26 µs）
+- 100 单位分散行军 tick（全 native：规划+线检查+分离求解）~0.6 ms（GDScript ~4.5-5 ms）
+- **真后台规划**（GDScript 线程两次验尸判死的目标达成）：100 条 plan 批在 worker
+  线程 ~1.2 ms 算完，主线程 collect 等待 0 ms；固定延迟收割 = tick T pump 时在队者
+  T+1 pump 可见，到达只依赖入队位置不依赖墙钟（core-019 教训焊进契约）；Web
+  nothreads 构建同调度同步计算（`worker_supported()` = false）
 
 变更记录：信封条目变化时更新此文件并在 commit message 中注明。

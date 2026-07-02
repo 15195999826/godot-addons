@@ -1,4 +1,11 @@
-# 刀⑤ GDExtension 铸模 — 移植方案（2026-07-02 用户批准）
+# 刀⑤ GDExtension 铸模 — 移植方案（2026-07-02 用户批准；**2026-07-03 M0-M5 全部完成 ✅**）
+
+> 完成实况：M0 工具链 / M1 双平台 hello-world（wasm 浏览器 CDP 实证）/ M2 格网+射线表
+> 逐字节 / M3 长径全链逐字段 / M4 移动热路径 600 tick 逐位（trig double-then-narrow
+> 精确修复，零 ε）/ M5 真后台规划（固定延迟 T+1 收割 + 飞行中冻结守卫）。
+> 每里程碑 codex review findings 全修。实测数字进 capability-envelope.md native 节。
+> 风险登记核销：wasm 链 ✅ 排雷通过；trig ULP ✅ 精确修复（预案 ε 判据未动用）；
+> godot-cpp v10 master pin ✅ 稳定；Web 无线程 → 按预期回退同步同调度。
 
 寻路核心 + 分离求解热路径铸成 C++ GDExtension。战略定位（用户原话）：最底层设施，
 跨项目长期复用；解锁真后台线程规划（GDScript 线程两次验尸判死，死因语言层全局锁）。
@@ -43,8 +50,9 @@ mega call，SoA packed arrays，单位真相仍在 GDScript `Dota2LabUnit`）；
 ## 里程碑（每步收尾：A/B → 56 smoke 全绿 → 性能数字 → codex review → 修 findings → submodule commit + 主仓 bump）
 
 - **M0 工具链**：清单安装 + godot-cpp Windows 编译通过
-- **M1 hello-world 排雷**：Windows .dll 编辑器/headless 加载 + Emscripten 4.0.11 编 wasm
-  （nothreads）+ Extension Support web 导出 + headless Chrome 验证。**wasm 不通 = 方案否决级**
+- **M1 hello-world 排雷**：Windows .dll 编辑器/headless 加载 + Emscripten（版本见下方
+  pin 表，4.0.20）编 wasm（nothreads）+ Extension Support web 导出 + headless Chrome 验证。
+  **wasm 不通 = 方案否决级**
 - **M2 格网 + 路牌表**：A/B baked grid + 4 射线表逐字节（含脏修复后）
 - **M3 长径全链 + hierarchical + flush**：A/B 万级射线穷举 + 全查询矩阵 + 500 segment +
   connectivity 网格 + 地形改变复测；wrapper 接 use_native；性能数字第一批

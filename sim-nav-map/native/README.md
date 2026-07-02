@@ -1,8 +1,20 @@
 # sim-nav-map native backend (GDExtension)
 
-C++ 可切换后端：寻路核心 + 分离求解热路径。GDScript 实现是永久默认与参照真值机；
-本扩展面向高性能需求的项目，行为与 GDScript 逐位对拍（方案与验收见
-[`../docs/gdextension-port-plan.md`](../docs/gdextension-port-plan.md)）。
+C++ 可切换后端：寻路核心 + 分离求解热路径 + 真后台线程规划。GDScript 实现是
+永久默认与参照真值机；本扩展面向高性能需求的项目，行为与 GDScript 逐位对拍
+（方案/拍板/验收见 [`../docs/gdextension-port-plan.md`](../docs/gdextension-port-plan.md)，
+实测数字见 [`../docs/capability-envelope.md`](../docs/capability-envelope.md) native 节）。
+
+类家族（GDScript 只准 ClassDB 间接引用）：
+
+| 类 | 职责 |
+|---|---|
+| `SimNavNativeSupport` | 存在性/构建信息探针 + float 原语 parity 探针 |
+| `SimNavNativeMap` | CoreMap 边界（静态障碍子集；动态单位不入图） |
+| `SimNavNativeJumpPointCache` | JPS+ 射线表（bake/增量修复/热查询/焊接导出） |
+| `SimNavNativeFacade` | flush / reachability / 长径 / movement_line_clear（Dictionary 边界） |
+| `SimNavNativeMotionSolver` | Phase A/B 移动热路径（每 tick 一次 SoA call） |
+| `SimNavNativeQueue` | 后台 worker 规划；固定延迟 T+1 收割；飞行中冻结守卫 |
 
 ## 布局
 
