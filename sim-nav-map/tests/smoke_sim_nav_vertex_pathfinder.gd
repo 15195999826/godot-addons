@@ -85,6 +85,8 @@ func _test_blocked_navcell_terrain_edge_reroute() -> void:
 
 
 func _test_static_raster_passability_blocks_tangent_short_edge() -> void:
+	# Raster band: half-width 24 + clearance 11 + CLEARANCE_EXTENSION_RADIUS 16
+	# = 51 px from center x=360, so cell centers up to x=411 are blocked.
 	var nav_map := SimNavMap.new(45, 27, 16.0, Vector2.ZERO, 1)
 	var ground := SimNavPassabilityClassConfig.new()
 	ground.class_name_id = "ground"
@@ -100,24 +102,47 @@ func _test_static_raster_passability_blocks_tangent_short_edge() -> void:
 	nav_map.add_static_obstruction(blocker)
 	nav_map.rebuild_dirty()
 
+	# Case 1: start OUTSIDE the raster band, segment enters it mid-way.
+	# The passable->impassable transition must reject the direct edge even
+	# though exact static geometry finds it clear: for edges entering the
+	# band from outside, the raster stays stricter than geometry.
 	var req := SimNavShortPathRequest.new()
-	req.start = Vector2(398.0, 120.0)
+	req.start = Vector2(430.0, 120.0)
 	req.goal = SimNavPathGoal.point(Vector2(398.0, 300.0))
 	req.clearance = 11.0
 	req.range_px = 320.0
 	req.pass_mask = pass_mask
-
 	_assert_true(
 		SimNavLineOfSight.segment_clear(req.start, req.goal.center, nav_map.get_static_obstruction_shapes(), req.clearance),
-		"setup direct edge should be geometrically clear against exact static shape"
+		"setup diagonal edge should be geometrically clear against exact static shape"
 	)
 	var result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(req)
 	_assert_false(
 		result.status == SimNavShortPathResult.STATUS_DIRECT_GOAL,
-		"raster-blocked tangent short edge should not stay direct"
+		"raster-entering short edge should not stay direct"
 	)
 	if result.has_path():
-		_assert_movement_segments_clear(req.start, result.path, nav_map, req.clearance, req.pass_mask, "raster tangent reroute")
+		_assert_movement_segments_clear(req.start, result.path, nav_map, req.clearance, req.pass_mask, "raster diagonal reroute")
+
+	# Case 2: start INSIDE the raster band but geometrically clear (a unit
+	# shoved against the wall). The 0 A.D. impassable-escape rule (CORE-020
+	# chain) keeps the tangent walkable: impassable cells may be traversed
+	# until the first passable cell, so this direct tangent is legal.
+	var escape_req := SimNavShortPathRequest.new()
+	escape_req.start = Vector2(398.0, 120.0)
+	escape_req.goal = SimNavPathGoal.point(Vector2(398.0, 300.0))
+	escape_req.clearance = 11.0
+	escape_req.range_px = 320.0
+	escape_req.pass_mask = pass_mask
+	_assert_true(
+		SimNavLineOfSight.segment_clear(escape_req.start, escape_req.goal.center, nav_map.get_static_obstruction_shapes(), escape_req.clearance),
+		"setup tangent edge should be geometrically clear against exact static shape"
+	)
+	var escape_result := SimNavVertexPathfinder.new(nav_map).compute_short_path_result(escape_req)
+	_assert_true(
+		escape_result.status == SimNavShortPathResult.STATUS_DIRECT_GOAL,
+		"in-band geometrically-clear tangent should stay direct via the impassable-escape rule"
+	)
 
 
 func _test_circle_goal_lands_on_nearest_goal_point() -> void:

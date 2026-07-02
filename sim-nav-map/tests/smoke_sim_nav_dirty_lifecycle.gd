@@ -100,10 +100,12 @@ func _test_dirty_rasterize_preserves_base_navcell_data() -> void:
 	_assert_false(nav_map.is_passable_navcell(Vector2i(9, 9), ground_mask), "base blocked terrain should stay blocked")
 
 	nav_map.clear_dirty_navcells()
-	manager.move_shape(static_tag, nav_map.navcell_center_world(Vector2i(4, 3)))
+	# Move by 4 cells: the old cell must leave the new position's raster band
+	# (body + CLEARANCE_EXTENSION_RADIUS reaches 1 cell out) to assert clearing.
+	manager.move_shape(static_tag, nav_map.navcell_center_world(Vector2i(7, 3)))
 	manager.rasterize()
 	_assert_true(nav_map.is_passable_navcell(Vector2i(3, 3), ground_mask), "old static cell should clear after dirty rasterize")
-	_assert_false(nav_map.is_passable_navcell(Vector2i(4, 3), ground_mask), "new static cell should be blocked")
+	_assert_false(nav_map.is_passable_navcell(Vector2i(7, 3), ground_mask), "new static cell should be blocked")
 	_assert_false(nav_map.is_passable_navcell(Vector2i(9, 9), ground_mask), "base terrain should not be cleared by dirty rasterize")
 
 

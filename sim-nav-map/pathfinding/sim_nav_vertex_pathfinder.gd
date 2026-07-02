@@ -542,8 +542,13 @@ func _segment_passable_clear(a: Vector2, b: Vector2, pass_mask: int) -> bool:
 	var j0 := int(floor((a.y - origin.y) / cell_size))
 	var i1 := int(floor((b.x - origin.x) / cell_size))
 	var j1 := int(floor((b.y - origin.y) / cell_size))
-	if not _nav_map.is_passable_navcell(Vector2i(i0, j0), pass_mask):
-		return false
+	# 0 A.D. CheckLineMovement escape rule (Pathfinding.cpp:46-75): a segment
+	# may START on impassable navcells (unit shoved into a clearance ring by
+	# push) and keep moving through impassable cells until it first reaches a
+	# passable one; after that, re-entering impassable fails. Without this,
+	# a unit whose center cell flips impassable loses every outgoing edge and
+	# deadlocks (CORE-020 chain).
+	var currently_on_impassable := not _nav_map.is_passable_navcell(Vector2i(i0, j0), pass_mask)
 	if i0 == i1 and j0 == j1:
 		return true
 	var dx := b.x - a.x
@@ -573,7 +578,11 @@ func _segment_passable_clear(a: Vector2, b: Vector2, pass_mask: int) -> bool:
 	var i := i0
 	var j := j0
 	var max_steps := absi(i1 - i0) + absi(j1 - j0) + 4
-	while (i != i1 or j != j1) and max_steps > 0:
+	while i != i1 or j != j1:
+		# Fail closed when the traversal budget is exhausted (pathological
+		# float drift); treating an unverified segment as clear is unsafe.
+		if max_steps <= 0:
+			return false
 		max_steps -= 1
 		if t_max_x < t_max_y:
 			i += step_i
@@ -581,7 +590,9 @@ func _segment_passable_clear(a: Vector2, b: Vector2, pass_mask: int) -> bool:
 		else:
 			j += step_j
 			t_max_y += delta_t_y
-		if not _nav_map.is_passable_navcell(Vector2i(i, j), pass_mask):
+		if _nav_map.is_passable_navcell(Vector2i(i, j), pass_mask):
+			currently_on_impassable = false
+		elif not currently_on_impassable:
 			return false
 	return true
 

@@ -38,10 +38,16 @@ func setup_default() -> void:
 	pathfinder = ZeroAdRtsLabPathfinder.new(map_size, 16.0, 12.0)
 	motion = ZeroAdRtsLabMotionController.new()
 	current_target = Vector2(610.0, 210.0)
+	# Corridor gaps are 74 px (north_block bottom y=72 to center_block top
+	# y=146, mirrored south). The +1-cell raster extension (CORE-005) widens
+	# the static band to clearance 12 + cell 16 = 28 px per side, leaving an
+	# 18 px long-path channel per corridor — identical to the pre-extension
+	# channel (42 px gap - 2*12). The old 42 px gaps sealed completely under
+	# the extended band.
 	obstacles = [
 		ZeroAdRtsLabObstacle.new("center_block", Vector2(360.0, 210.0), Vector2(48.0, 128.0)),
-		ZeroAdRtsLabObstacle.new("north_block", Vector2(360.0, 76.0), Vector2(132.0, 56.0)),
-		ZeroAdRtsLabObstacle.new("south_block", Vector2(360.0, 344.0), Vector2(132.0, 56.0)),
+		ZeroAdRtsLabObstacle.new("north_block", Vector2(360.0, 44.0), Vector2(132.0, 56.0)),
+		ZeroAdRtsLabObstacle.new("south_block", Vector2(360.0, 376.0), Vector2(132.0, 56.0)),
 	]
 	units = [
 		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(56.0, 170.0), 11.0, 96.0, true),

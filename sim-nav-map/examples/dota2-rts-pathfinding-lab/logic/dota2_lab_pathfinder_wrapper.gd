@@ -5,8 +5,12 @@ extends RefCounted
 const PASSABILITY_CLASS_NAME := "ground"
 
 
+# 8 px raster cells: after core gained CLEARANCE_EXTENSION_RADIUS (+1 raster
+# cell, CORE-005), 16 px cells inflated static bands to clearance+16 = 28 px
+# per side and sealed the 56 px narrow-gap fixtures outright. 8 px keeps the
+# band at clearance+8 = 20 px per side and halves center quantization.
 var map_size: Vector2 = Vector2(720.0, 420.0)
-var cell_size: float = 16.0
+var cell_size: float = 8.0
 var default_clearance: float = 12.0
 var nav_map: SimNavMap = null
 var pass_mask: int = 0
@@ -19,7 +23,7 @@ var path_queue: SimNavPathRequestQueue = null
 
 func _init(
 	p_map_size: Vector2 = Vector2(720.0, 420.0),
-	p_cell_size: float = 16.0,
+	p_cell_size: float = 8.0,
 	p_default_clearance: float = 12.0
 ) -> void:
 	map_size = p_map_size
@@ -158,6 +162,11 @@ func _build_short_path_request(
 	request.pass_mask = pass_mask
 	request.avoid_moving_units = true
 	request.obstruction_filter = _movement_filter_for_unit(unit)
+	# Keep static outset vertices outside the raster band: unit radius (11) +
+	# outset must exceed class clearance (12) + raster extension (+1 cell) +
+	# half-cell center quantization, or A* edges INTO those vertices are
+	# rejected by the passable->impassable DDA rule.
+	request.static_vertex_extra_outset = cell_size * 2.0
 	return request
 
 
