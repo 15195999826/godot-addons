@@ -161,10 +161,21 @@ Turning in place is exempt.
   is one query — a cold-cache first query after a map rebuild can still
   spike one tick to ~40 ms; warm queries fit the frame. `plans_applied` /
   `plans_waiting` in the step stats attribute any spike at a glance.
-- A worker-thread variant (core queue `start_worker`) was implemented and
-  reverted: GDScript execution on spawned threads crashed unpredictably on
-  Godot 4.6 rc1 (dangling-callable "Nonexistent function" → access
-  violations, both mid-run on world teardown and at engine exit — the
-  ObjectDB force-free does not wait for running threads). True background
-  planning wants core-side C++/GDExtension work or an engine fix; the
-  time-sliced queue is the safe main-thread ceiling until then.
+- A worker-thread variant (core queue `start_worker`, and a WorkerThreadPool
+  rewrite of it) was implemented and reverted — twice:
+  - Godot 4.6 rc1: GDScript on spawned threads crashed unpredictably
+    (dangling-callable "Nonexistent function" → access violations, both
+    mid-run on world teardown and at engine exit — ObjectDB force-free does
+    not wait for running threads).
+  - Godot 4.7 stable retest: crashes mid-run were gone, but the pool task
+    was STARVED — a batch the main thread computes in ~160 ms did not finish
+    within 4+ seconds while the main thread kept ticking (probe:
+    `WORKER_BATCH_STARTED` printed immediately, `is_task_completed` stayed
+    false for 240+ ticks; high-priority made no difference). Concurrent
+    GDScript execution contends on language-level global locks (allocation
+    heavy JPS on the pool thread vs. the 60 Hz main loop), so threading buys
+    negative throughput in pure GDScript.
+  Verdict: threading the planner is off the table while it is GDScript.
+  True background planning wants the pathfinding core ported to
+  C++/GDExtension; the time-sliced queue is the main-thread ceiling until
+  then. Do not re-attempt with the current stack.
