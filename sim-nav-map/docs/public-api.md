@@ -344,7 +344,7 @@ surface and may remain more implementation-shaped:
 | `SimNavObstructionManager` | Convenience wrapper around obstruction registration and rasterization for tests or tools. `SimNavMap` remains the primary map owner. Setters: `set_unit_moving_flag()`, `set_control_group()`, `set_static_flags(tag, flags)`, `set_unit_flags(tag, flags)`. The flag setters propagate dirty navcells through `SimNavObstructionShape.flags`'s setter. |
 | `SimNavSpatialIndex` | Spatial query primitive for obstruction bounds. |
 | `SimNavLineOfSight` | Geometry helper used by short paths and diagnostics. |
-| `SimNavJumpPointCache` | Long-path cache helper. Call `SimNavLongPathfinder.invalidate_jump_point_cache()` instead for normal integration. |
+| `SimNavJumpPointCache` | Long-path JPS+ ray tables (cardinal jump/obstruction/boundary distances precomputed per reset) plus the baked passability grid. Call `SimNavLongPathfinder.invalidate_jump_point_cache()` instead for normal integration. |
 
 ## Internal Helpers
 
