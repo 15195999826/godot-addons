@@ -37,12 +37,14 @@ std::vector<int32_t> SimNavNativeFacade::_masks_from_packed(const PackedInt32Arr
 
 void SimNavNativeFacade::recompute(const PackedInt32Array &p_masks) {
 	ERR_FAIL_COND_MSG(!_ready(), "facade has no bound map (call setup first)");
+	ERR_FAIL_COND_MSG(batch_in_flight_guard, "recompute while a background plan batch is in flight (collect first)");
 	facade.recompute(_masks_from_packed(p_masks));
 }
 
 Dictionary SimNavNativeFacade::recompute_dirty(const PackedInt32Array &p_masks, bool p_clear_dirty_navcells) {
 	Dictionary out;
 	ERR_FAIL_COND_V_MSG(!_ready(), out, "facade has no bound map (call setup first)");
+	ERR_FAIL_COND_V_MSG(batch_in_flight_guard, out, "recompute_dirty while a background plan batch is in flight (collect first)");
 	simnav::FlushStats stats = facade.recompute_dirty(_masks_from_packed(p_masks), p_clear_dirty_navcells);
 	out["dirty_navcells"] = stats.dirty_navcells;
 	out["changed_obstruction_navcells"] = stats.changed_obstruction_navcells;
@@ -53,10 +55,12 @@ Dictionary SimNavNativeFacade::recompute_dirty(const PackedInt32Array &p_masks, 
 
 void SimNavNativeFacade::prewarm_jump_point_cache(int64_t p_pass_mask) {
 	ERR_FAIL_COND_MSG(!_ready(), "facade has no bound map (call setup first)");
+	ERR_FAIL_COND_MSG(batch_in_flight_guard, "prewarm while a background plan batch is in flight (collect first)");
 	facade.long_path().prewarm_jump_point_cache((int32_t)p_pass_mask);
 }
 
 void SimNavNativeFacade::invalidate_long_path_cache() {
+	ERR_FAIL_COND_MSG(batch_in_flight_guard, "invalidate while a background plan batch is in flight (collect first)");
 	facade.long_path().invalidate_jump_point_cache();
 }
 

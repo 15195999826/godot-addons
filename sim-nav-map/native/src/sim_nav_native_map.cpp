@@ -7,6 +7,12 @@
 
 // Core tags live in the int32 domain; a truncated 64-bit script value must
 // not alias another tag (0x100000001 silently becoming 1).
+
+// While a background plan batch is in flight the worker reads the core map
+// concurrently — every mutation entry point refuses until collect() runs.
+#define SIMNAV_MAP_MUTATION_GUARD(m_ret) 	ERR_FAIL_COND_V_MSG(mutation_frozen, m_ret, "map is frozen while a background plan batch is in flight (collect first)")
+#define SIMNAV_MAP_MUTATION_GUARD_VOID() 	ERR_FAIL_COND_MSG(mutation_frozen, "map is frozen while a background plan batch is in flight (collect first)")
+
 static bool _tag_in_range(int64_t p_tag) {
 	return p_tag > 0 && p_tag <= INT32_MAX;
 }
@@ -56,6 +62,7 @@ void SimNavNativeMap::_bind_methods() {
 }
 
 void SimNavNativeMap::setup(int p_width, int p_height, double p_navcell_size, const Vector2 &p_origin, int p_navcells_per_tile) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	ERR_FAIL_COND_MSG(p_width < 0 || p_height < 0, "map dimensions must be non-negative");
 	ERR_FAIL_COND_MSG(p_navcell_size <= 0.0, "navcell_size must be positive");
 	ERR_FAIL_COND_MSG((int64_t)p_width * (int64_t)p_height > (int64_t)INT32_MAX, "map cell count overflows the int32 domain");
@@ -63,6 +70,7 @@ void SimNavNativeMap::setup(int p_width, int p_height, double p_navcell_size, co
 }
 
 int64_t SimNavNativeMap::register_passability_class(const String &p_name, double p_clearance, bool p_affects_pathfinding, int64_t p_terrain_mask) {
+	SIMNAV_MAP_MUTATION_GUARD(0);
 	return core_map.register_passability_class(p_name, p_clearance, p_affects_pathfinding, (int32_t)p_terrain_mask);
 }
 
@@ -75,6 +83,7 @@ double SimNavNativeMap::max_clearance() const {
 }
 
 void SimNavNativeMap::set_bounds(double p_x0, double p_z0, double p_x1, double p_z1) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.set_bounds(p_x0, p_z0, p_x1, p_z1);
 }
 
@@ -87,6 +96,7 @@ int64_t SimNavNativeMap::get_terrain_tile_data(const Vector2i &p_tile) const {
 }
 
 void SimNavNativeMap::set_terrain_tile_data(const Vector2i &p_tile, int64_t p_value) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.set_terrain_tile_data(p_tile, (int32_t)p_value);
 }
 
@@ -95,10 +105,12 @@ int64_t SimNavNativeMap::get_navcell_terrain_data(const Vector2i &p_coord) const
 }
 
 int64_t SimNavNativeMap::rebuild_terrain_passability() {
+	SIMNAV_MAP_MUTATION_GUARD(0);
 	return core_map.rebuild_terrain_passability();
 }
 
 int64_t SimNavNativeMap::add_static_obstruction(const String &p_entity_id, const Vector2 &p_center, double p_width, double p_height, double p_rotation_rad, int64_t p_flags, const String &p_control_group, const String &p_control_group_2) {
+	SIMNAV_MAP_MUTATION_GUARD(0);
 	simnav::StaticShape shape;
 	shape.entity_id = p_entity_id;
 	shape.center = p_center;
@@ -112,6 +124,7 @@ int64_t SimNavNativeMap::add_static_obstruction(const String &p_entity_id, const
 }
 
 bool SimNavNativeMap::remove_obstruction(int64_t p_tag) {
+	SIMNAV_MAP_MUTATION_GUARD(false);
 	if (!_tag_in_range(p_tag)) {
 		return false;
 	}
@@ -119,6 +132,7 @@ bool SimNavNativeMap::remove_obstruction(int64_t p_tag) {
 }
 
 bool SimNavNativeMap::move_obstruction(int64_t p_tag, const Vector2 &p_center, double p_rotation_rad) {
+	SIMNAV_MAP_MUTATION_GUARD(false);
 	if (!_tag_in_range(p_tag)) {
 		return false;
 	}
@@ -126,6 +140,7 @@ bool SimNavNativeMap::move_obstruction(int64_t p_tag, const Vector2 &p_center, d
 }
 
 void SimNavNativeMap::mark_obstruction_shape_dirty(int64_t p_tag) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	if (!_tag_in_range(p_tag)) {
 		return;
 	}
@@ -133,10 +148,12 @@ void SimNavNativeMap::mark_obstruction_shape_dirty(int64_t p_tag) {
 }
 
 void SimNavNativeMap::rebuild_dirty() {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.rebuild_dirty();
 }
 
 int64_t SimNavNativeMap::rasterize_dirty_obstructions() {
+	SIMNAV_MAP_MUTATION_GUARD(0);
 	return core_map.rasterize_dirty_obstructions();
 }
 
@@ -161,18 +178,22 @@ int64_t SimNavNativeMap::get_navcell_data(const Vector2i &p_coord) const {
 }
 
 void SimNavNativeMap::set_navcell_data(const Vector2i &p_coord, int64_t p_value) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.set_navcell_data(p_coord, (int32_t)p_value);
 }
 
 void SimNavNativeMap::or_navcell_data(const Vector2i &p_coord, int64_t p_mask) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.or_navcell_data(p_coord, (int32_t)p_mask);
 }
 
 void SimNavNativeMap::and_navcell_data(const Vector2i &p_coord, int64_t p_inverse_mask) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.and_navcell_data(p_coord, (int32_t)p_inverse_mask);
 }
 
 void SimNavNativeMap::mark_dirty_navcell(const Vector2i &p_coord) {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.mark_dirty_navcell(p_coord);
 }
 
@@ -189,10 +210,12 @@ bool SimNavNativeMap::has_dirty_obstruction_navcells() const {
 }
 
 void SimNavNativeMap::clear_dirty_navcells() {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.clear_dirty_navcells();
 }
 
 void SimNavNativeMap::clear_dirty_obstruction_navcells() {
+	SIMNAV_MAP_MUTATION_GUARD_VOID();
 	core_map.clear_dirty_obstruction_navcells();
 }
 

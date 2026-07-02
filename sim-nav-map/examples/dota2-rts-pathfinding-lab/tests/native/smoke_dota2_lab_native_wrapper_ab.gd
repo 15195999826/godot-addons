@@ -51,33 +51,46 @@ func _run() -> void:
 	for route in routes:
 		gd_tickets.append(gd_wrapper.request_plan(route[0], route[1]))
 		native_tickets.append(native_wrapper.request_plan(route[0], route[1]))
-	if gd_wrapper.pending_plan_count() != native_wrapper.pending_plan_count():
-		_failures.append("pending count differs after enqueue (gd=%d native=%d)" % [gd_wrapper.pending_plan_count(), native_wrapper.pending_plan_count()])
+	if gd_wrapper.pending_plan_count() != routes.size() or native_wrapper.pending_plan_count() != routes.size():
+		_failures.append("pending count wrong after enqueue (gd=%d native=%d)" % [gd_wrapper.pending_plan_count(), native_wrapper.pending_plan_count()])
 
-	# Cancel one mid-flight on both sides (same cadence contract).
+	# Cancel one before any pump on both sides.
 	gd_wrapper.cancel_plan(gd_tickets[2])
 	native_wrapper.cancel_plan(native_tickets[2])
 
+	# Arrival CADENCE differs by design (approved decision): the native queue
+	# delivers the whole batch one tick after it was handed to the worker,
+	# while the GDScript queue drains one per tick. Assert each side's own
+	# contract, then compare the RESULTS route-for-route.
+	var gd_results: Dictionary = {}
+	var n_results: Dictionary = {}
 	var max_ticks := 12
 	for tick in range(max_ticks):
 		gd_wrapper.pump_async()
 		native_wrapper.pump_async()
-		if gd_wrapper.pending_plan_count() != native_wrapper.pending_plan_count():
-			_failures.append("tick %d: pending count differs (gd=%d native=%d)" % [tick, gd_wrapper.pending_plan_count(), native_wrapper.pending_plan_count()])
-			break
+		if tick == 1 and native_wrapper.pending_plan_count() != 0:
+			_failures.append("native queue did not deliver the whole batch at T+1 (pending=%d)" % native_wrapper.pending_plan_count())
 		for i in range(routes.size()):
-			var gd_result := gd_wrapper.take_plan_result(gd_tickets[i])
-			var n_result := native_wrapper.take_plan_result(native_tickets[i])
-			if (gd_result == null) != (n_result == null):
-				_failures.append("tick %d route %d: result arrival differs (gd=%s native=%s)" % [tick, i, gd_result != null, n_result != null])
-				continue
-			if gd_result != null:
-				_compare_results("route %d" % i, gd_result, n_result)
+			if not gd_results.has(i):
+				var gd_result := gd_wrapper.take_plan_result(gd_tickets[i])
+				if gd_result != null:
+					gd_results[i] = gd_result
+			if not n_results.has(i):
+				var n_result := native_wrapper.take_plan_result(native_tickets[i])
+				if n_result != null:
+					n_results[i] = n_result
 		if gd_wrapper.pending_plan_count() == 0 and native_wrapper.pending_plan_count() == 0:
 			break
 
-	if gd_wrapper.take_plan_result(gd_tickets[2]) != null or native_wrapper.take_plan_result(native_tickets[2]) != null:
-		_failures.append("cancelled ticket produced a result")
+	for i in range(routes.size()):
+		if i == 2:
+			if gd_results.has(2) or n_results.has(2):
+				_failures.append("cancelled ticket produced a result (gd=%s native=%s)" % [gd_results.has(2), n_results.has(2)])
+			continue
+		if not gd_results.has(i) or not n_results.has(i):
+			_failures.append("route %d: missing result (gd=%s native=%s)" % [i, gd_results.has(i), n_results.has(i)])
+			continue
+		_compare_results("route %d" % i, gd_results[i], n_results[i])
 
 	# ── is_line_walkable sweep ───────────────────────────────────────────────
 	var rng := RandomNumberGenerator.new()

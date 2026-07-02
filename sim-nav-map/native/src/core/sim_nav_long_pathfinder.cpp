@@ -108,6 +108,28 @@ JumpTables &LongPathfinder::tables_for(int32_t p_pass_mask) {
 	return tables;
 }
 
+const JumpTables *LongPathfinder::_tables_for_query(int32_t p_pass_mask) {
+	if (frozen) {
+		return _tables_for_frozen(p_pass_mask);
+	}
+	return &tables_for(p_pass_mask);
+}
+
+const JumpTables *LongPathfinder::_tables_for_frozen(int32_t p_pass_mask) const {
+	auto found = caches.find(p_pass_mask);
+	if (found == caches.end()) {
+		ERR_PRINT("[SimNavNative] jump tables for this pass_mask are not built and a background batch is in flight — prewarm the mask before begin_tick");
+		return nullptr;
+	}
+	const JumpTables &tables = found->second;
+	if (tables.is_dirty() ||
+			(map->has_dirty_navcells() && tables.repaired_dirty_revision != map->dirty_navcell_revision())) {
+		ERR_PRINT("[SimNavNative] jump tables need a rebuild/repair while a background batch is in flight — flush before begin_tick");
+		return nullptr;
+	}
+	return &tables;
+}
+
 void LongPathfinder::_repair_cache_for_current_dirty(JumpTables &p_tables) {
 	int64_t revision = map->dirty_navcell_revision();
 	if (p_tables.repaired_dirty_revision == revision) {
@@ -138,6 +160,13 @@ void LongPathfinder::repair_jump_point_caches() {
 bool LongPathfinder::movement_raster_clear(const Vector2 &p_a, const Vector2 &p_b, int32_t p_pass_mask) {
 	if (map == nullptr || p_pass_mask == 0) {
 		return false;
+	}
+	if (frozen) {
+		const JumpTables *tables = _tables_for_frozen(p_pass_mask);
+		if (tables == nullptr) {
+			return false;
+		}
+		return tables->movement_line_clear(p_a, p_b);
 	}
 	return tables_for(p_pass_mask).movement_line_clear(p_a, p_b);
 }
@@ -205,7 +234,7 @@ LongPathResult LongPathfinder::compute_path_result(const LongPathQuery &p_query)
 		std::vector<Vector2> direct_path;
 		direct_path.push_back(p_query.goal.nearest_point_on_goal(p_query.start_world));
 		std::vector<Vector2i> direct_cells = { start_cell };
-		JumpTables *segment_tables = p_query.excluded_regions.empty() ? &tables_for(p_query.pass_mask) : nullptr;
+		const JumpTables *segment_tables = p_query.excluded_regions.empty() ? _tables_for_query(p_query.pass_mask) : nullptr;
 		std::vector<Vector2> refined_direct = _refine_waypoint_path(direct_path, p_query, result.post_process, result.waypoint_spacing, segment_tables);
 		result.search = SearchDiagnostics();
 		result.search.algorithm = "direct";
@@ -239,7 +268,7 @@ LongPathResult LongPathfinder::compute_path_result(const LongPathQuery &p_query)
 	if (refinement_cells.size() != raw_cells.size()) {
 		refinement_path = _waypoint_path_from_cells(refinement_cells, p_query.goal);
 	}
-	JumpTables *segment_tables = p_query.excluded_regions.empty() ? &tables_for(p_query.pass_mask) : nullptr;
+	const JumpTables *segment_tables = p_query.excluded_regions.empty() ? _tables_for_query(p_query.pass_mask) : nullptr;
 	std::vector<Vector2> refined_path = _refine_waypoint_path(refinement_path, p_query, result.post_process, result.waypoint_spacing, segment_tables);
 	result.canonical_navcell = raw_cells[raw_cells.size() - 1];
 	int64_t cost = _path_cost_for_cells(raw_cells);
@@ -250,7 +279,11 @@ LongPathResult LongPathfinder::compute_path_result(const LongPathQuery &p_query)
 // ── JPS ──────────────────────────────────────────────────────────────────────
 
 std::vector<Vector2i> LongPathfinder::_jps_cells(const Vector2i &p_start, const PathGoal &p_goal, int32_t p_pass_mask, SearchDiagnostics &p_diag) {
-	JumpTables &tables = tables_for(p_pass_mask);
+	const JumpTables *tables_ptr = _tables_for_query(p_pass_mask);
+	if (tables_ptr == nullptr) {
+		return {};
+	}
+	const JumpTables &tables = *tables_ptr;
 	const bool use_point_jump = p_goal.type == PathGoal::POINT;
 	const Vector2i point_goal_cell = use_point_jump ? map->world_to_navcell(p_goal.center) : Vector2i();
 	std::vector<HeapKey> open_keys;
@@ -642,7 +675,7 @@ std::vector<Vector2> LongPathfinder::_waypoint_path_from_cells(const std::vector
 	return path;
 }
 
-std::vector<Vector2> LongPathfinder::_refine_waypoint_path(const std::vector<Vector2> &p_raw_path, const LongPathQuery &p_query, const String &p_post_process, double p_spacing, JumpTables *p_segment_tables) {
+std::vector<Vector2> LongPathfinder::_refine_waypoint_path(const std::vector<Vector2> &p_raw_path, const LongPathQuery &p_query, const String &p_post_process, double p_spacing, const JumpTables *p_segment_tables) {
 	if (p_raw_path.empty()) {
 		return {};
 	}
@@ -668,7 +701,7 @@ std::vector<Vector2> LongPathfinder::_refine_waypoint_path(const std::vector<Vec
 	return path;
 }
 
-std::vector<Vector2> LongPathfinder::_compress_execution_points(const Vector2 &p_start_world, const std::vector<Vector2> &p_points, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, JumpTables *p_segment_tables) const {
+std::vector<Vector2> LongPathfinder::_compress_execution_points(const Vector2 &p_start_world, const std::vector<Vector2> &p_points, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, const JumpTables *p_segment_tables) const {
 	if (p_points.empty()) {
 		return {};
 	}
@@ -707,7 +740,7 @@ std::vector<Vector2> LongPathfinder::_apply_waypoint_spacing(const Vector2 &p_st
 	return result;
 }
 
-bool LongPathfinder::_segment_passable_clear(const Vector2 &p_a, const Vector2 &p_b, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, JumpTables *p_segment_tables) const {
+bool LongPathfinder::_segment_passable_clear(const Vector2 &p_a, const Vector2 &p_b, int32_t p_pass_mask, const std::vector<ExcludedRegion> &p_excluded, const JumpTables *p_segment_tables) const {
 	if (p_segment_tables != nullptr) {
 		return p_segment_tables->segment_clear(p_a, p_b);
 	}

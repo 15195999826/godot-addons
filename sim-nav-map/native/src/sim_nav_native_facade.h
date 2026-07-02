@@ -34,9 +34,27 @@ public:
 	godot::Vector2i find_nearest_passable_navcell(const godot::Vector2i &p_start, int64_t p_pass_mask) const;
 	godot::Dictionary export_connectivity(int64_t p_pass_mask, const godot::String &p_class_name) const;
 
+	// C++-side access for SimNavNativeQueue (worker computes against the core
+	// facade directly; Variant conversion stays on the main thread).
+	simnav::Facade &core_facade() { return facade; }
+	const simnav::CoreMap &core_map_for_queue() const { return bound_map->core(); }
+	// In-flight regime: the worker reads map + tables concurrently, so map
+	// mutation, flush, prewarm and cache invalidation are refused and every
+	// table access goes through the frozen-safe (read-only) lookup.
+	void set_batch_in_flight(bool p_in_flight) {
+		batch_in_flight_guard = p_in_flight;
+		facade.long_path().set_frozen(p_in_flight);
+		if (bound_map.is_valid()) {
+			bound_map->set_mutation_frozen(p_in_flight);
+		}
+	}
+	static simnav::LongPathQuery query_from_dict_public(const godot::Dictionary &p_query) { return _query_from_dict(p_query); }
+	static godot::Dictionary result_to_dict_public(const simnav::LongPathResult &p_result) { return _result_to_dict(p_result); }
+
 private:
 	godot::Ref<SimNavNativeMap> bound_map;
 	simnav::Facade facade;
+	bool batch_in_flight_guard = false;
 
 	bool _ready() const { return bound_map.is_valid(); }
 	static std::vector<int32_t> _masks_from_packed(const godot::PackedInt32Array &p_masks);

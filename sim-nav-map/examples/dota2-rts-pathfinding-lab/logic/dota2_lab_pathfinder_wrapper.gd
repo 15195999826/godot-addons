@@ -46,16 +46,19 @@ var _line_filter: SimNavObstructionFilter = null
 # When true AND the simnav_native extension is present, rebuild_context builds
 # the C++ map/facade instead of the GDScript stack and planning/line checks
 # route through it. Plan results convert back to SimNavLongPathResult at plan
-# granularity, so every consumer type stays unchanged. Plan cadence keeps the
-# same deterministic one-per-tick count cap. Default OFF — GDScript is the
-# reference implementation (approved decision, see docs/gdextension-port-plan.md).
+# granularity, so every consumer type stays unchanged. Default OFF — GDScript
+# is the reference implementation (approved decision, docs/gdextension-port-plan.md).
+#
+# Planning runs on a TRUE background worker (SimNavNativeQueue) with a
+# deterministic fixed-latency contract: everything requested during tick T is
+# visible at tick T+1's pump, regardless of thread timing — a whole group
+# command lands in one tick instead of draining one-per-tick (approved
+# decision: switching backends may change plan-arrival cadence). On platforms
+# without threads (web nothreads) the same schedule computes synchronously.
 var use_native: bool = false
 var native_map: Object = null
 var native_facade: Object = null
-var _native_pending: Array[Dictionary] = []
-var _native_results: Dictionary = {}
-var _native_cancelled: Dictionary = {}
-var _native_next_ticket := 1
+var native_queue: Object = null
 var _native_static_shapes: Array[SimNavObstructionShapeStatic] = []
 
 
@@ -107,9 +110,8 @@ func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
 # ── Native backend context ───────────────────────────────────────────────────
 
 func _rebuild_context_native(static_obstacles: Array[Dota2LabObstacle]) -> void:
-	_native_pending.clear()
-	_native_results.clear()
-	_native_cancelled.clear()
+	if native_queue != null:
+		native_queue.call("clear")
 	var width := int(ceil(map_size.x / cell_size))
 	var height := int(ceil(map_size.y / cell_size))
 	native_map = ClassDB.instantiate("SimNavNativeMap")
@@ -134,6 +136,8 @@ func _rebuild_context_native(static_obstacles: Array[Dota2LabObstacle]) -> void:
 	native_facade.call("recompute", PackedInt32Array([pass_mask]))
 	native_map.call("clear_dirty_navcells")
 	native_facade.call("prewarm_jump_point_cache", pass_mask)
+	native_queue = ClassDB.instantiate("SimNavNativeQueue")
+	native_queue.call("setup", native_facade)
 	nav_map = null
 	hierarchical = null
 	long_pathfinder = null
@@ -149,13 +153,7 @@ func _rebuild_context_native(static_obstacles: Array[Dota2LabObstacle]) -> void:
 func request_plan(start: Vector2, goal: Vector2) -> int:
 	if use_native:
 		plan_count += 1
-		var ticket := _native_next_ticket
-		_native_next_ticket += 1
-		_native_pending.append({
-			"ticket": ticket,
-			"query": SimNavNativeBridge.query_to_dict(_build_long_path_query(start, goal)),
-		})
-		return ticket
+		return int(native_queue.call("enqueue", SimNavNativeBridge.query_to_dict(_build_long_path_query(start, goal))))
 	if path_queue == null:
 		return 0
 	plan_count += 1
@@ -166,33 +164,26 @@ func cancel_plan(ticket: int) -> void:
 	if ticket <= 0:
 		return
 	if use_native:
-		_native_cancelled[ticket] = true
-		for i in range(_native_pending.size() - 1, -1, -1):
-			if int(_native_pending[i]["ticket"]) == ticket:
-				_native_pending.remove_at(i)
-		_native_results.erase(ticket)
+		native_queue.call("cancel", ticket)
 		return
 	if path_queue == null:
 		return
 	path_queue.cancel(ticket)
 
 
-# Once per tick: compute at most PLAN_BUDGET_PER_TICK pending requests on
-# the main thread (time-slicing, not threading).
+# Once per tick. GDScript backend: compute at most PLAN_BUDGET_PER_TICK
+# requests on the main thread (time-slicing). Native backend: harvest the
+# background batch handed last tick (blocking collect = deterministic
+# fixed-latency arrival), then hand everything pending to the worker.
 func pump_async() -> void:
 	if use_native:
-		var processed_count := 0
-		while processed_count < PLAN_BUDGET_PER_TICK and not _native_pending.is_empty():
-			var request: Dictionary = _native_pending[0]
-			_native_pending.remove_at(0)
-			var ticket := int(request["ticket"])
-			if _native_cancelled.has(ticket):
-				continue
-			var compute_start := Time.get_ticks_usec()
-			var result_dict: Dictionary = native_facade.call("compute_path_result", request["query"])
-			last_plan_usec = Time.get_ticks_usec() - compute_start
-			_native_results[ticket] = SimNavNativeBridge.to_long_path_result(result_dict)
-			processed_count += 1
+		if int(native_queue.call("collect")) > 0:
+			var diagnostics: Dictionary = native_queue.call("get_diagnostics")
+			var batch_size := maxi(1, int(diagnostics.get("last_batch_size", 1)))
+			@warning_ignore("integer_division")
+			var per_plan: int = int(diagnostics.get("last_batch_compute_usec", 0)) / batch_size
+			last_plan_usec = per_plan
+		native_queue.call("begin_tick")
 		return
 	if path_queue == null:
 		return
@@ -208,11 +199,10 @@ func take_plan_result(ticket: int) -> SimNavLongPathResult:
 	if ticket <= 0:
 		return null
 	if use_native:
-		if not _native_results.has(ticket):
+		var result_dict: Dictionary = native_queue.call("take_result", ticket)
+		if result_dict.is_empty():
 			return null
-		var result: SimNavLongPathResult = _native_results[ticket]
-		_native_results.erase(ticket)
-		return result
+		return SimNavNativeBridge.to_long_path_result(result_dict)
 	if path_queue == null:
 		return null
 	return path_queue.take_long_path_result(ticket)
@@ -220,7 +210,7 @@ func take_plan_result(ticket: int) -> SimNavLongPathResult:
 
 func pending_plan_count() -> int:
 	if use_native:
-		return _native_pending.size()
+		return int(native_queue.call("pending_count"))
 	if path_queue == null:
 		return 0
 	return path_queue.pending_count()
