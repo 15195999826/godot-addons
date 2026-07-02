@@ -146,12 +146,13 @@ func _build_long_path_query(start: Vector2, goal: Vector2) -> SimNavLongPathQuer
 
 # Raster LOS against statics only, at class clearance. Used for waypoint
 # shortcutting: conservative (band-inflated) on purpose so a shortcut can
-# never commit the unit to a line the planner would have refused.
+# never commit the unit to a line the planner would have refused. Boolean
+# fast path — this runs per tick for every moving unit.
 func is_line_walkable(start: Vector2, target: Vector2) -> bool:
 	line_check_count += 1
-	return facade.validate_movement_line(
+	return facade.movement_line_clear(
 		start, target, default_clearance, pass_mask, _line_filter
-	).is_success()
+	)
 
 
 # Exact static geometry for the separation solve's project-out step.
