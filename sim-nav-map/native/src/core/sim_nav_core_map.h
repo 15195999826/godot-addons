@@ -47,6 +47,8 @@ struct StaticShape {
 	double height = 0.0;
 	double rotation_rad = 0.0;
 	int32_t flags = 0;
+	String control_group;
+	String control_group_2;
 
 	bool contains_point_with_clearance(const Vector2 &p_point, double p_clearance) const;
 };
@@ -131,6 +133,8 @@ public:
 	bool move_obstruction(int32_t p_tag, const Vector2 &p_center, double p_rotation_rad);
 	const StaticShape *get_static_shape(int32_t p_tag) const;
 	void get_static_shapes_sorted(std::vector<const StaticShape *> &r_shapes) const;
+	// Twin: get_static_obstruction_shapes_in_range — ascending tag order.
+	void get_static_shapes_in_range(const Vector2 &p_center, double p_range, std::vector<const StaticShape *> &r_shapes) const;
 	void mark_obstruction_shape_dirty(int32_t p_tag);
 
 	// Dirty / raster lifecycle.
@@ -157,6 +161,9 @@ public:
 	void or_navcell_data(const Vector2i &p_coord, int32_t p_mask);
 	void and_navcell_data(const Vector2i &p_coord, int32_t p_inverse_mask);
 	void composed_navcell_data(std::vector<int32_t> &r_out) const;
+	// Windowed variant for sub-grid consumers (hierarchical chunk rebuilds).
+	// Out-of-bounds cells read as -1 (all bits set = blocked).
+	void composed_navcell_data_rect(const Vector2i &p_origin_cell, const Vector2i &p_size, std::vector<int32_t> &r_out) const;
 
 private:
 	std::vector<PassClass> classes;
