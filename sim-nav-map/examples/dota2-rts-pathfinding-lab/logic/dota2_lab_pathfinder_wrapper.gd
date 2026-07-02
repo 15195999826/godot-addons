@@ -38,6 +38,8 @@ var vertex_pathfinder: SimNavVertexPathfinder = null
 var path_queue: SimNavPathRequestQueue = null
 var plan_count: int = 0
 var line_check_count: int = 0
+# Compute cost of the most recent drained plan (usec) — HUD observability.
+var last_plan_usec: int = 0
 
 var _line_filter: SimNavObstructionFilter = null
 
@@ -100,8 +102,12 @@ func cancel_plan(ticket: int) -> void:
 func pump_async() -> void:
 	if path_queue == null:
 		return
-	if path_queue.pending_count() > 0:
-		path_queue.process_budget(PLAN_BUDGET_PER_TICK)
+	if path_queue.pending_count() <= 0:
+		return
+	if path_queue.process_budget(PLAN_BUDGET_PER_TICK) > 0:
+		var processed: Array = path_queue.get_diagnostics().get("last_processed_requests", [])
+		if not processed.is_empty():
+			last_plan_usec = int((processed.back() as Dictionary).get("compute_usec", 0))
 
 
 func take_plan_result(ticket: int) -> SimNavLongPathResult:
@@ -165,6 +171,7 @@ func diagnostics() -> Dictionary:
 		"plan_count": plan_count,
 		"line_check_count": line_check_count,
 		"plans_pending": pending_plan_count(),
+		"last_plan_usec": last_plan_usec,
 	}
 
 
