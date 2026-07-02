@@ -62,6 +62,14 @@ var _world: Dota2LabWorld = null
 var _paused: bool = false
 var _hud: Label = null
 var _export_button: Button = null
+# Push tuning survives scene resets: sliders are the source of truth and are
+# re-applied to every freshly built world's engine.
+var _push_moving: float = Dota2LabMotionEngine.DEFAULT_PUSHABILITY_MOVING
+var _push_idle: float = Dota2LabMotionEngine.DEFAULT_PUSHABILITY_IDLE
+var _push_moving_slider: HSlider = null
+var _push_idle_slider: HSlider = null
+var _push_moving_value: Label = null
+var _push_idle_value: Label = null
 var _mode: int = ToolMode.COMMAND
 var _selected_unit_ids: Array[String] = []
 var _drag_start: Vector2 = Vector2.ZERO
@@ -104,6 +112,8 @@ func _ready() -> void:
 	_export_button.z_index = 20
 	_export_button.pressed.connect(_on_export_log_pressed)
 	add_child(_export_button)
+	_build_push_controls()
+	_apply_push_tuning()
 	_record_event("ready", {"selected_unit_ids": _selected_unit_ids})
 	_install_dev_agent()
 	_update_hud()
@@ -339,6 +349,113 @@ func _print_dev_agent_paths() -> void:
 
 func _on_export_log_pressed() -> void:
 	export_debug_log()
+
+
+# ─────────────────────────── Push tuning UI ──────────────────────────────────
+
+func _build_push_controls() -> void:
+	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, 742.0)
+	_add_panel_label("Push tuning (live)   0 = solid body", origin, 15)
+
+	_add_panel_label("Moving", origin + Vector2(0.0, 30.0), 14)
+	_push_moving_slider = _add_push_slider(origin + Vector2(72.0, 30.0), _push_moving)
+	_push_moving_slider.value_changed.connect(_on_push_moving_changed)
+	_push_moving_value = _add_panel_label("", origin + Vector2(348.0, 30.0), 14)
+
+	_add_panel_label("Idle", origin + Vector2(0.0, 62.0), 14)
+	_push_idle_slider = _add_push_slider(origin + Vector2(72.0, 62.0), _push_idle)
+	_push_idle_slider.value_changed.connect(_on_push_idle_changed)
+	_push_idle_value = _add_panel_label("", origin + Vector2(348.0, 62.0), 14)
+
+	var soft_button := Button.new()
+	soft_button.text = "Soft (LoL)"
+	soft_button.position = origin + Vector2(0.0, 96.0)
+	soft_button.custom_minimum_size = Vector2(120.0, 30.0)
+	soft_button.z_index = 20
+	soft_button.pressed.connect(_on_push_preset_soft)
+	add_child(soft_button)
+
+	var hard_button := Button.new()
+	hard_button.text = "Hard (Dota2)"
+	hard_button.position = origin + Vector2(132.0, 96.0)
+	hard_button.custom_minimum_size = Vector2(120.0, 30.0)
+	hard_button.z_index = 20
+	hard_button.pressed.connect(_on_push_preset_hard)
+	add_child(hard_button)
+
+	_refresh_push_value_labels()
+
+
+func _add_panel_label(text: String, at: Vector2, font_size: int) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.position = at
+	label.z_index = 20
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", Color.WHITE)
+	add_child(label)
+	return label
+
+
+func _add_push_slider(at: Vector2, value: float) -> HSlider:
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = value
+	slider.position = at
+	slider.custom_minimum_size = Vector2(260.0, 22.0)
+	slider.z_index = 20
+	add_child(slider)
+	return slider
+
+
+func _on_push_moving_changed(value: float) -> void:
+	_push_moving = value
+	_apply_push_tuning()
+	_record_event("push_tuning", {"moving": _push_moving, "idle": _push_idle})
+
+
+func _on_push_idle_changed(value: float) -> void:
+	_push_idle = value
+	_apply_push_tuning()
+	_record_event("push_tuning", {"moving": _push_moving, "idle": _push_idle})
+
+
+func _on_push_preset_soft() -> void:
+	_set_push_sliders(
+		Dota2LabMotionEngine.DEFAULT_PUSHABILITY_MOVING,
+		Dota2LabMotionEngine.DEFAULT_PUSHABILITY_IDLE
+	)
+	_last_action = "push preset: soft (LoL)"
+
+
+func _on_push_preset_hard() -> void:
+	_set_push_sliders(
+		Dota2LabMotionEngine.DEFAULT_PUSHABILITY_MOVING,
+		Dota2LabMotionEngine.HARD_BLOCK_PUSHABILITY_IDLE
+	)
+	_last_action = "push preset: hard (Dota2)"
+
+
+func _set_push_sliders(moving: float, idle: float) -> void:
+	# Setting .value fires value_changed, which applies + records.
+	_push_moving_slider.value = moving
+	_push_idle_slider.value = idle
+
+
+func _apply_push_tuning() -> void:
+	if _world != null:
+		_world.motion.pushability_moving = _push_moving
+		_world.motion.pushability_idle = _push_idle
+	_refresh_push_value_labels()
+
+
+func _refresh_push_value_labels() -> void:
+	if _push_moving_value != null:
+		_push_moving_value.text = "%d%%" % int(round(_push_moving * 100.0))
+	if _push_idle_value != null:
+		_push_idle_value.text = "%d%%" % int(round(_push_idle * 100.0))
 
 
 # ─────────────────────────── Rendering ───────────────────────────────────────
@@ -643,6 +760,7 @@ func _reset_scene() -> void:
 		_world = Dota2LabWorld.new()
 		_ai_command_source = null
 		_selected_unit_ids = _world.get_mobile_unit_ids()
+		_apply_push_tuning()
 		_reset_perf_metrics()
 		_last_action = "reset scene"
 		_record_event("reset", {"selected_unit_ids": _selected_unit_ids})
@@ -652,6 +770,7 @@ func _reset_auto_demo() -> void:
 	_world = _create_auto_demo_world()
 	_ai_command_source = AiCommandSourceScript.build_visual_demo_driver()
 	_selected_unit_ids = _world.get_mobile_unit_ids()
+	_apply_push_tuning()
 	_auto_demo_run_index += 1
 	_auto_demo_reset_countdown = -1
 	_reset_perf_metrics()

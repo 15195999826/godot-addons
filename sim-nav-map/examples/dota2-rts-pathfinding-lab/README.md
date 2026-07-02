@@ -29,8 +29,12 @@ Full design: [docs/design-notes/fable-motion-design.md](docs/design-notes/fable-
 - **Commit-then-resolve**: units step by intent, then an iterative separation
   solve splits overlapping pairs (pushability-weighted, head-on lateral bias)
   and projects bodies out of statics/bounds. Overlap cannot persist.
-- Movers shove idle units aside, yield to unpushable blockers (round them via
-  contact sliding), and lane-sort through opposing streams.
+- Push flavor is a live-tunable engine setting (`pushability_moving` /
+  `pushability_idle`): **Soft (LoL)** movers shove idle units aside;
+  **Hard (Dota2)** stopped units are solid bodies (creep-blocking works).
+  The lab panel has sliders + presets; integrating projects set the fields
+  on their `Dota2LabMotionEngine`. Movers always lane-sort through opposing
+  streams and round unpushable blockers via contact sliding.
 - **Bounded termination**: arrive / arrive-partial (canonicalized goal) /
   arrive-crowded (goal buried in a crowd) / one replan then stalled-fail.
   There is no holding state and no forever-retry.

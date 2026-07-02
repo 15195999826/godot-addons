@@ -60,9 +60,17 @@ free.
 ### Separation solve
 
 - Pair correction is split by **pushability**: `0` for `mobile == false`
-  (unpushable round blocker), `0.35` for MOVING, `1.0` for IDLE. A mover
-  shoves idle units aside; a mover yields fully to a blocker; two movers
-  split evenly.
+  (unpushable round blocker), and runtime-tunable engine fields for the rest
+  (`pushability_moving`, default `0.35`; `pushability_idle`, default `1.0`).
+  Two flavors ship as presets, switchable live in the lab UI and settable by
+  integrating projects on the engine instance:
+  - **Soft (LoL)** — idle `1.0`: a mover shoves idle units aside.
+  - **Hard (Dota2)** — idle `0.0`: a stopped unit is a solid body; movers
+    round it via contact sliding. This is the creep-blocking flavor (real
+    Dota2 blocks friend and foe alike — opening creep-blocking blocks your
+    OWN creeps).
+  Keep `pushability_moving > 0`: two movers meeting head-on rely on it to
+  resolve their mutual overlap; at 0 they clip through each other.
 - **Head-on lateral bias**: when a mover is pushing nose-first into the other
   body (`|facing · dir| > 0.85`), the correction direction gains a
   fixed-handedness perpendicular component. This is the deadlock breaker:
