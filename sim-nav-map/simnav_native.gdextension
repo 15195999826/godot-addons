@@ -1,0 +1,16 @@
+[configuration]
+
+entry_symbol = "simnav_native_library_init"
+compatibility_minimum = "4.7"
+reloadable = true
+
+[libraries]
+
+windows.debug.x86_64 = "res://addons/sim-nav-map/bin/simnav_native.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/sim-nav-map/bin/simnav_native.windows.template_release.x86_64.dll"
+; web debug key deliberately falls back to the release wasm: we only ship one
+; web artifact (debug wasm doubles the committed payload for a rare use case).
+; A web debug export therefore runs the release native backend — build a
+; template_debug wasm and remap here if that ever matters.
+web.debug.nothreads.wasm32 = "res://addons/sim-nav-map/bin/simnav_native.web.template_release.wasm32.nothreads.wasm"
+web.release.nothreads.wasm32 = "res://addons/sim-nav-map/bin/simnav_native.web.template_release.wasm32.nothreads.wasm"

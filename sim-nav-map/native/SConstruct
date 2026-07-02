@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+# Build entry for the sim-nav-map native backend.
+#
+#   scons platform=windows target=template_debug custom_api_file=extension_api.json
+#   scons platform=windows target=template_release custom_api_file=extension_api.json
+#   scons platform=web target=template_release threads=no custom_api_file=extension_api.json
+#
+# godot-cpp is cloned by setup.ps1 (pinned commit — see README.md);
+# extension_api.json is dumped from the local Godot binary by the same script.
+# Artifacts land in ../bin/ next to simnav_native.gdextension.
+
+env = SConscript("godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src/"])
+sources = Glob("src/*.cpp")
+
+library = env.SharedLibrary(
+    "../bin/simnav_native{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+    source=sources,
+)
+
+env.NoCache(library)
+Default(library)

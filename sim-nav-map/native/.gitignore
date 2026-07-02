@@ -1,0 +1,14 @@
+# godot-cpp is cloned by setup.ps1 (authoritative pin lives there) — not vendored
+godot-cpp/
+# regenerated from the local Godot binary by setup.ps1 (godot --dump-extension-api)
+extension_api.json
+# build intermediates
+*.obj
+*.os
+*.o
+*.lib
+*.exp
+*.pdb
+.sconsign.dblite
+compile_commands.json
+__pycache__/
