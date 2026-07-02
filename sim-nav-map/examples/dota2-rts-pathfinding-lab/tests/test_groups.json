@@ -11,6 +11,7 @@
         "smoke/smoke_dota2_lab_crowd_blockers.tscn",
         "smoke/smoke_dota2_lab_stall_watchdog.tscn",
         "smoke/smoke_dota2_lab_target_fanout.tscn",
+        "smoke/smoke_dota2_lab_flying_layer.tscn",
         "smoke/smoke_dota2_lab_ai_command_source.tscn",
         "smoke/smoke_dota2_lab_ui_ops.tscn"
       ]

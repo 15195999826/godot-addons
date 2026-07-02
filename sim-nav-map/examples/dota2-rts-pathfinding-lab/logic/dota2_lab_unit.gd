@@ -34,6 +34,10 @@ var turn_rate_rad_per_sec: float = DEFAULT_TURN_RATE_RAD_PER_SEC
 # moves, never receives orders, and has zero pushability in the separation
 # solve.
 var mobile: bool = true
+# flying == true puts the unit on the air layer: it plans on the obstacle-free
+# air map and only separates against other flyers — ground bodies and statics
+# pass right underneath. The two layers never exchange forces.
+var flying: bool = false
 
 var state: String = STATE_IDLE
 # Last commanded goal (kept after the order ends, for diagnostics).
@@ -95,6 +99,21 @@ func _init(
 	mobile = p_mobile
 	facing_angle_rad = p_facing_angle_rad
 	turn_rate_rad_per_sec = p_turn_rate_rad_per_sec
+
+
+# Factory instead of a 9th positional _init param: flying is rare enough that
+# every ground call site should not have to spell out facing/turn-rate
+# defaults just to reach a trailing flag.
+static func new_flying(
+	p_id: String,
+	p_group_id: String,
+	p_position: Vector2,
+	p_radius: float = 10.0,
+	p_speed: float = 90.0
+) -> Dota2LabUnit:
+	var unit := Dota2LabUnit.new(p_id, p_group_id, p_position, p_radius, p_speed, true)
+	unit.flying = true
+	return unit
 
 
 func begin_order(goal: Vector2, tick: int) -> Dota2LabMoveOrder:

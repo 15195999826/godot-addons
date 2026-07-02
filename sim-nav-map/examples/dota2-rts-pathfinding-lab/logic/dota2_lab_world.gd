@@ -20,6 +20,10 @@ var map_size: Vector2 = Vector2(1320.0, 900.0)
 var obstacles: Array[Dota2LabObstacle] = []
 var units: Array[Dota2LabUnit] = []
 var pathfinder: Dota2LabPathfinderWrapper = null
+# Air-layer nav twin: same wrapper class, zero obstacles, built lazily on the
+# first flying unit (a flyer-free world never pays for the second nav stack).
+# It never rebuilds — obstacle edits are a ground-layer event.
+var _air_pathfinder: Dota2LabPathfinderWrapper = null
 var motion: Dota2LabMotionEngine = null
 var tick_count: int = 0
 var orders_completed: int = 0
@@ -78,8 +82,20 @@ func setup_default() -> void:
 	clear_traces()
 
 
+# One motion layer = one engine call over one unit list: units only separate
+# within their own call, so stepping flyers and ground as two disjoint lists
+# IS the layering — no cross-layer forces exist to suppress. Flyers step
+# first so last_step_stats (HUD) keeps describing the ground layer.
 func step(delta: float) -> void:
-	var events := motion.step(units, pathfinder, delta, tick_count)
+	var flyers := get_flying_units()
+	var events: Array[Dictionary]
+	if flyers.is_empty():
+		# Flyer-free worlds keep the exact pre-layer call shape (same array
+		# instance, no air pump) — existing determinism welds stay bitwise.
+		events = motion.step(units, pathfinder, delta, tick_count)
+	else:
+		events = motion.step(flyers, air_pathfinder(), delta, tick_count)
+		events.append_array(motion.step(get_ground_units(), pathfinder, delta, tick_count))
 	for event in events:
 		if str(event.get("kind", "")) == Dota2LabMotionEngine.EVENT_ORDER_FAILED:
 			orders_failed += 1
@@ -98,7 +114,7 @@ func issue_move(unit_id: String, goal: Vector2) -> void:
 	if unit == null or not unit.mobile:
 		return
 	last_fanout_assignments.clear()
-	motion.issue_move(unit, goal, pathfinder, tick_count)
+	motion.issue_move(unit, goal, pathfinder_for(unit), tick_count)
 
 
 func issue_move_all_mobile(goal: Vector2) -> void:
@@ -115,7 +131,7 @@ func cancel_move(unit_id: String) -> void:
 	var unit := get_unit(unit_id)
 	if unit == null:
 		return
-	motion.cancel_move(unit, pathfinder, tick_count)
+	motion.cancel_move(unit, pathfinder_for(unit), tick_count)
 
 
 # ───────────────── Scene editing (used by frontend keys 2/3/4) ──────────────
@@ -188,6 +204,34 @@ func get_mobile_units() -> Array[Dota2LabUnit]:
 	return result
 
 
+func get_flying_units() -> Array[Dota2LabUnit]:
+	var result: Array[Dota2LabUnit] = []
+	for unit in units:
+		if unit.flying:
+			result.append(unit)
+	return result
+
+
+# Ground layer = everything not flying, including immobile blockers.
+func get_ground_units() -> Array[Dota2LabUnit]:
+	var result: Array[Dota2LabUnit] = []
+	for unit in units:
+		if not unit.flying:
+			result.append(unit)
+	return result
+
+
+func air_pathfinder() -> Dota2LabPathfinderWrapper:
+	if _air_pathfinder == null:
+		_air_pathfinder = Dota2LabPathfinderWrapper.new(map_size)
+		_air_pathfinder.rebuild_context([])
+	return _air_pathfinder
+
+
+func pathfinder_for(unit: Dota2LabUnit) -> Dota2LabPathfinderWrapper:
+	return air_pathfinder() if unit.flying else pathfinder
+
+
 func get_mobile_unit_ids() -> Array[String]:
 	var result: Array[String] = []
 	for unit in get_mobile_units():
@@ -225,6 +269,7 @@ func get_metrics() -> Dictionary:
 	var metrics := motion.diagnostics(units)
 	metrics["tick_count"] = tick_count
 	metrics["mobile_count"] = get_mobile_units().size()
+	metrics["flying_count"] = get_flying_units().size()
 	metrics["orders_completed"] = orders_completed
 	metrics["orders_failed"] = orders_failed
 	metrics["last_fanout_assignments"] = last_fanout_assignments.duplicate(true)
@@ -236,8 +281,9 @@ func get_metrics() -> Dictionary:
 
 func rebuild_navigation() -> void:
 	pathfinder.rebuild_context(obstacles)
-	# The rebuilt queue starts fresh; old tickets would never resolve.
-	motion.invalidate_pending_plans(units)
+	# The rebuilt queue starts fresh; old tickets would never resolve. Ground
+	# units only: flyer tickets live in the air queue, which never rebuilds.
+	motion.invalidate_pending_plans(get_ground_units())
 
 
 # ───────────────── Internal helpers ─────────────────────────────────────────
@@ -246,7 +292,7 @@ func _issue_move_units(target_units: Array[Dota2LabUnit], goal: Vector2, command
 	if target_units.size() <= 1:
 		last_fanout_assignments.clear()
 		for unit in target_units:
-			motion.issue_move(unit, goal, pathfinder, tick_count)
+			motion.issue_move(unit, goal, pathfinder_for(unit), tick_count)
 		return
 
 	var assignments := _build_target_fanout_assignments(target_units, goal, command_kind)
@@ -257,7 +303,7 @@ func _issue_move_units(target_units: Array[Dota2LabUnit], goal: Vector2, command
 		if unit == null:
 			continue
 		var assigned_target: Vector2 = assignment.get("assigned_target", goal) as Vector2
-		motion.issue_move(unit, assigned_target, pathfinder, tick_count)
+		motion.issue_move(unit, assigned_target, pathfinder_for(unit), tick_count)
 
 
 func _mobile_units_for_ids(unit_ids: Array[String]) -> Array[Dota2LabUnit]:
@@ -356,6 +402,8 @@ func _fanout_candidate_is_acceptable(unit: Dota2LabUnit, candidate: Vector2) -> 
 	var clamped := _clamp_unit_point(candidate, unit.radius)
 	if clamped.distance_to(candidate) > 0.001:
 		return false
+	if unit.flying:
+		return true  # the air layer has no statics — any in-bounds slot works
 	for obstacle in obstacles:
 		if obstacle.contains_point_with_clearance(candidate, unit.radius):
 			return false
@@ -388,8 +436,12 @@ func _sort_units_by_id(a: Dota2LabUnit, b: Dota2LabUnit) -> bool:
 	return a.id < b.id
 
 
+# Ground layer only — every caller is a static-world event (obstacle edit,
+# backend switch) and the air map has no statics to invalidate flyer paths.
 func replan_all_active() -> void:
 	for unit in get_mobile_units():
+		if unit.flying:
+			continue
 		motion.replan_active(unit, pathfinder, tick_count)
 
 
