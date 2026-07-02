@@ -151,20 +151,24 @@ Turning in place is exempt.
   (≤ ~50 units); spatial hashing is the known upgrade path if that changes.
 - An idle unit displaced by pushes does not walk back to its spot (Dota2
   behavior; also what keeps the solve stable).
-- Planning is deferred and time-sliced, not threaded. Measured GDScript JPS
-  cost on the default map after the jump-cache hot-path fix (O(1) POINT-goal
-  ray check + integer cache keys — the per-cell goal scan on every cardinal
-  probe used to dominate whole-query cost): ~0.5 ms short/open, ~3 ms warm
-  cross-map, ~33 ms on a cold jump-point cache (cache accumulates lazily per
-  query region — a diagonal warmup does NOT soak it; the cold cost IS the
-  cache build). Synchronous group commands used to cost ~250 ms in one input
-  frame; now commands enqueue (~0.2 ms), units walk a straight-line
-  placeholder, and the engine drains ONE query per tick
-  (`PLAN_BUDGET_PER_TICK`). Worst per-frame planning cost is one query — a
-  cold-cache first query after a map rebuild can spike one tick to ~35 ms
-  once; warm queries fit the frame. `plans_applied` / `plans_waiting` in the
-  step stats plus the HUD's `last plan` / rolling 5s peak attribute any
-  spike at a glance.
+- Planning is deferred and time-sliced, not threaded. Commands enqueue
+  (~0.2 ms — synchronous group commands used to freeze the input frame for
+  ~250 ms), units walk a straight-line placeholder, and the engine drains
+  ONE query per tick (`PLAN_BUDGET_PER_TICK`).
+- Measured GDScript JPS cost on the default map, using FRESH start cells per
+  query (the realistic case — ray cache entries are keyed by start cell, so
+  real play hits the cache rarely; a repeated-identical-query probe reads
+  10× too fast): ~0.5 ms short/open, **~5-6 ms per cross-map query**,
+  first query after a rebuild ~16 ms (includes the one-off passability
+  bake). Two hot-path fixes got it there from 15-50 ms: an O(1) POINT-goal
+  ray check replacing a per-cell scan on every cardinal probe, and the
+  composed passability grid baked into a flat PackedInt32Array at cache
+  reset so miss-path ray scans do local bit tests instead of three-layer
+  cross-object composition per cell. The remaining cost is diagonal
+  stepping's per-cell probe overhead in GDScript — the next meaningful cut
+  is porting the pathfinding core to C++/GDExtension.
+  `plans_applied` / `plans_waiting` in the step stats plus the HUD's
+  `last plan` / rolling 5s peak attribute any spike at a glance.
 - A worker-thread variant (core queue `start_worker`, and a WorkerThreadPool
   rewrite of it) was implemented and reverted — twice:
   - Godot 4.6 rc1: GDScript on spawned threads crashed unpredictably
