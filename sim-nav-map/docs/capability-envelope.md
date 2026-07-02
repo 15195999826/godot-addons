@@ -23,7 +23,8 @@
 - 单条跨图长径规划 < 1 ms（当前实测 ~0.8 ms @ 165×113）
 - 一次地形动态改变的**完整 flush** < 5 ms（当前实测 ~3.5 ms = 表修复 ~0.7 +
   hierarchical 窗口化重算 ~2.5 + 杂项；曾为 ~30 ms）
-- 100 单位移动 tick < 5 ms（依赖清单 ②③）
+- 100 单位移动 tick < 5 ms（常态阵形；实测分散行军 ~3.8 ms。全员挤成一团
+  的死球行军是最坏情形 ~5.2 ms —— 真实对局形态不会全场 100 人贴身）
 - 规划预算每 tick 1-4 条可调（`PLAN_BUDGET_PER_TICK`）
 
 ## 硬化清单（黏土内完成，按序）
@@ -33,7 +34,7 @@
 | ① | 路牌表（jump ray tables）增量修复 + "增量==全量"等式 smoke | ✅ 2026-07-02（修复 ~0.7 ms，`smoke_sim_nav_jump_table_repair`）|
 | ⓪ | hierarchical 窗口化 chunk 重算（地形变更 flush 30→3.5 ms；`smoke_sim_nav_hierarchical_incremental` 焊死）| ✅ 2026-07-02 |
 | ② | `is_line_walkable` 查表化（`movement_line_clear` 布尔快路径：baked 逃逸规则孪生 + 保留形状段；8 单位移动 tick 0.78→0.17 ms）| ✅ 2026-07-02 |
-| ③ | 分离求解空间哈希（O(N²) → 近线性）| ⏳ 单位 50+ 触发 |
+| ③ | 移动管线三处 O(N²) 全部网格化（分离配对/接触转向/残余重叠统计）+ 静态投影 AABB 预筛；100 单位分散行军 tick ~3.8 ms、死球最坏 ~5.2 ms（原 ~20 ms）；≤16 单位保持原暴力路径（手感零风险）| ✅ 2026-07-02 |
 | ④ | budget smoke 套件（把上面的承诺焊进测试）| ⏳ ②③ 后 |
 | ⑤ | GDExtension 铸模（含分离求解；Web/WASM 构建链）| ⏳ 信封冻结 + ⓪-④ 完成后 |
 

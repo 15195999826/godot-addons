@@ -115,6 +115,11 @@ var pushability_idle: float = DEFAULT_PUSHABILITY_IDLE
 # Steer-around-contacts (see constants above). Off = pre-steering behavior:
 # squeezing past a non-yielding body reads as sideways translation.
 var contact_steering_enabled: bool = true
+# Above this unit count the pair pass switches from the all-pairs loop to a
+# uniform-grid neighbor query producing the SAME pairs in the SAME order
+# (welded bitwise by smoke_dota2_lab_separation_hash). Public so the weld
+# smoke can force either path; gameplay never needs to touch it.
+var separation_brute_force_max: int = 16
 
 
 # ───────────────────────────── Command API ───────────────────────────────────
@@ -199,11 +204,18 @@ func step(
 		_apply_plan_result(unit, plan, tick, events)
 		plans_applied += 1
 
-	# Phase A: intent step.
+	# Phase A: intent step. Contact steering scans neighbors; above the
+	# brute-force threshold it queries a position hash instead of every unit
+	# (same others, same order — welded by the separation-hash smoke).
+	var steer_cell := 0.0
+	var steer_buckets: Dictionary = {}
+	if contact_steering_enabled and units.size() > separation_brute_force_max:
+		steer_cell = _steering_hash_cell_size(units)
+		steer_buckets = _build_position_buckets(units, steer_cell)
 	for unit in units:
 		unit.prev_tick_position = unit.position
 		if unit.state == Dota2LabUnit.STATE_MOVING:
-			_advance_along_path(unit, wrapper, delta, units)
+			_advance_along_path(unit, wrapper, delta, units, steer_buckets, steer_cell)
 
 	# Phase B: separation solve.
 	var stats := _resolve_overlaps(units, wrapper)
@@ -227,7 +239,13 @@ func step(
 
 
 # Largest remaining pair-overlap depth among mobile units (smoke invariant).
+# Runs every tick as a step stat, so above the brute threshold it queries a
+# position hash — exact, not approximate: any overlapping pair sits in
+# adjacent buckets, and separated pairs only contribute negative depths that
+# can never win the max.
 func max_overlap_depth(units: Array[Dota2LabUnit]) -> float:
+	if units.size() > separation_brute_force_max:
+		return _max_overlap_depth_hashed(units)
 	var deepest := 0.0
 	for i in range(units.size()):
 		for j in range(i + 1, units.size()):
@@ -237,6 +255,28 @@ func max_overlap_depth(units: Array[Dota2LabUnit]) -> float:
 				continue
 			var depth := (a.radius + b.radius) - a.position.distance_to(b.position)
 			deepest = maxf(deepest, depth)
+	return deepest
+
+
+func _max_overlap_depth_hashed(units: Array[Dota2LabUnit]) -> float:
+	var cell_size := _separation_hash_cell_size(units)
+	var buckets := _build_position_buckets(units, cell_size)
+	var deepest := 0.0
+	for i in range(units.size()):
+		var a := units[i]
+		var base_x := floori(a.position.x / cell_size)
+		var base_y := floori(a.position.y / cell_size)
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				var bucket: Array = buckets.get(Vector2i(base_x + ox, base_y + oy), [])
+				for j in bucket:
+					if j <= i:
+						continue
+					var b: Dota2LabUnit = units[j]
+					if not a.mobile and not b.mobile:
+						continue
+					var depth := (a.radius + b.radius) - a.position.distance_to(b.position)
+					deepest = maxf(deepest, depth)
 	return deepest
 
 
@@ -294,7 +334,9 @@ func _advance_along_path(
 	unit: Dota2LabUnit,
 	wrapper: Dota2LabPathfinderWrapper,
 	delta: float,
-	units: Array[Dota2LabUnit]
+	units: Array[Dota2LabUnit],
+	steer_buckets: Dictionary = {},
+	steer_cell: float = 0.0
 ) -> void:
 	_shortcut_path(unit, wrapper)
 	while unit.has_path() and unit.position.distance_to(unit.path.back()) <= WAYPOINT_REACH:
@@ -310,7 +352,7 @@ func _advance_along_path(
 
 	var desired := to_track.angle()
 	if contact_steering_enabled:
-		desired = _contact_steered_heading(unit, to_track / distance, units)
+		desired = _contact_steered_heading(unit, to_track / distance, units, steer_buckets, steer_cell)
 	unit.last_turn_delta_rad = angle_difference(unit.facing_angle_rad, desired)
 	unit.facing_angle_rad = rotate_toward(
 		unit.facing_angle_rad, desired, unit.turn_rate_rad_per_sec * delta
@@ -337,38 +379,74 @@ func _advance_along_path(
 func _contact_steered_heading(
 	unit: Dota2LabUnit,
 	toward_track: Vector2,
-	units: Array[Dota2LabUnit]
+	units: Array[Dota2LabUnit],
+	steer_buckets: Dictionary = {},
+	steer_cell: float = 0.0
 ) -> float:
 	var my_push := _pushability(unit)
 	var steered := toward_track
 	var any_contact := false
-	for other in units:
-		if other == unit:
-			continue
-		# Only steer around bodies that will not yield to this unit: an
-		# immobile blocker, or anything at equal-or-lower pushability. Softer
-		# bodies get shoved by the solve instead — no need to walk around.
-		if other.mobile and _pushability(other) > my_push + 0.001:
-			continue
-		var offset := other.position - unit.position
-		var gap := offset.length() - (unit.radius + other.radius)
-		if gap > CONTACT_STEER_GAP_RANGE:
-			continue
-		var to_other := offset.normalized()
-		var frontness_dot := toward_track.dot(to_other)
-		if frontness_dot < CONTACT_STEER_FRONT_DOT_MIN:
-			continue
-		any_contact = true
-		if unit.steer_side == 0.0:
-			unit.steer_side = _pick_steer_side(to_other, toward_track)
-		var proximity := clampf(1.0 - gap / CONTACT_STEER_GAP_RANGE, 0.0, 1.0)
-		var frontness := (frontness_dot - CONTACT_STEER_FRONT_DOT_MIN) \
-			/ (1.0 - CONTACT_STEER_FRONT_DOT_MIN)
-		var around := Vector2(-to_other.y, to_other.x) * unit.steer_side
-		steered += around * (proximity * frontness * CONTACT_STEER_WEIGHT)
+	if steer_cell <= 0.0:
+		for other in units:
+			var contribution := _steer_contribution(unit, other, toward_track, my_push)
+			if contribution.z > 0.0:
+				any_contact = true
+				steered += Vector2(contribution.x, contribution.y)
+	else:
+		# Same others in the same array order (sorted indices): the steer
+		# accumulation is float-order-sensitive, and pruned far bodies
+		# contribute nothing in the full loop either.
+		var base_x := floori(unit.position.x / steer_cell)
+		var base_y := floori(unit.position.y / steer_cell)
+		var candidates: Array[int] = []
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				var bucket: Array = steer_buckets.get(Vector2i(base_x + ox, base_y + oy), [])
+				for candidate in bucket:
+					candidates.append(candidate)
+		candidates.sort()
+		for candidate in candidates:
+			var contribution := _steer_contribution(unit, units[candidate], toward_track, my_push)
+			if contribution.z > 0.0:
+				any_contact = true
+				steered += Vector2(contribution.x, contribution.y)
 	if not any_contact:
 		unit.steer_side = 0.0
 	return steered.angle()
+
+
+# One body's steering contribution: (x, y) = heading bias, z = 1 when this
+# body counts as a contact (even at zero bias — contact keeps steer_side
+# locked). Shared verbatim by the full loop and the hashed loop.
+func _steer_contribution(
+	unit: Dota2LabUnit,
+	other: Dota2LabUnit,
+	toward_track: Vector2,
+	my_push: float
+) -> Vector3:
+	if other == unit:
+		return Vector3.ZERO
+	# Only steer around bodies that will not yield to this unit: an
+	# immobile blocker, or anything at equal-or-lower pushability. Softer
+	# bodies get shoved by the solve instead — no need to walk around.
+	if other.mobile and _pushability(other) > my_push + 0.001:
+		return Vector3.ZERO
+	var offset := other.position - unit.position
+	var gap := offset.length() - (unit.radius + other.radius)
+	if gap > CONTACT_STEER_GAP_RANGE:
+		return Vector3.ZERO
+	var to_other := offset.normalized()
+	var frontness_dot := toward_track.dot(to_other)
+	if frontness_dot < CONTACT_STEER_FRONT_DOT_MIN:
+		return Vector3.ZERO
+	if unit.steer_side == 0.0:
+		unit.steer_side = _pick_steer_side(to_other, toward_track)
+	var proximity := clampf(1.0 - gap / CONTACT_STEER_GAP_RANGE, 0.0, 1.0)
+	var frontness := (frontness_dot - CONTACT_STEER_FRONT_DOT_MIN) \
+		/ (1.0 - CONTACT_STEER_FRONT_DOT_MIN)
+	var around := Vector2(-to_other.y, to_other.x) * unit.steer_side
+	var bias := around * (proximity * frontness * CONTACT_STEER_WEIGHT)
+	return Vector3(bias.x, bias.y, 1.0)
 
 
 # Which side to walk around: the side the intended direction already leans
@@ -405,16 +483,22 @@ func _resolve_overlaps(
 	wrapper: Dota2LabPathfinderWrapper
 ) -> Dictionary:
 	var statics := wrapper.static_shapes()
+	var static_bounds := _static_reach_bounds(statics, units)
 	var rounds := 0
+	var use_hash := units.size() > separation_brute_force_max
+	var hash_cell := _separation_hash_cell_size(units) if use_hash else 0.0
 	for iteration in range(SEPARATION_ITERATIONS):
 		rounds = iteration + 1
 		var moved_any := false
-		for i in range(units.size()):
-			for j in range(i + 1, units.size()):
-				if _separate_pair(units[i], units[j]):
-					moved_any = true
+		if use_hash:
+			moved_any = _separate_pairs_hashed(units, hash_cell)
+		else:
+			for i in range(units.size()):
+				for j in range(i + 1, units.size()):
+					if _separate_pair(units[i], units[j]):
+						moved_any = true
 		for unit in units:
-			if unit.mobile and _project_out_of_world(unit, statics, wrapper):
+			if unit.mobile and _project_out_of_world(unit, statics, static_bounds, wrapper.map_size):
 				moved_any = true
 		if not moved_any:
 			break
@@ -422,6 +506,150 @@ func _resolve_overlaps(
 		"separation_rounds": rounds,
 		"max_residual_overlap": max_overlap_depth(units),
 	}
+
+
+# Conservative axis-aligned reach bounds per static: the OBB's AABB grown by
+# the largest unit radius (+1 px float margin). _project_out_of_shape can
+# only move a unit whose center is within its radius of the OBB, so a
+# bounds-reject is exactly a "projection returns false" fast path.
+func _static_reach_bounds(
+	statics: Array[SimNavObstructionShapeStatic],
+	units: Array[Dota2LabUnit]
+) -> Array[Rect2]:
+	var max_radius := 0.0
+	for unit in units:
+		max_radius = maxf(max_radius, unit.radius)
+	var bounds: Array[Rect2] = []
+	for shape in statics:
+		var half_x := shape.width * 0.5
+		var half_y := shape.height * 0.5
+		if shape.rotation_rad != 0.0:
+			var cos_abs: float = absf(cos(shape.rotation_rad))
+			var sin_abs: float = absf(sin(shape.rotation_rad))
+			var rotated_x := cos_abs * shape.width * 0.5 + sin_abs * shape.height * 0.5
+			var rotated_y := sin_abs * shape.width * 0.5 + cos_abs * shape.height * 0.5
+			half_x = rotated_x
+			half_y = rotated_y
+		var reach_x := half_x + max_radius + 1.0
+		var reach_y := half_y + max_radius + 1.0
+		bounds.append(Rect2(
+			shape.center.x - reach_x, shape.center.y - reach_y,
+			reach_x * 2.0, reach_y * 2.0
+		))
+	return bounds
+
+
+# Flat-grid scratch for the hashed pair pass (heads/next intrusive chains +
+# a candidate buffer). Engine-level transient buffers reused across calls to
+# avoid per-iteration Dictionary and Array churn — not per-unit state.
+var _grid_heads := PackedInt32Array()
+var _grid_next := PackedInt32Array()
+var _grid_candidates := PackedInt32Array()
+
+
+# Uniform-grid neighbor pass over a flat linked-cell grid, rebuilt every
+# iteration from current positions (a unit pushed across a cell boundary is
+# re-seen next round exactly like the brute loop's next iteration would see
+# it). Produces the same pairs in the same (i, ascending j) order as the
+# all-pairs loop — corrections are order-sensitive (Gauss-Seidel). Units are
+# inserted in DESCENDING index order so every cell chain reads ascending;
+# cross-cell candidates are kept ascending with an insertion sort over the
+# handful of neighbors.
+func _separate_pairs_hashed(units: Array[Dota2LabUnit], cell_size: float) -> bool:
+	var count := units.size()
+	if count == 0:
+		return false
+	var min_x := units[0].position.x
+	var min_y := units[0].position.y
+	var max_x := min_x
+	var max_y := min_y
+	for unit in units:
+		min_x = minf(min_x, unit.position.x)
+		min_y = minf(min_y, unit.position.y)
+		max_x = maxf(max_x, unit.position.x)
+		max_y = maxf(max_y, unit.position.y)
+	var grid_w := int((max_x - min_x) / cell_size) + 1
+	var grid_h := int((max_y - min_y) / cell_size) + 1
+	if _grid_heads.size() < grid_w * grid_h:
+		_grid_heads.resize(grid_w * grid_h)
+	for cell in range(grid_w * grid_h):
+		_grid_heads[cell] = -1
+	if _grid_next.size() < count:
+		_grid_next.resize(count)
+	if _grid_candidates.size() < count:
+		_grid_candidates.resize(count)
+	for rev in range(count):
+		var insert_index := count - 1 - rev
+		var insert_pos := units[insert_index].position
+		var cell := int((insert_pos.y - min_y) / cell_size) * grid_w \
+			+ int((insert_pos.x - min_x) / cell_size)
+		_grid_next[insert_index] = _grid_heads[cell]
+		_grid_heads[cell] = insert_index
+	var moved_any := false
+	for i in range(count):
+		var unit := units[i]
+		var cx := int((unit.position.x - min_x) / cell_size)
+		var cy := int((unit.position.y - min_y) / cell_size)
+		var candidate_count := 0
+		for oy in range(maxi(cy - 1, 0), mini(cy + 2, grid_h)):
+			var row := oy * grid_w
+			for ox in range(maxi(cx - 1, 0), mini(cx + 2, grid_w)):
+				var j := _grid_heads[row + ox]
+				while j != -1:
+					if j > i:
+						var insert_at := candidate_count
+						while insert_at > 0 and _grid_candidates[insert_at - 1] > j:
+							_grid_candidates[insert_at] = _grid_candidates[insert_at - 1]
+							insert_at -= 1
+						_grid_candidates[insert_at] = j
+						candidate_count += 1
+					j = _grid_next[j]
+		for k in range(candidate_count):
+			var other: Dota2LabUnit = units[_grid_candidates[k]]
+			# Squared-distance pre-reject at the raw radius sum — strictly
+			# looser than _separate_pair's own reject (which subtracts
+			# SEPARATION_SLACK), so the 0.01 px band absorbs any float noise
+			# and a pre-rejected pair is always one the call would reject too.
+			# Skips the call + sqrt for most near-but-not-overlapping pairs.
+			var reach: float = unit.radius + other.radius
+			if unit.position.distance_squared_to(other.position) >= reach * reach:
+				continue
+			if _separate_pair(unit, other):
+				moved_any = true
+	return moved_any
+
+
+func _separation_hash_cell_size(units: Array[Dota2LabUnit]) -> float:
+	var max_radius := 0.0
+	for unit in units:
+		max_radius = maxf(max_radius, unit.radius)
+	# Cell = max possible pair reach (+1 px float margin): two bodies that can
+	# overlap are never more than one cell apart at pass start.
+	return maxf(1.0, max_radius * 2.0 + 1.0)
+
+
+# Steering looks further than overlap (contact gap range) and runs while
+# units advance one step per tick, so pad the cell by the gap range plus a
+# generous per-tick motion margin.
+func _steering_hash_cell_size(units: Array[Dota2LabUnit]) -> float:
+	var max_radius := 0.0
+	for unit in units:
+		max_radius = maxf(max_radius, unit.radius)
+	return maxf(1.0, max_radius * 2.0 + CONTACT_STEER_GAP_RANGE + 8.0)
+
+
+func _build_position_buckets(units: Array[Dota2LabUnit], cell_size: float) -> Dictionary:
+	var buckets: Dictionary = {}
+	for i in range(units.size()):
+		var key := Vector2i(
+			floori(units[i].position.x / cell_size),
+			floori(units[i].position.y / cell_size)
+		)
+		if buckets.has(key):
+			(buckets[key] as Array).append(i)
+		else:
+			buckets[key] = [i]
+	return buckets
 
 
 func _separate_pair(a: Dota2LabUnit, b: Dota2LabUnit) -> bool:
@@ -498,13 +726,28 @@ func _head_on_biased(a: Dota2LabUnit, b: Dota2LabUnit, direction: Vector2) -> Ve
 func _project_out_of_world(
 	unit: Dota2LabUnit,
 	statics: Array[SimNavObstructionShapeStatic],
-	wrapper: Dota2LabPathfinderWrapper
+	static_bounds: Array[Rect2],
+	map_size: Vector2
 ) -> bool:
 	var moved := false
-	for shape in statics:
-		if _project_out_of_shape(unit, shape):
+	var pos := unit.position
+	for shape_index in range(statics.size()):
+		# Inline bounds reject (this runs units x statics x iterations per
+		# tick; Rect2.has_point costs a call per check).
+		var bounds := static_bounds[shape_index]
+		if pos.x < bounds.position.x or pos.y < bounds.position.y \
+				or pos.x >= bounds.position.x + bounds.size.x \
+				or pos.y >= bounds.position.y + bounds.size.y:
+			continue
+		if _project_out_of_shape(unit, statics[shape_index]):
 			moved = true
-	var clamped := wrapper.clamp_to_playable(unit.position, unit.radius)
+			pos = unit.position
+	# Inline twin of Dota2LabPathfinderWrapper.clamp_to_playable — keep the
+	# formula in lockstep.
+	var clamped := Vector2(
+		clampf(pos.x, unit.radius, map_size.x - unit.radius),
+		clampf(pos.y, unit.radius, map_size.y - unit.radius)
+	)
 	if clamped != unit.position:
 		unit.position = clamped
 		moved = true
