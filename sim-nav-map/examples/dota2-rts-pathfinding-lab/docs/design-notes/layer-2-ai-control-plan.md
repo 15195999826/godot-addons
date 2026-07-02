@@ -2,6 +2,10 @@
 
 > Design note. Created 2026-05-15.
 >
+> NOTE (2026-07-02): motion-layer class names below predate the fable motion
+> rebuild (Dota2LabMotionController is now Dota2LabMotionEngine; the five-state
+> FSM is gone). The Layer 2 boundary itself is unchanged.
+>
 > First implementation status: a deterministic command-source smoke driver now
 > exists. This document still defines the boundary for future Layer 2 work.
 

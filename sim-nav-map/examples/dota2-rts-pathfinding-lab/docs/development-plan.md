@@ -1,6 +1,8 @@
 # Dota2 Lab Development Plan
 
-> Active document. Updated 2026-07-02.
+> HISTORICAL. The v1/v2 motion-controller line this plan tracked was replaced
+> wholesale by the fable motion rebuild on 2026-07-02 — see
+> design-notes/fable-motion-design.md. Kept as route history only.
 
 ## Movement Feel v2 (2026-07-02)
 

@@ -1,9 +1,13 @@
 extends Node
 
+# Group-move target fanout: a multi-unit command spreads assigned targets
+# around the clicked point so the group can actually settle. Single-unit
+# commands never fan out. Rapid target switching (synchronous planning)
+# always keeps the latest assignment.
 
 const TICK_DELTA := 1.0 / 60.0
-const DEFAULT_GROUP_TICKS := 1200
-const RAPID_SWITCH_TICKS := 500
+const DEFAULT_GROUP_TICKS := 1400
+const RAPID_SWITCH_TICKS := 700
 
 
 var _failures: Array[String] = []
@@ -12,7 +16,7 @@ var _failures: Array[String] = []
 func _ready() -> void:
 	_test_default_group_move_fanout()
 	_test_single_unit_command_has_no_fanout()
-	_test_rapid_target_switch_with_fanout_drains_queue()
+	_test_rapid_target_switch_keeps_latest()
 
 	if _failures.is_empty():
 		print("SMOKE_TEST_RESULT: PASS - dota2 lab target fanout")
@@ -28,22 +32,24 @@ func _test_default_group_move_fanout() -> void:
 	var world := Dota2LabWorld.new()
 	var unit_ids := world.get_mobile_unit_ids()
 	world.issue_move_all_mobile(world.current_target)
-	_assert_all_units_receive_orders_immediately(world, unit_ids, "default-fanout")
-	var report := _run_until_terminal("default_group_move_fanout", world, unit_ids, DEFAULT_GROUP_TICKS)
-	print("DOTA2_PHASE_C_FANOUT: %s" % JSON.stringify(report))
 
-	_assert_terminal_report(report)
-	_assert_true(
-		_state_count(report, Dota2LabUnit.STATE_IDLE) >= 3,
-		"default-fanout: expected at least 3/8 IDLE under same-tick target-only fanout, got %s"
-			% str(report.get("state_counts", {}))
-	)
-	_assert_true(
-		_state_count(report, Dota2LabUnit.STATE_FAILED) <= 5,
-		"default-fanout: expected at most 5/8 FAILED under same-tick target-only fanout, got %s"
-			% str(report.get("state_counts", {}))
-	)
+	# Synchronous planning: every commanded unit is MOVING with an order now.
+	for unit_id in unit_ids:
+		var unit := world.get_unit(unit_id)
+		_assert_true(unit != null and unit.current_order != null, "default-fanout: %s missing order" % unit_id)
+		if unit != null:
+			_assert_eq(Dota2LabUnit.STATE_MOVING, unit.state, "default-fanout: %s should be MOVING" % unit_id)
 	_assert_fanout_assignments(world, unit_ids.size(), "default-fanout")
+
+	var ticks := _run_until_idle(world, DEFAULT_GROUP_TICKS, "default-fanout")
+	var completed := 0
+	for unit_id in unit_ids:
+		var unit := world.get_unit(unit_id)
+		if unit != null \
+				and str(unit.last_order_snapshot().get("status", "")) == Dota2LabMoveOrder.STATUS_COMPLETED:
+			completed += 1
+	_assert_eq(8, completed, "default-fanout: all 8 orders should complete")
+	print("DOTA2_FANOUT default: ticks=%d completed=%d" % [ticks, completed])
 
 
 func _test_single_unit_command_has_no_fanout() -> void:
@@ -55,13 +61,13 @@ func _test_single_unit_command_has_no_fanout() -> void:
 	if unit == null:
 		return
 	_assert_eq(target, unit.move_target, "single-unit: move_target should stay exact")
-	_assert_eq(Dota2LabUnit.STATE_WAITING_LONG, unit.state, "single-unit: should still use normal move path")
+	_assert_eq(Dota2LabUnit.STATE_MOVING, unit.state, "single-unit: MOVING immediately")
 	var metrics := world.get_metrics()
 	var assignments: Array = metrics.get("last_fanout_assignments", []) as Array
 	_assert_eq(0, assignments.size(), "single-unit: should not record fanout assignments")
 
 
-func _test_rapid_target_switch_with_fanout_drains_queue() -> void:
+func _test_rapid_target_switch_keeps_latest() -> void:
 	var world := Dota2LabWorld.new()
 	world.obstacles = []
 	world.units = [
@@ -70,7 +76,7 @@ func _test_rapid_target_switch_with_fanout_drains_queue() -> void:
 		Dota2LabUnit.new("lane_2", "blue", Vector2(100.0, 300.0), 11.0, 110.0, true),
 		Dota2LabUnit.new("lane_3", "blue", Vector2(100.0, 380.0), 11.0, 110.0, true),
 	]
-	world._rebuild_navigation()
+	world.rebuild_navigation()
 	var unit_ids: Array[String] = ["lane_0", "lane_1", "lane_2", "lane_3"]
 	var final_targets: Dictionary = {}
 	for switch_index in range(5):
@@ -79,20 +85,8 @@ func _test_rapid_target_switch_with_fanout_drains_queue() -> void:
 		final_targets = _assignment_targets_by_unit(world)
 		world.step(TICK_DELTA)
 
-	var settled := false
-	for i in range(RAPID_SWITCH_TICKS):
-		world.step(TICK_DELTA)
-		if _units_are_terminal(world, unit_ids) and _queue_is_drained(world):
-			settled = true
-			break
-
-	var metrics := world.get_metrics()
-	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
-	_assert_true(settled, "rapid-fanout: units and queue should settle")
-	_assert_eq(0, int(pathfinder_metrics.get("pending_count", -1)), "rapid-fanout: pending_count should drain")
-	_assert_eq(0, int(pathfinder_metrics.get("result_count", -1)), "rapid-fanout: result_count should drain")
-	_assert_eq(0, _result_ticket_count(pathfinder_metrics), "rapid-fanout: result_tickets should drain")
-	_assert_true(int(pathfinder_metrics.get("cancelled_count", 0)) > 0, "rapid-fanout: cancelled_count should increase")
+	var ticks := _run_until_idle(world, RAPID_SWITCH_TICKS, "rapid-fanout")
+	print("DOTA2_FANOUT rapid: ticks=%d" % ticks)
 	for unit_id in unit_ids:
 		var unit := world.get_unit(unit_id)
 		_assert_true(unit != null, "rapid-fanout: missing unit %s" % unit_id)
@@ -103,47 +97,11 @@ func _test_rapid_target_switch_with_fanout_drains_queue() -> void:
 			unit.move_target.distance_to(expected_target) <= 0.001,
 			"rapid-fanout: %s should keep latest assigned target" % unit_id
 		)
-
-
-func _run_until_terminal(
-	scenario_id: String,
-	world: Dota2LabWorld,
-	unit_ids: Array[String],
-	max_ticks: int
-) -> Dictionary:
-	var settled := false
-	var ticks_run := 0
-	for i in range(max_ticks):
-		world.step(TICK_DELTA)
-		ticks_run = i + 1
-		if _units_are_terminal(world, unit_ids) and _queue_is_drained(world):
-			settled = true
-			break
-
-	var metrics := world.get_metrics()
-	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
-	return {
-		"scenario": scenario_id,
-		"settled": settled,
-		"ticks_run": ticks_run,
-		"state_counts": _state_counts_for_ids(world, unit_ids),
-		"pending_count": int(pathfinder_metrics.get("pending_count", -1)),
-		"result_count": int(pathfinder_metrics.get("result_count", -1)),
-		"result_ticket_count": _result_ticket_count(pathfinder_metrics),
-		"blocked_by_unit_count": int(metrics.get("blocked_by_unit_count", 0)),
-		"short_path_requests": int(metrics.get("short_path_requests", 0)),
-		"fanout_assignment_count": int(metrics.get("fanout_assignment_count", 0)),
-		"last_fanout_assignments": metrics.get("last_fanout_assignments", []),
-		"unit_summaries": _unit_summaries(world, unit_ids),
-	}
-
-
-func _assert_terminal_report(report: Dictionary) -> void:
-	var scenario_id := str(report.get("scenario", "unknown"))
-	_assert_true(bool(report.get("settled", false)), "%s: did not settle within bounded ticks" % scenario_id)
-	_assert_eq(0, int(report.get("pending_count", -1)), "%s: pending queue should drain" % scenario_id)
-	_assert_eq(0, int(report.get("result_count", -1)), "%s: result queue should drain" % scenario_id)
-	_assert_eq(0, int(report.get("result_ticket_count", -1)), "%s: result_tickets should drain" % scenario_id)
+		_assert_eq(
+			Dota2LabMoveOrder.STATUS_COMPLETED,
+			str(unit.last_order_snapshot().get("status", "")),
+			"rapid-fanout: %s final order should complete" % unit_id
+		)
 
 
 func _assert_fanout_assignments(world: Dota2LabWorld, expected_count: int, label: String) -> void:
@@ -155,7 +113,6 @@ func _assert_fanout_assignments(world: Dota2LabWorld, expected_count: int, label
 		var assignment: Dictionary = item as Dictionary
 		_assert_true(assignment.has("original_target"), "%s: missing original_target" % label)
 		_assert_true(assignment.has("assigned_target"), "%s: missing assigned_target" % label)
-		_assert_true(assignment.has("status"), "%s: missing status" % label)
 		var status := str(assignment.get("status", ""))
 		_assert_true(
 			status == "assigned_original" or status == "assigned_offset" or status == "no_slot",
@@ -164,24 +121,6 @@ func _assert_fanout_assignments(world: Dota2LabWorld, expected_count: int, label
 		var assigned: Dictionary = assignment.get("assigned_target", {}) as Dictionary
 		assigned_targets["%.2f,%.2f" % [float(assigned.get("x", 0.0)), float(assigned.get("y", 0.0))]] = true
 	_assert_true(assigned_targets.size() > 1, "%s: assignments should not all share one target" % label)
-
-
-func _assert_all_units_receive_orders_immediately(
-	world: Dota2LabWorld,
-	unit_ids: Array[String],
-	label: String
-) -> void:
-	for unit_id in unit_ids:
-		var unit := world.get_unit(unit_id)
-		_assert_true(unit != null, "%s: missing unit %s" % [label, unit_id])
-		if unit == null:
-			continue
-		_assert_true(unit.current_order != null, "%s: %s missing immediate order" % [label, unit_id])
-		_assert_eq(
-			Dota2LabUnit.STATE_WAITING_LONG,
-			unit.state,
-			"%s: %s should start in WAITING_LONG on command tick" % [label, unit_id]
-		)
 
 
 func _assignment_targets_by_unit(world: Dota2LabWorld) -> Dictionary:
@@ -198,67 +137,18 @@ func _assignment_targets_by_unit(world: Dota2LabWorld) -> Dictionary:
 	return result
 
 
-func _state_counts_for_ids(world: Dota2LabWorld, unit_ids: Array[String]) -> Dictionary:
-	var state_counts := {
-		Dota2LabUnit.STATE_IDLE: 0,
-		Dota2LabUnit.STATE_WAITING_LONG: 0,
-		Dota2LabUnit.STATE_FOLLOWING: 0,
-		Dota2LabUnit.STATE_WAITING_SHORT: 0,
-		Dota2LabUnit.STATE_FAILED: 0,
-	}
-	for unit_id in unit_ids:
-		var unit := world.get_unit(unit_id)
-		if unit == null:
-			continue
-		state_counts[unit.state] = int(state_counts.get(unit.state, 0)) + 1
-	return state_counts
-
-
-func _unit_summaries(world: Dota2LabWorld, unit_ids: Array[String]) -> Array[Dictionary]:
-	var result: Array[Dictionary] = []
-	for unit_id in unit_ids:
-		var unit := world.get_unit(unit_id)
-		if unit == null:
-			result.append({"id": unit_id, "missing": true})
-			continue
-		result.append({
-			"id": unit.id,
-			"state": unit.state,
-			"position": {"x": unit.position.x, "y": unit.position.y},
-			"move_target": {"x": unit.move_target.x, "y": unit.move_target.y},
-			"failure_reason": str(unit.last_order_snapshot().get("failure_reason", "")),
-		})
-	return result
-
-
-func _units_are_terminal(world: Dota2LabWorld, unit_ids: Array[String]) -> bool:
-	for unit_id in unit_ids:
-		var unit := world.get_unit(unit_id)
-		if unit == null:
-			return false
-		if unit.state != Dota2LabUnit.STATE_IDLE and unit.state != Dota2LabUnit.STATE_FAILED:
-			return false
-	return true
-
-
-func _queue_is_drained(world: Dota2LabWorld) -> bool:
-	var metrics := world.get_metrics()
-	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
-	return (
-		int(pathfinder_metrics.get("pending_count", 0)) == 0
-		and int(pathfinder_metrics.get("result_count", 0)) == 0
-		and _result_ticket_count(pathfinder_metrics) == 0
-	)
-
-
-func _result_ticket_count(pathfinder_metrics: Dictionary) -> int:
-	var tickets: Array = pathfinder_metrics.get("result_tickets", []) as Array
-	return tickets.size()
-
-
-func _state_count(report: Dictionary, state: String) -> int:
-	var state_counts: Dictionary = report.get("state_counts", {}) as Dictionary
-	return int(state_counts.get(state, 0))
+func _run_until_idle(world: Dota2LabWorld, max_ticks: int, label: String) -> int:
+	for i in range(max_ticks):
+		world.step(TICK_DELTA)
+		var all_idle := true
+		for unit in world.units:
+			if unit.state == Dota2LabUnit.STATE_MOVING:
+				all_idle = false
+				break
+		if all_idle:
+			return i + 1
+	_failures.append("%s: units did not settle within %d ticks" % [label, max_ticks])
+	return max_ticks
 
 
 func _assert_eq(expected: Variant, actual: Variant, label: String) -> void:

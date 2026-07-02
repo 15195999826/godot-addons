@@ -1,69 +1,46 @@
 # Dota2 RTS Pathfinding Lab
 
-> **Status: LAYER 2 COMMAND-SOURCE SMOKE (2026-05-15).**
-> Layer 1 manual frontend exists and is usable for investigation. Multi-unit
-> command feel has a narrow command-layer fanout baseline. Layer 2 now has a
-> deterministic automatic command-source smoke driver; it still does not own
-> movement policy.
+> **Status: FABLE MOTION (2026-07-02).**
+> The motion system was rebuilt from scratch. Paths know only the static
+> world; unit-vs-unit avoidance is a per-tick positional separation solve.
+> Two unit states (IDLE / MOVING), synchronous planning, and every order
+> terminates in bounded time.
 
 This lab is a Dota2/LoL-style movement-policy example for `sim-nav-map`:
-continuous-space movement on a navigation grid with static and dynamic
-obstructions.
+continuous-space movement on a navigation grid with static obstructions and
+contact-resolved unit collision.
 
-## Current Baseline
+## Try It
 
-- Manual scene: `frontend/dota2_pathfinding_lab.tscn`
-- Visible Layer 2 demo scene: `frontend/dota2_ai_command_demo.tscn`
-- Baseline reference: the `addons` submodule commit containing this README,
-  tracked by the parent repo commit that points at it.
-- Implemented: manual controls, explicit motion FSM, ticket lifecycle
-  diagnostics, same-tick command-layer target fanout, local short-detour
-  subgoals, debug HUD, JSON export, DevAgent debug adapter, and
-  `dota2lab/smoke`.
-- Verification: `./tools/run_tests.ps1 dota2lab/smoke` passes with
-  `PASS 6 / FAIL 0 / TIMEOUT 0`.
-- Known state: single-unit movement remains a strict hard-block baseline.
-  Multi-unit commands are a lab convenience with target fanout, not formation
-  or group movement. Narrow-gap and mixed-obstacle scenarios can still end in
-  bounded `FAILED` states.
-- Layer 1.1 movement-feel contract:
-  [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md)
-- Layer 2 automatic command-source plan:
-  [docs/design-notes/layer-2-ai-control-plan.md](docs/design-notes/layer-2-ai-control-plan.md)
+- Manual scene: `frontend/dota2_pathfinding_lab.tscn` — open in the Godot
+  editor, press F6. Right-click to move, drag to select, keys 2/3/4 to edit
+  the map live.
+- Auto demo: `frontend/dota2_ai_command_demo.tscn` — F6 and watch a scripted
+  Layer 2 command source drive lane moves, target switches, chase/retreat,
+  and cancel on a loop.
 
-## Visible Demo
+## Motion Model (Fable)
 
-Open `frontend/dota2_ai_command_demo.tscn` in the Godot editor and press F6.
-It uses the same renderer as the manual lab scene, but starts an automatic
-Layer 2 command-source script on load. The script repeatedly demonstrates lane
-movement, target switching, chase/retreat, and cancel commands, then loops.
+Full design: [docs/design-notes/fable-motion-design.md](docs/design-notes/fable-motion-design.md).
 
-## Motion Contract (v2)
+- **One movement rule**: turn toward the tracking point (turn-rate capped),
+  walk along facing with a continuous alignment speed ramp (Dota2 action-cone
+  feel, no binary gate). No sideways displacement exists anywhere.
+- **Commit-then-resolve**: units step by intent, then an iterative separation
+  solve splits overlapping pairs (pushability-weighted, head-on lateral bias)
+  and projects bodies out of statics/bounds. Overlap cannot persist.
+- Movers shove idle units aside, yield to unpushable blockers (round them via
+  contact sliding), and lane-sort through opposing streams.
+- **Bounded termination**: arrive / arrive-partial (canonicalized goal) /
+  arrive-crowded (goal buried in a crowd) / one replan then stalled-fail.
+  There is no holding state and no forever-retry.
+- Group commands fan one click out into deterministic nearby per-unit targets
+  (command-layer concern, in `Dota2LabWorld`).
+- `sim-nav-map` core stays policy-free; all movement policy lives in
+  `logic/dota2_lab_motion_engine.gd`.
 
-Full contract: [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md).
-
-- Units are real obstacles (no phasing), but a unit-blocked step first retries
-  with a ½-cell clearance relax (brush-past margin), then tries a validated
-  **tangential slide** around the blocker — a moving unit never parks against
-  another unit. Only when both fail does it escalate to a short-detour subgoal.
-- **Crowded arrive**: a blocked unit already within a crowd ring of its goal
-  completes; a group ordered to one point settles as concentric rings.
-- **HOLDING**: when the recovery budget is spent, the unit keeps its order,
-  holds position, and retries a long path at a bounded rate. Removing a
-  blocker lets it resume by itself. `FAILED` exists only for statically
-  unreachable goals — other units in the way never terminally fail an order
-  (`max_retry_exceeded` no longer exists).
-- No push pressure: sliding moves only the mover, blockers are never displaced.
-- Commands are individual per unit.
-- Units keep authoritative facing. They use the Dota2 `11.5°` action cone:
-  movement can start once the next waypoint is inside that front cone, then the
-  unit keeps rotating while moving. The raw Dota2 `0.6` per `0.03s` turn-rate
-  reference is kept in code, but the lab default runs at half-speed so the small
-  facing arrows do not look like instant turns.
-- Multi-unit commands may fan out one click target into deterministic nearby
-  per-unit targets. All independent move orders start on the command tick.
-- `sim-nav-map` core stays policy-free; slide, relax, crowd-arrive, holding,
-  retry, and repath policy live in this lab.
+`example/dota2-auto-battle` (LGF) drives the same engine through
+`Dota2MovementAdapter`.
 
 ## Controls
 
@@ -85,6 +62,11 @@ Run the smoke group:
 ./tools/run_tests.ps1 dota2lab/smoke
 ```
 
+Coverage: move basics (arrival/canonicalization/cancel/no-sideways guard),
+separation invariant (head-on, squads crossing, coincident spawn, static
+projection), crowds and blockers, stall watchdog, target fanout, AI command
+source, frontend UI ops.
+
 The scene can also run with DevAgent Debug Mode:
 
 ```text
@@ -98,17 +80,14 @@ Supported raw DevAgent ops include `capture`, `click_at`, `drag_at`, `tap_key`,
 - `dump_scene_state`
 - `export_debug_log`
 
-The HUD distinguishes active path source: long paths are green, short paths are
-cyan, and the last short subgoal is shown as a cyan ring for selected units.
-Each unit also draws a facing arrow; orange means it is currently rotating
-before movement.
+HUD reading: selected units draw their remaining path in green; each unit has
+a facing arrow (orange while turn-limited), a state dot (grey IDLE / green
+MOVING), and a red ring only for hard-failed orders (`no_path` / `stalled` —
+a cancel is not an error). The Motion panel shows the live separation-solve
+residual, which should read 0.00 at rest.
 
 ## Development Docs
 
-- Active route: [docs/development-plan.md](docs/development-plan.md)
-- Movement-feel contract: [docs/design-notes/movement-feel-policy.md](docs/design-notes/movement-feel-policy.md)
+- Motion design: [docs/design-notes/fable-motion-design.md](docs/design-notes/fable-motion-design.md)
 - Layer 2 AI control plan: [docs/design-notes/layer-2-ai-control-plan.md](docs/design-notes/layer-2-ai-control-plan.md)
-- Historical motion design: [docs/design-notes/motion-controller-design.md](docs/design-notes/motion-controller-design.md)
-
-Keep this README short. Put new development decisions, evidence, and repair
-plans in `docs/development-plan.md`.
+- Route history: [docs/development-plan.md](docs/development-plan.md)

@@ -38,21 +38,15 @@ const FACING_ARROW_COLOR := Color(1.00, 0.94, 0.42)
 const OBSTACLE_COLOR := Color(0.38, 0.35, 0.30)
 const OBSTACLE_OUTLINE_COLOR := Color(0.78, 0.67, 0.45)
 const OBSTACLE_CLEARANCE_COLOR := Color(0.95, 0.70, 0.25, 0.16)
-const PATH_COLOR_LONG := Color(0.20, 1.00, 0.55, 0.75)
-const PATH_COLOR_SHORT := Color(0.20, 0.78, 1.00, 0.88)
-const PATH_COLOR_UNKNOWN := Color(0.92, 0.92, 0.72, 0.70)
-const SHORT_GOAL_COLOR := Color(0.20, 0.78, 1.00, 0.55)
+const PATH_COLOR := Color(0.20, 1.00, 0.55, 0.75)
 const TARGET_COLOR := Color(0.2, 0.95, 0.65)
 const TRACE_COLOR := Color(0.45, 0.75, 1.0, 0.24)
 const DRAG_RECT_COLOR := Color(0.20, 0.70, 1.0, 0.15)
 const DRAG_RECT_OUTLINE := Color(0.35, 0.85, 1.0)
 
 const STATE_COLOR := {
-	"IDLE":          Color(0.65, 0.65, 0.65),
-	"WAITING_LONG":  Color(1.00, 0.55, 0.20),
-	"FOLLOWING":     Color(0.50, 0.95, 0.50),
-	"WAITING_SHORT": Color(0.95, 0.80, 0.30),
-	"FAILED":        Color(0.95, 0.30, 0.30),
+	"IDLE":   Color(0.65, 0.65, 0.65),
+	"MOVING": Color(0.50, 0.95, 0.50),
 }
 
 @export var auto_command_demo: bool = false
@@ -381,9 +375,7 @@ func _draw() -> void:
 		var unit := _world.get_unit(unit_id)
 		if unit == null or not unit.has_path():
 			continue
-		_draw_waypoint_path(unit.path, unit.position, _path_color_for_unit(unit))
-		if unit.last_short_range > 0.0:
-			_draw_short_goal_marker(unit.last_short_goal)
+		_draw_waypoint_path(unit.path, unit.position, PATH_COLOR)
 
 	# Units.
 	for unit in _world.units:
@@ -394,7 +386,7 @@ func _draw() -> void:
 		draw_arc(unit.position, unit.radius, 0.0, TAU, 24, UNIT_OUTLINE_COLOR, 1.5)
 		if _selected_unit_ids.has(unit.id):
 			draw_arc(unit.position, unit.radius + 5.0, 0.0, TAU, 32, UNIT_COLOR_SELECTED, 2.5)
-		if unit.state == Dota2LabUnit.STATE_FAILED:
+		if _order_failed_hard(unit) and unit.state == Dota2LabUnit.STATE_IDLE:
 			draw_arc(unit.position, unit.radius + 4.5, 0.0, TAU, 32, Color(1.0, 0.18, 0.15, 0.90), 2.5)
 			_draw_failed_glyph(unit.position - Vector2(0.0, unit.radius + 9.0))
 		_draw_facing_arrow(unit)
@@ -402,8 +394,8 @@ func _draw() -> void:
 		var state_color: Color = STATE_COLOR.get(unit.state, Color.WHITE)
 		draw_circle(unit.position + Vector2(unit.radius + 4.0, -unit.radius - 4.0), 3.0, state_color)
 		# Move target marker for active orders.
-		if unit.state != Dota2LabUnit.STATE_IDLE and unit.state != Dota2LabUnit.STATE_FAILED:
-			draw_line(unit.position, unit.move_target, TARGET_COLOR, 0.8)
+		if unit.state == Dota2LabUnit.STATE_MOVING:
+			draw_line(unit.position, unit.effective_target, TARGET_COLOR, 0.8)
 
 	# Drag selection rectangle.
 	if _is_dragging:
@@ -461,20 +453,14 @@ func _draw_failed_glyph(center: Vector2) -> void:
 	draw_line(center + Vector2(-arm, arm), center + Vector2(arm, -arm), color, width)
 
 
-func _draw_short_goal_marker(center: Vector2) -> void:
-	if center == Vector2.ZERO:
-		return
-	draw_circle(center, 5.0, SHORT_GOAL_COLOR)
-	draw_arc(center, 13.0, 0.0, TAU, 28, SHORT_GOAL_COLOR, 1.4)
-
-
 func _draw_facing_arrow(unit: Dota2LabUnit) -> void:
 	var direction := Vector2(cos(unit.facing_angle_rad), sin(unit.facing_angle_rad))
 	var start := unit.position + direction * maxf(unit.radius * 0.15, 2.0)
 	var tip := unit.position + direction * (unit.radius + 9.0)
 	var head_left := tip - direction.rotated(0.65) * 6.0
 	var head_right := tip - direction.rotated(-0.65) * 6.0
-	var color := Color(1.0, 0.45, 0.18) if unit.waiting_for_facing else FACING_ARROW_COLOR
+	var turning := unit.is_moving() and unit.last_speed_factor < 0.5
+	var color := Color(1.0, 0.45, 0.18) if turning else FACING_ARROW_COLOR
 	draw_line(start, tip, color, 2.0)
 	draw_line(tip, head_left, color, 2.0)
 	draw_line(tip, head_right, color, 2.0)
@@ -491,14 +477,6 @@ func _draw_waypoint_path(path: SimNavWaypointPath, start: Vector2, color: Color)
 		previous = point
 
 
-func _path_color_for_unit(unit: Dota2LabUnit) -> Color:
-	if unit.path_source == Dota2LabUnit.PATH_SOURCE_LONG:
-		return PATH_COLOR_LONG
-	if unit.path_source == Dota2LabUnit.PATH_SOURCE_SHORT:
-		return PATH_COLOR_SHORT
-	return PATH_COLOR_UNKNOWN
-
-
 # ─────────────────────────── HUD ─────────────────────────────────────────────
 
 func _update_hud() -> void:
@@ -506,12 +484,12 @@ func _update_hud() -> void:
 		return
 	var metrics := _world.get_metrics()
 	var state_counts: Dictionary = metrics.get("state_counts", {})
+	var step_stats: Dictionary = metrics.get("last_step_stats", {})
 	var pf: Dictionary = metrics.get("pathfinder", {})
 	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
 	var failed_line := _format_failed_line()
 	var selected_path_line := _format_selected_path_line()
-	var last_pathfinder_line := _format_last_pathfinder_line(pf)
-	var title := "Dota2 RTS Pathfinding Lab (Layer 2 Demo)" if auto_command_demo else "Dota2 RTS Pathfinding Lab (Layer 1)"
+	var title := "Dota2 RTS Pathfinding Lab (Layer 2 Demo)" if auto_command_demo else "Dota2 RTS Pathfinding Lab (Fable Motion)"
 	var subtitle := "Automatic command-source demo" if auto_command_demo else "Manual motion debug surface"
 	var auto_line := _format_auto_demo_line()
 	var lines := [
@@ -530,39 +508,24 @@ func _update_hud() -> void:
 		],
 		auto_line,
 		"",
-		"State",
-		"IDLE %d   WAIT_LONG %d   FOLLOW %d" % [
+		"Motion",
+		"IDLE %d   MOVING %d" % [
 			int(state_counts.get("IDLE", 0)),
-			int(state_counts.get("WAITING_LONG", 0)),
-			int(state_counts.get("FOLLOWING", 0)),
+			int(state_counts.get("MOVING", 0)),
 		],
-		"WAIT_SHORT %d   FAILED %d" % [
-			int(state_counts.get("WAITING_SHORT", 0)),
-			int(state_counts.get("FAILED", 0)),
+		"Orders done %d   failed %d" % [
+			int(metrics.get("orders_completed", 0)),
+			int(metrics.get("orders_failed", 0)),
 		],
-		"Turning: %d" % int(metrics.get("waiting_for_facing_count", 0)),
-		"",
-		"Path / Block",
-		"Long %d   Short %d   UnitBlock %d   StaticBlock %d" % [
-			metrics.get("long_path_requests", 0),
-			metrics.get("short_path_requests", 0),
-			metrics.get("blocked_by_unit_count", 0),
-			metrics.get("blocked_by_static_count", 0),
+		"Overlap residual %.2f   sep rounds %d" % [
+			float(step_stats.get("max_residual_overlap", 0.0)),
+			int(step_stats.get("separation_rounds", 0)),
 		],
-		"Reached: %d   Failed: %d   RetryMax: %d" % [
-			metrics.get("reached_goal_count", 0),
-			metrics.get("move_failed_count", 0),
-			metrics.get("retry_count_max", 0),
+		"Plans %d   LOS checks %d" % [
+			int(pf.get("plan_count", 0)),
+			int(pf.get("line_check_count", 0)),
 		],
-		"Queue pending %d   result %d   processed %d   peak %d" % [
-			int(pf.get("pending_count", 0)),
-			int(pf.get("result_count", 0)),
-			int(pf.get("processed_count", 0)),
-			metrics.get("pending_count_peak", 0),
-		],
-		"Path color: long green   short cyan   subgoal ring cyan",
 		selected_path_line,
-		last_pathfinder_line,
 		"",
 		"Performance",
 		"step %.2fms   avg %.2fms   max %.2fms @ tick %d" % [
@@ -604,36 +567,20 @@ func _format_failed_line() -> String:
 
 func _format_selected_path_line() -> String:
 	if _world == null or _selected_unit_ids.is_empty():
-		return "Selected path: none"
+		return "Selected: none"
 	var unit := _world.get_unit(_selected_unit_ids[0])
 	if unit == null:
-		return "Selected path: missing"
-	var suffix := ""
-	if unit.last_path_failure_reason != "":
-		suffix = "/%s" % unit.last_path_failure_reason
-	return "Selected path: %s state=%s src=%s last=%s:%s%s" % [
+		return "Selected: missing"
+	var last := unit.last_order_snapshot()
+	var last_text := "none"
+	if not last.is_empty():
+		last_text = "%s:%s" % [str(last.get("status", "")), str(last.get("reason", ""))]
+	return "Selected: %s state=%s wp=%d speed=%.0f%% last=%s" % [
 		unit.id,
 		unit.state,
-		unit.path_source,
-		unit.last_path_result_kind,
-		unit.last_path_result_status,
-		suffix,
-	]
-
-
-func _format_last_pathfinder_line(pf: Dictionary) -> String:
-	var last_processed := _last_processed_request_snapshot(pf)
-	if last_processed.is_empty():
-		return "Last pathfinder: none"
-	var suffix := ""
-	var failure_reason := str(last_processed.get("failure_reason", ""))
-	if failure_reason != "" and failure_reason != "none":
-		suffix = "/%s" % failure_reason
-	return "Last pathfinder: %s %s%s size=%d" % [
-		str(last_processed.get("kind", "")),
-		str(last_processed.get("status", "")),
-		suffix,
-		int(last_processed.get("path_size", 0)),
+		unit.path.size(),
+		unit.last_speed_factor * 100.0,
+		last_text,
 	]
 
 
@@ -654,18 +601,11 @@ func _format_auto_demo_line() -> String:
 	]
 
 
-func _last_processed_request_snapshot(pf: Dictionary) -> Dictionary:
-	var raw: Variant = pf.get("last_processed_requests", [])
-	if raw is Dictionary:
-		return (raw as Dictionary).duplicate(true)
-	if raw is Array:
-		var entries: Array = raw as Array
-		if entries.is_empty():
-			return {}
-		var last_entry: Variant = entries[entries.size() - 1]
-		if last_entry is Dictionary:
-			return (last_entry as Dictionary).duplicate(true)
-	return {}
+# A cancel is a deliberate stop, not an error — only no_path/stalled orders
+# get the red failure treatment.
+func _order_failed_hard(unit: Dota2LabUnit) -> bool:
+	return unit.mobile and unit.last_order_failed() \
+		and unit.last_order.reason != Dota2LabMoveOrder.REASON_CANCELLED
 
 
 func _failed_unit_ids() -> Array[String]:
@@ -673,7 +613,7 @@ func _failed_unit_ids() -> Array[String]:
 	if _world == null:
 		return result
 	for unit in _world.units:
-		if unit.state == Dota2LabUnit.STATE_FAILED:
+		if _order_failed_hard(unit):
 			result.append(unit.id)
 	return result
 
@@ -713,7 +653,7 @@ func _create_auto_demo_world() -> Dota2LabWorld:
 		Dota2LabUnit.new("chaser", "blue", Vector2(140.0, 450.0), 11.0, 110.0, true),
 		Dota2LabUnit.new("cancelled", "blue", Vector2(140.0, 560.0), 11.0, 110.0, true),
 	]
-	world._rebuild_navigation()
+	world.rebuild_navigation()
 	world.clear_traces()
 	return world
 
@@ -739,7 +679,7 @@ func _update_auto_demo_loop() -> void:
 		return
 	if not _ai_command_source.is_finished():
 		return
-	if not _auto_demo_units_are_terminal() or not _auto_demo_queue_is_drained():
+	if not _auto_demo_units_are_terminal():
 		return
 	if _auto_demo_reset_countdown < 0:
 		_auto_demo_reset_countdown = AUTO_DEMO_RESET_DELAY_TICKS
@@ -751,20 +691,9 @@ func _update_auto_demo_loop() -> void:
 
 func _auto_demo_units_are_terminal() -> bool:
 	for unit in _world.get_mobile_units():
-		if unit.state != Dota2LabUnit.STATE_IDLE and unit.state != Dota2LabUnit.STATE_FAILED:
+		if unit.state == Dota2LabUnit.STATE_MOVING:
 			return false
 	return true
-
-
-func _auto_demo_queue_is_drained() -> bool:
-	var metrics := _world.get_metrics()
-	var pathfinder_metrics: Dictionary = metrics.get("pathfinder", {}) as Dictionary
-	var result_tickets: Array = pathfinder_metrics.get("result_tickets", []) as Array
-	return (
-		int(pathfinder_metrics.get("pending_count", 0)) == 0
-		and int(pathfinder_metrics.get("result_count", 0)) == 0
-		and result_tickets.is_empty()
-	)
 
 
 func _debug_panel_origin() -> Vector2:
@@ -898,27 +827,18 @@ func _snapshot_units() -> Array[Dictionary]:
 			"id": unit.id,
 			"group_id": unit.group_id,
 			"mobile": unit.mobile,
-			"blocks_pathfinding": unit.blocks_pathfinding,
 			"position": _vector_snapshot(unit.position),
 			"move_target": _vector_snapshot(unit.move_target),
+			"effective_target": _vector_snapshot(unit.effective_target),
 			"radius": unit.radius,
 			"speed": unit.speed,
 			"facing_angle_rad": unit.facing_angle_rad,
-			"desired_facing_angle_rad": unit.desired_facing_angle_rad,
 			"turn_rate_rad_per_sec": unit.turn_rate_rad_per_sec,
 			"last_turn_delta_rad": unit.last_turn_delta_rad,
-			"waiting_for_facing": unit.waiting_for_facing,
+			"last_speed_factor": unit.last_speed_factor,
 			"state": unit.state,
-			"retry_count": unit.retry_count,
-			"pending_long_ticket": unit.pending_long_ticket,
-			"pending_short_ticket": unit.pending_short_ticket,
-			"path_source": unit.path_source,
-			"last_path_request_kind": unit.last_path_request_kind,
-			"last_path_result_kind": unit.last_path_result_kind,
-			"last_path_result_status": unit.last_path_result_status,
-			"last_path_failure_reason": unit.last_path_failure_reason,
-			"last_short_goal": _vector_snapshot(unit.last_short_goal),
-			"last_short_range": unit.last_short_range,
+			"stall_seconds": unit.stall_seconds,
+			"repath_count": unit.repath_count,
 			"active_order_id": unit.active_order_id(),
 			"current_order": unit.current_order_snapshot(),
 			"last_order": unit.last_order_snapshot(),

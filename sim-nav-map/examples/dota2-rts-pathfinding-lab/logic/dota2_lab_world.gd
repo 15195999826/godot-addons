@@ -3,18 +3,11 @@ extends RefCounted
 
 # Dota2 RTS Pathfinding Lab — world.
 #
-# Holds units + static obstacles + pathfinder + motion controller. Owns the
-# per-tick phase order required by the motion design doc
-# (docs/design-notes/motion-controller-design.md §4):
-#
-#   1. apply_path_results(unit)   for every unit
-#   2. step_unit(unit, delta)     for every FOLLOWING unit
-#   3. emit_motion_updates()      drain controller event buffer
-#   4. queue.process_budget(N)    advance core's pending requests
-#
-# Order is fixed. Do not interleave.
+# Holds units + static obstacles + pathfinder + motion engine. The whole
+# per-tick pipeline is one engine call (commit-then-resolve inside); planning
+# is synchronous at command time, so there is no result-collection phase and
+# no request queue to drain.
 
-const PATH_BUDGET_PER_TICK := 4
 const MAX_RECENT_MOTION_UPDATES := 160
 const MAX_RECENT_FANOUT_ASSIGNMENTS := 160
 const DEFAULT_OBSTACLE_SIZE := Vector2(64.0, 64.0)
@@ -27,8 +20,10 @@ var map_size: Vector2 = Vector2(1320.0, 900.0)
 var obstacles: Array[Dota2LabObstacle] = []
 var units: Array[Dota2LabUnit] = []
 var pathfinder: Dota2LabPathfinderWrapper = null
-var motion: Dota2LabMotionController = null
+var motion: Dota2LabMotionEngine = null
 var tick_count: int = 0
+var orders_completed: int = 0
+var orders_failed: int = 0
 var recent_motion_updates: Array[Dictionary] = []
 var recent_fanout_assignments: Array[Dictionary] = []
 var last_fanout_assignments: Array[Dictionary] = []
@@ -39,14 +34,12 @@ var _blocker_seq: int = 0
 
 func _init() -> void:
 	pathfinder = Dota2LabPathfinderWrapper.new(map_size)
-	motion = Dota2LabMotionController.new()
+	motion = Dota2LabMotionEngine.new()
 	setup_default()
 
 
-# Default scene: 8 mobile blue units on the west, 1 static red blocker mid-map,
-# and three static obstacles forming a more legible corridor. The composition
-# mirrors the 0AD lab's readable manual-test layout while keeping Dota2 motion
-# rules: hard block, no push, per-unit orders.
+# Default scene: 8 mobile blue units on the west, 1 unpushable red blocker
+# mid-map, and three static obstacles forming a legible corridor.
 func setup_default() -> void:
 	_obstacle_seq = 0
 	_blocker_seq = 0
@@ -67,8 +60,10 @@ func setup_default() -> void:
 		Dota2LabUnit.new("blue_7", "blue", Vector2(260.0, 505.0), 11.0, 110.0, true),
 		Dota2LabUnit.new("red_blocker", "red", Vector2(470.0, 450.0), 13.0, 0.0, false),
 	]
-	_rebuild_navigation()
+	rebuild_navigation()
 	tick_count = 0
+	orders_completed = 0
+	orders_failed = 0
 	recent_motion_updates.clear()
 	recent_fanout_assignments.clear()
 	last_fanout_assignments.clear()
@@ -76,26 +71,15 @@ func setup_default() -> void:
 
 
 func step(delta: float) -> void:
-	# Phase 1: collect path results for every unit (drives WAITING_* → FOLLOWING/FAILED).
-	for unit in units:
-		motion.apply_path_results(unit, pathfinder, tick_count)
-
-	# Phase 2: walk FOLLOWING units (step_unit returns early for others).
-	# Refresh dynamic obstructions once before stepping so validate_movement_line
-	# sees current unit positions.
-	pathfinder.refresh_dynamic_units(units)
-	for unit in units:
-		if unit.mobile:
-			motion.step_unit(unit, delta, pathfinder, units, tick_count)
-
-	# Phase 3: drain motion update event buffer for frontend/smoke consumption.
-	_dispatch_motion_updates()
-
-	# Phase 4: advance the path request queue. Results land in next tick's
-	# apply_path_results. This enforces the NO_SAME_TICK_TAKEOVER invariant
-	# at the world level (in addition to step_unit's internal discipline).
-	pathfinder.process_budget(units, PATH_BUDGET_PER_TICK)
-
+	var events := motion.step(units, pathfinder, delta, tick_count)
+	for event in events:
+		if str(event.get("kind", "")) == Dota2LabMotionEngine.EVENT_ORDER_FAILED:
+			orders_failed += 1
+		else:
+			orders_completed += 1
+		recent_motion_updates.append(event)
+		while recent_motion_updates.size() > MAX_RECENT_MOTION_UPDATES:
+			recent_motion_updates.pop_front()
 	tick_count += 1
 
 
@@ -106,7 +90,7 @@ func issue_move(unit_id: String, goal: Vector2) -> void:
 	if unit == null or not unit.mobile:
 		return
 	last_fanout_assignments.clear()
-	motion.begin_new_move_order(unit, goal, pathfinder, tick_count)
+	motion.issue_move(unit, goal, pathfinder, tick_count)
 
 
 func issue_move_all_mobile(goal: Vector2) -> void:
@@ -123,7 +107,7 @@ func cancel_move(unit_id: String) -> void:
 	var unit := get_unit(unit_id)
 	if unit == null:
 		return
-	motion.cancel_move_order(unit, pathfinder, tick_count, "cancelled")
+	motion.cancel_move(unit, tick_count)
 
 
 # ───────────────── Scene editing (used by frontend keys 2/3/4) ──────────────
@@ -132,16 +116,17 @@ func add_static_obstacle(center: Vector2, size: Vector2 = DEFAULT_OBSTACLE_SIZE)
 	_obstacle_seq += 1
 	var obstacle_id := "custom_obstacle_%d" % _obstacle_seq
 	obstacles.append(Dota2LabObstacle.new(obstacle_id, _clamp_point_to_map(center), size))
-	_rebuild_navigation()
+	rebuild_navigation()
 	_replan_all_active()
 	return obstacle_id
 
 
+# Blockers never enter the nav map, so adding one does not invalidate paths —
+# movers flow around it through the separation solve.
 func add_blocker(center: Vector2, radius: float = DEFAULT_BLOCKER_RADIUS) -> String:
 	_blocker_seq += 1
 	var blocker_id := "custom_blocker_%d" % _blocker_seq
 	units.append(Dota2LabUnit.new(blocker_id, "red", _clamp_unit_point(center, radius), radius, 0.0, false))
-	_replan_all_active()
 	return blocker_id
 
 
@@ -170,12 +155,11 @@ func remove_nearest_editable(point: Vector2, max_distance: float = 44.0) -> Stri
 	if best_kind == "obstacle":
 		var removed_obstacle := obstacles[best_index]
 		obstacles.remove_at(best_index)
-		_rebuild_navigation()
+		rebuild_navigation()
 		_replan_all_active()
 		return removed_obstacle.id
 	var removed_unit := units[best_index]
 	units.remove_at(best_index)
-	_replan_all_active()
 	return removed_unit.id
 
 
@@ -230,14 +214,20 @@ func clear_traces() -> void:
 # ───────────────── Diagnostics (smoke + frontend HUD) ───────────────────────
 
 func get_metrics() -> Dictionary:
-	var metrics := motion.diagnostics(units).duplicate(true)
+	var metrics := motion.diagnostics(units)
 	metrics["tick_count"] = tick_count
 	metrics["mobile_count"] = get_mobile_units().size()
+	metrics["orders_completed"] = orders_completed
+	metrics["orders_failed"] = orders_failed
 	metrics["last_fanout_assignments"] = last_fanout_assignments.duplicate(true)
 	metrics["recent_fanout_assignments"] = recent_fanout_assignments.duplicate(true)
 	metrics["fanout_assignment_count"] = recent_fanout_assignments.size()
 	metrics["pathfinder"] = pathfinder.diagnostics()
 	return metrics
+
+
+func rebuild_navigation() -> void:
+	pathfinder.rebuild_context(obstacles)
 
 
 # ───────────────── Internal helpers ─────────────────────────────────────────
@@ -246,7 +236,7 @@ func _issue_move_units(target_units: Array[Dota2LabUnit], goal: Vector2, command
 	if target_units.size() <= 1:
 		last_fanout_assignments.clear()
 		for unit in target_units:
-			motion.begin_new_move_order(unit, goal, pathfinder, tick_count)
+			motion.issue_move(unit, goal, pathfinder, tick_count)
 		return
 
 	var assignments := _build_target_fanout_assignments(target_units, goal, command_kind)
@@ -257,7 +247,7 @@ func _issue_move_units(target_units: Array[Dota2LabUnit], goal: Vector2, command
 		if unit == null:
 			continue
 		var assigned_target: Vector2 = assignment.get("assigned_target", goal) as Vector2
-		motion.begin_new_move_order(unit, assigned_target, pathfinder, tick_count)
+		motion.issue_move(unit, assigned_target, pathfinder, tick_count)
 
 
 func _mobile_units_for_ids(unit_ids: Array[String]) -> Array[Dota2LabUnit]:
@@ -388,22 +378,9 @@ func _sort_units_by_id(a: Dota2LabUnit, b: Dota2LabUnit) -> bool:
 	return a.id < b.id
 
 
-func _rebuild_navigation() -> void:
-	pathfinder.rebuild_context(obstacles)
-
-
 func _replan_all_active() -> void:
 	for unit in get_mobile_units():
-		if unit.state != Dota2LabUnit.STATE_IDLE and unit.state != Dota2LabUnit.STATE_FAILED:
-			motion.replan_active(unit, pathfinder, tick_count)
-
-
-func _dispatch_motion_updates() -> void:
-	var updates := motion.drain_motion_updates()
-	for update in updates:
-		recent_motion_updates.append(update.to_snapshot())
-		while recent_motion_updates.size() > MAX_RECENT_MOTION_UPDATES:
-			recent_motion_updates.pop_front()
+		motion.replan_active(unit, pathfinder, tick_count)
 
 
 func _clamp_point_to_map(point: Vector2) -> Vector2:
