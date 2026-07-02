@@ -1,0 +1,7 @@
+# committed: .dll / .wasm runtime artifacts (consumer projects need no toolchain)
+# ignored: MSVC link intermediates
+*.exp
+*.lib
+*.pdb
+# Windows in-place-replace temp files (linker overwriting a loaded dll)
+~*.TMP

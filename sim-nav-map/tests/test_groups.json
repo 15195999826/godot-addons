@@ -44,6 +44,11 @@
         "repro/repro_core_017_dense_cluster_perimeter_detour_known_limit.tscn",
         "repro/repro_core_018_visibility_graph_gap_threading.tscn"
       ]
+    },
+    "native": {
+      "scenes": [
+        "native/smoke_sim_nav_native_load.tscn"
+      ]
     }
   }
 }
