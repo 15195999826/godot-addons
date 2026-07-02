@@ -8,10 +8,18 @@ extends RefCounted
 # separation solve. That removes the whole class of same-tick-staleness bugs
 # the old dynamic-obstruction refresh had.
 #
-# Planning is synchronous — unit counts in this lab (and in dota2-auto-battle)
-# are far below anything that needs the budgeted request queue.
+# Planning is deferred and time-sliced: a GDScript JPS query costs 4-40 ms
+# (measured), so an 8-unit cross-map group command computed synchronously
+# used to freeze the input frame for ~250 ms. Commands enqueue instead; the
+# engine drains ONE request per tick through the core queue while units walk
+# a straight-line placeholder for those few ticks. Peak per-frame planning
+# cost is one query (~4-10 ms warm) instead of the whole batch.
+# (A worker-thread variant was tried and reverted: GDScript execution on
+# spawned threads crashed unpredictably on Godot 4.6 rc1 — see the
+# fable-motion design note.)
 
 const PASSABILITY_CLASS_NAME := "ground"
+const PLAN_BUDGET_PER_TICK := 1
 
 
 # 8 px raster cells: after core gained CLEARANCE_EXTENSION_RADIUS (+1 raster
@@ -26,6 +34,8 @@ var pass_mask: int = 0
 var hierarchical: SimNavHierarchicalPathfinder = null
 var long_pathfinder: SimNavLongPathfinder = null
 var facade: SimNavPathfinderFacade = null
+var vertex_pathfinder: SimNavVertexPathfinder = null
+var path_queue: SimNavPathRequestQueue = null
 var plan_count: int = 0
 var line_check_count: int = 0
 
@@ -45,6 +55,8 @@ func _init(
 
 
 func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
+	if path_queue != null:
+		path_queue.clear()
 	var width := int(ceil(map_size.x / cell_size))
 	var height := int(ceil(map_size.y / cell_size))
 	nav_map = SimNavMap.new(width, height, cell_size, Vector2.ZERO, 1)
@@ -62,14 +74,57 @@ func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
 	nav_map.clear_dirty_navcells()
 	long_pathfinder = SimNavLongPathfinder.new(nav_map)
 	facade = SimNavPathfinderFacade.new(nav_map, hierarchical, long_pathfinder)
+	vertex_pathfinder = SimNavVertexPathfinder.new(nav_map)
+	path_queue = SimNavPathRequestQueue.new(facade, vertex_pathfinder)
 
 
-# Synchronous long-path plan with reachable-goal canonicalization. An
-# unreachable goal comes back as a path to the nearest reachable point
-# (result.canonicalized == true) — callers never need a retry loop for
-# statically bad goals.
+# ── Async plan API (normal engine path) ──────────────────────────────────────
+
+# Enqueue a long-path request for the worker thread. Reachable-goal
+# canonicalization applies as in plan_path.
+func request_plan(start: Vector2, goal: Vector2) -> int:
+	if path_queue == null:
+		return 0
+	plan_count += 1
+	return path_queue.enqueue_long_path_query(_build_long_path_query(start, goal))
+
+
+func cancel_plan(ticket: int) -> void:
+	if path_queue == null or ticket <= 0:
+		return
+	path_queue.cancel(ticket)
+
+
+# Once per tick: compute at most PLAN_BUDGET_PER_TICK pending requests on
+# the main thread (time-slicing, not threading).
+func pump_async() -> void:
+	if path_queue == null:
+		return
+	if path_queue.pending_count() > 0:
+		path_queue.process_budget(PLAN_BUDGET_PER_TICK)
+
+
+func take_plan_result(ticket: int) -> SimNavLongPathResult:
+	if path_queue == null or ticket <= 0:
+		return null
+	return path_queue.take_long_path_result(ticket)
+
+
+func pending_plan_count() -> int:
+	if path_queue == null:
+		return 0
+	return path_queue.pending_count()
+
+
+# ── Synchronous plan (tools/probes only) ─────────────────────────────────────
+
+# Same query as request_plan, computed immediately.
 func plan_path(start: Vector2, goal: Vector2) -> SimNavLongPathResult:
 	plan_count += 1
+	return facade.compute_path_result(_build_long_path_query(start, goal))
+
+
+func _build_long_path_query(start: Vector2, goal: Vector2) -> SimNavLongPathQuery:
 	var query := SimNavLongPathQuery.from_values(
 		start,
 		SimNavPathGoal.point(goal),
@@ -78,7 +133,7 @@ func plan_path(start: Vector2, goal: Vector2) -> SimNavLongPathResult:
 	)
 	query.post_process = SimNavLongPathQuery.POST_PROCESS_LINE_OF_SIGHT
 	query.waypoint_spacing = cell_size * 12.0 - 1.0
-	return facade.compute_path_result(query)
+	return query
 
 
 # Raster LOS against statics only, at class clearance. Used for waypoint
@@ -109,6 +164,7 @@ func diagnostics() -> Dictionary:
 	return {
 		"plan_count": plan_count,
 		"line_check_count": line_check_count,
+		"plans_pending": pending_plan_count(),
 	}
 
 

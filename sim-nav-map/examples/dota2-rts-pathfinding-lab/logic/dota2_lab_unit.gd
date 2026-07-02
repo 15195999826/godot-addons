@@ -63,6 +63,11 @@ var last_turn_delta_rad: float = 0.0
 # a unit never flip-flops sides mid-squeeze.
 var steer_side: float = 0.0
 
+# Queued plan ticket for the current order (0 = none in flight). While it is
+# pending the unit walks a straight-line placeholder path; the engine swaps
+# in the real path when the result lands.
+var pending_plan_ticket: int = 0
+
 # Frontend / debug.
 var trace: PackedVector2Array = PackedVector2Array()
 

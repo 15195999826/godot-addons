@@ -74,11 +74,13 @@ const CONTACT_STEER_WEIGHT := 0.9
 # dead-center) a fixed handedness breaks the tie deterministically.
 const CONTACT_STEER_SIDE_DEADZONE := 0.05
 
-# Same-tick synchronous replans are capped so a batch of units that stalled
-# together (same command, same stall clock) cannot pile N long-path searches
-# into one step — the skipped units keep their stall time and replan on the
-# following ticks (natural stagger).
-const MAX_REPATHS_PER_STEP := 2
+# ── Deferred planning ────────────────────────────────────────────────────────
+# Plans are queued and time-sliced (one JPS query per tick — a query costs
+# 4-40 ms, so computing a whole group command in one frame froze it for
+# ~250 ms). A freshly ordered unit starts walking a straight-line placeholder
+# immediately (instant command response, Dota2 feel); the engine swaps in the
+# real path the tick its result lands. Static projection covers the
+# placeholder brushing a wall for those few ticks.
 
 # ── Watchdog ─────────────────────────────────────────────────────────────────
 # "Stalled" = net displacement this tick under this fraction of a full step.
@@ -114,13 +116,12 @@ var pushability_idle: float = DEFAULT_PUSHABILITY_IDLE
 # squeezing past a non-yielding body reads as sideways translation.
 var contact_steering_enabled: bool = true
 
-var _repaths_this_step: int = 0
-
 
 # ───────────────────────────── Command API ───────────────────────────────────
 
-# Synchronous: the unit leaves this call either MOVING with a usable path or
-# IDLE with a terminal order. A superseded active order fails as "cancelled".
+# The unit starts walking immediately: a straight-line placeholder path
+# toward the goal, replaced by the worker's real path when it lands. A
+# superseded active order fails as "cancelled".
 func issue_move(
 	unit: Dota2LabUnit,
 	goal: Vector2,
@@ -130,15 +131,23 @@ func issue_move(
 	if unit == null or not unit.mobile or wrapper == null:
 		return
 	if unit.state == Dota2LabUnit.STATE_MOVING:
+		_drop_pending_plan(unit, wrapper)
 		unit.finish_order(tick, false, Dota2LabMoveOrder.REASON_CANCELLED)
 	var clamped_goal := wrapper.clamp_to_playable(goal, unit.radius)
 	unit.begin_order(clamped_goal, tick)
-	_plan(unit, wrapper, tick)
+	unit.path.push_back(clamped_goal)
+	_request_plan(unit, wrapper)
 
 
-func cancel_move(unit: Dota2LabUnit, tick: int) -> void:
+func cancel_move(
+	unit: Dota2LabUnit,
+	wrapper: Dota2LabPathfinderWrapper,
+	tick: int
+) -> void:
 	if unit == null or unit.state != Dota2LabUnit.STATE_MOVING:
 		return
+	if wrapper != null:
+		_drop_pending_plan(unit, wrapper)
 	unit.finish_order(tick, false, Dota2LabMoveOrder.REASON_CANCELLED)
 
 
@@ -153,7 +162,14 @@ func replan_active(
 		return
 	unit.repath_count = 0
 	unit.stall_seconds = 0.0
-	_plan(unit, wrapper, tick)
+	_request_plan(unit, wrapper)
+
+
+# After a nav rebuild the queue is fresh and old tickets are meaningless —
+# clear them before replanning so no unit waits on a ghost ticket.
+func invalidate_pending_plans(units: Array[Dota2LabUnit]) -> void:
+	for unit in units:
+		unit.pending_plan_ticket = 0
 
 
 # ───────────────────────────── Per-tick step ─────────────────────────────────
@@ -167,8 +183,21 @@ func step(
 	tick: int
 ) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
-	var plans_before := wrapper.plan_count
-	_repaths_this_step = 0
+
+	# Phase 0: pump the plan worker and apply landed results.
+	wrapper.pump_async()
+	var plans_applied := 0
+	for unit in units:
+		if unit.pending_plan_ticket <= 0:
+			continue
+		var plan := wrapper.take_plan_result(unit.pending_plan_ticket)
+		if plan == null:
+			continue
+		unit.pending_plan_ticket = 0
+		if unit.state != Dota2LabUnit.STATE_MOVING:
+			continue  # order ended while the plan was in flight
+		_apply_plan_result(unit, plan, tick, events)
+		plans_applied += 1
 
 	# Phase A: intent step.
 	for unit in units:
@@ -186,8 +215,13 @@ func step(
 		if unit.mobile and tick % TRACE_SAMPLE_INTERVAL_TICKS == 0:
 			unit.remember_position()
 
+	var plans_waiting := 0
+	for unit in units:
+		if unit.pending_plan_ticket > 0:
+			plans_waiting += 1
 	stats["events"] = events.size()
-	stats["plans_this_step"] = wrapper.plan_count - plans_before
+	stats["plans_applied"] = plans_applied
+	stats["plans_waiting"] = plans_waiting
 	last_step_stats = stats
 	return events
 
@@ -221,10 +255,27 @@ func diagnostics(units: Array[Dota2LabUnit]) -> Dictionary:
 
 # ───────────────────────────── Planning ──────────────────────────────────────
 
-func _plan(unit: Dota2LabUnit, wrapper: Dota2LabPathfinderWrapper, tick: int) -> void:
-	var result := wrapper.plan_path(unit.position, unit.move_target)
+func _request_plan(unit: Dota2LabUnit, wrapper: Dota2LabPathfinderWrapper) -> void:
+	_drop_pending_plan(unit, wrapper)
+	unit.pending_plan_ticket = wrapper.request_plan(unit.position, unit.move_target)
+
+
+func _drop_pending_plan(unit: Dota2LabUnit, wrapper: Dota2LabPathfinderWrapper) -> void:
+	if unit.pending_plan_ticket <= 0:
+		return
+	wrapper.cancel_plan(unit.pending_plan_ticket)
+	unit.pending_plan_ticket = 0
+
+
+func _apply_plan_result(
+	unit: Dota2LabUnit,
+	result: SimNavLongPathResult,
+	tick: int,
+	events: Array[Dictionary]
+) -> void:
 	if not result.is_success():
 		unit.finish_order(tick, false, Dota2LabMoveOrder.REASON_NO_PATH)
+		_append_terminal_event(unit, tick, events)
 		return
 	unit.path = result.path
 	if result.has_path():
@@ -505,6 +556,7 @@ func _settle_or_watch(
 ) -> void:
 	var goal_distance := unit.position.distance_to(unit.effective_target)
 	if goal_distance <= ARRIVE_RADIUS:
+		_drop_pending_plan(unit, wrapper)
 		_complete(unit, tick, _arrival_reason(unit), events)
 		return
 
@@ -523,6 +575,7 @@ func _settle_or_watch(
 			return
 		unit.stall_seconds += delta
 		if unit.stall_seconds >= STALL_NEAR_COMPLETE_SEC:
+			_drop_pending_plan(unit, wrapper)
 			_complete(unit, tick, Dota2LabMoveOrder.REASON_ARRIVED_CROWDED, events)
 		return
 
@@ -533,15 +586,13 @@ func _settle_or_watch(
 	if unit.stall_seconds < STALL_REPATH_SEC:
 		return
 	if unit.repath_count < MAX_REPATHS:
-		if _repaths_this_step >= MAX_REPATHS_PER_STEP:
-			return  # keep the stall clock; replan on a following tick
-		_repaths_this_step += 1
+		if unit.pending_plan_ticket > 0:
+			return  # a replan is already in flight
 		unit.repath_count += 1
 		unit.stall_seconds = 0.0
-		_plan(unit, wrapper, tick)
-		if unit.state != Dota2LabUnit.STATE_MOVING:
-			_append_terminal_event(unit, tick, events)
+		_request_plan(unit, wrapper)
 		return
+	_drop_pending_plan(unit, wrapper)
 	_fail(unit, tick, Dota2LabMoveOrder.REASON_STALLED, events)
 
 

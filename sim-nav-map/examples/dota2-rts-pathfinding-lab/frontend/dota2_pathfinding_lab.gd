@@ -667,10 +667,11 @@ func _update_hud() -> void:
 			int(metrics.get("orders_completed", 0)),
 			int(metrics.get("orders_failed", 0)),
 		],
-		"Overlap residual %.2f   sep rounds %d   plans/step %d" % [
+		"Overlap residual %.2f   sep rounds %d   plans applied %d / waiting %d" % [
 			float(step_stats.get("max_residual_overlap", 0.0)),
 			int(step_stats.get("separation_rounds", 0)),
-			int(step_stats.get("plans_this_step", 0)),
+			int(step_stats.get("plans_applied", 0)),
+			int(step_stats.get("plans_waiting", 0)),
 		],
 		"Plans %d   LOS checks %d" % [
 			int(pf.get("plan_count", 0)),

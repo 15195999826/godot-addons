@@ -115,7 +115,7 @@ func cancel_move(unit_id: String) -> void:
 	var unit := get_unit(unit_id)
 	if unit == null:
 		return
-	motion.cancel_move(unit, tick_count)
+	motion.cancel_move(unit, pathfinder, tick_count)
 
 
 # ───────────────── Scene editing (used by frontend keys 2/3/4) ──────────────
@@ -236,6 +236,8 @@ func get_metrics() -> Dictionary:
 
 func rebuild_navigation() -> void:
 	pathfinder.rebuild_context(obstacles)
+	# The rebuilt queue starts fresh; old tickets would never resolve.
+	motion.invalidate_pending_plans(units)
 
 
 # ───────────────── Internal helpers ─────────────────────────────────────────
