@@ -57,6 +57,18 @@ const HARD_BLOCK_PUSHABILITY_IDLE := 0.0
 const HEAD_ON_ALIGN_DOT := 0.85
 const HEAD_ON_LATERAL_BIAS := 0.6
 
+# ── Contact steering ─────────────────────────────────────────────────────────
+# When a unit closes on a body that will NOT yield to it (equal or lower
+# pushability, or an immobile blocker), its desired heading gains a smooth
+# tangential bias — it walks around the contact instead of being ferried
+# sideways by the separation solve. Heading, displacement, and visuals stay
+# aligned (no "translation" look while squeezing past). The bias handedness
+# matches the solve's head-on lateral bias exactly, so intent and push never
+# fight. Phase B still resolves any residual overlap.
+const CONTACT_STEER_GAP_RANGE := 8.0
+const CONTACT_STEER_FRONT_DOT_MIN := 0.3
+const CONTACT_STEER_WEIGHT := 0.9
+
 # ── Watchdog ─────────────────────────────────────────────────────────────────
 # "Stalled" = net displacement this tick under this fraction of a full step.
 const STALL_MOVE_FRACTION := 0.25
@@ -87,6 +99,9 @@ var last_step_stats: Dictionary = {}
 # the sliders really tune WHO yields in mover-vs-idle contacts.
 var pushability_moving: float = DEFAULT_PUSHABILITY_MOVING
 var pushability_idle: float = DEFAULT_PUSHABILITY_IDLE
+# Steer-around-contacts (see constants above). Off = pre-steering behavior:
+# squeezing past a non-yielding body reads as sideways translation.
+var contact_steering_enabled: bool = true
 
 
 # ───────────────────────────── Command API ───────────────────────────────────
@@ -144,7 +159,7 @@ func step(
 	for unit in units:
 		unit.prev_tick_position = unit.position
 		if unit.state == Dota2LabUnit.STATE_MOVING:
-			_advance_along_path(unit, wrapper, delta)
+			_advance_along_path(unit, wrapper, delta, units)
 
 	# Phase B: separation solve.
 	var stats := _resolve_overlaps(units, wrapper)
@@ -211,7 +226,8 @@ func _plan(unit: Dota2LabUnit, wrapper: Dota2LabPathfinderWrapper, tick: int) ->
 func _advance_along_path(
 	unit: Dota2LabUnit,
 	wrapper: Dota2LabPathfinderWrapper,
-	delta: float
+	delta: float,
+	units: Array[Dota2LabUnit]
 ) -> void:
 	_shortcut_path(unit, wrapper)
 	while unit.has_path() and unit.position.distance_to(unit.path.back()) <= WAYPOINT_REACH:
@@ -226,6 +242,8 @@ func _advance_along_path(
 		return
 
 	var desired := to_track.angle()
+	if contact_steering_enabled:
+		desired = _contact_steered_heading(unit, to_track / distance, units)
 	unit.last_turn_delta_rad = angle_difference(unit.facing_angle_rad, desired)
 	unit.facing_angle_rad = rotate_toward(
 		unit.facing_angle_rad, desired, unit.turn_rate_rad_per_sec * delta
@@ -241,6 +259,43 @@ func _advance_along_path(
 		# past the goal reads as a wobble at 60 Hz).
 		step_length = minf(step_length, distance)
 	unit.position += Vector2.from_angle(unit.facing_angle_rad) * step_length
+
+
+# Blend a tangential bias into the desired heading for every non-yielding
+# body the unit is closing on nose-first. Continuous in all inputs (gap,
+# frontness), so the heading cannot flip-flop; the shared handedness formula
+# (-perp of the direction to the other body) is exactly the side Phase B's
+# lateral bias pushes this unit toward — both pairs' members bias toward
+# their own right, which is what makes opposing streams lane-sort.
+func _contact_steered_heading(
+	unit: Dota2LabUnit,
+	toward_track: Vector2,
+	units: Array[Dota2LabUnit]
+) -> float:
+	var my_push := _pushability(unit)
+	var steered := toward_track
+	for other in units:
+		if other == unit:
+			continue
+		# Only steer around bodies that will not yield to this unit: an
+		# immobile blocker, or anything at equal-or-lower pushability. Softer
+		# bodies get shoved by the solve instead — no need to walk around.
+		if other.mobile and _pushability(other) > my_push + 0.001:
+			continue
+		var offset := other.position - unit.position
+		var gap := offset.length() - (unit.radius + other.radius)
+		if gap > CONTACT_STEER_GAP_RANGE:
+			continue
+		var to_other := offset.normalized()
+		var frontness_dot := toward_track.dot(to_other)
+		if frontness_dot < CONTACT_STEER_FRONT_DOT_MIN:
+			continue
+		var proximity := clampf(1.0 - gap / CONTACT_STEER_GAP_RANGE, 0.0, 1.0)
+		var frontness := (frontness_dot - CONTACT_STEER_FRONT_DOT_MIN) \
+			/ (1.0 - CONTACT_STEER_FRONT_DOT_MIN)
+		var around := Vector2(to_other.y, -to_other.x)
+		steered += around * (proximity * frontness * CONTACT_STEER_WEIGHT)
+	return steered.angle()
 
 
 func _alignment_factor(heading_error: float) -> float:

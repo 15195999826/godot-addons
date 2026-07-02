@@ -99,15 +99,28 @@ func _test_idle_unit_is_shoved_aside() -> void:
 
 
 # Hard (Dota2) push tuning: a stopped unit is a solid body — the mover rounds
-# it via contact sliding and the idler does not move a hair. This is the
-# creep-blocking flavor projects opt into via pushability_idle = 0.
+# it via contact sliding and the idler does not move a hair. With contact
+# steering on (default), rounding is WALKED: per-tick displacement stays
+# aligned with facing (no sideways-translation look while squeezing past).
 func _test_hard_mode_idle_is_solid() -> void:
 	var idler := Dota2LabUnit.new("idler", "blue", Vector2(500.0, 450.0), 11.0, 110.0, true)
 	var mover := Dota2LabUnit.new("mover", "blue", Vector2(200.0, 450.0), 11.0, 110.0, true)
 	var world := _open_world([mover, idler])
 	world.motion.pushability_idle = Dota2LabMotionEngine.HARD_BLOCK_PUSHABILITY_IDLE
 	world.issue_move("mover", Vector2(800.0, 450.0))
-	var ticks := _run_until_idle(world, 600, "hard-idle")
+	var facing_dot_sum := 0.0
+	var facing_dot_samples := 0
+	var ticks := 600
+	for i in range(600):
+		var before := mover.position
+		world.step(TICK_DELTA)
+		var moved := mover.position - before
+		if moved.length() > 0.3:
+			facing_dot_sum += moved.normalized().dot(Vector2.from_angle(mover.facing_angle_rad))
+			facing_dot_samples += 1
+		if mover.state != Dota2LabUnit.STATE_MOVING:
+			ticks = i + 1
+			break
 	_assert_completed(mover, "hard-idle mover")
 	_assert_true(
 		mover.position.distance_to(Vector2(800.0, 450.0)) <= 12.0,
@@ -117,8 +130,13 @@ func _test_hard_mode_idle_is_solid() -> void:
 		idler.position.distance_to(Vector2(500.0, 450.0)) < 0.5,
 		"hard-idle: solid idler must not move, got %s" % str(idler.position)
 	)
-	print("CROWD hard-idle: ticks=%d idler_moved=%.2f" % [
-		ticks, idler.position.distance_to(Vector2(500.0, 450.0))
+	var facing_dot_avg := facing_dot_sum / float(maxi(facing_dot_samples, 1))
+	_assert_true(
+		facing_dot_avg > 0.9,
+		"hard-idle: displacement should follow facing while rounding (avg dot %.3f)" % facing_dot_avg
+	)
+	print("CROWD hard-idle: ticks=%d idler_moved=%.2f facing_dot_avg=%.3f" % [
+		ticks, idler.position.distance_to(Vector2(500.0, 450.0)), facing_dot_avg
 	])
 
 
