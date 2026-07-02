@@ -78,7 +78,7 @@ var _selected_unit_ids: Array[String] = []
 var _drag_start: Vector2 = Vector2.ZERO
 var _drag_current: Vector2 = Vector2.ZERO
 var _is_dragging: bool = false
-var _last_action: String = "ready"
+var _last_action: String = "就绪"
 var _last_step_usec: int = 0
 var _max_step_usec: int = 0
 var _max_step_tick: int = 0
@@ -112,7 +112,7 @@ func _ready() -> void:
 	_hud.add_theme_constant_override("shadow_offset_y", 1)
 	add_child(_hud)
 	_export_button = Button.new()
-	_export_button.text = "Export log"
+	_export_button.text = "导出日志"
 	_export_button.position = _debug_panel_origin() + Vector2(PANEL_WIDTH - 132.0, PANEL_PADDING)
 	_export_button.custom_minimum_size = Vector2(112.0, 32.0)
 	_export_button.z_index = 20
@@ -171,27 +171,27 @@ func _handle_key(keycode: int) -> void:
 	match keycode:
 		KEY_1:
 			_mode = ToolMode.COMMAND
-			_last_action = "mode COMMAND"
+			_last_action = "模式：指令"
 			_record_event("mode", {"mode": _mode_name()})
 		KEY_2:
 			_mode = ToolMode.OBSTACLE
-			_last_action = "mode OBSTACLE"
+			_last_action = "模式：障碍物"
 			_record_event("mode", {"mode": _mode_name()})
 		KEY_3:
 			_mode = ToolMode.BLOCKER
-			_last_action = "mode BLOCKER"
+			_last_action = "模式：阻挡单位"
 			_record_event("mode", {"mode": _mode_name()})
 		KEY_4:
 			_mode = ToolMode.ERASE
-			_last_action = "mode ERASE"
+			_last_action = "模式：擦除"
 			_record_event("mode", {"mode": _mode_name()})
 		KEY_A:
 			_selected_unit_ids = _world.get_mobile_unit_ids()
-			_last_action = "selected all (%d)" % _selected_unit_ids.size()
+			_last_action = "全选 (%d)" % _selected_unit_ids.size()
 			_record_event("select_all", {"selected_unit_ids": _selected_unit_ids})
 		KEY_C:
 			_world.clear_traces()
-			_last_action = "cleared traces"
+			_last_action = "已清除轨迹"
 			_record_event("clear_traces", {})
 		KEY_E:
 			export_debug_log()
@@ -199,7 +199,7 @@ func _handle_key(keycode: int) -> void:
 			_reset_scene()
 		KEY_SPACE:
 			_paused = not _paused
-			_last_action = "paused" if _paused else "resumed"
+			_last_action = "已暂停" if _paused else "已恢复"
 			_record_event("pause_toggle", {"paused": _paused})
 	_update_hud()
 	queue_redraw()
@@ -227,21 +227,21 @@ func _handle_mouse_button(mb: InputEventMouseButton) -> void:
 	match _mode:
 		ToolMode.OBSTACLE:
 			var obstacle_id := _world.add_static_obstacle(mb.position, OBSTACLE_SIZE)
-			_last_action = "placed %s" % obstacle_id
+			_last_action = "已放置 %s" % obstacle_id
 			_record_event("place_obstacle", {
 				"id": obstacle_id,
 				"position": mb.position,
 			})
 		ToolMode.BLOCKER:
 			var blocker_id := _world.add_blocker(mb.position)
-			_last_action = "placed %s" % blocker_id
+			_last_action = "已放置 %s" % blocker_id
 			_record_event("place_blocker", {
 				"id": blocker_id,
 				"position": mb.position,
 			})
 		ToolMode.ERASE:
 			var removed_id := _world.remove_nearest_editable(mb.position)
-			_last_action = "removed %s" % removed_id if removed_id != "" else "erase: nothing nearby"
+			_last_action = "已移除 %s" % removed_id if removed_id != "" else "擦除：附近无目标"
 			_record_event("erase", {
 				"removed_id": removed_id,
 				"position": mb.position,
@@ -260,7 +260,7 @@ func _finish_selection(end_pos: Vector2) -> void:
 			_selected_unit_ids.append(picked)
 	else:
 		_selected_unit_ids = _world.get_mobile_units_in_rect(_rect_from_points(_drag_start, end_pos))
-	_last_action = "selected %d" % _selected_unit_ids.size()
+	_last_action = "已选 %d" % _selected_unit_ids.size()
 	_record_event("select", {
 		"position": end_pos,
 		"selected_unit_ids": _selected_unit_ids,
@@ -271,11 +271,11 @@ func _move_selection(target: Vector2) -> void:
 	if _selected_unit_ids.is_empty():
 		# No selection ⇒ command all mobile units (per README convention).
 		_world.issue_move_all_mobile(target)
-		_last_action = "move all → %s" % str(target)
+		_last_action = "全体移动 → %s" % str(target)
 		_record_event("move_all", {"position": target})
 		return
 	_world.issue_move_ids(_selected_unit_ids, target)
-	_last_action = "move %d → %s" % [_selected_unit_ids.size(), str(target)]
+	_last_action = "移动 %d → %s" % [_selected_unit_ids.size(), str(target)]
 	_record_event("move", {
 		"position": target,
 		"selected_unit_ids": _selected_unit_ids,
@@ -294,13 +294,13 @@ func export_debug_log(file_path: String = "") -> String:
 	_record_event("export_log_requested", {"path": global_path})
 	var file := FileAccess.open(target_path, FileAccess.WRITE)
 	if file == null:
-		_last_action = "export failed"
+		_last_action = "导出失败"
 		printerr("DOTA2_RTS_LAB_EXPORT_LOG_FAIL: %s" % target_path)
 		return ""
 	file.store_string(JSON.stringify(_json_safe(_build_export_snapshot()), "\t"))
 	file.close()
 	_last_export_path = global_path
-	_last_action = "exported log"
+	_last_action = "已导出日志"
 	print("DOTA2_RTS_LAB_EXPORT_LOG: %s" % _last_export_path)
 	_update_hud()
 	return _last_export_path
@@ -364,22 +364,23 @@ func _on_export_log_pressed() -> void:
 
 func _build_push_controls() -> void:
 	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, 712.0)
-	_add_panel_label("推挤调参（实时生效）  让步 0% = 刚体，重叠仍强制平摊消解", origin, 15)
+	_add_panel_label("推挤调参（实时生效）", origin, 15)
+	_add_panel_label("两杆比的是让步比例：等值（含 0%）恒各让一半；钉死一方需对方 > 0%", origin + Vector2(0.0, 20.0), 12)
 
-	_add_panel_label("移动中让步", origin + Vector2(0.0, 28.0), 14)
-	_push_moving_slider = _add_push_slider(origin + Vector2(96.0, 28.0), _push_moving)
+	_add_panel_label("移动中让步", origin + Vector2(0.0, 48.0), 14)
+	_push_moving_slider = _add_push_slider(origin + Vector2(96.0, 48.0), _push_moving)
 	_push_moving_slider.value_changed.connect(_on_push_moving_changed)
-	_push_moving_value = _add_panel_label("", origin + Vector2(372.0, 28.0), 14)
+	_push_moving_value = _add_panel_label("", origin + Vector2(372.0, 48.0), 14)
 
-	_add_panel_label("停驻让步", origin + Vector2(0.0, 58.0), 14)
-	_push_idle_slider = _add_push_slider(origin + Vector2(96.0, 58.0), _push_idle)
+	_add_panel_label("停驻让步", origin + Vector2(0.0, 78.0), 14)
+	_push_idle_slider = _add_push_slider(origin + Vector2(96.0, 78.0), _push_idle)
 	_push_idle_slider.value_changed.connect(_on_push_idle_changed)
-	_push_idle_value = _add_panel_label("", origin + Vector2(372.0, 58.0), 14)
+	_push_idle_value = _add_panel_label("", origin + Vector2(372.0, 78.0), 14)
 
 	var steering_toggle := CheckButton.new()
 	steering_toggle.text = "贴身绕行转向（挤行时朝向跟着拐，关 = 横移观感）"
 	steering_toggle.button_pressed = _contact_steering
-	steering_toggle.position = origin + Vector2(0.0, 88.0)
+	steering_toggle.position = origin + Vector2(0.0, 108.0)
 	steering_toggle.z_index = 20
 	steering_toggle.add_theme_font_size_override("font_size", 14)
 	steering_toggle.toggled.connect(_on_contact_steering_toggled)
@@ -387,7 +388,7 @@ func _build_push_controls() -> void:
 
 	var soft_button := Button.new()
 	soft_button.text = "软碰撞（LoL 让路）"
-	soft_button.position = origin + Vector2(0.0, 124.0)
+	soft_button.position = origin + Vector2(0.0, 144.0)
 	soft_button.custom_minimum_size = Vector2(160.0, 30.0)
 	soft_button.z_index = 20
 	soft_button.pressed.connect(_on_push_preset_soft)
@@ -395,7 +396,7 @@ func _build_push_controls() -> void:
 
 	var hard_button := Button.new()
 	hard_button.text = "硬碰撞（Dota2 卡位）"
-	hard_button.position = origin + Vector2(172.0, 124.0)
+	hard_button.position = origin + Vector2(172.0, 144.0)
 	hard_button.custom_minimum_size = Vector2(160.0, 30.0)
 	hard_button.z_index = 20
 	hard_button.pressed.connect(_on_push_preset_hard)
@@ -645,18 +646,18 @@ func _update_hud() -> void:
 	var avg_step_msec := float(_total_step_usec) / float(maxi(_measured_step_count, 1)) / 1000.0
 	var failed_line := _format_failed_line()
 	var selected_path_line := _format_selected_path_line()
-	var title := "Dota2 RTS Pathfinding Lab (Layer 2 Demo)" if auto_command_demo else "Dota2 RTS Pathfinding Lab (Fable Motion)"
-	var subtitle := "Automatic command-source demo" if auto_command_demo else "Manual motion debug surface"
+	var title := "Dota2 RTS 寻路 Lab（Layer 2 演示）" if auto_command_demo else "Dota2 RTS 寻路 Lab（Fable Motion）"
+	var subtitle := "自动指令源演示" if auto_command_demo else "手动运动调试面板"
 	var auto_line := _format_auto_demo_line()
 	var lines := [
 		title,
 		subtitle,
-		"Mode: %s   %s" % [_mode_name(), "[PAUSED]" if _paused else ""],
-		"Action: %s%s" % [
+		"模式：%s   %s" % [_mode_name(), "[已暂停]" if _paused else ""],
+		"动作：%s%s" % [
 			_last_action,
-			" | exported %s" % _last_export_path if _last_export_path != "" else "",
+			" | 已导出 %s" % _last_export_path if _last_export_path != "" else "",
 		],
-		"Selected: %d   Tick: %d   Map: %dx%d" % [
+		"已选：%d   Tick: %d   地图：%dx%d" % [
 			_selected_unit_ids.size(),
 			metrics.get("tick_count", 0),
 			int(_world.map_size.x),
@@ -664,50 +665,50 @@ func _update_hud() -> void:
 		],
 		auto_line,
 		"",
-		"Motion",
+		"运动",
 		"IDLE %d   MOVING %d" % [
 			int(state_counts.get("IDLE", 0)),
 			int(state_counts.get("MOVING", 0)),
 		],
-		"Orders done %d   failed %d" % [
+		"指令完成 %d   失败 %d" % [
 			int(metrics.get("orders_completed", 0)),
 			int(metrics.get("orders_failed", 0)),
 		],
-		"Overlap residual %.2f   sep rounds %d   plans applied %d / waiting %d" % [
+		"重叠残余 %.2f   分离轮次 %d   规划已应用 %d / 等待 %d" % [
 			float(step_stats.get("max_residual_overlap", 0.0)),
 			int(step_stats.get("separation_rounds", 0)),
 			int(step_stats.get("plans_applied", 0)),
 			int(step_stats.get("plans_waiting", 0)),
 		],
-		"Plans %d   LOS checks %d   last plan %.1fms" % [
+		"规划次数 %d   LOS 检查 %d   上次规划 %.1fms" % [
 			int(pf.get("plan_count", 0)),
 			int(pf.get("line_check_count", 0)),
 			float(pf.get("last_plan_usec", 0)) / 1000.0,
 		],
-		"Speed tiers: amber %.0f   blue %.0f   violet %.0f" % [
+		"速度档位：琥珀 %.0f   蓝 %.0f   紫罗兰 %.0f" % [
 			Dota2LabWorld.SPEED_SLOW, Dota2LabWorld.SPEED_MID, Dota2LabWorld.SPEED_FAST,
 		],
 		selected_path_line,
 		"",
-		"Performance",
-		"step %.2fms   avg %.2fms   max %.2fms @ tick %d   5s-max %.2fms" % [
+		"性能",
+		"单步 %.2fms   均值 %.2fms   峰值 %.2fms @ tick %d   5s峰值 %.2fms" % [
 			float(_last_step_usec) / 1000.0,
 			avg_step_msec,
 			float(_max_step_usec) / 1000.0,
 			_max_step_tick,
 			float(_recent_max_step_usec()) / 1000.0,
 		],
-		"slow %d   events %d   motion updates %d" % [
+		"慢帧 %d   事件 %d   运动更新 %d" % [
 			_slow_frame_log.size(),
 			_event_log.size(),
 			_world.recent_motion_updates.size(),
 		],
 		failed_line,
 		"",
-		"Controls",
-		"1 command/select   Right click move",
-		"2 obstacle   3 blocker   4 erase",
-		"A all   C traces   E export   R reset   Space pause",
+		"操作",
+		"1 指令/选择   右键移动",
+		"2 障碍物   3 阻挡单位   4 擦除",
+		"A 全选   C 清轨迹   E 导出   R 重置   空格 暂停",
 	]
 	if auto_line == "":
 		lines.remove_at(5)
@@ -723,22 +724,22 @@ func _format_failed_line() -> String:
 	var labels: Array[String] = failed_ids.duplicate()
 	var suffix := ""
 	if labels.size() > 5:
-		suffix = " +%d more" % (labels.size() - 5)
+		suffix = " 等+%d" % (labels.size() - 5)
 		labels = labels.slice(0, 5)
-	return "Failed (%d): %s%s" % [failed_ids.size(), ", ".join(labels), suffix]
+	return "失败 (%d)：%s%s" % [failed_ids.size(), ", ".join(labels), suffix]
 
 
 func _format_selected_path_line() -> String:
 	if _world == null or _selected_unit_ids.is_empty():
-		return "Selected: none"
+		return "已选：无"
 	var unit := _world.get_unit(_selected_unit_ids[0])
 	if unit == null:
-		return "Selected: missing"
+		return "已选：目标已消失"
 	var last := unit.last_order_snapshot()
-	var last_text := "none"
+	var last_text := "无"
 	if not last.is_empty():
 		last_text = "%s:%s" % [str(last.get("status", "")), str(last.get("reason", ""))]
-	return "Selected: %s state=%s wp=%d speed=%.0f%% last=%s" % [
+	return "已选：%s state=%s 路径点=%d 速度=%.0f%% 上次=%s" % [
 		unit.id,
 		unit.state,
 		unit.path.size(),
@@ -751,13 +752,13 @@ func _format_auto_demo_line() -> String:
 	if not auto_command_demo:
 		return ""
 	if _ai_command_source == null:
-		return "Auto: not started"
-	var status := "running"
+		return "自动：未启动"
+	var status := "运行中"
 	if _ai_command_source.is_finished():
-		status = "settling"
+		status = "收尾中"
 	if _auto_demo_reset_countdown >= 0:
-		status = "reset in %d" % _auto_demo_reset_countdown
-	return "Auto: run %d   %s   emitted %d" % [
+		status = "%d 后重置" % _auto_demo_reset_countdown
+	return "自动：第 %d 轮   %s   已发出 %d" % [
 		_auto_demo_run_index,
 		status,
 		int(_ai_command_source.emitted_count()),
@@ -792,7 +793,7 @@ func _reset_scene() -> void:
 		_selected_unit_ids = _world.get_mobile_unit_ids()
 		_apply_push_tuning()
 		_reset_perf_metrics()
-		_last_action = "reset scene"
+		_last_action = "已重置场景"
 		_record_event("reset", {"selected_unit_ids": _selected_unit_ids})
 
 
@@ -804,7 +805,7 @@ func _reset_auto_demo() -> void:
 	_auto_demo_run_index += 1
 	_auto_demo_reset_countdown = -1
 	_reset_perf_metrics()
-	_last_action = "auto demo run %d" % _auto_demo_run_index
+	_last_action = "自动演示第 %d 轮" % _auto_demo_run_index
 	_record_event("auto_demo_reset", {"selected_unit_ids": _selected_unit_ids})
 
 
@@ -835,7 +836,7 @@ func _tick_auto_demo() -> void:
 	if snapshots.is_empty():
 		return
 	var last_snapshot: Dictionary = snapshots[snapshots.size() - 1] as Dictionary
-	_last_action = "auto %s" % str(last_snapshot.get("label", "command"))
+	_last_action = "自动 %s" % str(last_snapshot.get("label", "command"))
 	_record_event("auto_command", last_snapshot)
 
 
@@ -869,10 +870,10 @@ func _debug_panel_origin() -> Vector2:
 
 func _mode_name() -> String:
 	match _mode:
-		ToolMode.COMMAND:  return "COMMAND"
-		ToolMode.OBSTACLE: return "OBSTACLE"
-		ToolMode.BLOCKER:  return "BLOCKER"
-		ToolMode.ERASE:    return "ERASE"
+		ToolMode.COMMAND:  return "指令"
+		ToolMode.OBSTACLE: return "障碍物"
+		ToolMode.BLOCKER:  return "阻挡单位"
+		ToolMode.ERASE:    return "擦除"
 	return "?"
 
 
@@ -903,12 +904,12 @@ func _reset_perf_metrics() -> void:
 func _ensure_log_dir() -> bool:
 	var dir := DirAccess.open("user://")
 	if dir == null:
-		_last_action = "export failed"
+		_last_action = "导出失败"
 		printerr("DOTA2_RTS_LAB_EXPORT_LOG_FAIL: cannot open user://")
 		return false
 	var err := dir.make_dir_recursive("dota2_rts_pathfinding_lab_logs")
 	if err != OK:
-		_last_action = "export failed"
+		_last_action = "导出失败"
 		printerr("DOTA2_RTS_LAB_EXPORT_LOG_FAIL: mkdir error %d" % err)
 		return false
 	return true
