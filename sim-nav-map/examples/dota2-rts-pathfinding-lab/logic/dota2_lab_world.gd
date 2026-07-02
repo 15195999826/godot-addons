@@ -125,7 +125,7 @@ func add_static_obstacle(center: Vector2, size: Vector2 = DEFAULT_OBSTACLE_SIZE)
 	var obstacle_id := "custom_obstacle_%d" % _obstacle_seq
 	obstacles.append(Dota2LabObstacle.new(obstacle_id, _clamp_point_to_map(center), size))
 	rebuild_navigation()
-	_replan_all_active()
+	replan_all_active()
 	return obstacle_id
 
 
@@ -164,7 +164,7 @@ func remove_nearest_editable(point: Vector2, max_distance: float = 44.0) -> Stri
 		var removed_obstacle := obstacles[best_index]
 		obstacles.remove_at(best_index)
 		rebuild_navigation()
-		_replan_all_active()
+		replan_all_active()
 		return removed_obstacle.id
 	var removed_unit := units[best_index]
 	units.remove_at(best_index)
@@ -388,7 +388,7 @@ func _sort_units_by_id(a: Dota2LabUnit, b: Dota2LabUnit) -> bool:
 	return a.id < b.id
 
 
-func _replan_all_active() -> void:
+func replan_all_active() -> void:
 	for unit in get_mobile_units():
 		motion.replan_active(unit, pathfinder, tick_count)
 

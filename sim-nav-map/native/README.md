@@ -69,4 +69,6 @@ scons platform=web target=template_release threads=no custom_api_file=extension_
 
 ## 冒烟
 
-`./tools/run_tests.ps1 simnav/native`（要求本机已构建/已有 committed 二进制）。
+`./tools/run_tests.ps1 simnav/native dota2lab/native`（要求本机已构建/已有 committed
+二进制；二进制随 submodule 入库，Windows 开发机开箱即跑）。两组均已并入
+`-Required`（2026-07-03；Windows/Web-only，非 Windows 机器跑全量会红）。

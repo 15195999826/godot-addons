@@ -26,6 +26,7 @@ const TRACE_EXPORT_LIMIT: int = 120
 const PANEL_GAP: float = 24.0
 const PANEL_WIDTH: float = 520.0
 const PANEL_PADDING: float = 20.0
+const BACKEND_PANEL_EXTRA_HEIGHT: float = 140.0
 const AUTO_DEMO_RESET_DELAY_TICKS: int = 120
 const Dota2LabSceneAgentOpsScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_lab_scene_agent_ops.gd")
 const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
@@ -73,6 +74,9 @@ var _push_moving_slider: HSlider = null
 var _push_idle_slider: HSlider = null
 var _push_moving_value: Label = null
 var _push_idle_value: Label = null
+var _pathfinder_native_toggle: CheckButton = null
+var _motion_native_toggle: CheckButton = null
+var _reset_stats_on_switch: CheckButton = null
 var _mode: int = ToolMode.COMMAND
 var _selected_unit_ids: Array[String] = []
 var _drag_start: Vector2 = Vector2.ZERO
@@ -119,6 +123,7 @@ func _ready() -> void:
 	_export_button.pressed.connect(_on_export_log_pressed)
 	add_child(_export_button)
 	_build_push_controls()
+	_build_backend_controls()
 	_apply_push_tuning()
 	_record_event("ready", {"selected_unit_ids": _selected_unit_ids})
 	_install_dev_agent()
@@ -485,6 +490,102 @@ func _refresh_push_value_labels() -> void:
 		_push_idle_value.text = "%d%%" % int(round(_push_idle * 100.0))
 
 
+# ─────────────────────────── Backend switch UI ──────────────────────────────
+#
+# Pathfinding and motion each have their own native flag (knife 5 shipped
+# them a milestone apart — M3 vs M4 — with different A/B risk profiles: the
+# pathfinder is exact integer/double math, the motion solver has the trig-ULP
+# story). Two independent toggles here so the UI matches what the extension
+# actually lets you combine, instead of hiding that behind one switch.
+
+func _build_backend_controls() -> void:
+	var origin := _debug_panel_origin() + Vector2(PANEL_PADDING, 900.0)
+	_add_panel_label("Native 后端（C++ GDExtension，关 = GDScript 默认）", origin, 15)
+
+	# Built before the two backend toggles: both toggles assign button_pressed
+	# before connecting their signal, but the assignment on the SECOND toggle
+	# built still runs any signal already connected on the FIRST — keeping
+	# this one first (and unconnected) means nothing reads it before it exists.
+	_reset_stats_on_switch = CheckButton.new()
+	_reset_stats_on_switch.text = "切换后重置统计数据"
+	_reset_stats_on_switch.button_pressed = true
+	_reset_stats_on_switch.position = origin + Vector2(0.0, 20.0)
+	_reset_stats_on_switch.z_index = 20
+	_reset_stats_on_switch.add_theme_font_size_override("font_size", 14)
+	add_child(_reset_stats_on_switch)
+
+	_pathfinder_native_toggle = CheckButton.new()
+	_pathfinder_native_toggle.text = "寻路使用 native"
+	_pathfinder_native_toggle.button_pressed = _world.pathfinder.use_native
+	_pathfinder_native_toggle.position = origin + Vector2(0.0, 48.0)
+	_pathfinder_native_toggle.z_index = 20
+	_pathfinder_native_toggle.add_theme_font_size_override("font_size", 14)
+	_pathfinder_native_toggle.toggled.connect(_on_pathfinder_native_toggled)
+	add_child(_pathfinder_native_toggle)
+
+	_motion_native_toggle = CheckButton.new()
+	_motion_native_toggle.text = "运动求解使用 native"
+	_motion_native_toggle.button_pressed = _world.motion.use_native_solver
+	_motion_native_toggle.position = origin + Vector2(0.0, 76.0)
+	_motion_native_toggle.z_index = 20
+	_motion_native_toggle.add_theme_font_size_override("font_size", 14)
+	_motion_native_toggle.toggled.connect(_on_motion_native_toggled)
+	add_child(_motion_native_toggle)
+
+
+# Resyncs both toggles to whatever the current _world's flags actually are.
+# Needed after _world gets replaced wholesale (scene/demo reset) since a
+# freshly constructed Dota2LabWorld always starts both flags at false —
+# without this the checkboxes would keep showing a stale pre-reset state.
+func _sync_backend_toggles() -> void:
+	if _pathfinder_native_toggle != null:
+		_pathfinder_native_toggle.set_pressed_no_signal(_world.pathfinder.use_native)
+	if _motion_native_toggle != null:
+		_motion_native_toggle.set_pressed_no_signal(_world.motion.use_native_solver)
+
+
+func _on_pathfinder_native_toggled(enabled: bool) -> void:
+	_world.pathfinder.use_native = enabled
+	_world.rebuild_navigation()
+	# In-flight plans got invalidated by rebuild_navigation() — replan
+	# everyone now (same pattern as editing obstacles) so a mid-simulation
+	# switch actually compares the new backend, not stale pre-switch paths.
+	_world.replan_all_active()
+	# rebuild_context() silently falls back to false when the native
+	# extension isn't available — resync the toggle to the resolved state
+	# instead of trusting the value we just requested.
+	_pathfinder_native_toggle.set_pressed_no_signal(_world.pathfinder.use_native)
+	if _reset_stats_on_switch.button_pressed:
+		_reset_perf_metrics()
+		_world.pathfinder.plan_count = 0
+		_world.pathfinder.line_check_count = 0
+		_world.pathfinder.last_plan_usec = 0
+	_last_action = "寻路后端切换：%s" % ("native" if _world.pathfinder.use_native else "GDScript")
+	_record_event("pathfinder_backend_switch", {
+		"use_native": _world.pathfinder.use_native,
+		"reset_stats": _reset_stats_on_switch.button_pressed,
+	})
+
+
+func _on_motion_native_toggled(enabled: bool) -> void:
+	_world.motion.use_native_solver = enabled
+	# Unlike the pathfinder, use_native_solver only gets validated lazily
+	# inside step() (_ensure_native_solver) — checking availability here
+	# too resyncs the toggle immediately instead of showing a stale
+	# "checked" state for up to one tick.
+	if enabled and not ClassDB.class_exists("SimNavNativeMotionSolver"):
+		push_warning("[Dota2PathfindingLab] native motion solver requested but simnav_native extension is missing; staying on GDScript")
+		_world.motion.use_native_solver = false
+	_motion_native_toggle.set_pressed_no_signal(_world.motion.use_native_solver)
+	if _reset_stats_on_switch.button_pressed:
+		_reset_perf_metrics()
+	_last_action = "运动后端切换：%s" % ("native" if _world.motion.use_native_solver else "GDScript")
+	_record_event("motion_backend_switch", {
+		"use_native_solver": _world.motion.use_native_solver,
+		"reset_stats": _reset_stats_on_switch.button_pressed,
+	})
+
+
 # ─────────────────────────── Rendering ───────────────────────────────────────
 
 func _draw() -> void:
@@ -553,7 +654,7 @@ func _draw() -> void:
 
 func _draw_debug_panel_chrome() -> void:
 	var panel_origin := _debug_panel_origin()
-	var panel_size := Vector2(PANEL_WIDTH, _world.map_size.y)
+	var panel_size := Vector2(PANEL_WIDTH, _world.map_size.y + BACKEND_PANEL_EXTRA_HEIGHT)
 	draw_rect(Rect2(panel_origin, panel_size), Color(0.07, 0.08, 0.10), true)
 	draw_line(panel_origin, panel_origin + Vector2(0.0, panel_size.y), Color(0.18, 0.22, 0.26), 2.0)
 	for y in [76.0, 292.0, 470.0, 620.0]:
@@ -792,6 +893,7 @@ func _reset_scene() -> void:
 		_ai_command_source = null
 		_selected_unit_ids = _world.get_mobile_unit_ids()
 		_apply_push_tuning()
+		_sync_backend_toggles()
 		_reset_perf_metrics()
 		_last_action = "已重置场景"
 		_record_event("reset", {"selected_unit_ids": _selected_unit_ids})
@@ -802,6 +904,7 @@ func _reset_auto_demo() -> void:
 	_ai_command_source = AiCommandSourceScript.build_visual_demo_driver()
 	_selected_unit_ids = _world.get_mobile_unit_ids()
 	_apply_push_tuning()
+	_sync_backend_toggles()
 	_auto_demo_run_index += 1
 	_auto_demo_reset_countdown = -1
 	_reset_perf_metrics()
