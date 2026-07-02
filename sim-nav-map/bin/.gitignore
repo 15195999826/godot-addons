@@ -3,5 +3,6 @@
 *.exp
 *.lib
 *.pdb
-# Windows in-place-replace temp files (linker overwriting a loaded dll)
+# Windows in-place-replace temp files (linker/editor overwriting a loaded dll)
 ~*.TMP
+~*.dll

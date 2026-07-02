@@ -380,6 +380,32 @@ The core addon intentionally does not implement:
 `examples/0ad-rts-pathfinding-lab` may experiment with those behaviors as
 application policy, but that does not make them reusable `sim-nav-map` API.
 
+## Native Backend (knife 5, optional)
+
+`simnav_native.gdextension` ships a C++ backend covering the long-path stack
+and the dota2-lab motion hot path. The GDScript classes above remain the
+permanent default and reference implementation; the native backend is an
+opt-in swap for performance-hungry projects, welded A/B against GDScript
+(byte-identical tables, field-identical results, bit-identical 600-tick
+trajectories — see `../tests/native/` and `gdextension-port-plan.md`).
+
+- Native classes: `SimNavNativeSupport` (presence/build probes),
+  `SimNavNativeMap` (static-obstruction map subset), `SimNavNativeJumpPointCache`,
+  `SimNavNativeFacade` (Dictionary boundary mirroring `SimNavLongPathResult`
+  field-for-field), `SimNavNativeMotionSolver` (SoA Phase A/B step — a
+  dota2-lab-specific optional acceleration surface, NOT a general movement
+  API; the Non-Goals above still hold for the core addon),
+  `SimNavNativeQueue` (background worker planning, fixed-latency T+1 collection).
+- GDScript code must reach native classes via ClassDB indirection only
+  (`ClassDB.class_exists` + `instantiate`) — platforms without a built binary
+  must still parse every script. `SimNavNativeBridge` converts the Dictionary
+  boundary to/from the DTO classes at plan granularity.
+- Out of native scope (stay GDScript): `SimNavVertexPathfinder` short paths,
+  dynamic unit obstructions in the map, `validate_movement_line` /
+  `validate_unit_line` DTO diagnostics, and the 0ad lab surface.
+- Integration example: `examples/dota2-rts-pathfinding-lab`'s
+  `Dota2LabPathfinderWrapper.use_native` + `Dota2LabMotionEngine.use_native_solver`.
+
 ## Compatibility Note
 
 `addons/logic-game-framework/example/rts-auto-battle` keeps an RTS-shaped
