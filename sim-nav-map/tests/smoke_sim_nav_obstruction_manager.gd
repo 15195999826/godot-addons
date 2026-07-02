@@ -56,8 +56,11 @@ func _run() -> void:
 		nav_map.is_passable_navcell(Vector2i(4, 4), ground_mask),
 		"static manager shape should rasterize into navcell data"
 	)
+	# The static raster band (clearance 4 + CLEARANCE_EXTENSION_RADIUS 8 = 12)
+	# reaches cell (6, 4) whose center is exactly 12 px from the wall edge, so
+	# assert the unit's non-rasterization one cell further out instead.
 	_assert_true(
-		nav_map.is_passable_navcell(Vector2i(6, 4), ground_mask),
+		nav_map.is_passable_navcell(Vector2i(7, 4), ground_mask),
 		"unit manager shape should not rasterize into navcell data"
 	)
 

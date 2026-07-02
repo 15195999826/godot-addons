@@ -486,11 +486,18 @@ func _rasterize_static_obstruction(shape: SimNavObstructionShapeStatic, mark_dir
 func _blocked_mask_for_point(shape: SimNavObstructionShapeStatic, point: Vector2) -> int:
 	if not is_inside_playable_bounds(point):
 		return 0
+	# CLEARANCE_EXTENSION_RADIUS (+1 navcell), mirroring 0 A.D. Rasterize.cpp:48 /
+	# Pathfinding.h:156-160: long-path rasterization must be strictly more
+	# conservative than the short-path vector representation, otherwise long
+	# paths thread gaps the vertex pathfinder rejects (units oscillate / stick).
+	# Terrain rasterization intentionally does NOT get this extension (0 A.D.
+	# parity). CORE-005 pins this behavior.
+	var raster_extension := navcell_size
 	var result := 0
 	for config in _passability_registry.get_classes():
 		if not config.affects_pathfinding:
 			continue
-		if shape.contains_point_with_clearance(point, config.clearance):
+		if shape.contains_point_with_clearance(point, config.clearance + raster_extension):
 			result |= 1 << config.bit_index
 	return result
 

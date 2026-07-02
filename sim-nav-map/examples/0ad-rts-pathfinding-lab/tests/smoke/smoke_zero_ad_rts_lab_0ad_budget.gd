@@ -91,7 +91,12 @@ func _test_push_adjust_uses_spatial_bucket() -> void:
 
 
 func _test_static_wall_short_path_does_not_burn_frame() -> void:
+	# Self-contained geometry: an open field plus one solid wall. The default
+	# scene's blocks are removed because, with the +1-cell raster extension
+	# (CORE-005), their bands merge with this wall's band and seal the outer
+	# detour channels the scenario relies on.
 	var world := ZeroAdRtsLabWorld.new()
+	world.obstacles = []
 	for y_value in [110.0, 165.0, 215.0, 270.0, 325.0]:
 		world.add_static_obstacle(Vector2(400.0, y_value), Vector2(40.0, 60.0))
 	world.set_group_target(Vector2(610.0, 210.0))
@@ -125,9 +130,13 @@ func _test_static_wall_short_path_does_not_burn_frame() -> void:
 
 
 func _test_partial_wall_with_gap_arrives_with_fast_short_path() -> void:
+	# Self-contained geometry (see the static-wall test above). The gap is
+	# 90 px so the raster bands (clearance 12 + 16 extension per side) still
+	# leave a 34 px long-path channel through the middle.
 	var world := ZeroAdRtsLabWorld.new()
-	world.add_static_obstacle(Vector2(400.0, 132.0), Vector2(40.0, 105.0))
-	world.add_static_obstacle(Vector2(400.0, 287.0), Vector2(40.0, 105.0))
+	world.obstacles = []
+	world.add_static_obstacle(Vector2(400.0, 112.0), Vector2(40.0, 105.0))
+	world.add_static_obstacle(Vector2(400.0, 307.0), Vector2(40.0, 105.0))
 	world.set_group_target(Vector2(560.0, 210.0))
 	var max_short_compute_usec := 0
 	var max_profile: Dictionary = {}

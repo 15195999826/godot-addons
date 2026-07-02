@@ -923,6 +923,15 @@ func _test_opposing_same_team_units_do_not_cross_in_narrow_passage() -> void:
 
 func _test_logged_offset_opposing_units_build_push_pressure() -> void:
 	var world := ZeroAdRtsLabWorld.new()
+	# Frozen replay geometry: this logged scenario squeezes both units between
+	# each other and north_block's raster band along y=116, so it pins the
+	# obstacle layout from the export's era (north_block at y=76). The default
+	# scene has since widened its corridors (CORE-005 raster extension).
+	world.obstacles = [
+		ZeroAdRtsLabObstacle.new("center_block", Vector2(360.0, 210.0), Vector2(48.0, 128.0)),
+		ZeroAdRtsLabObstacle.new("north_block", Vector2(360.0, 76.0), Vector2(132.0, 56.0)),
+		ZeroAdRtsLabObstacle.new("south_block", Vector2(360.0, 344.0), Vector2(132.0, 56.0)),
+	]
 	world.units = [
 		ZeroAdRtsLabUnit.new("blue_2", "blue", Vector2(347.7861, 117.6917), 11.0, 96.0, true),
 		ZeroAdRtsLabUnit.new("blue_0", "blue", Vector2(369.3112, 125.5196), 11.0, 96.0, true),

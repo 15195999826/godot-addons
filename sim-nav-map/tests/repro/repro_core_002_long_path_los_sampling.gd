@@ -85,9 +85,12 @@ func _run() -> void:
 		)
 		return
 
-	# Sanity: a segment that does NOT cross cell (5, 5) must still report clear.
-	var safe_a := Vector2(32.0, 36.0)
-	var safe_b := Vector2(52.0, 36.0)
+	# Sanity: a segment that does NOT cross any blocked cell must still report
+	# clear. Row y = 20 keeps 20 px from the blocker edge, outside the
+	# CLEARANCE_EXTENSION_RADIUS (+1 navcell) raster band (row y = 36 sits
+	# inside it since CORE-005 landed).
+	var safe_a := Vector2(32.0, 20.0)
+	var safe_b := Vector2(52.0, 20.0)
 	var safe_clear: Variant = pathfinder.call("_segment_passable_clear", safe_a, safe_b, pass_mask, no_excluded)
 	if not bool(safe_clear):
 		_failures.append(

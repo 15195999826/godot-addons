@@ -19,6 +19,12 @@ const PASSABILITY_CLASS_NAME: String = "ground"
 # count cap with no wall-clock component, which keeps simulation deterministic.
 const DEFAULT_SYNC_PATH_BUDGET_USEC: int = 0
 
+# Raster resolution note: core's CLEARANCE_EXTENSION_RADIUS (+1 raster cell,
+# CORE-005) makes static raster bands clearance + cell_size per side (= 26 px
+# here). An 8 px cell experiment halved the band but invalidated every
+# logged-* replay anchor in the motion smoke (they are all 16 px-era exports);
+# re-anchoring belongs to the movement-contract rework, so the resolution
+# stays 16 and map fixtures must budget corridors for the wider band instead.
 var map_size: Vector2 = Vector2(720.0, 420.0)
 var cell_size: float = 16.0
 var default_clearance: float = 10.0
@@ -123,6 +129,11 @@ func build_short_path_request(
 	request.avoid_moving_units = false
 	request.control_group = unit.control_group_id
 	request.obstruction_filter = movement_filter_for_unit(unit)
+	# NOTE: with the +1-cell raster extension this outset no longer clears the
+	# static raster band (11 + 8 < 10 + 16 + 8); vertices inside the band stay
+	# reachable outbound via the impassable-escape rule but edges INTO them can
+	# be DDA-rejected. Raising it re-anchors every logged-* motion replay, so
+	# the rebalance is deferred to the movement-contract rework.
 	request.static_vertex_extra_outset = cell_size * 0.5
 	return request
 

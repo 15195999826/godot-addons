@@ -235,9 +235,15 @@ func _first_blocked_line_navcell(
 	var j1 := int(floor((target_world.y - origin.y) / cell_size))
 	var current := Vector2i(i0, j0)
 	var target := Vector2i(i1, j1)
-	var initial := _line_navcell_failure(current, target, pass_mask, true, result)
+	var initial := _line_navcell_bounds_failure(current, target, true, result)
 	if not initial.is_empty():
 		return initial
+	# 0 A.D. CheckLineMovement escape rule (Pathfinding.cpp:46-75): movement may
+	# start on an impassable navcell and continue through impassable cells until
+	# it first reaches a passable one; after that, re-entering impassable fails.
+	# This lets a unit shoved into a clearance ring by push walk back out
+	# instead of having every movement candidate rejected (CORE-020 chain).
+	var currently_on_impassable := not _nav_map.is_passable_navcell(current, pass_mask)
 	if current == target:
 		return {}
 
@@ -267,7 +273,14 @@ func _first_blocked_line_navcell(
 		delta_t_y = -cell_size / dy
 
 	var max_steps := absi(i1 - i0) + absi(j1 - j0) + 4
-	while current != target and max_steps > 0:
+	while current != target:
+		# Fail closed on traversal-budget exhaustion (pathological float
+		# drift); an unverified segment must not be reported as clear.
+		if max_steps <= 0:
+			return {
+				"coord": current,
+				"reason": SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED,
+			}
 		max_steps -= 1
 		if t_max_x < t_max_y:
 			current.x += step_i
@@ -275,16 +288,22 @@ func _first_blocked_line_navcell(
 		else:
 			current.y += step_j
 			t_max_y += delta_t_y
-		var failure := _line_navcell_failure(current, target, pass_mask, false, result)
+		var failure := _line_navcell_bounds_failure(current, target, false, result)
 		if not failure.is_empty():
 			return failure
+		if _nav_map.is_passable_navcell(current, pass_mask):
+			currently_on_impassable = false
+		elif not currently_on_impassable:
+			return {
+				"coord": current,
+				"reason": SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED,
+			}
 	return {}
 
 
-func _line_navcell_failure(
+func _line_navcell_bounds_failure(
 	coord: Vector2i,
 	target_coord: Vector2i,
-	pass_mask: int,
 	is_start: bool,
 	result: SimNavMovementLineResult
 ) -> Dictionary:
@@ -298,11 +317,6 @@ func _line_navcell_failure(
 		return {
 			"coord": coord,
 			"reason": reason,
-		}
-	if not _nav_map.is_passable_navcell(coord, pass_mask):
-		return {
-			"coord": coord,
-			"reason": SimNavMovementLineResult.FAILURE_PASSABILITY_BLOCKED,
 		}
 	return {}
 
