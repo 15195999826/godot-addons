@@ -245,10 +245,11 @@ Projection DTOs:
   obstruction count.
 - `SimNavPathfinderFacade` exposes `recompute_dirty()`, `query_reachability()`,
   `compute_path_result()`, `compute_path_immediate()`, `validate_movement_line()`,
-  `validate_unit_line()`, and `get_navigation_diagnostics()`. `recompute_dirty()` is the stable batch edit
+  `validate_unit_line()`, `movement_line_clear()`, and `get_navigation_diagnostics()`.
+  `recompute_dirty()` is the stable batch edit
   lifecycle entry: it rasterizes dirty static obstructions, recomputes dirty
-  hierarchical chunks, invalidates the long-path jump-point cache, and clears
-  dirty navcells by default. `query_reachability()` returns
+  hierarchical chunks, incrementally repairs the long-path jump tables, and
+  clears dirty navcells by default. `query_reachability()` returns
   `SimNavReachabilityResult` for `POINT`, `CIRCLE`, `SQUARE`, and inverted goals.
   `compute_path_result()` uses the same reachability query before long-path
   search and snapshots canonicalization/start-recovery metadata into
@@ -256,8 +257,11 @@ Projection DTOs:
   path-only API and may canonicalize the supplied goal object in place when a
   fallback point goal is required. `validate_movement_line()` checks a swept
   segment against passability and filtered obstructions. `validate_unit_line()`
-  checks only dynamic unit obstructions under the same filter protocol. Neither
-  method decides retry, stop, push, yield, or stuck behavior.
+  checks only dynamic unit obstructions under the same filter protocol.
+  `movement_line_clear()` is the boolean fast path — equivalent to
+  `validate_movement_line(...).is_success()` with no result DTO, for per-tick
+  movement consumers. None of these methods decide retry, stop, push, yield,
+  or stuck behavior.
 - `SimNavPathRequestQueue` exposes `enqueue_long_path()`, `enqueue_short_path()`,
   `enqueue_long_path_query()`, `cancel()`, `process_budget()`, `start_worker()`,
   `is_worker_running()`, `collect_worker_results()`, `has_result()`,

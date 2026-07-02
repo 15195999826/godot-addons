@@ -132,6 +132,37 @@ func validate_unit_line(
 	return _validate_line(start_world, target_world, clearance, 0, obstruction_filter, true)
 
 
+# Boolean fast path, equivalent to validate_movement_line(...).is_success():
+# the same two stages (escape-rule raster walk, then exact shape geometry) but
+# no result DTO / filter clone, and the raster walk reads the long
+# pathfinder's baked grid instead of paying two cross-object calls per
+# crossed navcell. Per-tick movement consumers (waypoint shortcutting) call
+# this every step for every moving unit.
+func movement_line_clear(
+	start_world: Vector2,
+	target_world: Vector2,
+	clearance: float,
+	pass_mask: int,
+	obstruction_filter: SimNavObstructionFilter = null
+) -> bool:
+	if _nav_map == null:
+		return false
+	if pass_mask != 0:
+		var raster_clear: bool
+		if _long != null:
+			raster_clear = _long.movement_raster_clear(start_world, target_world, pass_mask)
+		else:
+			var scratch := SimNavMovementLineResult.new()
+			raster_clear = _first_blocked_line_navcell(
+				start_world, target_world, clearance, pass_mask, scratch).is_empty()
+		if not raster_clear:
+			return false
+	var filter := obstruction_filter if obstruction_filter != null else SimNavObstructionFilter.new()
+	var shapes := _collect_line_obstructions(start_world, target_world, clearance, filter, false)
+	return SimNavLineOfSight.first_blocking_shape(
+		start_world, target_world, shapes, maxf(clearance, 0.000001)) == null
+
+
 func get_navigation_diagnostics(passability_masks: Array[int] = []) -> Dictionary:
 	return {
 		"map": _nav_map.get_diagnostics() if _nav_map != null else {},

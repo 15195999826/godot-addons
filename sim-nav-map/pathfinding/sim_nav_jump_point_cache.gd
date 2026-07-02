@@ -234,6 +234,79 @@ func _jump_diagonal_point(start: Vector2i, direction: Vector2i, goal_cell: Vecto
 	return start
 
 
+# Boolean escape-rule raster walk, twin of
+# SimNavPathfinderFacade._first_blocked_line_navcell (0 A.D.
+# CheckLineMovement): movement may START on an impassable navcell and keep
+# walking through impassable cells until it first reaches a passable one;
+# after that, re-entering impassable fails. Keep the traversal in lockstep
+# with the facade twin — only the per-cell reads differ (baked grid instead
+# of two cross-object calls per crossed cell).
+func movement_line_clear(a: Vector2, b: Vector2) -> bool:
+	var w := _baked_width
+	var h := _baked_height
+	var mask := _pass_mask
+	var cell_size := _cell_size
+	var i0 := int(floor((a.x - _origin.x) / cell_size))
+	var j0 := int(floor((a.y - _origin.y) / cell_size))
+	var i1 := int(floor((b.x - _origin.x) / cell_size))
+	var j1 := int(floor((b.y - _origin.y) / cell_size))
+	if i0 < 0 or j0 < 0 or i0 >= w or j0 >= h:
+		return false
+	var on_impassable := (_baked[j0 * w + i0] & mask) != 0
+	if i0 == i1 and j0 == j1:
+		return true
+	var dx := b.x - a.x
+	var dy := b.y - a.y
+	var step_i := 0
+	var step_j := 0
+	var t_max_x := INF
+	var t_max_y := INF
+	var delta_t_x := INF
+	var delta_t_y := INF
+	if dx > 0.0:
+		step_i = 1
+		t_max_x = (_origin.x + float(i0 + 1) * cell_size - a.x) / dx
+		delta_t_x = cell_size / dx
+	elif dx < 0.0:
+		step_i = -1
+		t_max_x = (_origin.x + float(i0) * cell_size - a.x) / dx
+		delta_t_x = -cell_size / dx
+	if dy > 0.0:
+		step_j = 1
+		t_max_y = (_origin.y + float(j0 + 1) * cell_size - a.y) / dy
+		delta_t_y = cell_size / dy
+	elif dy < 0.0:
+		step_j = -1
+		t_max_y = (_origin.y + float(j0) * cell_size - a.y) / dy
+		delta_t_y = -cell_size / dy
+	var max_steps := absi(i1 - i0) + absi(j1 - j0) + 4
+	var ci := i0
+	var cj := j0
+	while ci != i1 or cj != j1:
+		if max_steps <= 0:
+			return false
+		max_steps -= 1
+		if ci == i1:
+			cj += step_j
+			t_max_y += delta_t_y
+		elif cj == j1:
+			ci += step_i
+			t_max_x += delta_t_x
+		elif t_max_x < t_max_y:
+			ci += step_i
+			t_max_x += delta_t_x
+		else:
+			cj += step_j
+			t_max_y += delta_t_y
+		if ci < 0 or cj < 0 or ci >= w or cj >= h:
+			return false
+		if (_baked[cj * w + ci] & mask) == 0:
+			on_impassable = false
+		elif not on_impassable:
+			return false
+	return true
+
+
 # Straight-segment passability against the baked grid. Twin of
 # SimNavLongPathfinder._segment_passable_clear for the no-excluded-regions
 # case — keep the traversal (Amanatides-Woo walk + axis-convergence guard)

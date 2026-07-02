@@ -160,6 +160,15 @@ func prewarm_jump_point_cache(pass_mask: int) -> void:
 	_jump_point_cache(pass_mask)
 
 
+# Boolean escape-rule movement raster check against the baked grid (see
+# SimNavJumpPointCache.movement_line_clear). Facade fast path for
+# validate_movement_line().is_success() consumers.
+func movement_raster_clear(a: Vector2, b: Vector2, pass_mask: int) -> bool:
+	if _nav_map == null or pass_mask == 0:
+		return false
+	return _jump_point_cache(pass_mask).movement_line_clear(a, b)
+
+
 # Dirty-flush entry (facade): incrementally repair every built cache for the
 # currently-dirty navcells instead of discarding them. Must run BEFORE the
 # dirty flags are cleared. invalidate_jump_point_cache() stays as the nuclear
