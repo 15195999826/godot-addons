@@ -40,8 +40,18 @@ func _test_plan_cost_and_prewarm() -> void:
 	var world := Dota2LabWorld.new()
 	var pf := world.pathfinder
 
-	# Prewarm contract: the very first plan after a rebuild runs at warm cost
-	# (bake + tables were paid inside rebuild_context).
+	# Prewarm contract, structural half: rebuild_context must have built the
+	# jump cache already (probe the dict directly — _jump_point_cache() would
+	# create it and mask the regression), and the first plan must not pay a
+	# rebuild.
+	if not pf.long_pathfinder._jump_point_caches.has(pf.pass_mask):
+		_failures.append("plan: rebuild_context did not prewarm the jump cache")
+		return
+	var cache: SimNavJumpPointCache = pf.long_pathfinder._jump_point_caches[pf.pass_mask]
+	var resets_before := cache.full_reset_count
+
+	# Prewarm contract, wall-clock half: the very first plan after a rebuild
+	# runs at warm cost (a cold build reads ~11ms on the dev machine).
 	var t_first := Time.get_ticks_usec()
 	var first := pf.plan_path(Vector2(120.0, 400.0), Vector2(1160.0, 450.0))
 	var first_usec := int(Time.get_ticks_usec() - t_first)
@@ -50,6 +60,8 @@ func _test_plan_cost_and_prewarm() -> void:
 	if first_usec > PLAN_TRIPWIRE_USEC:
 		_failures.append("plan: first plan after rebuild %d usec > %d (prewarm regressed?)" % [
 			first_usec, PLAN_TRIPWIRE_USEC])
+	if cache.full_reset_count != resets_before:
+		_failures.append("plan: first plan paid a full cache rebuild despite prewarm")
 
 	# Warm cross-map planning, 16 distinct starts (repeated-identical queries
 	# would read fake-fast).
