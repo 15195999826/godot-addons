@@ -229,10 +229,11 @@ func _analyze_replay(replay: Dictionary, report: Dictionary) -> void:
 	if int(meta.get("totalFrames", 0)) <= 0:
 		_report_failure(report, "replay totalFrames <= 0")
 
-	var initial_actors: Array = replay.get("initialActors", []) as Array
+	var snapshot_dict: Dictionary = replay.get("world_snapshot", {}) as Dictionary
+	var initial_actors: Array = snapshot_dict.get("actors", []) as Array
 	report["initial_actors"] = initial_actors.size()
 	if initial_actors.size() != TEAM_SIZE * 2:
-		_report_failure(report, "initialActors=%d expected=%d" % [initial_actors.size(), TEAM_SIZE * 2])
+		_report_failure(report, "world_snapshot.actors=%d expected=%d" % [initial_actors.size(), TEAM_SIZE * 2])
 	_check_initial_actor_names(initial_actors, report)
 
 	var events := _flatten_events(replay)

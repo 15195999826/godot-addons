@@ -537,7 +537,6 @@ var easing: EasingType
 
 ```json
 {
-  "version": "2.0",
   "meta": {
     "battleId": "battle_001",
     "recordedAt": 1706000000,
@@ -545,19 +544,20 @@ var easing: EasingType
     "totalFrames": 50,
     "result": "victory"
   },
-  "configs": {},
-  "initialActors": [
-    {
-      "id": "actor_1",
-      "configId": "warrior",
-      "displayName": "Warrior",
-      "team": 0,
-      "position": { "hex": { "q": -2, "r": 0 } },
-      "attributes": { "hp": 100.0, "maxHp": 100.0 },
-      "abilities": [],
-      "tags": {}
-    }
-  ],
+  "world_snapshot": {
+    "actors": [
+      {
+        "id": "actor_1",
+        "configId": "warrior",
+        "displayName": "Warrior",
+        "team": 0,
+        "position": { "hex": { "q": -2, "r": 0 } },
+        "attributes": { "hp": 100.0, "maxHp": 100.0 }
+      }
+    ],
+    "mapConfig": {},
+    "positionFormats": { "Character": "hex" }
+  },
   "timeline": [
     {
       "frame": 5,

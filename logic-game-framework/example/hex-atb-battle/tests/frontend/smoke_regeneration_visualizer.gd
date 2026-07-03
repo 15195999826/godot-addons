@@ -10,8 +10,10 @@ func _ready() -> void:
 
 	var record := PlaybackData.BattleRecord.new()
 	record.meta = PlaybackData.BattleMeta.new()
-	record.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
-	record.configs = {"positionFormats": {"Character": "hex"}}
+	var snap := PlaybackData.WorldSnapshot.new()
+	snap.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
+	snap.position_formats = {"Character": "hex"}
+	record.world_snapshot = snap
 
 	var actor_init := PlaybackData.ActorInitData.new()
 	actor_init.id = "hero_1"
@@ -20,7 +22,7 @@ func _ready() -> void:
 	actor_init.team = 0
 	actor_init.position = [0, 0, 0]
 	actor_init.attributes = {"hp": 50.0, "maxHp": 100.0}
-	record.initial_actors = [actor_init]
+	snap.actors = [actor_init]
 
 	var rw := FrontendRenderWorld.new()
 	rw.initialize_from_replay(record)

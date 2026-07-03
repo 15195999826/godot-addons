@@ -111,12 +111,13 @@ func initialize_from_replay(record: PlaybackData.BattleRecord) -> void:
 	_cone_debug_overlays.clear()
 	_screen_shake = FrontendRenderData.ScreenShake.new()
 	
-	# 从 configs 读取 positionFormats
-	_position_formats = record.configs.get("positionFormats", {})
-	
+	Log.assert_crash(record.world_snapshot != null, "FrontendRenderWorld",
+		"录像缺 world_snapshot —— 无法重建开战台面")
+	_position_formats = record.world_snapshot.position_formats
+
 	# 从 mapConfig 创建 GridLayout
-	if not record.map_config.is_empty():
-		var grid_config := GridMapConfig.from_dict(record.map_config)
+	if not record.world_snapshot.map_config.is_empty():
+		var grid_config := GridMapConfig.from_dict(record.world_snapshot.map_config)
 		_layout = GridLayout.new(
 			grid_config.grid_type,
 			grid_config.size,
@@ -124,8 +125,8 @@ func initialize_from_replay(record: PlaybackData.BattleRecord) -> void:
 			grid_config.orientation,
 			Vector2.ONE
 		)
-	
-	for actor_init: PlaybackData.ActorInitData in record.initial_actors:
+
+	for actor_init: PlaybackData.ActorInitData in record.world_snapshot.actors:
 		_initialize_actor_from_init_data(actor_init)
 	
 	# 初始化完成后触发状态同步 (修复 M3)

@@ -76,6 +76,42 @@ func configure_grid(config: GridMapConfig) -> void:
 
 # ========== 战斗调度 ==========
 
+## 拍摄开战时刻的世界快照（录像范围内的 registry actor + 地图配置 + 坐标格式声明）,
+## 供 BattleProcedure 注入 recorder。快照是回放的必需品: 战斗 blocking 跑完后
+## 世界已是终态, 回放要从开战初态播。范围默认全体 actor 而非仅参战者 ——
+## 环境物/障碍物也是回放要摆的台面; 中途 spawn 的走 ActorSpawned 事件。
+func capture_world_snapshot() -> PlaybackData.WorldSnapshot:
+	var snap := PlaybackData.WorldSnapshot.new()
+	for actor in get_recordable_actors():
+		snap.actors.append(PlaybackData.ActorInitData.create(actor))
+	if grid != null:
+		snap.map_config = grid.to_config_dict()
+	snap.position_formats = _get_position_formats()
+	return snap
+
+
+## 战斗录像范围内的 actor（快照 + 变化订阅共用同一集合）。
+func get_recordable_actors() -> Array[Actor]:
+	var result: Array[Actor] = []
+	for actor in get_actors():
+		if should_record_actor(actor):
+			result.append(actor)
+	return result
+
+
+## 该 actor 是否属于战斗录像范围（快照 / 变化订阅 / 中途补录三处同语义）。
+## 常驻世界子类 override 排除与战斗无关的 registry 常客（如 overworld 玩家/NPC）,
+## 否则回放器会为它们建战斗视觉替身。
+func should_record_actor(_actor: Actor) -> bool:
+	return true
+
+
+## 坐标格式声明钩子: 回放器用它解释各 actor 的 position 数组（如 {"Character": "hex"}）。
+## 坐标系语义是子类知识, 基类不假设。
+func _get_position_formats() -> Dictionary:
+	return {}
+
+
 ## 开启一场战斗。procedure 由子类工厂 _create_battle_procedure 返回。
 ## 调方监听 battle_finished signal 获取最终 timeline。
 func start_battle(participants: Array[Actor]) -> BattleProcedure:

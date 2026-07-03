@@ -42,8 +42,10 @@ func _ready() -> void:
 	record.meta = PlaybackData.BattleMeta.new()
 	record.meta.total_frames = 50
 	record.meta.tick_interval = 100
-	record.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
-	record.configs = {"positionFormats": {"Character": "hex"}}
+	var snap := PlaybackData.WorldSnapshot.new()
+	snap.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
+	snap.position_formats = {"Character": "hex"}
+	record.world_snapshot = snap
 
 	var actor_init := PlaybackData.ActorInitData.new()
 	actor_init.id = "hero_1"
@@ -52,7 +54,7 @@ func _ready() -> void:
 	actor_init.team = 0
 	actor_init.position = [0, 0, 0]
 	actor_init.attributes = {"hp": 100.0, "maxHp": 100.0}
-	record.initial_actors = [actor_init]
+	snap.actors = [actor_init]
 
 	# BattleDirector 从 _current_frame=0 推到 next_frame=1 才查事件,
 	# 所以 frame 0 永远不被处理。事件从 frame 1 开始。

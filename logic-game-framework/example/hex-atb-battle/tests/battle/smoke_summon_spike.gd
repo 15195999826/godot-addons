@@ -159,7 +159,11 @@ func _run_phase_3_replay() -> void:
 
 	var recorder := BattleRecorder.new({"battleId": "spike_p3", "tickInterval": int(TICK_INTERVAL)})
 	var all_actors: Array[Actor] = [totem]
-	recorder.start_recording(all_actors, {"positionFormats": {"Character": "hex"}}, {})
+	var snap := PlaybackData.WorldSnapshot.new()
+	for a in all_actors:
+		snap.actors.append(PlaybackData.ActorInitData.create(a))
+	snap.position_formats = {"Character": "hex"}
+	recorder.start_recording(snap, all_actors)
 
 	# grant DemonForm 让它有 ability_granted 事件;tick 数次让 stacks_changed 产生
 	var demon_ability := Ability.new(HexBattleDemonForm.ABILITY, totem.get_id())

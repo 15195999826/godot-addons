@@ -19,6 +19,7 @@ const DEFAULT_TICK_INTERVAL: float = 100.0
 var _world: WeakRef = null
 var _participant_ids: Array[String] = []
 var _recorder: BattleRecorder = null
+var _recording_enabled: bool = true
 var _current_tick: int = 0
 var _finished: bool = false
 var _tick_interval: float = DEFAULT_TICK_INTERVAL
@@ -36,22 +37,41 @@ func _init(world: WorldGameplayInstance, participants: Array[Actor]) -> void:
 
 # ========== 生命周期 ==========
 
-## 开始战斗: 给参与者打 in_combat tag, 构造 recorder 并交给 _start_recorder() 钩子启动。
-## 默认 _start_recorder() 调用 start_recording_events_only(), 子类可 override 以走
-## 旧版 start_recording(actors, configs, map_config) 路径保持向后兼容。
+## 开始战斗: 给参与者打 in_combat tag; 录像开启时（_recording_enabled, 子类构造时
+## 可关）构造 recorder 并由 _start_recorder() 注入世界快照启动。
 func start() -> void:
 	for pid in _participant_ids:
 		_mark_in_combat(pid, true)
-	_recorder = BattleRecorder.new({"tickInterval": int(_tick_interval)})
-	_start_recorder()
+	if _recording_enabled:
+		_recorder = BattleRecorder.new({"tickInterval": int(_tick_interval)})
+		_start_recorder()
 
 
-## Recorder 启动钩子, 默认走 events-only 路径(无 initial_actors snapshot)。
-## 子类可 override 以走旧版 start_recording() 保留 initial_actors / map_config。
+## Recorder 启动钩子: 问世界要快照与订阅列表注入 recorder, 并连接 actor_added
+## 让中途 spawn 的 actor 自动补录（否则其 abilityGranted / actorSpawned / damage
+## 不进录像）。连接在 finish() 时释放 —— procedure 短命而 world 常驻, 不释会
+## 跨战斗累积旧 procedure 监听器并阻止其 GC。
 func _start_recorder() -> void:
-	if _recorder == null:
+	var world := _get_world()
+	if _recorder == null or world == null:
 		return
-	_recorder.start_recording_events_only()
+	_recorder.start_recording(world.capture_world_snapshot(), world.get_recordable_actors())
+	if not world.actor_added.is_connected(_on_world_actor_added):
+		world.actor_added.connect(_on_world_actor_added)
+
+
+## 中途 spawn 的 actor 自动 register 进 recorder。开战已在场的全体 actor 在
+## start_recording 时已订阅, register_actor 内部按订阅表去重, 不会重复推事件。
+func _on_world_actor_added(actor_id: String) -> void:
+	if _recorder == null or not _recorder.get_is_recording():
+		return
+	var world := _get_world()
+	if world == null:
+		return
+	var actor := world.get_actor(actor_id)
+	if actor == null or not world.should_record_actor(actor):
+		return
+	_recorder.register_actor(actor)
 
 
 ## 推进一帧。基类仅 flush event + record, 子类覆盖做 ATB / timeline 推进等具体逻辑,
@@ -66,13 +86,16 @@ func should_end() -> bool:
 	return _finished
 
 
-## 结束战斗: 清 in_combat tag, 停止 recorder, 返回 timeline。
+## 结束战斗: 释放 actor_added 补录连接, 清 in_combat tag, 停止 recorder, 返回 timeline。
 ## result 传给 recorder 作为战斗结果标签("battle_complete" / "left_win" / "timeout" 等)。
 func finish(result: String = "battle_complete") -> Dictionary:
+	var world := _get_world()
+	if world != null and world.actor_added.is_connected(_on_world_actor_added):
+		world.actor_added.disconnect(_on_world_actor_added)
 	for pid in _participant_ids:
 		_mark_in_combat(pid, false)
 	_finished = true
-	if _recorder != null:
+	if _recorder != null and _recorder.get_is_recording():
 		return _recorder.stop_recording(result)
 	return {}
 

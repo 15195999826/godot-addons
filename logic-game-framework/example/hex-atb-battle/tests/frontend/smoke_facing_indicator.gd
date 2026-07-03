@@ -17,8 +17,10 @@ func _ready() -> void:
 	# ===== Step 1: Replay init reads facing_direction from attributes =====
 	var record := PlaybackData.BattleRecord.new()
 	record.meta = PlaybackData.BattleMeta.new()
-	record.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
-	record.configs = {"positionFormats": {"Character": "hex"}}
+	var snap := PlaybackData.WorldSnapshot.new()
+	snap.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
+	snap.position_formats = {"Character": "hex"}
+	record.world_snapshot = snap
 
 	var hero_a := PlaybackData.ActorInitData.new()
 	hero_a.id = "hero_a"
@@ -44,7 +46,7 @@ func _ready() -> void:
 	wall.position = [2, 0, 0]
 	wall.attributes = {"hp": 100.0, "maxHp": 100.0}
 
-	record.initial_actors = [hero_a, hero_b, wall]
+	snap.actors = [hero_a, hero_b, wall]
 
 	var rw := FrontendRenderWorld.new()
 	rw.initialize_from_replay(record)

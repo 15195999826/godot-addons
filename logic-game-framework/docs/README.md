@@ -645,7 +645,9 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 
 `BattleProcedure` 持有短命的 `BattleRecorder`，随 procedure 销毁。录像的核心不变量是 **"调用栈真实顺序 = 录像顺序"**：Action 的 `event_collector.push` 与 callback 触发的 AttributeChanged / AbilityGranted 在同一调用栈穿插发生，因此 recorder **不分** `pending_events` / `frame_events` 双容器，而是统一汇入 `GameWorld.event_collector` 单一队列，`record_frame(frame, events)` 每帧只接收 flush 出的一个有序数组。
 
-播放侧钉死两层命名：**A 层 `Playback`（现役）** 只从录像 dict spawn 视觉 view、不重建逻辑层；**B 层 `Replay`（deterministic 重算，未来不一定做）** 仅保留 `BattleReplayPlayer` / `BattleReplaySession` 命名占位。录像格式停在 v2，`PROTOCOL_VERSION` 不升，外部消费方（JS / cloud）不受影响。
+播放侧钉死两层命名：**A 层 `Playback`（现役）** 只从录像 dict spawn 视觉 view、不重建逻辑层；**B 层 `Replay`（deterministic 重算，未来不一定做）** 仅保留 `BattleReplayPlayer` / `BattleReplaySession` 命名占位。
+
+录像格式为 v3（`meta + world_snapshot{actors, mapConfig, positionFormats} + timeline`，无 version 字段）：**world_snapshot 由世界侧产出**（`WorldGameplayInstance.capture_world_snapshot()`，范围由 `should_record_actor()` 钩子裁定），recorder 只接收注入、专职事件流。快照是回放的必需品——战斗 blocking 跑完后世界已是终态，回放要从开战初态播（"复用现有 world"对战后回放不成立）；因此 v3 是职责归位而非瘦身，文件大小优化（过滤/节流/二进制）另列挂账。防呆走必需字段检查（`BattleRecord.from_dict` 对缺 `world_snapshot`/`timeline` 直接 crash），不设版本号（录像是短命数据，无多版本共存需求）。web/JS 端解析器同步延后至 web 发布启用时（2026-07-03 拍板，见 `docs/proposals/2026-07-03-playback-v3-format.md`）。
 
 ## 设计铁律
 

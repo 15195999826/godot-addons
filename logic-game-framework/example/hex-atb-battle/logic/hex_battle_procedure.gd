@@ -20,7 +20,6 @@ var logger: HexBattleLogger = null
 
 var _world_instance: HexWorldGameplayInstance = null
 var _logging_enabled: bool = true
-var _recording_enabled: bool = true
 var _result: String = ""
 
 
@@ -62,38 +61,6 @@ func start() -> void:
 	if logger != null:
 		for actor in get_all_characters():
 			logger.register_actor(actor.get_id(), actor.get_display_name())
-
-
-## 沿用带 initial_actors 的旧录像格式以兼容 FrontendBattleReplayScene / WebBridge;
-## 录像格式 v3(split world_snapshot + event_timeline) 落地时再切到 start_recording_events_only。
-func _start_recorder() -> void:
-	if not _recording_enabled or _recorder == null:
-		return
-	var replay_map_config: Dictionary = {}
-	if _world_instance != null and _world_instance.grid != null:
-		replay_map_config = _world_instance.grid.to_config_dict()
-	var configs := {
-		"positionFormats": {
-			HexBattleActor.KIND_CHARACTER: "hex",
-			HexBattleActor.KIND_ENVIRONMENT: "hex",
-		},
-	}
-	_recorder.start_recording(get_all_characters(), configs, replay_map_config)
-	if _world_instance != null and not _world_instance.actor_added.is_connected(_on_world_actor_added):
-		_world_instance.actor_added.connect(_on_world_actor_added)
-
-
-func _on_world_actor_added(actor_id: String) -> void:
-	if actor_id in _participant_ids:
-		return
-	if _recorder == null or not _recorder.get_is_recording():
-		return
-	if _world_instance == null:
-		return
-	var actor := _world_instance.get_actor(actor_id)
-	if actor == null:
-		return
-	_recorder.register_actor(actor)
 
 
 func tick_once() -> void:

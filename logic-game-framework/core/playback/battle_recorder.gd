@@ -2,8 +2,16 @@ class_name BattleRecorder
 extends RefCounted
 ## 战斗录像器
 ##
-## 职责：管理一次战斗 session 的录像（meta + initial_actors + timeline + actor 订阅生命周期）。
+## 职责：管理一次战斗 session 的录像（meta + world_snapshot + timeline + actor 订阅生命周期）。
 ## 不持有事件 buffer —— 所有事件统一走 GameWorld.event_collector，保证调用栈穿插时真实时序自然成立。
+##
+## world_snapshot 由世界侧（WorldGameplayInstance.capture_world_snapshot）产出后注入,
+## recorder 只管战斗过程（事件流）, 不伸手进世界抄状态。快照是回放的必需品:
+## 战斗 blocking 跑完后世界已是终态, 回放要从开战初态播, 初态只存在于快照里
+## ——"回放时复用现有 world"对战后回放不成立。
+##
+## actor 订阅（setup_recording 回调）不可省: attributeChanged 等事件的唯一产生管道
+## 就是这些订阅（inkmon render2d 回放消费 attributeChanged 更新属性状态）。
 ##
 ## 事件流：
 ##   Action.execute() ──┐
@@ -47,7 +55,10 @@ func _init(recorder_config: Dictionary = {}) -> void:
 	_meta.battle_id = battle_id
 	_meta.tick_interval = recorder_config.get("tickInterval", 100) as int
 
-func start_recording(actors: Array, configs_value: Dictionary = {}, map_config_value: Dictionary = {}) -> void:
+## 开始录像。world_snapshot 必传 —— 每场可回放的战斗必须有开战快照（§见头注释）;
+## 不录像的战斗不该建 recorder。actors = 需订阅变化回调的 actor（通常 = 快照时的
+## 全体 registry actor）; 中途 spawn 的走 register_actor 补订阅。
+func start_recording(world_snapshot: PlaybackData.WorldSnapshot, actors: Array[Actor]) -> void:
 	if is_recording:
 		push_error("[BattleRecorder] Already recording")
 		return
@@ -58,41 +69,11 @@ func start_recording(actors: Array, configs_value: Dictionary = {}, map_config_v
 
 	_record = PlaybackData.BattleRecord.new()
 	_record.meta = _meta
-	_record.configs = configs_value
-	_record.map_config = map_config_value
-	_record.initial_actors = []
+	_record.world_snapshot = world_snapshot
 	_record.timeline = []
 
 	for actor in actors:
-		_record.initial_actors.append(PlaybackData.ActorInitData.create(actor))
 		_subscribe_actor(actor)
-
-
-## 仅记录 event timeline, 不含 initial_actors snapshot。
-##
-## 用于"世界 owns 战斗"新架构: WorldGameplayInstance 已常驻持有 actor/grid,
-## 战斗 procedure 无须再快照世界状态 —— 录像只需记录战斗期间的事件流。
-## 录像回放时由 ReplayPlayer 从独立的 world_snapshot 字段恢复世界(或复用现有 world)。
-##
-## 与 start_recording() 的差别:
-## - 不写 initial_actors
-## - 不写 map_config(world_snapshot 承载)
-## - 不订阅 actor 的属性/tag/ability 变化回调(这些由 event_collector 的事件承载)
-func start_recording_events_only() -> void:
-	if is_recording:
-		push_error("[BattleRecorder] Already recording")
-		return
-
-	is_recording = true
-	_meta.recorded_at = Time.get_unix_time_from_system()
-	current_frame = 0
-
-	_record = PlaybackData.BattleRecord.new()
-	_record.meta = _meta
-	_record.configs = {}
-	_record.map_config = {}
-	_record.initial_actors = []
-	_record.timeline = []
 
 func record_frame(frame: int, events: Array[Dictionary]) -> void:
 	if not is_recording:

@@ -36,12 +36,12 @@ func _phase_summon_totem() -> bool:
 		return _fail("SummonTotem: spawned Totem team snapshot expected 0")
 	if _actor_data_position_is(actor_data, 0.0, 0.0):
 		return _fail("SummonTotem: spawned Totem position snapshot stayed at default origin")
-	if not _actor_data_has_ability(actor_data, HexBattleTotemAttack.CONFIG_ID):
-		return _fail("SummonTotem: actorSpawned snapshot missing TotemAttack")
-	if not _actor_data_has_ability(actor_data, HexBattleTotemLifetime.CONFIG_ID):
-		return _fail("SummonTotem: actorSpawned snapshot missing TotemLifetime")
+	# totem 技能进录像走 abilityGranted 补录事件（真消费管道, buff visualizer 读它）;
+	# actorSpawned payload 不再含 abilities 快照字段（回放器不消费）。
 	if not _has_ability_granted(replay, totem_id, HexBattleTotemAttack.CONFIG_ID):
 		return _fail("SummonTotem: missing synthesized TotemAttack abilityGranted")
+	if not _has_ability_granted(replay, totem_id, HexBattleTotemLifetime.CONFIG_ID):
+		return _fail("SummonTotem: missing synthesized TotemLifetime abilityGranted")
 	if not _has_execution_activated(replay, totem_id, HexBattleTotemAttack.CONFIG_ID):
 		return _fail("SummonTotem: missing TotemAttack executionActivated")
 	if not _has_stage_cue(replay, totem_id, HexBattleTotemAttack.STAGE_CUE_ID):
@@ -65,12 +65,10 @@ func _phase_fire_tile() -> bool:
 	var actor_data: Dictionary = spawned.get("actor", {}) as Dictionary
 	if not _actor_data_position_is(actor_data, 2.0, 0.0):
 		return _fail("FireTile: actorSpawned position snapshot expected target coord [2,0]")
-	if not _actor_data_has_ability(actor_data, HexBattleFireTilePulse.CONFIG_ID):
-		return _fail("FireTile: actorSpawned snapshot missing FireTilePulse")
-	if not _actor_data_has_ability(actor_data, HexBattleFireTileLifetime.CONFIG_ID):
-		return _fail("FireTile: actorSpawned snapshot missing FireTileLifetime")
 	if not _has_ability_granted(replay, fire_tile_id, HexBattleFireTilePulse.CONFIG_ID):
 		return _fail("FireTile: missing synthesized FireTilePulse abilityGranted")
+	if not _has_ability_granted(replay, fire_tile_id, HexBattleFireTileLifetime.CONFIG_ID):
+		return _fail("FireTile: missing synthesized FireTileLifetime abilityGranted")
 	if not _has_execution_activated(replay, fire_tile_id, HexBattleFireTilePulse.CONFIG_ID):
 		return _fail("FireTile: missing FireTilePulse executionActivated")
 	if not _has_actor_destroyed(replay, fire_tile_id):
@@ -164,13 +162,6 @@ func _find_spawned_actor_by_config(replay: Dictionary, config_id: String) -> Dic
 		if str(actor_data.get("configId", "")) == config_id:
 			return event
 	return {}
-
-
-func _actor_data_has_ability(actor_data: Dictionary, config_id: String) -> bool:
-	for ability in actor_data.get("abilities", []) as Array:
-		if ability is Dictionary and str((ability as Dictionary).get("config_id", "")) == config_id:
-			return true
-	return false
 
 
 func _actor_data_position_is(actor_data: Dictionary, q: float, r: float) -> bool:
