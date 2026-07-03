@@ -4,7 +4,7 @@
 extends Panel
 
 
-var _owner_scene: Node
+var _owner_scene: Object
 var _container_id: int = -1
 var _slot_index: int = -1  # 0..5
 
@@ -46,7 +46,7 @@ func _ready() -> void:
 	_refresh_visual()
 
 
-func setup(owner_scene: Node, slot_index: int) -> void:
+func setup(owner_scene: Object, slot_index: int) -> void:
 	_owner_scene = owner_scene
 	_slot_index = slot_index
 	set_meta("slot_index", slot_index)

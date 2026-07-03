@@ -91,7 +91,7 @@ func _phase_drag_drop_contract() -> bool:
 	if sword_id <= 0 or orb_id <= 0 or stone_id <= 0:
 		return _fail("missing expected seed items sword=%d orb=%d stone=%d" % [sword_id, orb_id, stone_id])
 
-	_preview.handle_drop({"item_id": sword_id}, eq0, 0)
+	_preview._inventory_panel.handle_drop({"item_id": sword_id}, eq0, 0)
 	await get_tree().process_frame
 	state = _preview.dev_agent_inventory_state()
 	if not bool(state.get("last_op_success", false)):
@@ -99,7 +99,7 @@ func _phase_drag_drop_contract() -> bool:
 	if int(_slot_at(state, 0, 0).get("item_id", 0)) != sword_id:
 		return _fail("slot 1 should contain sword after equip")
 
-	_preview.handle_drop({"item_id": orb_id}, eq0, 0)
+	_preview._inventory_panel.handle_drop({"item_id": orb_id}, eq0, 0)
 	await get_tree().process_frame
 	state = _preview.dev_agent_inventory_state()
 	if bool(state.get("last_op_success", true)):
@@ -107,7 +107,7 @@ func _phase_drag_drop_contract() -> bool:
 	if ItemSystem.get_item_location(orb_id).container_id != bag_id:
 		return _fail("occupied reject should keep orb in bag")
 
-	_preview.handle_drop({"item_id": stone_id}, eq0, 1)
+	_preview._inventory_panel.handle_drop({"item_id": stone_id}, eq0, 1)
 	await get_tree().process_frame
 	state = _preview.dev_agent_inventory_state()
 	if bool(state.get("last_op_success", true)):
@@ -127,7 +127,7 @@ func _phase_drag_drop_contract() -> bool:
 	var empty_bag_slot := _first_empty_bag_slot(state)
 	if empty_bag_slot < 0:
 		return _fail("no empty bag slot for equipment -> bag")
-	_preview.handle_drop({"item_id": sword_id}, bag_id, empty_bag_slot)
+	_preview._inventory_panel.handle_drop({"item_id": sword_id}, bag_id, empty_bag_slot)
 	await get_tree().process_frame
 	state = _preview.dev_agent_inventory_state()
 	if not bool(state.get("last_op_success", false)):
@@ -157,7 +157,7 @@ func _phase_add_remove_actor_lifecycle() -> bool:
 	var sword_id := _find_any_bag_item(after_add, &"training_sword")
 	if sword_id <= 0:
 		return _fail("no sword left in bag for add/remove lifecycle")
-	_preview.handle_drop({"item_id": sword_id}, new_eq_id, 0)
+	_preview._inventory_panel.handle_drop({"item_id": sword_id}, new_eq_id, 0)
 	await get_tree().process_frame
 	if ItemSystem.get_item_location(sword_id).container_id != new_eq_id:
 		return _fail("sword should be equipped on newly added actor")
@@ -183,7 +183,7 @@ func _phase_reset_restores_demo_inventory() -> bool:
 	var actor0: Dictionary = (before.get("actors", []) as Array)[0] as Dictionary
 	var old_actor_id := str(actor0.get("actor_id", ""))
 	var old_eq_id := int(actor0.get("equipment_container_id", -1))
-	_preview.handle_drop({"item_id": sword_id}, old_eq_id, 0)
+	_preview._inventory_panel.handle_drop({"item_id": sword_id}, old_eq_id, 0)
 	await get_tree().process_frame
 	if ItemSystem.get_item_location(sword_id).container_id != old_eq_id:
 		return _fail("setup for reset: sword should be equipped before reset")

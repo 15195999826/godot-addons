@@ -6,7 +6,7 @@
 extends Panel
 
 
-var _owner_scene: Node
+var _owner_scene: Object
 var _container_id: int = -1
 var _slot_index: int = -1
 
@@ -41,7 +41,7 @@ func _ready() -> void:
 
 
 ## ItemPreview 在 _build_bag_grid 中调用 (一次性 slot_index 绑定)
-func setup(owner_scene: Node, container_id: int, slot_index: int) -> void:
+func setup(owner_scene: Object, container_id: int, slot_index: int) -> void:
 	_owner_scene = owner_scene
 	_container_id = container_id
 	_slot_index = slot_index
