@@ -251,7 +251,7 @@ static var ABILITY := (AbilityConfig.builder()
 	.description("对目标造成魔法伤害,弹跳至最近的其他敌人,每跳衰减 20%,最多 3 跳")
 	.ability_tags(["skill", "active", "ranged", "magic", "enemy", "projectile"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 5)
-	.active_use(ActiveUseConfig.builder()
+	.active_use(HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(CAST_TIMELINE_ID)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -273,10 +273,6 @@ static var ABILITY := (AbilityConfig.builder()
 			null,
 			_initial_chain_custom_data_resolver()
 		)])
-		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
-		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
-		.condition(HexBattleCooldownSystem.CooldownCondition.new())
-		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build())
 	.component_config(ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.new(

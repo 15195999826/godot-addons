@@ -61,7 +61,7 @@ static var ABILITY := (
 	.ability_tags(["skill", "active", "ranged", "magic", "enemy", "projectile"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 5)
 	.active_use(
-		ActiveUseConfig.builder()
+		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID_CAST)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -81,10 +81,6 @@ static var ABILITY := (
 			HexBattleSkillHelpers.owner_position_resolver(),
 			HexBattleSkillHelpers.target_position_resolver(),
 		)])
-		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
-		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
-		.condition(HexBattleCooldownSystem.CooldownCondition.new())
-		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()
 	)
 	.component_config(
