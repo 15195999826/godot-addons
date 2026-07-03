@@ -62,6 +62,14 @@ const UNIT_COLOR_SELECTED := Color(0.25, 1.0, 0.70)
 const FLYER_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.32)
 const FLYER_SHADOW_OFFSET := Vector2(7.0, 11.0)
 const COVERED_GHOST_ALPHA := 0.42
+# Padding for the near-tangency boundary checks in _circle_intersection_polygon.
+# At real map coordinates (hundreds of px from origin), float32 rounds the
+# already-tiny arc points of a near-tangent lens into duplicates well before
+# the shape is mathematically zero-area — empirically up to ~0.01px of
+# overlap/shortfall depth. 1.0 is a wide safety margin over that; below it the
+# lens is cosmetically negligible anyway, so treating it as fully
+# separate/contained is free.
+const COVERED_GHOST_MIN_OVERLAP := 1.0
 const SPEED_TIER_SLOW_MAX := 85.0
 const SPEED_TIER_FAST_MIN := 140.0
 const UNIT_OUTLINE_COLOR := Color(0.95, 0.95, 0.92)
@@ -847,17 +855,21 @@ func _draw_covered_ghosts(flyers: Array[Dota2LabUnit]) -> void:
 
 # Lens-shaped intersection of circle A (ground body) with circle B (flyer) —
 # the exact covered region. Empty when apart; full containment degenerates to
-# the smaller disc.
+# the smaller disc. Boundary checks are padded by COVERED_GHOST_MIN_OVERLAP so
+# near-tangent circles never reach the general branch below, where a
+# near-touching pair makes both arc spans collapse toward zero — a
+# degenerate, near-zero-area polygon the triangulator rejects outright
+# ("Invalid polygon data, triangulation failed").
 func _circle_intersection_polygon(
 	ca: Vector2, ra: float,
 	cb: Vector2, rb: float
 ) -> PackedVector2Array:
 	var d := ca.distance_to(cb)
-	if d >= ra + rb:
+	if d >= ra + rb - COVERED_GHOST_MIN_OVERLAP:
 		return PackedVector2Array()
-	if d + ra <= rb:
+	if d + ra <= rb + COVERED_GHOST_MIN_OVERLAP:
 		return _arc_points(ca, ra, 0.0, TAU, true)
-	if d + rb <= ra:
+	if d + rb <= ra + COVERED_GHOST_MIN_OVERLAP:
 		return _arc_points(cb, rb, 0.0, TAU, true)
 	var axis := (cb - ca).angle()
 	var half_a := acos(clampf((d * d + ra * ra - rb * rb) / (2.0 * d * ra), -1.0, 1.0))
