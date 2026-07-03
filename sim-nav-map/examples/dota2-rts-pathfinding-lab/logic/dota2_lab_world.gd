@@ -20,9 +20,10 @@ var map_size: Vector2 = Vector2(1320.0, 900.0)
 var obstacles: Array[Dota2LabObstacle] = []
 var units: Array[Dota2LabUnit] = []
 var pathfinder: Dota2LabPathfinderWrapper = null
-# Air-layer nav twin: same wrapper class, zero obstacles, built lazily on the
-# first flying unit (a flyer-free world never pays for the second nav stack).
-# It never rebuilds — obstacle edits are a ground-layer event.
+# Air-layer nav: same wrapper class in open_field mode — no nav stack at all
+# (the air world is one open rectangle, so straight placeholders are final
+# paths). Built lazily on the first flying unit and never rebuilt — obstacle
+# edits are a ground-layer event.
 var _air_pathfinder: Dota2LabPathfinderWrapper = null
 var motion: Dota2LabMotionEngine = null
 var tick_count: int = 0
@@ -224,6 +225,7 @@ func get_ground_units() -> Array[Dota2LabUnit]:
 func air_pathfinder() -> Dota2LabPathfinderWrapper:
 	if _air_pathfinder == null:
 		_air_pathfinder = Dota2LabPathfinderWrapper.new(map_size)
+		_air_pathfinder.open_field = true
 		_air_pathfinder.rebuild_context([])
 	return _air_pathfinder
 
