@@ -84,7 +84,7 @@ static var ABILITY := (
 	.ability_tags(["skill", "active", "melee", "enemy", "lifesteal"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
 	.active_use(
-		ActiveUseConfig.builder()
+		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID)
 		.on_timeline_start([
 			StageCueAction.new(
@@ -103,10 +103,6 @@ static var ABILITY := (
 				BattleEvents.DamageType.PHYSICAL,
 			).on_hit(_LifestealHealAction.new())
 		])
-		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
-		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
-		.condition(HexBattleCooldownSystem.CooldownCondition.new())
-		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()
 	)
 	.build()

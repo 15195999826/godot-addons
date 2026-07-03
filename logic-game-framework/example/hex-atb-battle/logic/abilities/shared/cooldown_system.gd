@@ -63,15 +63,25 @@ static func create_timed_cooldown_cost(duration: float) -> TimedCooldownCost:
 # ========== 标准门控 bundle helper ==========
 #
 # 标准主动技能门控四件套 = NoTagCondition(cant_act) + NoTagCondition(cant_use_skill)
-# + CooldownCondition + TimedCooldownCost(cd_ms)。当前 28 个技能逐文件手抄这 4 行
-# (这正是让 strike 漏 silence 这类漂移无法被结构区分的根因)。新技能应改用下面的
-# helper; 既有技能的迁移留待专门一轮 (见 docs/README.md 已知债务: 28 技能迁移到 condition bundle helper)。
+# + CooldownCondition + TimedCooldownCost(cd_ms)。全部 active 技能已统一走 helper
+# (2026-07-03 线 3 轮 D 迁移完成), 门控声明单点化 —— strike 漏 silence 这类漂移
+# 从此可结构区分 (basic attack 的 silence 豁免 = 显式调 apply_basic_attack_gating)。
 #
-# 用法: ActiveUseConfig.builder().timeline_id(...).on_tag(...) |> standard_active_conditions(builder, cd_ms)
-# 注意 builder 链式返回 self, helper 直接在传入的 builder 上 apply 后返回它。
+# 用法(链头包装, helper 在传入 builder 上 apply 后返回它, 后续继续链):
+#   .active_use(
+#       HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
+#       .timeline_id(...)
+#       .on_tag(...)
+#       .build()
+#   )
 
 ## 标准主动技能门控: cant_act + silence + cooldown condition + timed cooldown cost。
-static func apply_standard_active_gating(builder, cooldown_ms: float):
+## 签名必须强类型: 无标注时返回值退化 Variant, 调用方后续链式 on_timeline_start([...])
+## 变动态派发, 数组字面量不再协变成 Array[Action.BaseAction], 运行时类型错。
+static func apply_standard_active_gating(
+	builder: ActiveUseConfig.ActiveUseConfigBuilder,
+	cooldown_ms: float,
+) -> ActiveUseConfig.ActiveUseConfigBuilder:
 	return (builder
 		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
 		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
@@ -81,7 +91,10 @@ static func apply_standard_active_gating(builder, cooldown_ms: float):
 
 ## basic-attack 门控 (silence-exempt): cant_act + cooldown, 不含 silence。
 ## 普攻不受沉默是 ARPG/MOBA 惯例 (强调: 这是有意豁免, 非遗漏)。Strike 用。
-static func apply_basic_attack_gating(builder, cooldown_ms: float):
+static func apply_basic_attack_gating(
+	builder: ActiveUseConfig.ActiveUseConfigBuilder,
+	cooldown_ms: float,
+) -> ActiveUseConfig.ActiveUseConfigBuilder:
 	return (builder
 		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
 		.condition(CooldownCondition.new())

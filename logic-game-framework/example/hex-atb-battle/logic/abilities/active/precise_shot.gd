@@ -48,7 +48,7 @@ static var ABILITY := (
 	.meta(HexBattleSkillMetaKeys.RANGE, 4)
 	# 主动使用组件：发射投射物
 	.active_use(
-		ActiveUseConfig.builder()
+		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID_CAST)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -68,10 +68,6 @@ static var ABILITY := (
 			HexBattleSkillHelpers.owner_position_resolver(),
 			HexBattleSkillHelpers.target_position_resolver(),
 		)])
-		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
-		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
-		.condition(HexBattleCooldownSystem.CooldownCondition.new())
-		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()
 	)
 	# 投射物命中响应组件：造成伤害

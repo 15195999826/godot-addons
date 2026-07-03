@@ -104,7 +104,7 @@ static var ABILITY := (AbilityConfig.builder()
 		.build())
 	.component_config(_incoming_pre_event())
 	.component_config(_outgoing_pre_event())
-	.active_use(ActiveUseConfig.builder()
+	.active_use(HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
@@ -115,10 +115,6 @@ static var ABILITY := (AbilityConfig.builder()
 			_wrath_to_calm_actions(),
 			_calm_to_wrath_actions(),
 		)])
-		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
-		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
-		.condition(HexBattleCooldownSystem.CooldownCondition.new())
-		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build())
 	.build())
 

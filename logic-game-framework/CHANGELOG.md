@@ -15,6 +15,7 @@
 ## [Unreleased]
 
 ### Changed
+- **hex 技能门控统一走 bundle helper（线 3 轮 D）**：28 个标准 active 技能的手抄门控四件套（cant_act + silence + CooldownCondition + TimedCooldownCost）机械替换为 `HexBattleCooldownSystem.apply_standard_active_gating(builder, COOLDOWN_MS)` 链头包装；`strike` 的三件套（有意豁免 silence）替换为 `apply_basic_attack_gating`；`move` 零门控不变。条件从链尾前移到链头（纯查询条件 + 单 cost，求值顺序无副作用，语义等价）。门控声明自此单点化，漂移可结构区分。
 - **A 层命名收敛（线 3 轮 C）**：`ReplayData → PlaybackData`（文件名同步 `core/playback/playback_data.gd` / `playback_log_printer.gd`）、`FrontendBattleDirector.load_replay → load_playback`——「现役 = A 层 = Playback」立场落到代码；.gd 17 文件 69 处 + 主仓 inkmon 4 文件联动 + 现行文档同步。录像 JSON key 与 web 桥协议零波及（key 本就不含 replay 字样），`PROTOCOL_VERSION` 不动；`assert_replay` scenario DSL / `BattleRecorder` 家族 / `initialize_from_replay` 等词根方法不在最小集，维持原名。
 - **`AbilityActivate` 补齐 schema（线 3 轮 B）**：新增 `logic_time` / `target_actor_id` / `target_coord: Dictionary` 三个可选字段（to_dict key 沿用既有事实拼写 `logicTime` / `target_actor_id` / `target_coord`，空 target 不写 key）——消灭全仓仅存的 6 处手写 `abilityActivate` dict literal（hex / dota2 procedure、skill-preview、harness、2 个 smoke 全部改走 `create()`）。`target_coord` 是坐标 dict 而非 HexCoord 类型，core 不依赖坐标实现。
 - **REFRESH 叠层刷新改组件钩子（线 3 轮 B）**：`AbilityComponent` 新增 `on_ability_stack_refreshed()` 虚钩子，`Ability` 的 OVERFLOW_REFRESH 改为向全部 component 广播（原 `component.type == "TimeDurationComponent"` 字符串鸭子匹配删除——core 不再点名 stdlib 具体组件）；`TimeDurationComponent` override 钩子调自身 `refresh()`，行为等价。

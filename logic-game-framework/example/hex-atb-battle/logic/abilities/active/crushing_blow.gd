@@ -28,7 +28,7 @@ static var ABILITY := (
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
 	.active_use(
-		ActiveUseConfig.builder()
+		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -39,10 +39,6 @@ static var ABILITY := (
 			Resolvers.float_val(90.0),
 			BattleEvents.DamageType.PHYSICAL
 		)])
-		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
-		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
-		.condition(HexBattleCooldownSystem.CooldownCondition.new())
-		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build()
 	)
 	.build()

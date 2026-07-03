@@ -130,7 +130,7 @@ static var ABILITY := (AbilityConfig.builder()
 	.description("瞬移到目标背侧并造成 150% 攻击力的一击")
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 4)
-	.active_use(ActiveUseConfig.builder()
+	.active_use(HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -147,9 +147,5 @@ static var ABILITY := (AbilityConfig.builder()
 				BattleEvents.DamageType.PHYSICAL
 			)] as Array[Action.BaseAction]
 		)])
-		.condition(Condition.NoTagCondition.new(HexBattleActionLockStatus.TAG_CANT_ACT))
-		.condition(Condition.NoTagCondition.new(HexBattleSilenceBuff.TAG_CANT_USE_SKILL))
-		.condition(HexBattleCooldownSystem.CooldownCondition.new())
-		.cost(HexBattleCooldownSystem.TimedCooldownCost.new(COOLDOWN_MS))
 		.build())
 	.build())
