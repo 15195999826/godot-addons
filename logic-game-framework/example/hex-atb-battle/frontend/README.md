@@ -452,7 +452,7 @@ signal floating_text_created(data: FrontendRenderData.FloatingText)
 signal actor_died(actor_id: String)
 
 # 核心方法
-func load_replay(record: ReplayData.BattleRecord) -> void
+func load_playback(record: PlaybackData.BattleRecord) -> void
 func play() -> void
 func pause() -> void
 func reset() -> void
@@ -497,7 +497,7 @@ signal actor_spawned(actor_id: String, state: FrontendActorRenderState)
 signal floating_text_created(data: FrontendRenderData.FloatingText)
 signal actor_died(actor_id: String)
 
-func initialize_from_replay(record: ReplayData.BattleRecord) -> void
+func initialize_from_replay(record: PlaybackData.BattleRecord) -> void
 func apply_actions(active_actions: Array[FrontendActionScheduler.ActiveAction]) -> void
 func reset() -> void
 ```

@@ -1,7 +1,7 @@
 class_name ReplayLogPrinter
 ## 纯静态工具类：录像日志打印
 
-static func print_record(record: ReplayData.BattleRecord) -> void:
+static func print_record(record: PlaybackData.BattleRecord) -> void:
 	print("==========================================")
 	print("Battle Replay Log")
 	print("==========================================")
@@ -15,7 +15,7 @@ static func print_record(record: ReplayData.BattleRecord) -> void:
 	print("")
 
 	print("## Initial Actors (%d)" % record.initial_actors.size())
-	for actor_init: ReplayData.ActorInitData in record.initial_actors:
+	for actor_init: PlaybackData.ActorInitData in record.initial_actors:
 		print("  - %s (%s)" % [actor_init.display_name, actor_init.id])
 		print("    Team: %s" % actor_init.team)
 		if not actor_init.position.is_empty():
@@ -25,7 +25,7 @@ static func print_record(record: ReplayData.BattleRecord) -> void:
 	print("")
 
 	print("## Timeline (%d frames with events)" % record.timeline.size())
-	for frame_data: ReplayData.FrameData in record.timeline:
+	for frame_data: PlaybackData.FrameData in record.timeline:
 		if frame_data.events.is_empty():
 			continue
 		print("Frame %d (%d events):" % [frame_data.frame, frame_data.events.size()])

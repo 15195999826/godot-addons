@@ -85,13 +85,13 @@ func _process(_delta: float) -> void:
 ## unit_views: actor_id -> FrontendUnitView 字典,由 WorldView 管理生命周期。
 ## 反复调用 = 重新加载(老 timeline 被替换,VFX/飘字/投射物清空)。
 func load(record_data: Dictionary, unit_views: Dictionary) -> void:
-	var record := ReplayData.BattleRecord.from_dict(record_data)
+	var record := PlaybackData.BattleRecord.from_dict(record_data)
 	_clear_replay_unit_views()
 	_base_unit_views = _filter_initial_base_unit_views(record, unit_views)
 	_unit_views = _base_unit_views.duplicate()
 	_clear_effects()
 
-	_director.load_replay(record)
+	_director.load_playback(record)
 	_prebuild_replay_unit_views(record)
 
 
@@ -209,8 +209,8 @@ func _on_actor_spawned(actor_id: String, state: FrontendActorRenderState) -> voi
 		])
 
 
-func _prebuild_replay_unit_views(record: ReplayData.BattleRecord) -> void:
-	for frame_data: ReplayData.FrameData in record.timeline:
+func _prebuild_replay_unit_views(record: PlaybackData.BattleRecord) -> void:
+	for frame_data: PlaybackData.FrameData in record.timeline:
 		for event: Dictionary in frame_data.events:
 			if event.get("kind", "") != "actorSpawned":
 				continue
@@ -367,10 +367,10 @@ func _on_cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay) -
 	overlay_view.initialize(data)
 
 
-func _filter_initial_base_unit_views(record: ReplayData.BattleRecord, unit_views: Dictionary) -> Dictionary:
+func _filter_initial_base_unit_views(record: PlaybackData.BattleRecord, unit_views: Dictionary) -> Dictionary:
 	_excluded_base_unit_views.clear()
 	var initial_actor_ids := {}
-	for actor_init: ReplayData.ActorInitData in record.initial_actors:
+	for actor_init: PlaybackData.ActorInitData in record.initial_actors:
 		if not actor_init.id.is_empty():
 			initial_actor_ids[actor_init.id] = true
 

@@ -101,7 +101,7 @@ func _init(
 # ========== 初始化 ==========
 
 ## 从回放数据初始化角色状态
-func initialize_from_replay(record: ReplayData.BattleRecord) -> void:
+func initialize_from_replay(record: PlaybackData.BattleRecord) -> void:
 	_actors.clear()
 	_interpolated_positions.clear()
 	_floating_texts.clear()
@@ -125,7 +125,7 @@ func initialize_from_replay(record: ReplayData.BattleRecord) -> void:
 			Vector2.ONE
 		)
 	
-	for actor_init: ReplayData.ActorInitData in record.initial_actors:
+	for actor_init: PlaybackData.ActorInitData in record.initial_actors:
 		_initialize_actor_from_init_data(actor_init)
 	
 	# 初始化完成后触发状态同步 (修复 M3)
@@ -134,7 +134,7 @@ func initialize_from_replay(record: ReplayData.BattleRecord) -> void:
 
 
 ## 初始化单个角色
-func _initialize_actor_from_init_data(actor_init: ReplayData.ActorInitData) -> void:
+func _initialize_actor_from_init_data(actor_init: PlaybackData.ActorInitData) -> void:
 	if actor_init.id.is_empty():
 		return
 	
@@ -182,7 +182,7 @@ func _apply_actor_spawned_event(event: Dictionary) -> void:
 	var actor_data := actor_data_variant as Dictionary
 	if actor_data.is_empty():
 		return
-	var actor_init := ReplayData.ActorInitData.from_dict(actor_data)
+	var actor_init := PlaybackData.ActorInitData.from_dict(actor_data)
 	if actor_init.id.is_empty():
 		actor_init.id = str(event.get("actorId", ""))
 	if actor_init.id.is_empty() or _actors.has(actor_init.id):
@@ -706,7 +706,7 @@ func get_screen_shake_offset() -> Vector2:
 # ========== 重置 ==========
 
 ## 重置到初始状态
-func reset_to(record: ReplayData.BattleRecord) -> void:
+func reset_to(record: PlaybackData.BattleRecord) -> void:
 	_world_time_ms = 0
 	initialize_from_replay(record)
 

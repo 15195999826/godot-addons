@@ -15,12 +15,12 @@ func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 
 	# ===== Step 1: Replay init reads facing_direction from attributes =====
-	var record := ReplayData.BattleRecord.new()
-	record.meta = ReplayData.BattleMeta.new()
+	var record := PlaybackData.BattleRecord.new()
+	record.meta = PlaybackData.BattleMeta.new()
 	record.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
 	record.configs = {"positionFormats": {"Character": "hex"}}
 
-	var hero_a := ReplayData.ActorInitData.new()
+	var hero_a := PlaybackData.ActorInitData.new()
 	hero_a.id = "hero_a"
 	hero_a.type = "Character"
 	hero_a.team = 0
@@ -28,7 +28,7 @@ func _ready() -> void:
 	# A 队默认朝东 (DIR_EAST = 0)
 	hero_a.attributes = {"hp": 100.0, "maxHp": 100.0, "facing_direction": HexFacing.DIR_EAST}
 
-	var hero_b := ReplayData.ActorInitData.new()
+	var hero_b := PlaybackData.ActorInitData.new()
 	hero_b.id = "hero_b"
 	hero_b.type = "Character"
 	hero_b.team = 1
@@ -37,7 +37,7 @@ func _ready() -> void:
 	hero_b.attributes = {"hp": 100.0, "maxHp": 100.0, "facing_direction": HexFacing.DIR_WEST}
 
 	# Environment actor 不带 facing_direction 字段, RenderWorld 读到默认 0
-	var wall := ReplayData.ActorInitData.new()
+	var wall := PlaybackData.ActorInitData.new()
 	wall.id = "wall_1"
 	wall.type = "Environment"
 	wall.team = -1

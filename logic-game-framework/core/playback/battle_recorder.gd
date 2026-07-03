@@ -32,8 +32,8 @@ extends RefCounted
 ##    - 预期体积减少 50-70%
 ##    - 需要同步修改 Web 端解析器
 
-var _record: ReplayData.BattleRecord
-var _meta: ReplayData.BattleMeta
+var _record: PlaybackData.BattleRecord
+var _meta: PlaybackData.BattleMeta
 var is_recording: bool = false
 var current_frame: int = 0
 var actor_subscriptions: Dictionary = {}
@@ -43,7 +43,7 @@ func _init(recorder_config: Dictionary = {}) -> void:
 	if battle_id.is_empty():
 		battle_id = IdGenerator.generate("battle")
 
-	_meta = ReplayData.BattleMeta.new()
+	_meta = PlaybackData.BattleMeta.new()
 	_meta.battle_id = battle_id
 	_meta.tick_interval = recorder_config.get("tickInterval", 100) as int
 
@@ -56,7 +56,7 @@ func start_recording(actors: Array, configs_value: Dictionary = {}, map_config_v
 	_meta.recorded_at = Time.get_unix_time_from_system()
 	current_frame = 0
 
-	_record = ReplayData.BattleRecord.new()
+	_record = PlaybackData.BattleRecord.new()
 	_record.meta = _meta
 	_record.configs = configs_value
 	_record.map_config = map_config_value
@@ -64,7 +64,7 @@ func start_recording(actors: Array, configs_value: Dictionary = {}, map_config_v
 	_record.timeline = []
 
 	for actor in actors:
-		_record.initial_actors.append(ReplayData.ActorInitData.create(actor))
+		_record.initial_actors.append(PlaybackData.ActorInitData.create(actor))
 		_subscribe_actor(actor)
 
 
@@ -87,7 +87,7 @@ func start_recording_events_only() -> void:
 	_meta.recorded_at = Time.get_unix_time_from_system()
 	current_frame = 0
 
-	_record = ReplayData.BattleRecord.new()
+	_record = PlaybackData.BattleRecord.new()
 	_record.meta = _meta
 	_record.configs = {}
 	_record.map_config = {}
@@ -101,7 +101,7 @@ func record_frame(frame: int, events: Array[Dictionary]) -> void:
 	current_frame = frame
 
 	if not events.is_empty():
-		var frame_data := ReplayData.FrameData.new()
+		var frame_data := PlaybackData.FrameData.new()
 		frame_data.frame = frame
 		frame_data.events = events
 		_record.timeline.append(frame_data)
@@ -140,7 +140,7 @@ func get_timeline() -> Array[Dictionary]:
 		return []
 	var result: Array[Dictionary] = []
 	for f in _record.timeline:
-		result.append(f.to_dict() if f is ReplayData.FrameData else f)
+		result.append(f.to_dict() if f is PlaybackData.FrameData else f)
 	return result
 
 func register_actor(actor: Actor) -> void:
@@ -149,7 +149,7 @@ func register_actor(actor: Actor) -> void:
 	if actor_subscriptions.has(actor.id):
 		return
 
-	var init_data := ReplayData.ActorInitData.create(actor)
+	var init_data := PlaybackData.ActorInitData.create(actor)
 	var event := GameEvent.ActorSpawned.create(actor.id, init_data.to_dict())
 	GameWorld.event_collector.push(event.to_dict())
 

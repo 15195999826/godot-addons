@@ -3,7 +3,7 @@
 ## 走完整 Director → Visualizer → RenderWorld → UnitView 链路,
 ## 在每帧推进后断言 UnitView._buff_label.text 序列。
 ##
-## 此 smoke 现在手工构造 ReplayData, 不依赖 headless scenario harness, 才能
+## 此 smoke 现在手工构造 PlaybackData, 不依赖 headless scenario harness, 才能
 ## 复现 BattleRecorder 把 pending(AbilityGranted)放在 collector(StacksChanged)
 ## 之后的真实顺序问题。
 ##
@@ -36,16 +36,16 @@ func _ready() -> void:
 
 	HexBattleAllSkills.register_all_timelines()
 
-	# 构造最小 ReplayData:1 actor(team A),frame 0 同帧 grant Surge + first tick
+	# 构造最小 PlaybackData:1 actor(team A),frame 0 同帧 grant Surge + first tick
 	# (3→2),frame 20 tick(2→1),frame 40 tick(1→0)+remove。
-	var record := ReplayData.BattleRecord.new()
-	record.meta = ReplayData.BattleMeta.new()
+	var record := PlaybackData.BattleRecord.new()
+	record.meta = PlaybackData.BattleMeta.new()
 	record.meta.total_frames = 50
 	record.meta.tick_interval = 100
 	record.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
 	record.configs = {"positionFormats": {"Character": "hex"}}
 
-	var actor_init := ReplayData.ActorInitData.new()
+	var actor_init := PlaybackData.ActorInitData.new()
 	actor_init.id = "hero_1"
 	actor_init.type = "Character"
 	actor_init.display_name = "Hero"
@@ -56,18 +56,18 @@ func _ready() -> void:
 
 	# BattleDirector 从 _current_frame=0 推到 next_frame=1 才查事件,
 	# 所以 frame 0 永远不被处理。事件从 frame 1 开始。
-	var f1 := ReplayData.FrameData.new()
+	var f1 := PlaybackData.FrameData.new()
 	f1.frame = 1
 	f1.events = [
 		_grant_event("hero_1", "surge_inst_1", HexBattleSurgeBuff.CONFIG_ID, 3),
 		_stacks_event("hero_1", "surge_inst_1", HexBattleSurgeBuff.CONFIG_ID, 3, 2),
 	]
-	var f21 := ReplayData.FrameData.new()
+	var f21 := PlaybackData.FrameData.new()
 	f21.frame = 21
 	f21.events = [
 		_stacks_event("hero_1", "surge_inst_1", HexBattleSurgeBuff.CONFIG_ID, 2, 1),
 	]
-	var f41 := ReplayData.FrameData.new()
+	var f41 := PlaybackData.FrameData.new()
 	f41.frame = 41
 	f41.events = [
 		_stacks_event("hero_1", "surge_inst_1", HexBattleSurgeBuff.CONFIG_ID, 1, 0),
@@ -83,7 +83,7 @@ func _ready() -> void:
 	_director = FrontendBattleDirector.new()
 	_director.name = "BattleDirector"
 	add_child(_director)
-	_director.load_replay(record)
+	_director.load_playback(record)
 
 	_unit_view = FrontendUnitView.new()
 	_unit_view.name = "HeroView"
