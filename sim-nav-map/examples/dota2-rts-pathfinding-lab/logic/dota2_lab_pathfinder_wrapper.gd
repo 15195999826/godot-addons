@@ -61,6 +61,18 @@ var native_facade: Object = null
 var native_queue: Object = null
 var _native_static_shapes: Array[SimNavObstructionShapeStatic] = []
 
+# ── Open-field mode (air layer) ──────────────────────────────────────────────
+# Opt-in for wrappers whose world is provably obstacle-free forever (the lab's
+# air layer). The playable area is a single rectangle, so the straight line
+# between any two clamped points is always valid: planning degenerates to
+# "walk the placeholder", request_plan returns 0 (no ticket, no queue), line
+# checks are unconditionally clear, and NO nav stack is built — neither the
+# GDScript one nor the native one, so both planner twins stay untouched and
+# A/B-welded. Explicit flag rather than auto-detecting empty obstacles: ground
+# worlds that merely happen to have no obstacles (lane fixtures, wrapper A/B
+# smokes) must keep exercising real planning.
+var open_field: bool = false
+
 
 func _init(
 	p_map_size: Vector2 = Vector2(1320.0, 900.0),
@@ -75,6 +87,17 @@ func _init(
 
 
 func rebuild_context(static_obstacles: Array[Dota2LabObstacle]) -> void:
+	if open_field:
+		Log.assert_crash(static_obstacles.is_empty(), "Dota2LabPathfinderWrapper",
+			"open_field wrapper cannot take static obstacles")
+		use_native = false
+		nav_map = null
+		hierarchical = null
+		long_pathfinder = null
+		facade = null
+		vertex_pathfinder = null
+		path_queue = null
+		return
 	if use_native:
 		if SimNavNativeBridge.available():
 			_rebuild_context_native(static_obstacles)
@@ -151,6 +174,10 @@ func _rebuild_context_native(static_obstacles: Array[Dota2LabObstacle]) -> void:
 # Enqueue a long-path request for the worker thread. Reachable-goal
 # canonicalization applies as in plan_path.
 func request_plan(start: Vector2, goal: Vector2) -> int:
+	if open_field:
+		# The engine's straight-line placeholder already IS the final path;
+		# 0 = no ticket, so no plan ever computes or lands.
+		return 0
 	if use_native:
 		plan_count += 1
 		return int(native_queue.call("enqueue", SimNavNativeBridge.query_to_dict(_build_long_path_query(start, goal))))
@@ -176,6 +203,8 @@ func cancel_plan(ticket: int) -> void:
 # background batch handed last tick (blocking collect = deterministic
 # fixed-latency arrival), then hand everything pending to the worker.
 func pump_async() -> void:
+	if open_field:
+		return
 	if use_native:
 		if int(native_queue.call("collect")) > 0:
 			var diagnostics: Dictionary = native_queue.call("get_diagnostics")
@@ -220,11 +249,25 @@ func pending_plan_count() -> int:
 
 # Same query as request_plan, computed immediately.
 func plan_path(start: Vector2, goal: Vector2) -> SimNavLongPathResult:
+	if open_field:
+		return _direct_result(start, goal)
 	plan_count += 1
 	if use_native:
 		var result_dict: Dictionary = native_facade.call("compute_path_result", SimNavNativeBridge.query_to_dict(_build_long_path_query(start, goal)))
 		return SimNavNativeBridge.to_long_path_result(result_dict)
 	return facade.compute_path_result(_build_long_path_query(start, goal))
+
+
+# Synthesized straight-line result for open-field sync probes; the async path
+# never plans at all (request_plan returns 0).
+func _direct_result(start: Vector2, goal: Vector2) -> SimNavLongPathResult:
+	var result := SimNavLongPathResult.new()
+	result.configure_query(_build_long_path_query(start, goal))
+	var direct := SimNavWaypointPath.new()
+	direct.push_back(goal)
+	var no_cells: Array[Vector2i] = []
+	result.set_paths(SimNavLongPathResult.STATUS_DIRECT_GOAL, no_cells, SimNavWaypointPath.new(), direct, 0)
+	return result
 
 
 func _build_long_path_query(start: Vector2, goal: Vector2) -> SimNavLongPathQuery:
@@ -244,6 +287,8 @@ func _build_long_path_query(start: Vector2, goal: Vector2) -> SimNavLongPathQuer
 # never commit the unit to a line the planner would have refused. Boolean
 # fast path — this runs per tick for every moving unit.
 func is_line_walkable(start: Vector2, target: Vector2) -> bool:
+	if open_field:
+		return true  # one rectangular playable area: every segment is clear
 	line_check_count += 1
 	if use_native:
 		# Statics-only filter is the native default (units never enter the
