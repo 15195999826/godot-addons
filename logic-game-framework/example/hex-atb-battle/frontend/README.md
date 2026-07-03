@@ -1,6 +1,6 @@
 # Hex ATB Battle Frontend (表演层)
 
-> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `main.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。本 README 中"使用方法 / 主调用流程"段落保留作历史参考,API 已不存在;按下面"现状响应式 wire"段为准。详见 `addons/logic-game-framework/docs/README.md`（World owns Battle + 响应式前端 节）。
+> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `main.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。详见 `addons/logic-game-framework/docs/README.md`（World owns Battle + 响应式前端 节）。
 
 ## 现状响应式 wire(2026-04-26 起)
 
@@ -122,6 +122,8 @@ UI 控件 `FrontendPlaybackControls` 提供 play/pause/reset/speed,信号转发�
 ---
 
 ## 流程图
+
+> ⚠ 阶段一为**历史示意**（`FrontendBattleReplayScene` / `HexBattle` 已删除，现行入口是响应式 wire + `FrontendBattleAnimator.load(record_data, unit_views)` → `play()`，见顶部）；阶段二/三描述的 Director → RenderWorld → view 播放机制仍是现行实现。
 
 ### 阶段一：加载录像
 
@@ -300,7 +302,7 @@ RenderWorld (状态层)
 BattleDirector (转发层，1:1 转发所有信号)
   | signals
   v
-BattleReplayScene (渲染层)
+FrontendBattleAnimator (wire 到 view)
   |
   +-- actor_state_changed(id, state)
   |     +-- unit_view.update_state(state)
@@ -308,8 +310,9 @@ BattleReplayScene (渲染层)
   |     |     +-- _update_hp_bar()       -> 缩放 BoxMesh + 变色
   |     |     +-- _update_flash_effect() -> 材质 lerp 白色
   |     |     +-- _update_tint_color()   -> 材质 blend
-  |     |     +-- if !is_alive -> _play_death_animation()
-  |     |           +-- Tween: scale->0.1, y-=0.5, -> hide
+  |     |     (update_state 只做幂等 State 更新, 不推断死亡 ——
+  |     |      死亡动画走 actor_died signal -> unit_view.play_death(),
+  |     |      transition-only Event 路径, _death_played 门控)
   |     +-- unit_view.set_world_position(world_pos)
   |           +-- _target_position = pos
   |              (UnitView._process 中 lerp 平滑跟随)
@@ -439,16 +442,17 @@ hex-atb-battle/frontend/
 class_name FrontendBattleDirector
 extends Node
 
-# 信号
+# 信号(节选; attack_vfx_* / projectile_* / cone_debug_overlay_created 同为强类型, 见源码)
 signal playback_state_changed(is_playing: bool)
 signal frame_changed(current_frame: int, total_frames: int)
 signal playback_ended()
-signal actor_state_changed(actor_id: String, state: Dictionary)
-signal floating_text_created(data: Dictionary)
+signal actor_state_changed(actor_id: String, state: FrontendActorRenderState)
+signal actor_spawned(actor_id: String, state: FrontendActorRenderState)
+signal floating_text_created(data: FrontendRenderData.FloatingText)
 signal actor_died(actor_id: String)
 
 # 核心方法
-func load_replay(replay_data: Dictionary) -> void
+func load_replay(record: ReplayData.BattleRecord) -> void
 func play() -> void
 func pause() -> void
 func reset() -> void
@@ -488,13 +492,13 @@ func clear() -> void
 class_name FrontendRenderWorld
 extends RefCounted
 
-signal actor_state_changed(actor_id: String, state: Dictionary)
-signal floating_text_created(data: Dictionary)
+signal actor_state_changed(actor_id: String, state: FrontendActorRenderState)
+signal actor_spawned(actor_id: String, state: FrontendActorRenderState)
+signal floating_text_created(data: FrontendRenderData.FloatingText)
 signal actor_died(actor_id: String)
 
-func initialize_from_replay(replay_data: Dictionary) -> void
-func apply_actions(tick_result: FrontendActionScheduler.TickResult) -> void
-func get_actor_state(actor_id: String) -> Dictionary
+func initialize_from_replay(record: ReplayData.BattleRecord) -> void
+func apply_actions(active_actions: Array[FrontendActionScheduler.ActiveAction]) -> void
 func reset() -> void
 ```
 
@@ -574,28 +578,7 @@ var easing: EasingType
 
 ## 使用方法
 
-### 基本使用
-
-```gdscript
-# 1. 创建回放场景
-var replay_scene = FrontendBattleReplayScene.new()
-add_child(replay_scene)
-
-# 2. 加载录像
-var replay_data = load_replay_json("user://Replays/battle.json")
-replay_scene.load_replay(replay_data)
-
-# 3. 控制播放
-replay_scene.play()
-replay_scene.pause()
-replay_scene.reset()
-replay_scene.set_speed(2.0)
-
-# 4. 监听信号
-var director = replay_scene.get_director()
-director.playback_ended.connect(_on_playback_ended)
-director.frame_changed.connect(_on_frame_changed)
-```
+> 战斗回放的权威 wire 见顶部「现状响应式 wire」节;旧 `FrontendBattleReplayScene` API 已删除。
 
 ### 添加自定义 Visualizer
 

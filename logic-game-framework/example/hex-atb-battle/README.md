@@ -10,8 +10,8 @@ Logic Game Framework 的**回合制 / ATB + hex grid** 战斗示例，也是框�
 
 | 层 | 目录 | 职责 | 说明 |
 |---|---|---|---|
-| **core**（共享） | `core/` | 强类型事件定义 + WorldGI 基类 | `events/battle_events.gd`、`hex_world_gameplay_instance.gd`（通用基类）。见 [`core/README.md`](core/README.md) |
-| **logic**（逻辑） | `logic/` | 战斗规则 / 技能 / actor / procedure | `HexDemoWorldGameplayInstance`（demo 行为）、`HexBattleProcedure`（ATB / AI / 胜负）、`abilities/`、`hex_battle_actor.gd` |
+| **core**（共享） | `core/` | 强类型事件定义 | `events/battle_events.gd`。见 [`core/README.md`](core/README.md) |
+| **logic**（逻辑） | `logic/` | WorldGI / procedure / 战斗规则 / 技能 / actor | `HexWorldGameplayInstance`（hex world 基类）、`HexDemoWorldGameplayInstance`（demo 行为）、`HexBattleProcedure`（ATB / AI / 胜负）、`abilities/`、`hex_battle_actor.gd` |
 | **frontend**（表演） | `frontend/` | 响应式 view + 事件动画 | `FrontendWorldView`（观察 world 结构）、`FrontendBattleAnimator`（消费 event timeline）。见 [`frontend/README.md`](frontend/README.md) |
 
 - **World owns Battle**：`HexWorldGameplayInstance` 持有 actor / grid / systems；战斗是短命的 `HexBattleProcedure`。每个场景（demo / skill-preview）有自己的 `HexWorldGameplayInstance` 子类（`HexDemoWorldGameplayInstance` / `SkillPreviewWorldGI`），框架基类保持通用。

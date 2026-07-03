@@ -14,6 +14,7 @@ const ABILITY_STACKS_CHANGED_EVENT := "abilityStacksChanged"
 const EXECUTION_ACTIVATED_EVENT := "executionActivated"
 const TAG_CHANGED_EVENT := "tagChanged"
 const STAGE_CUE_EVENT := "stageCue"
+const PROJECTILE_HIT_EVENT := "projectileHit"
 
 
 # ========== 事件基类 ==========
@@ -416,7 +417,7 @@ class ProjectileHit extends Base:
 	var fly_distance: float = 0.0
 	
 	func _init() -> void:
-		kind = ProjectileEvents.PROJECTILE_HIT_EVENT
+		kind = PROJECTILE_HIT_EVENT
 	
 	static func create(p_projectile_id: String, p_source_actor_id: String, p_target_actor_id: String, p_hit_position: Vector3, p_fly_time: float, p_fly_distance: float, p_ability_config_id: String = "") -> ProjectileHit:
 		var e := ProjectileHit.new()
@@ -455,7 +456,7 @@ class ProjectileHit extends Base:
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind", "") == ProjectileEvents.PROJECTILE_HIT_EVENT
+		return d.get("kind", "") == PROJECTILE_HIT_EVENT
 
 
 class AbilityActivate extends Base:

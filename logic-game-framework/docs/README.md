@@ -313,9 +313,11 @@ addons/logic-game-framework/
 │   ├── actions/            # Action 基类、TargetSelector
 │   ├── abilities/          # Ability 系统
 │   ├── events/             # 事件系统
+│   ├── playback/           # 录像（BattleRecorder / ReplayData）
 │   └── timeline/           # Timeline 系统
 ├── stdlib/                  # 标准库
-│   └── actions/            # 通用 Action（StageCueAction 等）
+│   ├── actions/            # 通用 Action（StageCueAction 等）
+│   └── projectile/         # 投射物（ProjectileActor / ProjectileSystem / detectors）
 ├── example/                 # 示例项目
 │   └── hex-atb-battle/     # 六边形 ATB 战斗示例
 │       ├── actions/        # 游戏特定 Action
@@ -772,12 +774,14 @@ if ability_set != null:
 
 ### 已知债务
 
-- **core → stdlib 反向依赖 (BattleRecorder)**：依赖图规定 stdlib 建在 core 之上，但 `core/entity/battle_procedure.gd` 直接持有并构造 stdlib 的 `BattleRecorder`（`_recorder` / `get_recorder()`），`Actor.gd` 也多处引用。破坏单向依赖图，阻塞把 core 拆成独立 addon，且替换 recorder 实现（NoopRecorder / NetworkRecorder）必须改 core。候选：core 定义 `IRecorder` interface（A）/ `BattleProcedure` 整体下放 stdlib（B）/ 把 BattleRecorder 物理移进 core（C）。待决断 recorder 是否属于 core 概念。
-- **ProjectileActor / projectile_events 在 core**：`core/entity/projectile_actor.gd` 硬编码玩法常量（`PROJECTILE_TYPE_BULLET / HITSCAN / MOBA`）并反向引用 stdlib 的 `ProjectileSystem`；`core/events/projectile_events.gd` 同理。不做投射物的 example（纯回合卡牌）继承 core 时白带此类型。候选：整体迁 `stdlib/projectile/`，或承认投射物是当前定位的一等公民。与 BattleRecorder 同批讨论 "core 边界"。
-- **强类型事件最后落回 Dictionary**：`core/events/game_event.gd` 定义 ~12 个强类型 class，但所有消费路径（`EventProcessor` / `MutableEvent` / `Ability.receive_event` / `EventCollector` / 各 component 的 `on_event`）仍吃 `Dictionary`，强类型只活在构造（`.to_dict()`）与反序列化（`from_dict()`）两个端点。结果：强类型纯文档、编译器不强制、field 拼错只能等 KeyError。候选：全切强类型签名（A）/ 删 class 只留 kind 常量（B）/ 仅 hot path（damage / attribute_changed）切（C）。需先拍板"这层要不要"。
-- **Replay / Playback / Director 命名混用**：同一概念三套词交叉 —— stdlib 数据类用 **Replay**（`ReplayData` / `replay_data.gd`）、写入器用 **Recorder**（`BattleRecorder`）、frontend signal 用 **playback**、frontend API 又用 **replay 动词**（`load_replay`）、UI 用 **Playback**。立场已定：A 层 = Playback（现役），B 层 = Replay（未来不一定做）；当前命名让"现役 = A 层"在代码里看不出来。计划随 A 层整合那轮捎带 rename（`ReplayData → PlaybackData` / `load_replay → load_playback`）。
-- **28 个 hex 技能未迁移到 condition bundle helper**：标准主动技能门控四件套（`NoTagCondition(cant_act)` + `NoTagCondition(silence)` + `CooldownCondition` + `TimedCooldownCost`）在 ~28 个技能里 byte-identical 手抄，手抄是唯一"正确性保证"。helper 已就位（`HexBattleCooldownSystem.apply_standard_active_gating` / `apply_basic_attack_gating`），`SkillValidator` Stage5 已 advisory 检测漏写（warn-only，strike/move 具名豁免）。待做：~26 个标准技能改用 helper、`strike` 改 `apply_basic_attack_gating`、`move` 不碰。单独成轮：28 文件 diff + 全量 hex 回归面，收益是防漂移而非修 bug。
+> 2026-07-03 起本节按 [线 3 提案](proposals/2026-07-03-known-debt-and-hex-architecture-proposal.md) 收敛——每条已有裁决与执行轮次，完成即标 ✅。
+
+- ✅ **core → stdlib 反向依赖 (BattleRecorder)**（裁决 2026-07-03，轮 A 位移完成；轮 B 收尾）：录像是 core 一等公民——`BattleProcedure.finish()` 返回值即 recorder 输出、`EventCollector` 只服务录像/表演层、「录像顺序 = 调用栈真实顺序」是铁律——recorder 家族（`BattleRecorder` / `RecordingContext` / `RecordingUtils` / `ReplayData` / `ReplayLogPrinter`）已物理迁入 `core/playback/`（类名不变，零代码改动）。剩余（轮 B）：`ability.gd` 对 `TimeDurationComponent` 的字符串鸭子匹配（文档此前未记录的第三处反依赖）改为 `on_ability_stack_refreshed()` component 钩子。否决：IRecorder 抽象 + 注入（YAGNI、改 core 接口波及三个 procedure 子类）；BattleProcedure 下放 stdlib（被 `WorldGameplayInstance._active_battle` / 工厂钩子钉死）。
+- ✅ **ProjectileActor / projectile_events 在 core**（2026-07-03 轮 A 完成）：原「反向引用 stdlib 的 ProjectileSystem」描述经查证**不实**（core 内唯一命中是注释）；真实问题 = 玩法策略常量（bullet/hitscan/moba）住 core + 全仓仅 hex 一个 example 使用（dota2 / inkmon 白带）。裁决：投射物是 stdlib 可选件而非 core 一等公民——`ProjectileActor` / `ProjectileEvents` 工厂 / `ProjectileSystem` / collision detector 家族整体迁 `stdlib/projectile/`；`GameEvent.ProjectileHit` 强类型事件类按「事件类型定义归 core 注册表」原则留在 `game_event.gd`。
+- **强类型事件与 Dictionary 的分工**（已裁决 2026-07-03，轮 B / 轮 E 执行）：**dict = 总线/序列化形态**（`EventCollector` 与录像边界的合法形态，`EventProcessor` / `MutableEvent` / `receive_event` / `on_event` 管线签名不切强类型）；**强类型 = 两端形态**（构造走 `create()`、消费走 `from_dict()` / 字段直访）。`is_match` 从四件套降级为可选（实测全仓真实调用 0 处，kind 常量比较是事实标准）。执行项：`AbilityActivate` 补齐 schema（logicTime / target 字段）消灭全仓仅存的 6 处手写事件 literal、删除零使用死类 `AbilityActivated`（轮 B）；4 个手写 `.get()` visualizer 改 from_dict、kind 字符串字面量常量化（轮 E）。否决：管线签名全切强类型（波及全部 example + inkmon 主游戏，违「少改 core」）；删 class 只留 kind 常量（违用户既有强类型意志，见架构 KB P084）。
+- **Replay / Playback / Director 命名混用**（裁决维持，轮 C 执行）：最小 rename = `ReplayData → PlaybackData` + `load_replay → load_playback`（18 文件 73 引用点，含主仓 4 文件联动）。已核实：录像 JSON 顶层 key 与 web 桥协议均不含 replay 字样，rename 零协议波及；`PROTOCOL_VERSION` 不动。明确不动：69 个 scenario 的 `assert_replay` 测试 DSL 名、`BattleRecorder` 家族（Recorder = 写入器语义无争议）、`playback_*` signal（词根已正确）、B 层占位名 `BattleReplayPlayer` / `BattleReplaySession`（仅存在于本句文档，代码零实现）。
+- **28 个 hex 技能未迁移到 condition bundle helper**（轮 D 执行）：实测 `active/` 30 文件 = 28 个 byte-identical 手抄（机械迁 `apply_standard_active_gating`）+ `strike`（有意豁免 silence 的三件套，迁 `apply_basic_attack_gating`）+ `move`（零门控，走 ActivateInstanceConfig 事件路由，不碰）。附带修正 `SkillValidator` 豁免名单字符串错位（写的 `"skill_move"`、实际 CONFIG_ID 是 `"action_move"`——当前因 move 无 active_use 组件而无症状，属潜伏 bug）。
 
 ### 未来规划（触发式重审，当前不修）
 
-- **WorldGameplayInstance 把 hex 概念塞进 core**：`core/entity/world_gameplay_instance.gd` 直接 import `HexCoord` / `GridMapConfig` / `GridMapModel`。当前路线图下**不视为问题** —— 在第二个非 hex example 落地前，把 grid 抽成 `ISpatialBackend` 属过度工程。触发重审条件：立项完全脱离 grid 的 example（纯卡牌 / 文字冒险）、需把 LGF core 单独发布给外部用户、或 `WorldGameplayInstance` 子类增至 3+ 且其中超过一个不用 grid。
+- **WorldGameplayInstance 把 grid 概念塞进 core**：`core/entity/world_gameplay_instance.gd` 直接引用姊妹 addon ultra-grid-map 的 `HexCoord` / `GridMapConfig` / `GridMapModel`（addon→addon 依赖，非 core→example）。**维持不修**（2026-07-03 线 3 复核）——现有 3 个 WorldGI 分支中，hex example 与 inkmon 主游戏（adr/0002 明确把 `grid` / `actor_position_changed` 钉为 GI 基类机器）都用 grid，仅 dota2 不用（白带字段无实害；其战斗推进也不走 `tick()` 的 blocking 循环、由前端时钟外部 drive `tick_once`——实时模型的既有绕行，已在源码注释文档化）。触发重审条件：再出现一个不用 grid 的 WorldGI 分支、或需把 LGF core 单独发布给外部用户。

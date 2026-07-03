@@ -19,12 +19,12 @@ graph TB
         Actions[Action System<br/>BaseAction]
         Timeline[Timeline System<br/>TimelineRegistry]
         Tags[Tag System<br/>TagContainer]
+        Playback[Playback System<br/>BattleRecorder]
     end
 
     subgraph "Stdlib"
         Components[Components<br/>StatModifier/Duration]
-        Systems[Systems<br/>ProjectileSystem]
-        Replay[Replay System<br/>BattleRecorder]
+        Projectile[Projectile<br/>ProjectileSystem/Detectors]
     end
 
     subgraph "Example"
@@ -42,13 +42,13 @@ graph TB
     Abilities --> Timeline
     Actions --> Events
     Components --> Abilities
-    Systems --> Entity
-    Replay --> Events
+    Projectile --> Entity
+    Playback --> Events
     HexDemo --> World
     HexDemo --> Core
-    HexDemo --> Replay
+    HexDemo --> Playback
     Frontend --> Core
-    Frontend --> Replay
+    Frontend --> Playback
 ```
 
 ## Key Data Flows

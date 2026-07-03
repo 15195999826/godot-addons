@@ -14,7 +14,12 @@
 
 ## [Unreleased]
 
-_（暂无）_
+### Changed
+- **目录归位（零行为，线 3 轮 A）**：recorder 家族（`BattleRecorder` / `RecordingContext` / `RecordingUtils` / `ReplayData` / `ReplayLogPrinter`）`stdlib/replay/` → `core/playback/`——录像是 core 事件系统一等公民（`BattleProcedure.finish()` 返回值即 recorder 输出）；投射物家族（`ProjectileActor` / `ProjectileEvents` / `ProjectileSystem` / collision detector ×4）`core/` + `stdlib/systems/` → `stdlib/projectile/`——仅 hex 使用的可选玩法件，不再让全部 example 白带；hex 的 `HexWorldGameplayInstance` / `HexBattleProcedure` `core/` → `logic/`——两类签名依赖 logic 类型，按单向依赖归位，hex `core/` 只剩共享事件定义。**全部类名不变，引用方零改动。** 裁决与执行切分见 `docs/proposals/2026-07-03-known-debt-and-hex-architecture-proposal.md`。
+
+### Fixed
+- **`ProjectileHit` 的 kind 常量归 core 注册表**：`GameEvent` 新增 `PROJECTILE_HIT_EVENT` 常量，`ProjectileHit` 改用之；stdlib `ProjectileEvents.PROJECTILE_HIT_EVENT` 转引 core 常量（值不变 `"projectileHit"`，行为逐位等价）——消除投射物工厂迁 stdlib 后 `game_event.gd` 对其残留的 core→stdlib 反向引用（codex review P2）。
+- 文档漂移：`docs/README.md` 已知债务节按线 3 提案裁决重写（原 D2 条目「反向引用 ProjectileSystem」描述经查证不实）；hex `core/README.md` 重写为共享数据层职责（作废「阶段 5 Actor 下沉」旧路线）；`frontend/README.md` 修正死亡动画路径描述（走 `actor_died` Event 路径而非 `update_state` 推断）、删除已下线的 `FrontendBattleReplayScene` 使用段、Director/RenderWorld 的 signal 与方法签名对齐现行强类型；清理 `HexBattle` 已删除类的亡灵注释（2 处）。
 
 ---
 

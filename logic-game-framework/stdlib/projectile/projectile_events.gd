@@ -2,7 +2,8 @@ class_name ProjectileEvents
 ## 纯静态工具类：投射物事件工厂
 
 const PROJECTILE_LAUNCHED_EVENT := "projectileLaunched"
-const PROJECTILE_HIT_EVENT := "projectileHit"
+## HIT 的 kind 归 core 注册表所有(强类型类 GameEvent.ProjectileHit 在 core), 此处仅转引 —— 避免 core 反向依赖本工厂。
+const PROJECTILE_HIT_EVENT := GameEvent.PROJECTILE_HIT_EVENT
 const PROJECTILE_MISS_EVENT := "projectileMiss"
 const PROJECTILE_DESPAWN_EVENT := "projectileDespawn"
 const PROJECTILE_PIERCE_EVENT := "projectilePierce"
