@@ -5,13 +5,10 @@ extends RefCounted
 ## 职责：管理一次战斗 session 的录像（meta + world_snapshot + timeline + actor 订阅生命周期）。
 ## 不持有事件 buffer —— 所有事件统一走 GameWorld.event_collector，保证调用栈穿插时真实时序自然成立。
 ##
-## world_snapshot 由世界侧（WorldGameplayInstance.capture_world_snapshot）产出后注入,
-## recorder 只管战斗过程（事件流）, 不伸手进世界抄状态。快照是回放的必需品:
-## 战斗 blocking 跑完后世界已是终态, 回放要从开战初态播, 初态只存在于快照里
-## ——"回放时复用现有 world"对战后回放不成立。
-##
-## actor 订阅（setup_recording 回调）不可省: attributeChanged 等事件的唯一产生管道
-## 就是这些订阅（inkmon render2d 回放消费 attributeChanged 更新属性状态）。
+## world_snapshot（开战初态, 回放的起点）由世界侧 WorldGameplayInstance.capture_world_snapshot
+## 产出后注入; recorder 专职事件流, 不伸手进世界抄状态。
+## actor 订阅（setup_recording 回调）负责把属性/tag/ability 变化转成事件推进 collector,
+## 供回放消费（如 inkmon render2d 靠 attributeChanged 更新属性状态）。
 ##
 ## 事件流：
 ##   Action.execute() ──┐
@@ -55,9 +52,8 @@ func _init(recorder_config: Dictionary = {}) -> void:
 	_meta.battle_id = battle_id
 	_meta.tick_interval = recorder_config.get("tickInterval", 100) as int
 
-## 开始录像。world_snapshot 必传 —— 每场可回放的战斗必须有开战快照（§见头注释）;
-## 不录像的战斗不该建 recorder。actors = 需订阅变化回调的 actor（通常 = 快照时的
-## 全体 registry actor）; 中途 spawn 的走 register_actor 补订阅。
+## 开始录像。world_snapshot = 开战初态（回放从这里起播）; 不录像的战斗不建 recorder。
+## actors = 需订阅变化回调的 actor（与快照同集合）; 中途 spawn 的走 register_actor 补订阅。
 func start_recording(world_snapshot: PlaybackData.WorldSnapshot, actors: Array[Actor]) -> void:
 	if is_recording:
 		push_error("[BattleRecorder] Already recording")
