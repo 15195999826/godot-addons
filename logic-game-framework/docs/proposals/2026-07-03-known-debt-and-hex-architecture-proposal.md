@@ -1,5 +1,9 @@
 # 线 3 启动提案：已知债务清偿 + hex-atb-battle 架构优化
 
+> ✅ **全部执行完成（2026-07-03，轮 A-F 六轮，每轮 V1 一致性核对 + codex review 双验收 + 全量测试）**：
+> 轮 A `b5434fe` 目录归位（D1/D2 位移 + H1 归位 + 全部文档修正；codex P2 = ProjectileHit kind 常量归 core 消除迁移残留反向边）· 轮 B `9b63db2`（D1b 钩子 + D3a 事件补齐/删死类 + D5.4 validator 修正）· 轮 C `7165242`（D4 rename，实测 17 文件 69 处）· 轮 D `9348645`（D5 门控 29 文件；helper 补强类型签名——无标注时 builder 链退化 Variant 致 typed array 协变失效）· 轮 E `009b36a`（D3b kind 常量化 + H3 清理）· 轮 F `340ae94`（H2 最小档：宿主 6607→5083 行，Inventory/Timeline 双子控制器）。
+> 偏差记录：H2 的「库存 orchestration 与 item_preview 合并」降级为差异清单（两侧 DevAgent rect schema 冲突，强行统一=行为变化，留给完整档）；BagCell/EquipmentSlot owner 参数 Node→Object 放宽（panel 为 RefCounted）。D6 维持不修（触发条款未满足）。§4 观察项（timeline 骨架 helper / BaseAction 归类 / AI 测试空白 / dota2 事件模式 / 录像 v3）继续挂账。
+
 > 任务来源：主仓 `docs/future/task-queue.md` 线 3。约束：**尽量少改 core** · **首要目标 = 优化 hex-atb-battle 架构** · 改动前出提案过目 · 守 enforcing-lgf。
 > 本文 = 启动轮产出（现状核实 + 逐项方案 + 执行切分），**未动任何代码**。侦察方式：5 路并行代码级普查（core→stdlib 反依赖 / 强类型事件消费路径 / Replay 命名影响面 / 门控迁移清单 / hex 全景）+ 主会话对 core 中枢文件逐一直读 + 架构 KB 4 条原则比对（P027/P084/P034/P019）。
 > 2026-07-03，fable。
