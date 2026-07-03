@@ -3,7 +3,7 @@
 ## BattleProcedure 的 hex 特化: ATB 累积、AI 决策、技能施放、投射物事件广播、
 ## 胜负判定(某方全灭)、MAX_TICKS 安全上限。
 ##
-## 由 HexWorldGameplayInstance(或其兼容子类 HexBattle)通过 start_battle 创建,
+## 由 HexWorldGameplayInstance 通过 start_battle 创建,
 ## 战斗结束即随 WorldGI._active_battle 释放。
 class_name HexBattleProcedure
 extends BattleProcedure

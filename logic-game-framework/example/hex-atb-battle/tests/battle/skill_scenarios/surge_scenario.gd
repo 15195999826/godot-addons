@@ -1,5 +1,5 @@
 ## Surge 自施场景:验证 BattleRecorder 把 AbilityGranted(pending)排在 collector
-## 主动事件之前(修复点见 stdlib/replay/battle_recorder.gd::record_frame)。
+## 主动事件之前(修复点见 core/playback/battle_recorder.gd::record_frame)。
 ##
 ## Surge 用 GRANTED_SELF + on_timeline_start,grant 同步链里立即 fire 首 tick:
 ##   1. ApplyBuffAction → grant_ability:

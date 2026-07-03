@@ -2,36 +2,32 @@
 
 ## 目录用途
 
-六边形 ATB 战斗系统的 **核心层 (world + procedure + events)**。配合 LGF core 的 `WorldGameplayInstance` / `BattleProcedure` 两条抽象,给 hex-atb 提供:
+六边形 ATB 战斗系统的**共享数据层**——只放跨 logic / frontend 的纯数据定义:
 
-- **World 特化**:`hex_world_gameplay_instance.gd` — 接 UGridMap autoload 做 grid backend,actor/格子清理,`can_use_skill_on` 等 hex 查询。
-- **Procedure 特化**:`hex_battle_procedure.gd` — ATB 累积、AI 决策、投射物事件广播、胜负判定、MAX_TICKS 安全上限。
-- **共享事件**:`events/battle_events.gd` — 强类型事件定义,frontend 订阅点。
+- **共享事件**:`events/battle_events.gd` — 强类型事件定义(11 个 `extends GameEvent.Base` 的战斗事件 + DamageType 枚举),frontend 的订阅契约。
 
-设计背景见 `addons/logic-game-framework/docs/README.md`（World owns Battle + 响应式前端 节）。
+World / Procedure 两个 hex 特化类(`hex_world_gameplay_instance.gd` / `hex_battle_procedure.gd`)自 2026-07(线 3 轮 A)起物理归位 `../logic/`——它们的方法签名依赖 logic 层类型(`CharacterActor` / `BattleAbilitySet` / `HexBattleSkillMetaKeys`),按「单向依赖 frontend → logic → core」应属 logic 层;本目录不再承载任何引用上层类型的代码,旧「阶段 5 把 Actor 下沉 core 消除倒挂」路线随之作废(下沉会把职业 config / 技能 / 装备整条链拖进 core)。
 
-## 三层架构(2026-04-20 调整)
+设计背景见 `addons/logic-game-framework/docs/README.md`(World owns Battle + 响应式前端 节)。
+
+## 三层架构
 
 ```
 hex-atb-battle/frontend   表演层(Node3D / 动画 / UI)
-        ↓ 只读订阅 event / signal
-hex-atb-battle/logic      逻辑扩展层(技能 / AI 策略 / Actor 子类)
-        ↓ 类型依赖 (CharacterActor / BattleAbilitySet / HexBattleSkillMetaKeys)
-hex-atb-battle/core       核心层(本目录) ← WorldGI / Procedure / 事件
+        ↓ 依赖 logic 与 core(只读订阅 event / signal)
+hex-atb-battle/logic      逻辑层(WorldGI / Procedure / 技能 / AI 策略 / Actor 子类)
+        ↓ 只依赖共享事件
+hex-atb-battle/core       共享数据层(本目录) ← 强类型事件
         ↓
 LGF core / stdlib         框架层
 ```
 
-**注意**:阶段 1 改造后,`hex-atb-battle/core` 的 World / Procedure 类引用了上层 `hex-atb-battle/logic` 的 `CharacterActor` / `BattleAbilitySet` / `HexBattleSkillMetaKeys`,严格的"下层不依赖上层"层向在 GDScript 全局 class_name 体系下未真正违反编译(GDScript 全局解析),但在概念上有倒挂。阶段 5 若把 Actor 类型也下沉到 core 层可消除此倒挂;短期不动。
-
 ## 目录清单
 
 - `events/` — 强类型事件定义 (BattleEvents)
-- `hex_world_gameplay_instance.gd` — hex 特化 World instance
-- `hex_battle_procedure.gd` — hex ATB 战斗过程
 
 ## 设计原则
 
-- **World 持久,Procedure 短命**:world 贯穿一整局游戏,procedure 只在单场战斗内存在,结束即 GC。
-- **状态直写**:procedure tick 期间直接改 world 里 actor 的属性/tag,不经 signal;战斗期视觉由 `BattleAnimator` 消费 event_timeline 回放。
+- **本目录只放纯数据定义**:事件 class 只依赖 LGF core 的 `GameEvent.Base`,不引用 hex logic / frontend 的任何类型。新增内容前先问「它引用上层类型吗」——引用则归 `../logic/`。
+- **World 持久,Procedure 短命**(实现在 `../logic/`):world 贯穿一整局游戏,procedure 只在单场战斗内存在,结束即 GC。
 - **Signal 只由显式 mutation 触发**:`add_actor` / `remove_actor` / `configure_grid` 等 API emit signal,供非战斗期 frontend 订阅 view lifecycle。
