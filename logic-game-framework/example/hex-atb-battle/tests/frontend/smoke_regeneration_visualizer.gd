@@ -8,12 +8,12 @@ func _ready() -> void:
 	print("=== Smoke: Regeneration Visualizer ===")
 	Log.set_level(Log.LogLevel.WARNING)
 
-	var record := ReplayData.BattleRecord.new()
-	record.meta = ReplayData.BattleMeta.new()
+	var record := PlaybackData.BattleRecord.new()
+	record.meta = PlaybackData.BattleMeta.new()
 	record.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
 	record.configs = {"positionFormats": {"Character": "hex"}}
 
-	var actor_init := ReplayData.ActorInitData.new()
+	var actor_init := PlaybackData.ActorInitData.new()
 	actor_init.id = "hero_1"
 	actor_init.type = "Character"
 	actor_init.display_name = "Hero"

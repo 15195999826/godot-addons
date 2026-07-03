@@ -1,6 +1,6 @@
-class_name ReplayData
+class_name PlaybackData
 extends RefCounted
-## ReplayData - 录像数据强类型类
+## PlaybackData - 录像数据强类型类
 ##
 ## 提供 BattleRecord, BattleMeta, FrameData, ActorInitData 四个内部类
 ## 每个类实现 to_dict() 和 from_dict() 方法，支持序列化/反序列化

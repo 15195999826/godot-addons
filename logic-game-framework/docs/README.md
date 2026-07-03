@@ -313,7 +313,7 @@ addons/logic-game-framework/
 │   ├── actions/            # Action 基类、TargetSelector
 │   ├── abilities/          # Ability 系统
 │   ├── events/             # 事件系统
-│   ├── playback/           # 录像（BattleRecorder / ReplayData）
+│   ├── playback/           # 录像（BattleRecorder / PlaybackData）
 │   └── timeline/           # Timeline 系统
 ├── stdlib/                  # 标准库
 │   ├── actions/            # 通用 Action（StageCueAction 等）
@@ -639,7 +639,7 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 
 `FrontendWorldView` 是 state 的 **reactive projection**：`bind_world(world)` 先一次性 hydrate 当前所有 actor，再订阅 mutation signal 自动维护 unit view 与 grid。它**只订阅生命周期 / 结构变化**（`actor_added` → 建 view、`actor_removed` → `queue_free`、`grid_configured` → 重渲染），且只为 `CharacterActor` 建 view（过滤掉 projectile）。
 
-属性变化（HP / tag）**不**走 signal —— 交给叠加层 `FrontendBattleAnimator` 消费 event_timeline 驱动飘字 / 特效 / 死亡动画。这是关键解耦：战斗期间 unit view 停在开战时的视觉状态，signal 只服务非战斗期的 view lifecycle；战斗结束后 WorldGI 里 actor 已是终态，animator 播完 timeline 视觉自然追上。`WorldView` **没有** `load_replay` 这种 destructive API，只有 `bind_world` + 订阅。
+属性变化（HP / tag）**不**走 signal —— 交给叠加层 `FrontendBattleAnimator` 消费 event_timeline 驱动飘字 / 特效 / 死亡动画。这是关键解耦：战斗期间 unit view 停在开战时的视觉状态，signal 只服务非战斗期的 view lifecycle；战斗结束后 WorldGI 里 actor 已是终态，animator 播完 timeline 视觉自然追上。`WorldView` **没有**「加载录像重建 view」这种 destructive API（历史反例：已删除的 `FrontendBattleReplayScene.load_replay`），只有 `bind_world` + 订阅。
 
 ### (c) recorder 单 buffer + playback 模型
 
@@ -656,7 +656,7 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 - **Config 驱动跨属性 clamp**：跨属性约束（如 hp ≤ max_hp）必须声明在 attribute config 的 `maxRef` / `minRef`、由生成器产出 `register_cross_attr_clamp` 调用；**禁止**在 Actor 里用 `set_pre_change` 注入 Callable —— lambda 捕获 owner 会形成无法 GC 的闭包循环。
 - **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 `WeakRef`（类型明确时，如 `AbilityComponent._ability`）或调用链参数流（类型是 Variant 接口时，如 `game_state_provider` 不缓存而每次 tick 传入）—— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
 - **测试引擎按场景独立**：两种场景生命周期语义冲突（headless 的 init/destroy vs UI 常驻 world）时各写一条 procedure（`SkillPreviewProcedure` vs `HexBattleProcedure`），而非硬塞兼容签名进一条引擎 —— 兼容参数会把 API 撑胖成坑。
-- **View 是 state 的 reactive projection**：前端只能 `bind_world` + 订阅 mutation signal（`actor_added` / `actor_removed` / `grid_configured`）自动同步，**禁止任何 destructive 的 view 重建 API**（如 `load_replay`）；且只订阅生命周期 / 结构变化，属性变化（HP / tag）交给 timeline 驱动的 Animator。
+- **View 是 state 的 reactive projection**：前端只能 `bind_world` + 订阅 mutation signal（`actor_added` / `actor_removed` / `grid_configured`）自动同步，**禁止任何 destructive 的 view 重建 API**（历史反例：已删除的 `FrontendBattleReplayScene.load_replay`）；且只订阅生命周期 / 结构变化，属性变化（HP / tag）交给 timeline 驱动的 Animator。
 - **Playback 不重建逻辑层**：A 层"录像播放"（`Playback`）只从录像 dict spawn 视觉 view、绝不 hydrate 真 Actor / AbilitySet / AttributeSet；B 层"回放"（`Replay`，deterministic 重算）未来不一定做，相关类名仅作命名占位。
 - **录像顺序 = 调用栈真实顺序**：所有录像事件统一走 `GameWorld.event_collector.push()` 单一队列，**禁止**按"入口类型"分两个容器再拼接 —— callback 在同步栈里穿插触发，任何固定拼接顺序都会丢失交错信息（反例：`damage1 → grant → damage2`）。
 - **Action 是共享无状态对象**：Action 执行后必须 `_verify_unchanged()`，child action 必须随父 `_freeze()`，跨 tag 的临时状态放 execution-local state 而非 Action 字段 —— 详见 [Action 架构契约](./reference/action-architecture.md)。
@@ -779,7 +779,7 @@ if ability_set != null:
 - ✅ **core → stdlib 反向依赖 (BattleRecorder)**（裁决 2026-07-03，轮 A 位移完成；轮 B 收尾）：录像是 core 一等公民——`BattleProcedure.finish()` 返回值即 recorder 输出、`EventCollector` 只服务录像/表演层、「录像顺序 = 调用栈真实顺序」是铁律——recorder 家族（`BattleRecorder` / `RecordingContext` / `RecordingUtils` / `ReplayData` / `ReplayLogPrinter`）已物理迁入 `core/playback/`（类名不变，零代码改动）；`ability.gd` 对 `TimeDurationComponent` 的字符串鸭子匹配（文档此前未记录的第三处反依赖）已改为 `on_ability_stack_refreshed()` component 钩子（轮 B）——core→stdlib 代码级反向依赖清零。否决：IRecorder 抽象 + 注入（YAGNI、改 core 接口波及三个 procedure 子类）；BattleProcedure 下放 stdlib（被 `WorldGameplayInstance._active_battle` / 工厂钩子钉死）。
 - ✅ **ProjectileActor / projectile_events 在 core**（2026-07-03 轮 A 完成）：原「反向引用 stdlib 的 ProjectileSystem」描述经查证**不实**（core 内唯一命中是注释）；真实问题 = 玩法策略常量（bullet/hitscan/moba）住 core + 全仓仅 hex 一个 example 使用（dota2 / inkmon 白带）。裁决：投射物是 stdlib 可选件而非 core 一等公民——`ProjectileActor` / `ProjectileEvents` 工厂 / `ProjectileSystem` / collision detector 家族整体迁 `stdlib/projectile/`；`GameEvent.ProjectileHit` 强类型事件类按「事件类型定义归 core 注册表」原则留在 `game_event.gd`。
 - **强类型事件与 Dictionary 的分工**（已裁决 2026-07-03，轮 B / 轮 E 执行）：**dict = 总线/序列化形态**（`EventCollector` 与录像边界的合法形态，`EventProcessor` / `MutableEvent` / `receive_event` / `on_event` 管线签名不切强类型）；**强类型 = 两端形态**（构造走 `create()`、消费走 `from_dict()` / 字段直访）。`is_match` 从四件套降级为可选（实测全仓真实调用 0 处，kind 常量比较是事实标准）。执行项：`AbilityActivate` 补齐 schema（logicTime / target 字段）消灭全仓仅存的 6 处手写事件 literal、删除零使用死类 `AbilityActivated`（轮 B）；4 个手写 `.get()` visualizer 改 from_dict、kind 字符串字面量常量化（轮 E）。否决：管线签名全切强类型（波及全部 example + inkmon 主游戏，违「少改 core」）；删 class 只留 kind 常量（违用户既有强类型意志，见架构 KB P084）。
-- **Replay / Playback / Director 命名混用**（裁决维持，轮 C 执行）：最小 rename = `ReplayData → PlaybackData` + `load_replay → load_playback`（18 文件 73 引用点，含主仓 4 文件联动）。已核实：录像 JSON 顶层 key 与 web 桥协议均不含 replay 字样，rename 零协议波及；`PROTOCOL_VERSION` 不动。明确不动：69 个 scenario 的 `assert_replay` 测试 DSL 名、`BattleRecorder` 家族（Recorder = 写入器语义无争议）、`playback_*` signal（词根已正确）、B 层占位名 `BattleReplayPlayer` / `BattleReplaySession`（仅存在于本句文档，代码零实现）。
+- ✅ **Replay / Playback / Director 命名混用**（2026-07-03 轮 C 完成）：最小 rename 落地 = `ReplayData → PlaybackData`（文件名同步 `playback_data.gd` / `playback_log_printer.gd`）+ `load_replay → load_playback`（.gd 17 文件 69 处 + 现行文档，含主仓 inkmon 4 文件联动）。已核实录像 JSON 顶层 key 与 web 桥协议均不含 replay 字样，rename 零协议波及；`PROTOCOL_VERSION` 不动。明确不动：69 个 scenario 的 `assert_replay` 测试 DSL 名、`BattleRecorder` 家族（Recorder = 写入器语义无争议）、`playback_*` signal（词根已正确）、`initialize_from_replay` / `get_replay_data` 等含 replay 词根的其余方法（超出最小集，B 层语义重审时再议）、B 层占位名 `BattleReplayPlayer` / `BattleReplaySession`（仅存在于本句文档，代码零实现）。
 - **28 个 hex 技能未迁移到 condition bundle helper**（轮 D 执行）：实测 `active/` 30 文件 = 28 个 byte-identical 手抄（机械迁 `apply_standard_active_gating`）+ `strike`（有意豁免 silence 的三件套，迁 `apply_basic_attack_gating`）+ `move`（零门控，走 ActivateInstanceConfig 事件路由，不碰）。附带修正 `SkillValidator` 豁免名单字符串错位（写的 `"skill_move"`、实际 CONFIG_ID 是 `"action_move"`——当前因 move 无 active_use 组件而无症状，属潜伏 bug）。
 
 ### 未来规划（触发式重审，当前不修）

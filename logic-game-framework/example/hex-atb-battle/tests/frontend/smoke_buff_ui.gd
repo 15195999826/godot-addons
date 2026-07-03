@@ -1,6 +1,6 @@
 ## Smoke test: BuffVisualizer + RenderWorld.actor.buffs 数据契约
 ##
-## 白盒测试,不走完整 main.tscn 流程。直接构造 ReplayData + 手动喂事件给
+## 白盒测试,不走完整 main.tscn 流程。直接构造 PlaybackData + 手动喂事件给
 ## VisualizerRegistry,断言 actor.buffs 的最终状态。
 ##
 ## 覆盖事件类型:
@@ -19,12 +19,12 @@ func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 
 	# Step 1: 构造最小 BattleRecord (一个 actor,空 timeline)
-	var record := ReplayData.BattleRecord.new()
-	record.meta = ReplayData.BattleMeta.new()
+	var record := PlaybackData.BattleRecord.new()
+	record.meta = PlaybackData.BattleMeta.new()
 	record.meta.total_frames = 0
 	record.map_config = {"radius": 3, "orientation": "flat", "hex_size": 1.0, "grid_type": "hex"}
 	record.configs = {"positionFormats": {"Character": "hex"}}
-	var actor_init := ReplayData.ActorInitData.new()
+	var actor_init := PlaybackData.ActorInitData.new()
 	actor_init.id = "hero_1"
 	actor_init.type = "Character"
 	actor_init.display_name = "Hero"

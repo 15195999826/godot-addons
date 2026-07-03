@@ -4165,7 +4165,7 @@ func _make_actor_spin(
 ## 把 world + inventory 重置成 demo 初始状态: rebuild ItemSystem session →
 ## world reset → configure_grid → add_actor × N + place_occupant。每一步都走 WorldGI 的显式 mutation API,
 ## 触发 signal -> FrontendWorldView 自动维护 unit view 生命周期
-## (无 destructive load_replay 或 _spawn_units 调用)。
+## (无 destructive load_playback 或 _spawn_units 调用)。
 ##
 ## ⚠ 这是 destructive 操作, 仅用于"明确意图的场景重置", 合法调用点只有 3 处:
 ##   1. _ready 初始化 (首次建立 world)
