@@ -77,9 +77,8 @@ func configure_grid(config: GridMapConfig) -> void:
 # ========== 战斗调度 ==========
 
 ## 拍摄开战时刻的世界快照（录像范围内的 registry actor + 地图配置 + 坐标格式声明）,
-## 供 BattleProcedure 注入 recorder。快照是回放的必需品: 战斗 blocking 跑完后
-## 世界已是终态, 回放要从开战初态播。范围默认全体 actor 而非仅参战者 ——
-## 环境物/障碍物也是回放要摆的台面; 中途 spawn 的走 ActorSpawned 事件。
+## 供 BattleProcedure 注入 recorder, 作为回放的起点。范围默认全体 actor 而非仅参战者
+## —— 环境物/障碍物也是回放要摆的台面; 中途 spawn 的走 ActorSpawned 事件。
 func capture_world_snapshot() -> PlaybackData.WorldSnapshot:
 	var snap := PlaybackData.WorldSnapshot.new()
 	for actor in get_recordable_actors():

@@ -36,8 +36,7 @@ func _phase_summon_totem() -> bool:
 		return _fail("SummonTotem: spawned Totem team snapshot expected 0")
 	if _actor_data_position_is(actor_data, 0.0, 0.0):
 		return _fail("SummonTotem: spawned Totem position snapshot stayed at default origin")
-	# totem 技能进录像走 abilityGranted 补录事件（真消费管道, buff visualizer 读它）;
-	# actorSpawned payload 不再含 abilities 快照字段（回放器不消费）。
+	# totem 技能进录像走 abilityGranted 补录事件（buff visualizer 消费的管道）。
 	if not _has_ability_granted(replay, totem_id, HexBattleTotemAttack.CONFIG_ID):
 		return _fail("SummonTotem: missing synthesized TotemAttack abilityGranted")
 	if not _has_ability_granted(replay, totem_id, HexBattleTotemLifetime.CONFIG_ID):

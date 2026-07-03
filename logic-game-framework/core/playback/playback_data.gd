@@ -111,8 +111,7 @@ class FrameData:
 
 
 ## 单个 actor 的回放自足快照 —— 只含视觉替身重建所需字段（回放不重建逻辑层,
-## 见 docs/README.md 设计铁律"Playback 不重建逻辑层"）。attributes 含派生值
-## (如 maxHp): 回放器没有规则引擎, 不能像存档那样读档重算。
+## 见 docs/README.md 设计铁律）。attributes 含派生值（如 maxHp）: 回放器无规则引擎。
 class ActorInitData:
 	var id: String = ""
 	var type: String = ""
