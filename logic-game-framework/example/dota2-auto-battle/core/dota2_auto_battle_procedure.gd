@@ -213,13 +213,9 @@ func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_m
 	var ability := unit.get_basic_attack_ability()
 	if ability == null:
 		return
-	var event := {
-		"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
-		"abilityInstanceId": ability.id,
-		"sourceId": unit.get_id(),
-		"target_actor_id": target_id,
-		"logicTime": logic_time_ms,
-	}
+	var event := GameEvent.AbilityActivate.create(
+		ability.id, unit.get_id(), logic_time_ms, target_id
+	).to_dict()
 	unit.ability_set.receive_event(event, _world_instance)
 
 

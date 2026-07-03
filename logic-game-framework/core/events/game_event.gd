@@ -8,7 +8,6 @@ const ACTOR_DESTROYED_EVENT := "actorDestroyed"
 const ATTRIBUTE_CHANGED_EVENT := "attributeChanged"
 const ABILITY_GRANTED_EVENT := "abilityGranted"
 const ABILITY_REMOVED_EVENT := "abilityRemoved"
-const ABILITY_ACTIVATED_EVENT := "abilityActivated"
 const ABILITY_TRIGGERED_EVENT := "abilityTriggered"
 const ABILITY_STACKS_CHANGED_EVENT := "abilityStacksChanged"
 const EXECUTION_ACTIVATED_EVENT := "executionActivated"
@@ -221,41 +220,6 @@ class AbilityStacksChanged extends Base:
 		return d.get("kind") == ABILITY_STACKS_CHANGED_EVENT
 
 
-class AbilityActivated extends Base:
-	var actor_id: String = ""
-	var ability_instance_id: String = ""
-	var ability_config_id: String = ""
-	var target: Dictionary = {}
-	
-	func _init() -> void:
-		kind = ABILITY_ACTIVATED_EVENT
-	
-	static func create(p_actor_id: String, p_ability_instance_id: String, p_ability_config_id: String, p_target: Dictionary = {}) -> AbilityActivated:
-		var e := AbilityActivated.new()
-		e.actor_id = p_actor_id
-		e.ability_instance_id = p_ability_instance_id
-		e.ability_config_id = p_ability_config_id
-		e.target = p_target
-		return e
-	
-	func to_dict() -> Dictionary:
-		var d := { "kind": kind, "actorId": actor_id, "abilityInstanceId": ability_instance_id, "abilityConfigId": ability_config_id }
-		if not target.is_empty():
-			d["target"] = target
-		return d
-	
-	static func from_dict(d: Dictionary) -> AbilityActivated:
-		var e := AbilityActivated.new()
-		e.actor_id = d.get("actorId", "")
-		e.ability_instance_id = d.get("abilityInstanceId", "")
-		e.ability_config_id = d.get("abilityConfigId", "")
-		e.target = d.get("target", {})
-		return e
-	
-	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == ABILITY_ACTIVATED_EVENT
-
-
 class AbilityTriggered extends Base:
 	var actor_id: String = ""
 	var ability_instance_id: String = ""
@@ -459,26 +423,57 @@ class ProjectileHit extends Base:
 		return d.get("kind", "") == PROJECTILE_HIT_EVENT
 
 
+## 主动施放请求事件。procedure / 测试 harness 构造后喂 ability_set.receive_event。
+##
+## target_coord 是坐标 dict({q, r}, HexCoord.to_dict() 形态)或空 dict —— core 不依赖
+## 具体坐标类型, 由调用方在 example 层序列化后传入; 消费方(HexFacing / coord-based
+## ability)自行解析。target_actor_id / target_coord 为空时 to_dict 不写入对应 key
+## (消费方一律 .get() 带默认值, "缺 key"与"空值"语义等价)。
 class AbilityActivate extends Base:
 	var ability_instance_id: String = ""
 	var source_id: String = ""
-	
+	var logic_time: float = 0.0
+	var target_actor_id: String = ""
+	var target_coord: Dictionary = {}
+
 	func _init() -> void:
 		kind = ABILITY_ACTIVATE_EVENT
-	
-	static func create(p_ability_instance_id: String, p_source_id: String) -> AbilityActivate:
+
+	static func create(
+		p_ability_instance_id: String,
+		p_source_id: String,
+		p_logic_time: float = 0.0,
+		p_target_actor_id: String = "",
+		p_target_coord: Dictionary = {},
+	) -> AbilityActivate:
 		var e := AbilityActivate.new()
 		e.ability_instance_id = p_ability_instance_id
 		e.source_id = p_source_id
+		e.logic_time = p_logic_time
+		e.target_actor_id = p_target_actor_id
+		e.target_coord = p_target_coord
 		return e
-	
+
 	func to_dict() -> Dictionary:
-		return { "kind": kind, "abilityInstanceId": ability_instance_id, "sourceId": source_id }
-	
+		var d := {
+			"kind": kind,
+			"abilityInstanceId": ability_instance_id,
+			"sourceId": source_id,
+			"logicTime": logic_time,
+		}
+		if target_actor_id != "":
+			d["target_actor_id"] = target_actor_id
+		if not target_coord.is_empty():
+			d["target_coord"] = target_coord
+		return d
+
 	static func from_dict(d: Dictionary) -> AbilityActivate:
 		var e := AbilityActivate.new()
 		e.ability_instance_id = d.get("abilityInstanceId", "")
 		e.source_id = d.get("sourceId", "")
+		e.logic_time = d.get("logicTime", 0.0)
+		e.target_actor_id = d.get("target_actor_id", "")
+		e.target_coord = d.get("target_coord", {})
 		return e
 
 	static func is_match(d: Dictionary) -> bool:

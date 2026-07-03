@@ -108,14 +108,10 @@ func _run_production_skill(skill_config: AbilityConfig, target_mode: String, tic
 
 	var ability := Ability.new(skill_config, caster.get_id())
 	caster.ability_set.grant_ability(ability, world)
-	var activate_event := {
-		"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
-		"abilityInstanceId": ability.id,
-		"sourceId": caster.get_id(),
-		"logicTime": 0.0,
-	}
-	if target_mode == "enemy":
-		activate_event["target_actor_id"] = enemy.get_id()
+	var activate_target_id: String = enemy.get_id() if target_mode == "enemy" else ""
+	var activate_event := GameEvent.AbilityActivate.create(
+		ability.id, caster.get_id(), 0.0, activate_target_id
+	).to_dict()
 	caster.ability_set.receive_event(activate_event, world)
 
 	for _i in range(tick_count):

@@ -38,6 +38,10 @@ func refresh() -> void:
 	remaining = initial_duration
 	_state = "active"
 
+## Ability 以 REFRESH 溢出策略叠层时广播的钩子: 刷新持续时间。
+func on_ability_stack_refreshed() -> void:
+	refresh()
+
 func extend(amount_ms: float) -> void:
 	remaining += amount_ms
 

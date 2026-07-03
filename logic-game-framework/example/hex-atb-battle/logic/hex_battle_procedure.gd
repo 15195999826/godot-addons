@@ -296,17 +296,12 @@ func _create_action_use_event(
 	target_coord: Variant,
 	logic_time: float,
 ) -> Dictionary:
-	var event := {
-		"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
-		"abilityInstanceId": ability_instance_id,
-		"sourceId": source_id,
-		"logicTime": logic_time,
-	}
-	if target_actor_id != "":
-		event["target_actor_id"] = target_actor_id
+	var coord_dict: Dictionary = {}
 	if target_coord != null and target_coord is HexCoord:
-		event["target_coord"] = (target_coord as HexCoord).to_dict()
-	return event
+		coord_dict = (target_coord as HexCoord).to_dict()
+	return GameEvent.AbilityActivate.create(
+		ability_instance_id, source_id, logic_time, target_actor_id, coord_dict
+	).to_dict()
 
 
 func _check_battle_end() -> bool:

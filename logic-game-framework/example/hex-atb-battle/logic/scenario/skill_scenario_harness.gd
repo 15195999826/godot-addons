@@ -365,16 +365,9 @@ static func _fire_action(
 	else:
 		ability = Ability.new(ability_config, action_caster.get_id())
 		action_caster.ability_set.grant_ability(ability, battle)
-	var activate_event := {
-		"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
-		"abilityInstanceId": ability.id,
-		"sourceId": action_caster.get_id(),
-		"logicTime": keyframe_time_ms,
-	}
-	if target_id != "":
-		activate_event["target_actor_id"] = target_id
-	if not target_coord.is_empty():
-		activate_event["target_coord"] = target_coord
+	var activate_event := GameEvent.AbilityActivate.create(
+		ability.id, action_caster.get_id(), keyframe_time_ms, target_id, target_coord
+	).to_dict()
 	HexFacing.face_actor_for_active_event(action_caster, activate_event, battle, GameWorld.event_collector)
 	action_caster.ability_set.receive_event(activate_event, battle)
 
