@@ -1,7 +1,20 @@
 # 录像 v3 格式提案：world_snapshot 归位 + 单路径录像
 
+> ✅ **已执行完成（2026-07-03，单轮，用户批准后落地）**。全量验证：hex/all + inkmon/all + dota2autobattle/all 50/50 绿 + all-required 15/15 绿（含 LGF 73 单元、68 scenario 契约）；golden 重烤——ticks/frames/result 与旧基线逐项一致 = 逻辑行为零漂移，仅指纹载体变化。双 review：V1 一致性核对（提案 §3 逐条零遗漏）+ codex exec review（submodule P1 + 主仓 P2 = 同一 finding，见偏差 ⑧，已修复复绿）。
+>
+> **执行偏差记录（相对本提案）**：
+> ① recorder 的 actor 变化**订阅保留**，签名定为 `start_recording(world_snapshot, actors)` 两参——执行时查证 `attributeChanged` 有真实回放消费者（inkmon render2d `apply_event_side_effects`），订阅是这些事件的唯一产生管道；原 events-only 注释"这些由 event_collector 的事件承载"系误导（这也解释了该路径为何从未有人敢用）。
+> ② `_recording_enabled` 开关上提 `BattleProcedure` 基类，inkmon override 连薄开关都不留——**三处 override 全删**（提案原计划 inkmon 留一行）。
+> ③ InkMonWorldGI **不补** `_get_position_formats`——inkmon render2d 不消费 positionFormats，不养无消费数据（与砍 abilities/tags 同一取舍逻辑）。
+> ④ 中途 spawn 补录连接 `_on_world_actor_added` + `finish()` disconnect 上提基类（消灭 hex/skill-preview 双份实现；hex 原版漏 disconnect 的泄漏顺手根治）；基类版不带 participants 去重 guard——`register_actor` 的订阅表前置检查已覆盖去重语义。
+> ⑤ `smoke_mid_spawn_production_replay` 删 4 条白带快照断言（actorSpawned payload 的 abilities 字段），补 2 条真管道断言（TotemLifetime / FireTileLifetime 的 abilityGranted）。
+> ⑥ inkmon animator 对 `configs.animation` 的死读（recorder 侧从未写过该 key，永空）改 `create_default()`。
+> ⑦ golden smoke 顺修 key 拼错潜伏 bug（`"initial_actors"` ≠ 实际 `"initialActors"`——v2 时代快照从未真正入过指纹锁），v3 起 world_snapshot 真入锁并重烤基线。
+> ⑧ **codex finding 修复**：快照范围"全体 registry"在常驻世界是盲区——InkMonWorldGI 的 registry 常驻 overworld 玩家/NPC（`add_actor` 双写 registry + world_actors dict），全量快照会让 2D 回放画出非战斗实体。修复 = 基类 `should_record_actor()` 录像范围钩子（快照/订阅/中途补录三处同语义），InkMonWorldGI override 为 `actor is InkMonUnitActor`。
+> ⑨ 文档同步扩展：enforcing-lgf skill（stdlib.md/entity.md v3 增量 + `.agents/` 镜像整体重同步——上午校准漏了镜像）、LGF docs/README.md §(c) 重写、CHANGELOG 双条目、hex frontend/README JSON 示例 v3 化、SimulationManager 欠账注释、adr/0005 修订行。
+>
 > 任务来源：主仓 `docs/future/task-queue.md` 3b（2026-07-03 用户点名）。
-> 决策方式：grill 会话逐项拍板（2026-07-03，用户 + fable），本文 = 拍板的固化 + 执行清单。**未动任何代码。**
+> 决策方式：grill 会话逐项拍板（2026-07-03，用户 + fable），本文 = 拍板的固化 + 执行清单。
 > 关联：主仓 `docs/adr/0005-presentation-true-2d-isometric-hex.md`（inkmon 全量录像的原始决策，本轮兑现其意志并更新措辞）。
 
 ---

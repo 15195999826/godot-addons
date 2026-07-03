@@ -81,7 +81,7 @@ func _process(_delta: float) -> void:
 # ========== 公共 API ==========
 
 ## 加载战斗动画(不自动播放)。完成后 frame 停在 0,等 play() / resume() 启动。
-## record_data: BattleProcedure.finish() 返回的 dict(v2 格式,含 initial_actors / map_config)。
+## record_data: BattleProcedure.finish() 返回的 dict(含 world_snapshot / timeline)。
 ## unit_views: actor_id -> FrontendUnitView 字典,由 WorldView 管理生命周期。
 ## 反复调用 = 重新加载(老 timeline 被替换,VFX/飘字/投射物清空)。
 func load(record_data: Dictionary, unit_views: Dictionary) -> void:
@@ -370,7 +370,10 @@ func _on_cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay) -
 func _filter_initial_base_unit_views(record: PlaybackData.BattleRecord, unit_views: Dictionary) -> Dictionary:
 	_excluded_base_unit_views.clear()
 	var initial_actor_ids := {}
-	for actor_init: PlaybackData.ActorInitData in record.initial_actors:
+	var snapshot_actors: Array[PlaybackData.ActorInitData] = []
+	if record.world_snapshot != null:
+		snapshot_actors = record.world_snapshot.actors
+	for actor_init: PlaybackData.ActorInitData in snapshot_actors:
 		if not actor_init.id.is_empty():
 			initial_actor_ids[actor_init.id] = true
 

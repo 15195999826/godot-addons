@@ -14,14 +14,15 @@ static func print_record(record: PlaybackData.BattleRecord) -> void:
 	print("Result: %s" % record.meta.result)
 	print("")
 
-	print("## Initial Actors (%d)" % record.initial_actors.size())
-	for actor_init: PlaybackData.ActorInitData in record.initial_actors:
+	var snapshot_actors: Array[PlaybackData.ActorInitData] = []
+	if record.world_snapshot != null:
+		snapshot_actors = record.world_snapshot.actors
+	print("## World Snapshot Actors (%d)" % snapshot_actors.size())
+	for actor_init: PlaybackData.ActorInitData in snapshot_actors:
 		print("  - %s (%s)" % [actor_init.display_name, actor_init.id])
 		print("    Team: %s" % actor_init.team)
 		if not actor_init.position.is_empty():
 			print("    Position: %s" % str(actor_init.position))
-		if not actor_init.tags.is_empty():
-			print("    Tags: %s" % str(actor_init.tags.keys()))
 	print("")
 
 	print("## Timeline (%d frames with events)" % record.timeline.size())

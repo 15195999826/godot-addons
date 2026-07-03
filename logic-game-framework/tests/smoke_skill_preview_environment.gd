@@ -73,7 +73,9 @@ func _run() -> void:
 		return
 
 	var found_env := false
-	for actor_init in timeline.get("initialActors", []) as Array:
+	var snapshot_dict: Dictionary = timeline.get("world_snapshot", {}) as Dictionary
+	var snapshot_actors: Array = snapshot_dict.get("actors", []) as Array
+	for actor_init in snapshot_actors:
 		if not (actor_init is Dictionary):
 			continue
 		var init_data := actor_init as Dictionary
@@ -90,7 +92,7 @@ func _run() -> void:
 			return
 		break
 	if not found_env:
-		_fail("replay initialActors missing stone_wall Environment: %s" % str(timeline.get("initialActors", [])))
+		_fail("replay world_snapshot missing stone_wall Environment: %s" % str(snapshot_actors))
 		return
 
 	_pass("StoneWall staged in UI model, world/grid, scene_config, and replay")

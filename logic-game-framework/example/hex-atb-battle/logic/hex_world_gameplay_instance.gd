@@ -47,6 +47,14 @@ func configure_grid(config: GridMapConfig) -> void:
 	grid_configured.emit(config)
 
 
+## 录像 world_snapshot 的坐标格式声明: hex 例子全员 hex 坐标（position = [q, r]）。
+func _get_position_formats() -> Dictionary:
+	return {
+		HexBattleActor.KIND_CHARACTER: "hex",
+		HexBattleActor.KIND_ENVIRONMENT: "hex",
+	}
+
+
 # ========== Actor registry ==========
 
 ## 覆盖父类: 移除 Actor 时清理格子占用与预订。

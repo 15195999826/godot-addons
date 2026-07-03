@@ -632,9 +632,6 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 			"battleId": id,
 			"tickInterval": int(HexBattleSkillScenarioHarness.TICK_INTERVAL),
 		})
-		var replay_map_config: Dictionary = {}
-		if UGridMap.model != null:
-			replay_map_config = UGridMap.model.to_config_dict()
 		var all_actors: Array[Actor] = []
 		for c in left_team:
 			all_actors.append(c)
@@ -642,9 +639,14 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 			all_actors.append(c)
 		for e in environments:
 			all_actors.append(e)
-		recorder.start_recording(all_actors, {
-			"positionFormats": { HexBattleActor.KIND_CHARACTER: "hex", HexBattleActor.KIND_ENVIRONMENT: "hex" }
-		}, replay_map_config)
+		# 手工构造快照保持 left→right→environments 顺序（scenario 断言对顺序敏感）
+		var snap := PlaybackData.WorldSnapshot.new()
+		for a in all_actors:
+			snap.actors.append(PlaybackData.ActorInitData.create(a))
+		if UGridMap.model != null:
+			snap.map_config = UGridMap.model.to_config_dict()
+		snap.position_formats = { HexBattleActor.KIND_CHARACTER: "hex", HexBattleActor.KIND_ENVIRONMENT: "hex" }
+		recorder.start_recording(snap, all_actors)
 
 	## 创建环境物 actor 并放入 grid。M1 仅支持 stone_wall。
 	## cfg 格式: {"type": "stone_wall", "pos": {"q": q, "r": r}}
