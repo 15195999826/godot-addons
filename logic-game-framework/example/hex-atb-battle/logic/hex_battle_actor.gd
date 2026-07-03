@@ -6,6 +6,16 @@ class_name HexBattleActor
 extends Actor
 
 
+# ========== actor kind 常量 ==========
+#
+# actor.type 的取值域(也是 ALLOWED_TARGET_KINDS metadata / 录像 positionFormats key
+# 的取值域)。消费端类型比较 / 默认值一律用这里, 不手写字面量。
+# 注: tests 侧保留字面量是有意的 —— 测试以协议黑盒视角验证录像 dict / metadata。
+
+const KIND_CHARACTER := "Character"
+const KIND_ENVIRONMENT := "Environment"
+
+
 # ========== 公共字段 ==========
 
 ## AbilitySet — 战斗管线平权: 环境物也可挂 PreEvent / PostEvent / buff

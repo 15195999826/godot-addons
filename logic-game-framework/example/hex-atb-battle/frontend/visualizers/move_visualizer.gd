@@ -11,7 +11,7 @@ func _init() -> void:
 
 ## 检查是否为移动开始事件
 func can_handle(event: Dictionary) -> bool:
-	return get_event_kind(event) == "move_start"
+	return get_event_kind(event) == BattleEvents.MOVE_START_EVENT
 
 
 ## 翻译移动事件为 MoveAction

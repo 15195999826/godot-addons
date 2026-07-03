@@ -11,7 +11,7 @@ func _init() -> void:
 
 ## 检查是否为死亡事件
 func can_handle(event: Dictionary) -> bool:
-	return get_event_kind(event) == "death"
+	return get_event_kind(event) == BattleEvents.DEATH_EVENT
 
 
 ## 翻译死亡事件为视觉动作

@@ -50,7 +50,7 @@ func update_from_state(state: FrontendActorRenderState) -> void:
 	if state == null:
 		visible = false
 		return
-	if state.type != "Character":
+	if state.type != HexBattleActor.KIND_CHARACTER:
 		# EnvironmentActor 等不显示 facing 箭头 (per spec).
 		visible = false
 		return

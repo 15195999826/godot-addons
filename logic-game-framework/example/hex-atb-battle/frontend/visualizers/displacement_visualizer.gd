@@ -11,7 +11,7 @@ func _init() -> void:
 
 
 func can_handle(event: Dictionary) -> bool:
-	return get_event_kind(event) == "actor_displaced"
+	return get_event_kind(event) == BattleEvents.ACTOR_DISPLACED_EVENT
 
 
 func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:

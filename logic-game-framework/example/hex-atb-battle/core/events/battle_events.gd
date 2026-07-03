@@ -10,6 +10,21 @@
 class_name BattleEvents
 
 
+# ========== kind 常量 (唯一来源, 消费端 can_handle/match 用这里, 不手写字面量) ==========
+
+const DAMAGE_EVENT := "damage"
+const BASIC_ATTACK_LANDED_EVENT := "basic_attack_landed"
+const SHIELD_BROKEN_EVENT := "shield_broken"
+const REGENERATION_EVENT := "regeneration"
+const HEAL_EVENT := "heal"
+const MOVE_START_EVENT := "move_start"
+const MOVE_COMPLETE_EVENT := "move_complete"
+const DEATH_EVENT := "death"
+const ACTOR_DISPLACED_EVENT := "actor_displaced"
+const ACTOR_FACING_CHANGED_EVENT := "actor_facing_changed"
+const PUSH_BLOCKED_EVENT := "push_blocked"
+
+
 # ========== 枚举 ==========
 
 enum DamageType { PHYSICAL, MAGICAL, PURE }
@@ -36,7 +51,7 @@ class DamageEvent extends GameEvent.Base:
 	var consumption_records: Array = []
 
 	func _init() -> void:
-		kind = "damage"
+		kind = DAMAGE_EVENT
 
 	static func create(
 		p_target_actor_id: String,
@@ -86,7 +101,7 @@ class DamageEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "damage"
+		return d.get("kind") == DAMAGE_EVENT
 
 
 # ========== BasicAttackLandedEvent ==========
@@ -117,7 +132,7 @@ class BasicAttackLandedEvent extends GameEvent.Base:
 	var damage_event: Dictionary = {}
 
 	func _init() -> void:
-		kind = "basic_attack_landed"
+		kind = BASIC_ATTACK_LANDED_EVENT
 
 	## 注意: damage_event 字段保存 caller 传入的 dict 引用本身 (不 duplicate).
 	## 反正 to_dict() 出口会 duplicate(true), 此处再拷一次纯属浪费 (deep array /
@@ -163,7 +178,7 @@ class BasicAttackLandedEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "basic_attack_landed"
+		return d.get("kind") == BASIC_ATTACK_LANDED_EVENT
 
 
 # ========== ShieldBrokenEvent ==========
@@ -181,7 +196,7 @@ class ShieldBrokenEvent extends GameEvent.Base:
 	var absorbed_amount: float = 0.0
 
 	func _init() -> void:
-		kind = "shield_broken"
+		kind = SHIELD_BROKEN_EVENT
 
 	static func create(
 		p_target_actor_id: String,
@@ -224,7 +239,7 @@ class ShieldBrokenEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "shield_broken"
+		return d.get("kind") == SHIELD_BROKEN_EVENT
 
 
 # ========== RegenerationEvent ==========
@@ -249,7 +264,7 @@ class RegenerationEvent extends GameEvent.Base:
 	var source: String = ""
 
 	func _init() -> void:
-		kind = "regeneration"
+		kind = REGENERATION_EVENT
 
 	static func create(
 		p_target_actor_id: String,
@@ -286,7 +301,7 @@ class RegenerationEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "regeneration"
+		return d.get("kind") == REGENERATION_EVENT
 
 
 # ========== HealEvent ==========
@@ -297,7 +312,7 @@ class HealEvent extends GameEvent.Base:
 	var source_actor_id: String = ""
 	
 	func _init() -> void:
-		kind = "heal"
+		kind = HEAL_EVENT
 	
 	static func create(p_target_actor_id: String, p_heal_amount: float, p_source_actor_id: String = "") -> HealEvent:
 		var e := HealEvent.new()
@@ -320,7 +335,7 @@ class HealEvent extends GameEvent.Base:
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "heal"
+		return d.get("kind") == HEAL_EVENT
 
 
 # ========== MoveStartEvent ==========
@@ -331,7 +346,7 @@ class MoveStartEvent extends GameEvent.Base:
 	var to_hex: Dictionary = {}
 	
 	func _init() -> void:
-		kind = "move_start"
+		kind = MOVE_START_EVENT
 	
 	static func create(p_actor_id: String, p_from_hex: Dictionary, p_to_hex: Dictionary) -> MoveStartEvent:
 		var e := MoveStartEvent.new()
@@ -351,7 +366,7 @@ class MoveStartEvent extends GameEvent.Base:
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "move_start"
+		return d.get("kind") == MOVE_START_EVENT
 
 
 # ========== MoveCompleteEvent ==========
@@ -362,7 +377,7 @@ class MoveCompleteEvent extends GameEvent.Base:
 	var to_hex: Dictionary = {}
 	
 	func _init() -> void:
-		kind = "move_complete"
+		kind = MOVE_COMPLETE_EVENT
 	
 	static func create(p_actor_id: String, p_from_hex: Dictionary, p_to_hex: Dictionary) -> MoveCompleteEvent:
 		var e := MoveCompleteEvent.new()
@@ -382,7 +397,7 @@ class MoveCompleteEvent extends GameEvent.Base:
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "move_complete"
+		return d.get("kind") == MOVE_COMPLETE_EVENT
 
 
 # ========== DeathEvent ==========
@@ -392,7 +407,7 @@ class DeathEvent extends GameEvent.Base:
 	var killer_actor_id: String = ""
 	
 	func _init() -> void:
-		kind = "death"
+		kind = DEATH_EVENT
 	
 	static func create(p_actor_id: String, p_killer_actor_id: String = "") -> DeathEvent:
 		var e := DeathEvent.new()
@@ -413,7 +428,7 @@ class DeathEvent extends GameEvent.Base:
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "death"
+		return d.get("kind") == DEATH_EVENT
 
 
 # ========== ActorDisplacedEvent ==========
@@ -437,7 +452,7 @@ class ActorDisplacedEvent extends GameEvent.Base:
 	var swap_id: String = ""
 
 	func _init() -> void:
-		kind = "actor_displaced"
+		kind = ACTOR_DISPLACED_EVENT
 
 	static func create(
 		p_actor_id: String,
@@ -490,7 +505,7 @@ class ActorDisplacedEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "actor_displaced"
+		return d.get("kind") == ACTOR_DISPLACED_EVENT
 
 
 # ========== ActorFacingChangedEvent ==========
@@ -507,7 +522,7 @@ class ActorFacingChangedEvent extends GameEvent.Base:
 	var reason: String = ""
 
 	func _init() -> void:
-		kind = "actor_facing_changed"
+		kind = ACTOR_FACING_CHANGED_EVENT
 
 	static func create(
 		p_actor_id: String,
@@ -540,7 +555,7 @@ class ActorFacingChangedEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "actor_facing_changed"
+		return d.get("kind") == ACTOR_FACING_CHANGED_EVENT
 
 
 # ========== PushBlockedEvent ==========
@@ -565,7 +580,7 @@ class PushBlockedEvent extends GameEvent.Base:
 	var collision_action_lock_bonus_ms: float = 0.0
 
 	func _init() -> void:
-		kind = "push_blocked"
+		kind = PUSH_BLOCKED_EVENT
 
 	static func create(
 		p_actor_id: String,
@@ -618,7 +633,7 @@ class PushBlockedEvent extends GameEvent.Base:
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
-		return d.get("kind") == "push_blocked"
+		return d.get("kind") == PUSH_BLOCKED_EVENT
 
 
 # ========== 辅助函数 ==========

@@ -31,7 +31,7 @@ static var ABILITY := (
 	.description("近战攻击, 可对敌方角色或环境物造成物理伤害")
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
-	.meta(HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, ["Character", "Environment"])
+	.meta(HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, [HexBattleActor.KIND_CHARACTER, HexBattleActor.KIND_ENVIRONMENT])
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID)

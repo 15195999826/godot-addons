@@ -74,8 +74,8 @@ func _start_recorder() -> void:
 		replay_map_config = _world_instance.grid.to_config_dict()
 	var configs := {
 		"positionFormats": {
-			"Character": "hex",
-			"Environment": "hex",
+			HexBattleActor.KIND_CHARACTER: "hex",
+			HexBattleActor.KIND_ENVIRONMENT: "hex",
 		},
 	}
 	_recorder.start_recording(get_all_characters(), configs, replay_map_config)
@@ -143,7 +143,8 @@ func tick_once() -> void:
 	record_current_frame_events()
 
 	if _current_tick >= MAX_TICKS:
-		print("\n战斗结束(达到安全上限 %d 帧, 可能存在死循环)" % MAX_TICKS)
+		if _logging_enabled and logger != null:
+			logger.log_message("战斗结束(达到安全上限 %d 帧, 可能存在死循环)" % MAX_TICKS)
 		_result = "timeout"
 		mark_finished()
 	else:
@@ -238,15 +239,12 @@ func _is_actor_executing(actor: CharacterActor) -> bool:
 
 func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 	var world := _world_instance
-	print("\n[Tick %d] %s 准备行动 (ATB: %.1f)" % [_current_tick, actor.get_display_name(), actor.get_atb_gauge()])
-
 	if _logging_enabled and logger != null:
 		logger.actor_ready(actor.get_id(), actor.get_display_name(), actor.get_atb_gauge())
 
 	var decision := _decide_action(actor)
 
 	if decision["type"] == "skip":
-		print("  %s 无法行动, 跳过本次决策" % actor.get_display_name())
 		if _logging_enabled and logger != null:
 			logger.ai_decision(actor.get_id(), actor.get_display_name(), "跳过(无可用行动)")
 		actor.reset_atb()
@@ -266,7 +264,6 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 		var skill_name := skill.display_name if skill != null else "技能"
 		decision_text = "%s -> %s" % [skill_name, target_name]
 
-	print("  AI 决策: %s" % decision_text)
 	if _logging_enabled and logger != null:
 		logger.ai_decision(actor.get_id(), actor.get_display_name(), decision_text)
 
@@ -316,12 +313,14 @@ func _check_battle_end() -> bool:
 			right_alive += 1
 
 	if left_alive == 0:
-		print("\n战斗结束: 右方胜利!")
+		if _logging_enabled and logger != null:
+			logger.log_message("战斗结束: 右方胜利!")
 		_result = "right_win"
 		mark_finished()
 		return true
 	elif right_alive == 0:
-		print("\n战斗结束: 左方胜利!")
+		if _logging_enabled and logger != null:
+			logger.log_message("战斗结束: 左方胜利!")
 		_result = "left_win"
 		mark_finished()
 		return true

@@ -75,7 +75,7 @@ func _start_recorder() -> void:
 		if a != null:
 			actors.append(a)
 	_recorder.start_recording(actors, {
-		"positionFormats": {"Character": "hex", "Environment": "hex"},
+		"positionFormats": {HexBattleActor.KIND_CHARACTER: "hex", HexBattleActor.KIND_ENVIRONMENT: "hex"},
 	}, replay_map_config)
 
 	# Phase C0: 中途 add_actor 自动 register

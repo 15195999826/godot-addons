@@ -12,7 +12,7 @@ func _init() -> void:
 
 ## 检查是否为伤害事件
 func can_handle(event: Dictionary) -> bool:
-	return get_event_kind(event) == "damage"
+	return get_event_kind(event) == BattleEvents.DAMAGE_EVENT
 
 
 ## 翻译伤害事件为视觉动作

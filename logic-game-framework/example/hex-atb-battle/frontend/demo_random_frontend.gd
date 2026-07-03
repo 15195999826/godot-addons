@@ -5,9 +5,6 @@
 extends "res://addons/logic-game-framework/example/hex-atb-battle/frontend/demo_frontend.gd"
 
 
-const RandomWorldGIScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/hex_random_demo_world_gameplay_instance.gd")
-
-
 var _seed_input: SpinBox
 var _passive_count_input: SpinBox
 
@@ -82,7 +79,7 @@ func _on_start_battle_button_pressed() -> void:
 	var map_config := _get_map_config()
 	print("[RandomMain] Starting random battle with map config: %s" % map_config)
 
-	_battle = RandomWorldGIScript.new() as HexDemoWorldGameplayInstance
+	_battle = HexRandomDemoWorldGameplayInstance.new()
 	GameWorld.create_instance(func() -> GameplayInstance: return _battle)
 	_battle.battle_finished.connect(_on_battle_finished)
 	_battle.battle_final_state_ready.connect(_on_battle_final_state_ready)

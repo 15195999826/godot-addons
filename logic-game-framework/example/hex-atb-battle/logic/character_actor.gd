@@ -45,7 +45,7 @@ var _facing_direction: int = HexFacing.DIR_EAST
 
 func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 	character_class = p_character_class
-	type = "Character"
+	type = KIND_CHARACTER
 
 	var class_config := HexBattleClassConfig.get_class_config(character_class)
 	_display_name = class_config.name
