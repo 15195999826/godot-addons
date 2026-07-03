@@ -25,7 +25,7 @@ var attribute_set: HexBattleEnvironmentAttributeSet
 
 func _init(p_environment_kind: String, p_collision_profile: CollisionProfile) -> void:
 	environment_kind = p_environment_kind
-	type = "Environment"
+	type = KIND_ENVIRONMENT
 	_display_name = p_environment_kind
 
 	attribute_set = HexBattleEnvironmentAttributeSet.new(get_id())

@@ -15,7 +15,7 @@ func _init() -> void:
 ## 检查是否为投射物事件
 func can_handle(event: Dictionary) -> bool:
 	var kind := get_event_kind(event)
-	return kind == "projectileLaunched" or kind == "projectileHit" or kind == "projectileMiss"
+	return kind == ProjectileEvents.PROJECTILE_LAUNCHED_EVENT or kind == ProjectileEvents.PROJECTILE_HIT_EVENT or kind == ProjectileEvents.PROJECTILE_MISS_EVENT
 
 
 ## 翻译投射物事件为视觉动作
@@ -23,11 +23,11 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 	var kind := get_event_kind(event)
 	
 	match kind:
-		"projectileLaunched":
+		ProjectileEvents.PROJECTILE_LAUNCHED_EVENT:
 			return _translate_launched(event, context)
-		"projectileHit":
+		ProjectileEvents.PROJECTILE_HIT_EVENT:
 			return _translate_hit(event, context)
-		"projectileMiss":
+		ProjectileEvents.PROJECTILE_MISS_EVENT:
 			return _translate_miss(event, context)
 		_:
 			return []

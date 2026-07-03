@@ -10,12 +10,11 @@ func _init() -> void:
 
 
 func can_handle(event: Dictionary) -> bool:
-	return get_event_kind(event) == "actor_facing_changed"
+	return get_event_kind(event) == BattleEvents.ACTOR_FACING_CHANGED_EVENT
 
 
 func translate(event: Dictionary, _context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:
-	var actor_id := str(event.get("actor_id", ""))
-	if actor_id.is_empty():
+	var e := BattleEvents.ActorFacingChangedEvent.from_dict(event)
+	if e.actor_id.is_empty():
 		return []
-	var new_direction := int(event.get("new_direction", 0))
-	return [FrontendApplyFacingStateAction.new(actor_id, new_direction)]
+	return [FrontendApplyFacingStateAction.new(e.actor_id, e.new_direction)]

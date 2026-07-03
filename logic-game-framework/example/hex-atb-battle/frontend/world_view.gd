@@ -157,7 +157,7 @@ func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 	var max_hp := 100.0
 	var cur_hp := 100.0
 	var hex_pos: HexCoord = null
-	var actor_type := "Character"
+	var actor_type := HexBattleActor.KIND_CHARACTER
 	var facing_direction := 0
 
 	if actor is CharacterActor:
@@ -171,7 +171,7 @@ func _hydrate_from_actor(view: FrontendUnitView, actor: Actor) -> void:
 	elif actor is EnvironmentActor:
 		var env_actor := actor as EnvironmentActor
 		team = -1
-		actor_type = "Environment"
+		actor_type = HexBattleActor.KIND_ENVIRONMENT
 		if env_actor.attribute_set != null:
 			max_hp = env_actor.attribute_set.max_hp
 			cur_hp = env_actor.attribute_set.hp

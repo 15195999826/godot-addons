@@ -195,7 +195,7 @@ func can_use_skill_on(actor: CharacterActor, skill: Ability, target: HexBattleAc
 		return false
 
 	var allowed_kinds: Array = skill.metadata.get(
-		HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, ["Character"]
+		HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, [HexBattleActor.KIND_CHARACTER]
 	)
 	if not (target.type in allowed_kinds):
 		return false

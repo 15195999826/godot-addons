@@ -4399,7 +4399,7 @@ func _apply_actor_hp_change(idx: int, hp: float) -> void:
 			actor.get_team_id(),
 			hp,
 			hp,
-			"Character",
+			HexBattleActor.KIND_CHARACTER,
 			actor.get_facing_direction()
 		)
 

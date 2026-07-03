@@ -448,25 +448,25 @@ func _build_status_label() -> void:
 # ----- Refresh / signals -----------------------------------------------------
 
 func _connect_item_system_signals() -> void:
-	ItemSystem.item_created.connect(_on_any_item_change)
-	ItemSystem.item_moved.connect(_on_any_item_change_2)
+	ItemSystem.item_created.connect(_on_item_created_refresh)
+	ItemSystem.item_moved.connect(_on_item_moved_refresh)
 	ItemSystem.item_destroyed.connect(_on_item_destroyed)
 
 
 func _disconnect_item_system_signals() -> void:
-	if ItemSystem.item_created.is_connected(_on_any_item_change):
-		ItemSystem.item_created.disconnect(_on_any_item_change)
-	if ItemSystem.item_moved.is_connected(_on_any_item_change_2):
-		ItemSystem.item_moved.disconnect(_on_any_item_change_2)
+	if ItemSystem.item_created.is_connected(_on_item_created_refresh):
+		ItemSystem.item_created.disconnect(_on_item_created_refresh)
+	if ItemSystem.item_moved.is_connected(_on_item_moved_refresh):
+		ItemSystem.item_moved.disconnect(_on_item_moved_refresh)
 	if ItemSystem.item_destroyed.is_connected(_on_item_destroyed):
 		ItemSystem.item_destroyed.disconnect(_on_item_destroyed)
 
 
-func _on_any_item_change(_item_id: int, _loc: ItemLocation) -> void:
+func _on_item_created_refresh(_item_id: int, _loc: ItemLocation) -> void:
 	_refresh_all()
 
 
-func _on_any_item_change_2(_item_id: int, _old: ItemLocation, _new: ItemLocation) -> void:
+func _on_item_moved_refresh(_item_id: int, _old: ItemLocation, _new: ItemLocation) -> void:
 	_refresh_all()
 
 

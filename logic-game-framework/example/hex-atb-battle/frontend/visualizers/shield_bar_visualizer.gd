@@ -43,7 +43,7 @@ func can_handle(event: Dictionary) -> bool:
 	return (
 		kind == GameEvent.ABILITY_GRANTED_EVENT
 		or kind == GameEvent.ABILITY_REMOVED_EVENT
-		or kind == "damage"
+		or kind == BattleEvents.DAMAGE_EVENT
 	)
 
 
@@ -54,7 +54,7 @@ func translate(event: Dictionary, _context: FrontendVisualizerContext) -> Array[
 			_handle_granted(event, actions)
 		GameEvent.ABILITY_REMOVED_EVENT:
 			_handle_removed(event, actions)
-		"damage":
+		BattleEvents.DAMAGE_EVENT:
 			_handle_damage(event, actions)
 	return actions
 

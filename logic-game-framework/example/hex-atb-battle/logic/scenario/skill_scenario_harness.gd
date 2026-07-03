@@ -643,7 +643,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		for e in environments:
 			all_actors.append(e)
 		recorder.start_recording(all_actors, {
-			"positionFormats": { "Character": "hex", "Environment": "hex" }
+			"positionFormats": { HexBattleActor.KIND_CHARACTER: "hex", HexBattleActor.KIND_ENVIRONMENT: "hex" }
 		}, replay_map_config)
 
 	## 创建环境物 actor 并放入 grid。M1 仅支持 stone_wall。

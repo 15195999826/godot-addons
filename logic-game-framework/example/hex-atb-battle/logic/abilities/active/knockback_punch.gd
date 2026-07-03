@@ -48,7 +48,7 @@ static var ABILITY := (
 	.description("近战物理伤害, 并将目标击退 1 格 (撞物 / 撞墙时承受额外碰撞伤害)")
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
-	.meta(HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, ["Character"])
+	.meta(HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, [HexBattleActor.KIND_CHARACTER])
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
 		.timeline_id(TIMELINE_ID)

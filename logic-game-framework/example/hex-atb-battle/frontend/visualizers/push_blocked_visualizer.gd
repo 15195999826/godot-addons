@@ -23,7 +23,7 @@ func _init() -> void:
 
 
 func can_handle(event: Dictionary) -> bool:
-	return get_event_kind(event) == "push_blocked"
+	return get_event_kind(event) == BattleEvents.PUSH_BLOCKED_EVENT
 
 
 func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:

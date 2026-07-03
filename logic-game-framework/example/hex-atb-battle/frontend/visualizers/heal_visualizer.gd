@@ -11,7 +11,7 @@ func _init() -> void:
 
 ## 检查是否为治疗事件
 func can_handle(event: Dictionary) -> bool:
-	return get_event_kind(event) == "heal"
+	return get_event_kind(event) == BattleEvents.HEAL_EVENT
 
 
 ## 翻译治疗事件为视觉动作

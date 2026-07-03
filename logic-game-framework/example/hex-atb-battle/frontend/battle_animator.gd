@@ -212,7 +212,7 @@ func _on_actor_spawned(actor_id: String, state: FrontendActorRenderState) -> voi
 func _prebuild_replay_unit_views(record: PlaybackData.BattleRecord) -> void:
 	for frame_data: PlaybackData.FrameData in record.timeline:
 		for event: Dictionary in frame_data.events:
-			if event.get("kind", "") != "actorSpawned":
+			if event.get("kind", "") != GameEvent.ACTOR_SPAWNED_EVENT:
 				continue
 			var state := _actor_spawn_event_to_state(event)
 			if state.id.is_empty() or _base_unit_views.has(state.id):
@@ -228,7 +228,7 @@ func _actor_spawn_event_to_state(event: Dictionary) -> FrontendActorRenderState:
 	var actor: Dictionary = event.get("actor", {}) as Dictionary
 	var state := FrontendActorRenderState.new()
 	state.id = actor.get("id", event.get("actorId", "")) as String
-	state.type = actor.get("type", "Character") as String
+	state.type = actor.get("type", HexBattleActor.KIND_CHARACTER) as String
 	state.config_id = actor.get("configId", "") as String
 	state.display_name = actor.get("displayName", state.config_id) as String
 	state.team = int(actor.get("team", 0))
@@ -265,7 +265,7 @@ func _initialize_replay_unit_view(
 		state.type,
 		state.facing_direction
 	)
-	if state.type == "Environment":
+	if state.type == HexBattleActor.KIND_ENVIRONMENT:
 		var environment_kind := state.config_id if not state.config_id.is_empty() else state.display_name
 		view.set_environment_style(environment_kind)
 

@@ -122,7 +122,7 @@ func initialize(
 	team: int,
 	max_hp: float,
 	current_hp: float,
-	actor_type: String = "Character",
+	actor_type: String = HexBattleActor.KIND_CHARACTER,
 	facing_direction: int = 0
 ) -> void:
 	_actor_id = p_actor_id
