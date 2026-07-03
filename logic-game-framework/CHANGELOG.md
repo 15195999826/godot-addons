@@ -15,7 +15,12 @@
 ## [Unreleased]
 
 ### Changed
+- **`AbilityActivate` 补齐 schema（线 3 轮 B）**：新增 `logic_time` / `target_actor_id` / `target_coord: Dictionary` 三个可选字段（to_dict key 沿用既有事实拼写 `logicTime` / `target_actor_id` / `target_coord`，空 target 不写 key）——消灭全仓仅存的 6 处手写 `abilityActivate` dict literal（hex / dota2 procedure、skill-preview、harness、2 个 smoke 全部改走 `create()`）。`target_coord` 是坐标 dict 而非 HexCoord 类型，core 不依赖坐标实现。
+- **REFRESH 叠层刷新改组件钩子（线 3 轮 B）**：`AbilityComponent` 新增 `on_ability_stack_refreshed()` 虚钩子，`Ability` 的 OVERFLOW_REFRESH 改为向全部 component 广播（原 `component.type == "TimeDurationComponent"` 字符串鸭子匹配删除——core 不再点名 stdlib 具体组件）；`TimeDurationComponent` override 钩子调自身 `refresh()`，行为等价。
 - **目录归位（零行为，线 3 轮 A）**：recorder 家族（`BattleRecorder` / `RecordingContext` / `RecordingUtils` / `ReplayData` / `ReplayLogPrinter`）`stdlib/replay/` → `core/playback/`——录像是 core 事件系统一等公民（`BattleProcedure.finish()` 返回值即 recorder 输出）；投射物家族（`ProjectileActor` / `ProjectileEvents` / `ProjectileSystem` / collision detector ×4）`core/` + `stdlib/systems/` → `stdlib/projectile/`——仅 hex 使用的可选玩法件，不再让全部 example 白带；hex 的 `HexWorldGameplayInstance` / `HexBattleProcedure` `core/` → `logic/`——两类签名依赖 logic 类型，按单向依赖归位，hex `core/` 只剩共享事件定义。**全部类名不变，引用方零改动。** 裁决与执行切分见 `docs/proposals/2026-07-03-known-debt-and-hex-architecture-proposal.md`。
+
+### Removed
+- **死类 `GameEvent.AbilityActivated` 及其 `ABILITY_ACTIVATED_EVENT` 常量（线 3 轮 B）**：与 `AbilityActivate` 仅差一字母、全仓 create/from_dict/is_match 调用为 0 的占位类，从未有生产路径 emit 该 kind——直接删除消除命名混淆源（enforcing-lgf skill 文档清单同步）。
 
 ### Fixed
 - **`ProjectileHit` 的 kind 常量归 core 注册表**：`GameEvent` 新增 `PROJECTILE_HIT_EVENT` 常量，`ProjectileHit` 改用之；stdlib `ProjectileEvents.PROJECTILE_HIT_EVENT` 转引 core 常量（值不变 `"projectileHit"`，行为逐位等价）——消除投射物工厂迁 stdlib 后 `game_event.gd` 对其残留的 core→stdlib 反向引用（codex review P2）。

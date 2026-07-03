@@ -64,6 +64,15 @@ func on_stacks_changed(_context: AbilityLifecycleContext, _old_stacks: int, _new
 	pass
 
 
+## Ability 以 REFRESH 溢出策略叠层达到 CAP 时广播 (可选覆盖)。
+##
+## 时长类 component 借此实现"叠层刷新持续时间"的原子语义 (如 TimeDurationComponent
+## 重置 remaining)。非时长类 component 无需实现 —— core 不点名具体 component 类型,
+## 由实现方自行决定是否响应。
+func on_ability_stack_refreshed() -> void:
+	pass
+
+
 ## Phase B2 (Break): Ability 首次进入 disabled 状态时调用 (empty → non-empty)。
 ##
 ## 仅外部注册型 component 应实现 (StatModifierComponent / DynamicStatModifierComponent):

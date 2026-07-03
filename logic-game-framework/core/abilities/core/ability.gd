@@ -8,7 +8,7 @@ const STATE_EXPIRED := "expired"
 ## Ability 层数的溢出策略
 ##
 ## - CAP：超过 max 截断到 max
-## - REFRESH：达到 CAP 的同时调用所在 Ability 上 TimeDurationComponent.refresh()
+## - REFRESH：达到 CAP 的同时广播 on_ability_stack_refreshed() 钩子（时长类 component 刷新持续时间）
 ## - REJECT：超过 max 时拒绝本次叠加（stacks 不变）
 const OVERFLOW_CAP := 0
 const OVERFLOW_REFRESH := 1
@@ -297,8 +297,8 @@ var _notifying_stacks_changed: bool = false
 
 ## 按溢出策略叠加层数，返回实际增加量。
 ##
-## REFRESH 策略在叠层的同时顺手调用同 ability 上 TimeDurationComponent.refresh()，
-## 让"刷新层数 + 刷新持续时间"成为原子语义。
+## REFRESH 策略在叠层的同时广播 on_ability_stack_refreshed() 钩子（时长类
+## component 借此刷新持续时间），让"刷新层数 + 刷新持续时间"成为原子语义。
 ##
 ## §0.X: stacks 实际变化后通过 _notify_stacks_changed 触发所有 component.on_stacks_changed。
 func add_stacks(count: int) -> int:
@@ -311,7 +311,7 @@ func add_stacks(count: int) -> int:
 			stacks = mini(new_value, max_stacks)
 		OVERFLOW_REFRESH:
 			stacks = mini(new_value, max_stacks)
-			_refresh_time_duration_components()
+			_notify_stack_refreshed()
 		OVERFLOW_REJECT:
 			if new_value <= max_stacks:
 				stacks = new_value
@@ -356,10 +356,9 @@ func _notify_stacks_changed(old_stacks: int, new_stacks: int) -> void:
 	_notifying_stacks_changed = false
 
 
-func _refresh_time_duration_components() -> void:
+func _notify_stack_refreshed() -> void:
 	for component in _components:
-		if component.has_method("refresh") and component.type == "TimeDurationComponent":
-			component.refresh()
+		component.on_ability_stack_refreshed()
 
 
 ## 获取 int 类型的元数据

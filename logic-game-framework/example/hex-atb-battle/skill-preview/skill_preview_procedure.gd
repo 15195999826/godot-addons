@@ -269,20 +269,13 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		if ability == null:
 			ability = Ability.new(ability_cfg, actor.get_id())
 			actor.ability_set.grant_ability(ability, world)
-		var event := {
-			"kind": GameEvent.ABILITY_ACTIVATE_EVENT,
-			"abilityInstanceId": ability.id,
-			"sourceId": actor.get_id(),
-			"logicTime": float(kf["time_ms"]),
-		}
-		var target_id: String = kf["target_id"] as String
-		if target_id != "":
-			event["target_actor_id"] = target_id
 		# Phase D: target_coord 由 SkillPreview._collect_actor_setups 在 fixed_pos mode 时填充,
 		# cone / move 等 coord-based ability 直接读 event["target_coord"].
+		var target_id: String = kf["target_id"] as String
 		var target_coord: Dictionary = kf.get("target_coord", {}) as Dictionary
-		if not target_coord.is_empty():
-			event["target_coord"] = target_coord
+		var event := GameEvent.AbilityActivate.create(
+			ability.id, actor.get_id(), float(kf["time_ms"]), target_id, target_coord
+		).to_dict()
 		HexFacing.face_actor_for_active_event(actor, event, world, GameWorld.event_collector)
 		actor.ability_set.receive_event(event, world)
 
