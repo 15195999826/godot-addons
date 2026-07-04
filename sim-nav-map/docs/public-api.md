@@ -26,7 +26,7 @@ in `smoke_sim_nav_long_pathfinder.tscn` and
 `smoke_sim_nav_path_request_queue.tscn`. Feature 6-8 coverage adds
 `smoke_sim_nav_line_validation.tscn`, `smoke_sim_nav_diagnostics_exports.tscn`,
 and expanded queue/vertex/public API smoke. Lab-side regression coverage lives
-under `examples/0ad-rts-pathfinding-lab/tests/`.
+under `examples/dota2-rts-pathfinding-lab/tests/`.
 
 ## Stable Entry Points
 
@@ -377,7 +377,7 @@ The core addon intentionally does not implement:
 - deadlock resolution
 - combat, command, selection, HUD, rendering, or editor tools
 
-`examples/0ad-rts-pathfinding-lab` may experiment with those behaviors as
+`examples/dota2-rts-pathfinding-lab` may experiment with those behaviors as
 application policy, but that does not make them reusable `sim-nav-map` API.
 
 ## Native Backend (knife 5, optional)

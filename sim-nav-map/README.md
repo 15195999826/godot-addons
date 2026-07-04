@@ -94,13 +94,17 @@ adapter input 仍应使用 `SimNavObstructionShapeStatic` 或
 ## Example Lab
 
 插件内的 playable usage sample 位于
-[`examples/0ad-rts-pathfinding-lab/`](examples/0ad-rts-pathfinding-lab/)。它负责
-adapter、movement policy、selection、replan budget、push behavior、HUD 和 smoke
-regression；这些都不是 core addon public API。
+[`examples/dota2-rts-pathfinding-lab/`](examples/dota2-rts-pathfinding-lab/)（Dota2/LoL
+式movement policy：连续空间移动 + 静态障碍 + 接触式分离求解）。它负责 adapter、movement
+policy、selection、replan budget、push behavior、HUD 和 smoke regression；这些都不是 core
+addon public API。
 
 ```powershell
-./tools/run_tests.ps1 zeroadlab/smoke
+./tools/run_tests.ps1 dota2lab/smoke
 ```
+
+> 历史上还有一个 `0ad-rts-pathfinding-lab`（RTS 群体寻路 sample），2026-07-03 已删除——
+> dota2 lab 手感与可扩展性均已验证足够，不再需要两个 example 并行维护。
 
 ## Docs And References
 

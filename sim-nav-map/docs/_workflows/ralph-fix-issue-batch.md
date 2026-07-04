@@ -100,6 +100,12 @@ last_smoke_result: PASS
 | Layer = lab + Repro = `smoke (FAIL)` | D | LAB-001/002/003 |
 | Repro = `smoke (PASS lock-in)` | E | LAB-004/005 |
 
+> LAB-001~005 是 `0ad-rts-pathfinding-lab`（2026-07-03 已删除，见 submodule README）时代的历史
+> worked example，issue 文件本身已不在 `docs/issues/` 里，仅保留分支路由形状供参考。Branch D/E
+> 若未来在 `dota2-rts-pathfinding-lab` 上复用，按该 lab 当前实现（`Dota2LabMotionEngine` 接触式
+> 分离求解，无 formation/arrival-radius 概念）重新走查具体常量点，不要照搬下面 LAB-004/LAB-005
+> 里 0ad-lab-specific 的字段名。
+
 ### Step 3: 执行 branch 子流程
 
 #### Branch A: Direct fix
@@ -112,7 +118,7 @@ sub_steps：
 2. **应用 Proposed fix** —— 只改 issue Proposed fix 段 + Verify 段提到的文件。
 3. **跑 repro smoke**：`godot --headless --path . <repro tscn 路径> > /tmp/repro.txt 2>&1`
    - 未 PASS → 回 sub_step 2（同 sub_iteration，循环改）
-4. **跑 simnav/smoke + zeroadlab/smoke 全绿**：`./tools/run_tests.ps1 simnav/smoke rtslab/smoke`
+4. **跑 simnav/smoke + dota2lab/smoke 全绿**：`./tools/run_tests.ps1 simnav/smoke dota2lab/smoke`
    - 有 FAIL → `git -C addons/sim-nav-map checkout .`（**回退本轮全部代码改动**），state.notes 记 "regression in <smoke>"，sub_iteration += 1，回 sub_step 2
 5. **更新 issue 文件**：
    - Status: `open` → `resolved`
@@ -162,7 +168,7 @@ sub_steps：
 4. **跑新 smoke 必须 FAIL**（instrumentation 加完但 fix 还没做，理应 FAIL）—— 未 FAIL → 改 smoke 直到 FAIL（这是 ralph 探索"失败信号成立"）
 5. **应用 Proposed fix**
 6. **跑新 smoke 必须 PASS** —— 未 PASS → 回 sub_step 5
-7. 之后走 Branch A sub_step 4-13（simnav/smoke + zeroadlab/smoke 全绿 / 更新 issue / commit / bump）
+7. 之后走 Branch A sub_step 4-13（simnav/smoke + dota2lab/smoke 全绿 / 更新 issue / commit / bump）
 
 **B 分支单 issue 上限**：sub_iteration ≥ 8。
 
@@ -173,7 +179,7 @@ sub_steps：
 sub_steps：
 
 1. **读 issue + 0 A.D. reference**（CheckLineMovement 在 0 A.D. Pathfinding.cpp）
-2. **跑 lab 找候选 waypoint pair**：跑 `./tools/run_tests.ps1 rtslab/smoke`，扫日志找 long-path refined waypoint pair；候选 = 看起来 graze 角的
+2. **跑 lab 找候选 waypoint pair**：跑 `./tools/run_tests.ps1 dota2lab/smoke`，扫日志找 long-path refined waypoint pair；候选 = 看起来 graze 角的
 3. **Bresenham 验证候选**：对每个候选独立用 Bresenham iterator 走 navcell，断言"是否有 blocked cell 被穿过"
 4. **找到对抗场景** → 提取最小复现：static OBB 配置 + start/goal + clearance class
 5. **写 FAIL smoke** `tests/repro/repro_core_002_long_path_los_sampling.gd` + tscn
@@ -193,10 +199,10 @@ sub_steps：
 3. **写 core-only 等价 smoke** `addons/sim-nav-map/tests/repro/repro_<lab-id>_core_only.gd`：跑同样的 path query / passability / timing 但**不经过 lab movement / separation 层**
 4. **跑 core-only smoke**：
    - **core 也复现 / 也慢** → bug 在 core；issue 文件加 `## Triaged: core` 段（含 core-only smoke 路径 + 决策原因）→ 后续按 A 分支步骤改 core
-   - **core OK** → bug 在 lab；issue 文件加 `## Triaged: lab` 段 → 改 `examples/0ad-rts-pathfinding-lab/` 内文件
+   - **core OK** → bug 在 lab；issue 文件加 `## Triaged: lab` 段 → 改 `examples/dota2-rts-pathfinding-lab/` 内文件
 5. **应用对应层的 fix**
 6. **跑 lab repro smoke 必须 PASS**
-7. **跑 simnav/smoke + zeroadlab/smoke 全绿**
+7. **跑 simnav/smoke + dota2lab/smoke 全绿**
 8. **回填 PROCESS-001 worked example**：在 `process-001-core-lab-proof-protocol.md` `## Worked examples` 段加一行（含 lab-id / core-only smoke 路径 / 决策结果）
 9. 之后走 Branch A sub_step 5-13（更新 issue / BASELINE / submodule commit / 主仓 bump）
 
@@ -206,18 +212,18 @@ sub_steps：
 
 服务：LAB-004 / LAB-005
 
-**LAB-004** sub_steps：
-1. 在 `examples/0ad-rts-pathfinding-lab/` 找当前 `ARRIVE_MAX_OVERLAP` / arrival radius / formation slot spacing 写法分散的所有点
-2. 抽统一常量：`ACTIVE_*` / `IDLE_*` + overlap matrix 文档（写进 issue 文件 / `examples/0ad-rts-pathfinding-lab/README.md` 看哪个合适）
-3. 跑 simnav/smoke + zeroadlab/smoke 全绿（重构无回归）
+**LAB-004** sub_steps（0ad-lab 时代历史记录，字段名不适用于 dota2 lab，见上方 Step 2 注）：
+1. 在该 lab 内找当前 `ARRIVE_MAX_OVERLAP` / arrival radius / formation slot spacing 写法分散的所有点
+2. 抽统一常量：`ACTIVE_*` / `IDLE_*` + overlap matrix 文档（写进 issue 文件 / lab `README.md` 看哪个合适）
+3. 跑 simnav/smoke + dota2lab/smoke 全绿（重构无回归）
 4. 写 adversarial smoke `repro_lab_004b_*.gd`（按 issue "Adversarial scenario still pending" 描述：rapid obstacle edits during arrival, edge-adjacent target, blocker-near-target packing），断言 overlap matrix 阈值
 5. 跑 adversarial smoke 必须 PASS（lock-in 性质：现有行为对的，smoke 锁定）
 6. 之后走 Branch A sub_step 5-13
 
-**LAB-005** sub_steps：
+**LAB-005** sub_steps（同上，历史记录）：
 1. 给 `unit.target` / `unit.path_target` 加 docstring（说明语义 + 引用 LAB-005 ID）
-2. Audit `examples/0ad-rts-pathfinding-lab/frontend/` 命令 marker 引用的字段（确认引用 `target` 不是 `path_target`）
-3. 跑 simnav/smoke + zeroadlab/smoke 全绿
+2. Audit lab `frontend/` 命令 marker 引用的字段（确认引用 `target` 不是 `path_target`）
+3. 跑 simnav/smoke + dota2lab/smoke 全绿
 4. 之后走 Branch A sub_step 5-13
 
 **E 分支单 issue 上限**：sub_iteration ≥ 5。

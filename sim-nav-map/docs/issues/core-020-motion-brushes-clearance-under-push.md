@@ -16,10 +16,22 @@ happen to not assemble under the new short-path dynamics for that seed.
 
 **Decision (2026-05-11)**: pull `repro_core_020_motion_brushes_clearance_under_push_known_limit`
 out of the `zeroadlab/smoke` group so it does not block daily regression.
-The repro file itself is retained in
+The repro file itself was retained in
 `examples/0ad-rts-pathfinding-lab/tests/repro/` for future use; if anyone
 sees the sub-pixel brush artifact during real play, re-enable the test
 (or adjust the seed/budget) and proceed with the original fix options.
+
+**Update (2026-07-03)**: `0ad-rts-pathfinding-lab` (and this repro file with it)
+was deleted — only `dota2-rts-pathfinding-lab` is kept as the sim-nav-map
+example (task-queue.md 1b). The re-enable plan above no longer has a repro
+artifact to re-enable. The underlying root cause (LOS boundary handling under
+push at zero-path conditions, in core) is still formally unfixed, but
+`dota2-rts-pathfinding-lab`'s motion engine resolves unit-unit separation by
+contact (units never enter the nav map), not by pushing through the core
+clearance ring this issue describes — so it's unconfirmed whether this
+specific manifestation still has a live surface anywhere. Re-open with a new
+repro if the sub-pixel artifact is ever observed again; do not assume it
+carries over 1:1 to the new lab's architecture.
 
 ## Symptom
 

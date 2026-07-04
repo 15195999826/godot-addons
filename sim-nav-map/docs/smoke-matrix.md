@@ -20,18 +20,18 @@ Why the three are separate: **smoke** locks in correctness, **repro** locks in k
 Run both groups before merging any issue fix:
 
 ```powershell
-./tools/run_tests.ps1 simnav/smoke zeroadlab/smoke
+./tools/run_tests.ps1 simnav/smoke dota2lab/smoke
 ```
 
 | Group | Manifest | Responsibility |
 |---|---|---|
 | `simnav/smoke` | `addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: public API defaults, map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, line validation, cache, request queue, and diagnostics exports. |
-| `zeroadlab/smoke` | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: lab path planning, metadata consumption, movement-loop integration, metrics contract, and scene load. |
+| `dota2lab/smoke` | `addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: Dota2/LoL-style contact-resolved movement — move basics, separation-solve invariants, crowd blockers, stall watchdog, target fanout, flying layer, AI command source, and UI ops. |
 
 Baseline gate:
 
 ```powershell
-./tools/run_tests.ps1 simnav/smoke zeroadlab/smoke
+./tools/run_tests.ps1 simnav/smoke dota2lab/smoke
 git -C addons diff --check
 ```
 
@@ -44,13 +44,17 @@ until the matching issue is fixed.
 | Kind | Location | Rule |
 |---|---|---|
 | Core repro | `addons/sim-nav-map/tests/repro/` | Add a focused scene for one core issue. Register it into `simnav/smoke` only after the fix turns it green. |
-| Lab repro | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/repro/` | Add a focused scene for one lab issue. Register it into `zeroadlab/smoke` only after the fix turns it green or when it is a PASS lock-in guard. |
+
+`dota2-rts-pathfinding-lab` has no separate `tests/repro/` tier — its `smoke/` scenes assert
+regression invariants directly (e.g. residual-overlap == 0 after separation solve). Add a new
+smoke scene there instead of a repro scene when locking in a dota2-lab-specific fix.
 
 ## Stress
 
-| Kind | Location | Rule |
-|---|---|---|
-| Lab stress | `addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/tests/stress/` | Torture phases + fuzz mode share one file (`stress_playthrough.tscn`). Soft observations (path-request counts, slow frames, formation overlap) print into `STRESS_OBSERVATION` lines and a summary table for human inspection only. The only fail path is a hard invariant violation: NaN / inf / out-of-map / illegal teleport. **Do not add business outcome assertions here** — promote the phase into a smoke under `tests/smoke/` instead (see `smoke_zero_ad_rts_lab_edge_cases.gd` for the promotion template). Not registered in `test_groups.json`. |
+Neither `simnav` core nor `dota2-rts-pathfinding-lab` currently has a stress/fuzz harness. If one
+is added later, follow the same rule the old 0ad lab used: hard safety invariants only (NaN / inf
+/ out-of-map / illegal teleport), no business-outcome assertions, and keep it out of
+`test_groups.json` (observation only, non-zero exit on invariant violation).
 
 ## Current Coverage
 
@@ -74,18 +78,22 @@ until the matching issue is fixed.
 - path request queue, queued request cloning, and queue diagnostics
 - map dirtiness diagnostics and connectivity exports
 
-`zeroadlab/smoke` covers:
+`dota2lab/smoke` covers:
 
-- the headless lab movement/pathfinding contract
-- repeated static obstacle add/remove stress while six units move between building sides
-- terrain preset adapter behavior
-- small/large clearance adapter behavior
-- long-path result metadata adapter behavior
-- short-result, movement-line, and unit-line metadata adapter behavior
-- real lab scene loading
-- failed-units HUD panel surfacing
-- frontend UI tool ops + debug log export
-- world edge cases: unreachable goal, off-map command, formation packing, drop-on-unit, sealed corridors, goal blocked at arrival
+- move-order basics (issue → arrive / arrived_partial / arrived_crowded / bounded stalled-fail)
+- unit-unit separation-solve invariants (no persistent overlap across ticks)
+- separation under the spatial-hash broad phase at higher unit counts
+- perf budget guardrails (plan/flush/line-check/tick timing thresholds)
+- crowd blockers (dense packing near a target, sealed corridors)
+- stall watchdog (bounded termination when no progress is possible)
+- target fanout (many units, distinct destinations)
+- flying-layer movement
+- AI command source (scripted Layer 2 command stream driving lane moves/chase/retreat/cancel)
+- frontend UI tool ops
+
+> Note: this matrix predates the GDExtension native port (1d ⑤, 2026-07-03) and does not yet
+> cover the `simnav/native` / `dota2lab/native` required groups — pre-existing gap, out of scope
+> for this pass.
 
 ## Discovery Contract
 
@@ -99,16 +107,16 @@ addons/sim-nav-map/examples/*/tests/test_groups.json
 Paths inside each manifest are relative to that manifest directory. New core
 addon smoke scenes belong under `addons/sim-nav-map/tests/` and should be added
 to `simnav/smoke` after they are expected to pass. New lab behavior smoke scenes
-belong under `examples/0ad-rts-pathfinding-lab/tests/smoke/` and should be added
-to `zeroadlab/smoke` after they are expected to pass.
+belong under `examples/dota2-rts-pathfinding-lab/tests/smoke/` and should be added
+to `dota2lab/smoke` after they are expected to pass.
 
 ## Issue Fix Checklist
 
 - `README.md`, `docs/mental-model.md`, `docs/public-api.md`,
   and this file still agree on the same boundary.
-- `simnav/smoke` and `zeroadlab/smoke` are discoverable by `./tools/run_tests.ps1 -List`.
+- `simnav/smoke` and `dota2lab/smoke` are discoverable by `./tools/run_tests.ps1 -List`.
 - Fixed issue repros are promoted into the correct smoke manifest.
-- Red repros stay in `tests/repro/` or lab `tests/repro/`, not in the stable manifest.
+- Red repros stay in `tests/repro/` (core only — `dota2-rts-pathfinding-lab` has no lab-level repro tier), not in the stable manifest.
 - Stress/fuzz lives in `tests/stress/`, never in the smoke manifest, and only ever asserts hard safety invariants.
 - Old RTS private pathfinder wording points to archived compatibility, not a future implementation path.
 - `addons/sim-nav-map/docs/references/0ad-source/` remains ignored/untracked.

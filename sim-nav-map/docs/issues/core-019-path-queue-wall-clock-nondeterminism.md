@@ -1,9 +1,11 @@
 # CORE-019: Path Queue Wall-Clock Cap Causes Simulation Nondeterminism
 
 Status: **fixed (2026-05-11)** — `DEFAULT_SYNC_PATH_BUDGET_USEC` now defaults
-to `0` (no time cap). Per-tick request count cap (`PATH_REQUEST_BUDGET_PER_TICK`
-in `ZeroAdRtsLabWorld`) remains. Callers can pass an explicit `max_usec > 0`
-if they accept nondeterminism in exchange for a hard frame budget.
+to `0` (no time cap), in core; this part is unaffected by anything below.
+Callers can pass an explicit `max_usec > 0` if they accept nondeterminism in
+exchange for a hard frame budget. Per-tick request count cap
+(`PATH_REQUEST_BUDGET_PER_TICK` in `ZeroAdRtsLabWorld`) remains a historical
+detail — that class lived in `0ad-rts-pathfinding-lab`, deleted 2026-07-03.
 
 ## Symptom
 

@@ -152,11 +152,15 @@ source/simulation2/helpers/VertexPathfinder.cpp
   pressure behavior. Otherwise the unit can be pushed into a static clearance
   corner and the short pathfinder may legitimately choose a visually odd
   retreat waypoint to get back out.
-- In the `0ad-rts-pathfinding-lab`, a dense moving crowd should therefore
-  increase local short-path and blocked-move activity, not cause repeated global
-  long-path rejection. If diagnostics show long-path churn under moving-unit
-  pressure, treat that as a policy bug in the lab layer before changing core
-  long-path contracts.
+- This formation/push-recovery guidance was written against the RTS-formation
+  style `0ad-rts-pathfinding-lab`, deleted 2026-07-03 — the remaining
+  `dota2-rts-pathfinding-lab` has no formation concept (contact-resolved
+  separation instead, see its `docs/design-notes/fable-motion-design.md`), so
+  this specific paragraph doesn't transfer 1:1. Kept as 0 A.D. source-behavior
+  reference for if a formation-style consumer is ever built again. In such a
+  lab, a dense moving crowd should increase local short-path and blocked-move
+  activity, not cause repeated global long-path rejection; long-path churn
+  under moving-unit pressure would be a policy bug in the lab layer, not core.
 - Useful diagnostics for this boundary are: long/short request counts,
   cancelled or obsolete tickets, `repath_suppressed`, path queue processed
   counts, blocked moves, unit-line failures, and frame average/max time.
@@ -273,10 +277,11 @@ source/simulation2/components/CCmpUnitMotion.h
 - `post_process` supports `raw`, `line_of_sight`, and `max_spacing`. Spacing is
   a navigation output preference (`waypoint_spacing` or `PathGoal.maxdist`),
   not movement policy.
-- `0ad-rts-pathfinding-lab` consumes result metadata through adapter reports only.
-  Feature 5 did not move `CCmpUnitMotion`-style short-path fallback, retry
-  cadence, push/yield, stuck/deadlock, formation, or movement controller policy
-  into core.
+- Example labs consume result metadata through adapter reports only (true of
+  the deleted `0ad-rts-pathfinding-lab` and of the current
+  `dota2-rts-pathfinding-lab` alike). Feature 5 did not move
+  `CCmpUnitMotion`-style short-path fallback, retry cadence, push/yield,
+  stuck/deadlock, formation, or movement controller policy into core.
 
 ## Feature 6 Filtered Short Query And Line Validation Source Audit
 
