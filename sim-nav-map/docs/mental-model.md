@@ -153,7 +153,7 @@ adapter 也是放项目侧 query policy 的地方：
 - 目标不可达时，是否 canonicalize 到最近可达 navcell
 - path 失败时是否 retry、fallback、停止、或进入 stuck handling
 
-`0ad-rts-pathfinding-lab` 里的 `ZeroAdRtsLabPathfinder` 就是这个模型。
+`dota2-rts-pathfinding-lab` 里的 `Dota2LabPathfinderWrapper` 就是这个模型。
 
 ## 典型 Path Query
 
@@ -186,17 +186,21 @@ if path.is_empty():
 
 ## 当前真实样例
 
-`addons/sim-nav-map/examples/0ad-rts-pathfinding-lab` 是一个 playable usage sample，不是 reusable addon API 的一部分。
+`addons/sim-nav-map/examples/dota2-rts-pathfinding-lab` 是一个 playable usage sample，不是 reusable addon API 的一部分。
 
 它添加了：
 
-- `ZeroAdRtsLabPathfinder`：把 lab object 转成 `sim-nav-map` shape 的 adapter
-- `ZeroAdRtsLabWorld`：simulation loop、replan queue、movement、overlap resolution、obstacle editing、metrics
-- `ZeroAdRtsLabMotionController`：0 A.D.-style motion + push policy
-- `ZeroAdRtsLabUnit` / `ZeroAdRtsLabObstacle`：lab state types
-- `frontend/zero_ad_rts_pathfinding_lab.gd`：drawing、input、HUD、tool modes
+- `Dota2LabPathfinderWrapper`：把 lab object 转成 `sim-nav-map` shape 的 adapter
+- `Dota2LabWorld`：simulation loop、move order 派发、metrics
+- `Dota2LabMotionEngine`：接触式分离求解（单位不进 nav map）+ 两态 FSM（IDLE/MOVING）+ 同步规划，Dota2/LoL 式移动手感
+- `Dota2LabUnit` / `Dota2LabObstacle` / `Dota2LabMoveOrder`：lab state types
+- `Dota2LabAiCommandSource`：Layer 2 脚本化命令流（驱动 lane move / chase / retreat / cancel）
+- `frontend/dota2_pathfinding_lab.gd`：drawing、input、HUD、tool modes
 
 这个 lab 可以用来验证行为，但里面的 movement / crowd policy 不应该被当成 addon API。
+
+> 历史上还有一个 `0ad-rts-pathfinding-lab`（RTS 群体寻路 sample，`ZeroAdRtsLabPathfinder` 等），
+> 2026-07-03 已删除——dota2 lab 手感与可扩展性均已验证足够，不再需要两个 example 并行维护。
 
 ## 设计规则
 

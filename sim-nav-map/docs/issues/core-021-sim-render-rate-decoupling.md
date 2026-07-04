@@ -1,8 +1,21 @@
 # CORE-019: Sim / Render Rate Decoupling (lab architecture)
 
+Status: **moot — subject lab deleted (2026-07-03)**. This issue is entirely
+about `0ad-rts-pathfinding-lab` running its 5Hz-designed logic at a 60Hz
+frame-driven cadence; that lab was removed (task-queue.md 1b: only
+`dota2-rts-pathfinding-lab` is kept). No fix was ever attempted, and none is
+needed now. Kept as archived architecture analysis — the observation that a
+frame-rate-driven sim can make otherwise-correct per-tick logic pathological
+is still valid knowledge, just no longer actionable against a live example.
+
+<details>
+<summary>Original tracking status (pre-deletion)</summary>
+
 Status: **open / accepted limitation**. No fix attempted. Tracking entry
 only — surfaces a design pivot that, if taken, would let us simplify or
 delete several lab-only mitigations shipped this round.
+
+</details>
 
 ## Symptom
 

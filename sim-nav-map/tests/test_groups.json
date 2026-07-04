@@ -39,8 +39,6 @@
         "repro/repro_core_012_boundary_motion_step_not_stay.tscn",
         "repro/repro_core_013_boundary_step_b_inside_no_early_block.tscn",
         "repro/repro_core_014_overlap_escape_must_be_strict_binary.tscn",
-        "repro/repro_core_015_motion_validates_full_segment_to_waypoint.tscn",
-        "repro/repro_core_016_arrive_when_blocked_close_to_target.tscn",
         "repro/repro_core_017_dense_cluster_perimeter_detour_known_limit.tscn",
         "repro/repro_core_018_visibility_graph_gap_threading.tscn"
       ]
