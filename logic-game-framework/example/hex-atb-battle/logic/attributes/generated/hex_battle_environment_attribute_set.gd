@@ -7,3 +7,4 @@ class_name HexBattleEnvironmentAttributeSet
 
 func _init(p_actor_id: String = "") -> void:
 	super(p_actor_id)
+

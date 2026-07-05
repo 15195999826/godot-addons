@@ -17,19 +17,14 @@ LGF（Logic Game Framework）目前提供两个示例项目，作为框架能力
 
 ## AttributeSet 边界
 
-[attributes/](attributes/) 目录提供早期示例共用的 `BaseGeneratedAttributeSet`
-子类（hex_battle_*、example_hero/tower/derived_demo），由
-`AttributeSetGeneratorScript` 从 `attributes_config.gd` 自动生成。
+每个 example 自持属性配置与产物：`example/<name>/logic/attributes/attributes_config.gd`
+（暴露 `const SETS := {...}`），`AttributeSetGeneratorScript` 按此约定自动发现并
+生成到同目录 `generated/`——加新 example 无需改 generator。项目级游戏用
+`res://logic-game-framework-config/attributes`。set 名决定生成的 class_name
+（全局符号），跨 config 必须唯一，generator 生成前做冲突预检。
 
-这个目录现在应视为 legacy/shared demo 区域，而不是新 example 的理想属性
-落点。多 example 并行后，把每个项目的属性 schema 都塞进这个共享 config 会造成
-不必要耦合和生成产物冲突；但在 generator 尚未支持 per-example output 前，个别
-新 example 可以把它作为明确记录的临时债务使用。
+[attributes/](attributes/) 目录仅承载 generator 演示/自测用的 `Example*` set
+（example_hero/tower/derived_demo），不是任何 example 的属性落点，不再往里加 set。
 
-新示例应优先拥有自己的 AttributeSet 边界：
-
-- 项目级游戏可用 `res://logic-game-framework-config/attributes`；
-- example 级游戏长期应使用 example-local config/output，或在 generator 支持前直接 extends `BaseGeneratedAttributeSet` 自管 `_raw.apply_config`；
-- `dota2-auto-battle` 如果 M1 暂时使用共享
-  `example/attributes/attributes_config.gd`，必须使用清晰的 DOTA2 前缀/命名空间，
-  不改变现有 hex 语义，并在本 example 文档里标记为待迁出的技术债。
+重新生成入口：编辑器菜单 `Tools > LGFramework > 生成属性集`，或 headless
+`godot --headless --path . addons/logic-game-framework/scripts/generate_attribute_sets.tscn`。
