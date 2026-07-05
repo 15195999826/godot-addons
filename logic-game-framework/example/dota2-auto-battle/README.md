@@ -19,7 +19,7 @@ ARAM 式**单中路实时自动战斗** example：一条水平中路，左右两
 ### `logic/attributes/`
 - 单位属性走 LGF AttributeSet，不在 actor 上加 per-stat forwarding getter。`Dota2BattleActorAttributeSet`（基类，含 `hp` / `max_hp` 及 `hp <= max_hp` 跨属性 clamp，clamp 归 AttributeSet 而非 actor setter）；`Dota2UnitAttributeSet` 继承之，加 `move_speed` / `attack_damage` / `attack_range` / `attack_interval_ms` / `aggro_range`。
 - `armor` 暂不生成（待伤害模型需要再加）；spawn 时**先设 `max_hp` 再设 `hp`** 避免被默认 max clip。
-- **临时技术债（route 3）**：M1 把 DOTA2 前缀定义加进共享 `example/attributes/attributes_config.gd`，生成到共享 `example/attributes/generated/`，与 hex/rts 共用一份 config/输出目录；长期目标是迁到 example-local 的 `logic/attributes/`。
+- **example-local config/output**：`attributes_config.gd` 定义本 example 全部 set，`AttributeSetGeneratorScript` 按 `example/<name>/logic/attributes/attributes_config.gd` 约定自动发现，产物生成到同目录 `generated/`。
 
 ### `logic/controllers/`
 - 每单位的运行时行为大脑：`Dota2UnitController`（基类）、`Dota2LaneCreepController`（首个具体实现：推线行军 / aggro / 追击 / 攻击 / 回线）。
@@ -95,7 +95,7 @@ Dota2TowerActor  extends Dota2BattleActor { tower_kind;   attribute_set: Dota2To
 
 **static config vs runtime attribute**：type config 是静态共享初值/常量；AttributeSet 是 buff/aura/item/modifier 读写的运行时对象。可被 modifier 改的 stat 进 AttributeSet；纯 identity/geometry/authored timing（`team_id` / `position_2d` / `collision_radius` / `attack_point_ms` / `backswing_ms` / `projectile_speed`）留 actor 或 config，**待真有 modifier 需求再 promote**。tower protection / glyph 经 AbilitySet tag/modifier 建模，不硬编码为 actor flag。
 
-**route 3 = 临时债**：M1 用共享 example 生成器（DOTA2 名字须 prefix/namespace、不改既有 hex/rts 生成名、债记入 note），长期目标 example-local config/output；M1 期间不移动既有 hex 生成文件。
+**属性生成 example-local**：config 与产物都在 `logic/attributes/`（generator 自动发现，见「分层结构 › logic/attributes/」）；set 名跨 config 全局唯一（决定生成的 class_name），generator 生成前做冲突预检。
 
 ## Logic / View 契约
 
@@ -162,14 +162,13 @@ cooldown 与 cast timing 是 Ability/AbilitySet 执行状态，非临时 control
 - **M3 — LGF Skill 模型**：把基础攻击 Ability 形状向 DOTA2 技能扩展；定义 DOT/HOT/aura/attack modifier 如何避免硬编码 tick 分支（periodic effect 不进 Procedure tick loop；skill 执行为 cast point/backswing/projectile/passive reaction 留路径）。
 - **M4 — Movement Adapter 硬化**：硬化 adapter 边界 + movement/path/blocked/failed 诊断；证明 controller/ability 只与 adapter 对话；底层 lab API 变更时 adapter 可替换。
 - **M5 — 可见前端**：`frontend/dota2_lane_battle.tscn` live unit view / HP bar / attack-death VFX / lane camera + debug panel；frontend smoke 验 scene 加载。
-- **长期方向**：AttributeSet 生成器走向 example-local ownership（hex 生成文件 migration 独立进行）；前端私有 clock 仅在真实压力下抽 `Dota2SimulationDriver`；玩家/英雄控制以独立 `PlayerController` 输入边界设计。
+- **长期方向**：前端私有 clock 仅在真实压力下抽 `Dota2SimulationDriver`；玩家/英雄控制以独立 `PlayerController` 输入边界设计。
 
 ### Open Design Questions
 
 - 未来玩家控制时，cast request 应 override 自主 controller、busy 时 fail、还是 queued-command？
 - 首个 basic-attack Timeline 能多小同时保留 attack point/backswing/projectile 路径？
 - aura 与 DOT/HOT 如何表示才不成特殊 Procedure tick 分支？
-- 临时共享 AttributeSet 生成器何时由 example-local 取代？
 - 哪些部分应在至少两个 example 需要后才提升进 LGF core？
 
 ---

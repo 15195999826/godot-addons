@@ -10,7 +10,8 @@ Keep a Changelog 格式。本 example 的变更入口；架构契约见 `README.
 
 ## [Unreleased]
 
-_（暂无）_
+### Changed
+- **AttributeSet 迁至 example-local（route-3 债清偿）**：`Dota2BattleActor` / `Dota2Unit` 两个 set 定义从共享 `example/attributes/attributes_config.gd` 迁入本 example `logic/attributes/attributes_config.gd`，产物 git mv 到 `logic/attributes/generated/`（内容逐字节不变、class_name 不变，业务代码零改动）。generator 自动发现机制与冲突预检见框架 CHANGELOG。
 
 ---
 
