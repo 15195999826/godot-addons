@@ -64,6 +64,11 @@ enum DrawMode {
 ## 半径（用于 RADIUS 模式）
 @export var radius: int = 5
 
+## 高差通行规则（边语义）：相邻格 height 差超过该值即不可跨越（can_traverse），
+## 除非该边挂了 edge_pass_override 豁免。< 0 = 关闭（现行为，任意高差可走）；
+## 0 = 严格同高（带 epsilon）；> 0 = 允许 ≤ 该值的落差。
+@export var max_height_step: float = -1.0
+
 
 func _init() -> void:
 	# 默认值已在 @export 声明中设置
@@ -84,6 +89,7 @@ func to_dict() -> Dictionary:
 		"rows": rows,
 		"columns": columns,
 		"radius": radius,
+		"max_height_step": max_height_step,
 	}
 
 
@@ -101,4 +107,5 @@ static func from_dict(d: Dictionary) -> GridMapConfig:
 	config.rows = d.get("rows", 10)
 	config.columns = d.get("columns", 10)
 	config.radius = d.get("radius", 5)
+	config.max_height_step = d.get("max_height_step", -1.0)
 	return config

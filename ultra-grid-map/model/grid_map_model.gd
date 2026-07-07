@@ -35,10 +35,14 @@ class GridTileData:
 	var occupant: Variant = null
 	## 自定义元数据
 	var metadata: Dictionary = {}
-	
+	## 边通行覆盖（key = 邻居 HexCoord.to_key(), value = bool）：true = 该边豁免
+	## max_height_step 高差检查（台阶/坡道等例外边）。can_traverse 双向查（任一侧
+	## 标注即放行），一处标注即可两向通行。
+	var edge_pass_overrides: Dictionary = {}
+
 	func _init(p_coord: HexCoord = null) -> void:
 		coord = p_coord if p_coord else HexCoord.zero()
-	
+
 	## 复制
 	func duplicate() -> GridTileData:
 		var copy := GridTileData.new(coord.duplicate())
@@ -47,6 +51,7 @@ class GridTileData:
 		copy.is_blocking = is_blocking
 		copy.occupant = occupant
 		copy.metadata = metadata.duplicate()
+		copy.edge_pass_overrides = edge_pass_overrides.duplicate()
 		return copy
 
 
@@ -466,6 +471,41 @@ func is_passable(coord: HexCoord) -> bool:
 	return not tile.is_blocking and tile.occupant == null
 
 
+## 边通行判定（含高差规则）：to 可通行且 from→to 的高差不超 config.max_height_step
+## （< 0 = 规则关闭，任意高差可走）。超限时看两侧 edge_pass_overrides（任一侧标注
+## 该边即放行——台阶边一处标注即可两向通行）。寻路（astar/reachable 的 edge_check）
+## 与移动检查请一律走本方法，不要各自比 height。
+func can_traverse(from: HexCoord, to: HexCoord) -> bool:
+	if not is_passable(to):
+		return false
+	var step := _config.max_height_step if _config != null else -1.0
+	if step < 0.0:
+		return true
+	var from_tile := get_tile(from)
+	var to_tile := get_tile(to)
+	if from_tile == null or to_tile == null:
+		return false
+	if absf(to_tile.height - from_tile.height) <= step + 0.0001:
+		return true
+	if from_tile.edge_pass_overrides.get(to.to_key(), false):
+		return true
+	if to_tile.edge_pass_overrides.get(from.to_key(), false):
+		return true
+	return false
+
+
+## 标注一条边的通行豁免（value=true 放行）。挂在 from 侧；can_traverse 双向查，
+## 无需两侧都挂。
+func set_edge_pass_override(from: HexCoord, to: HexCoord, value: bool) -> void:
+	var tile := get_tile(from)
+	if tile == null:
+		return
+	if value:
+		tile.edge_pass_overrides[to.to_key()] = true
+	else:
+		tile.edge_pass_overrides.erase(to.to_key())
+
+
 ## 预订格子
 ## 使用 metadata 存储预订信息
 func reserve_tile(coord: HexCoord, reserver_id: String) -> bool:
@@ -538,6 +578,7 @@ func to_config_dict() -> Dictionary:
 		"rows": _config.rows,
 		"columns": _config.columns,
 		"radius": _config.radius,
+		"max_height_step": _config.max_height_step,
 	}
 	return config_dict
 
@@ -561,6 +602,8 @@ func serialize() -> Dictionary:
 				tile_dict["occupant_id"] = tile.occupant.id
 		if not tile.metadata.is_empty():
 			tile_dict["metadata"] = tile.metadata
+		if not tile.edge_pass_overrides.is_empty():
+			tile_dict["edge_pass_overrides"] = tile.edge_pass_overrides.duplicate()
 		tiles_data.append(tile_dict)
 	
 	return {

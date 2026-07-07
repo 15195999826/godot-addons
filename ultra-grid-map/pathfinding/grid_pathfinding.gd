@@ -41,6 +41,8 @@ class PathResult:
 ## @param is_passable: 判断格子是否可通行的回调 func(coord: HexCoord) -> bool
 ## @param cost_func: 移动代价回调 func(from: HexCoord, to: HexCoord) -> float (可选，默认为1)
 ## @param max_cost: 最大搜索代价 (可选，防止无限搜索)
+## @param edge_check: 边通行回调 func(from, to: HexCoord) -> bool (可选；高差规则等
+##   边语义走这里——用 model.can_traverse。缺省 = 不做边检查，行为不变)
 ## @return: PathResult
 static func astar(
 	model: GridMapModel,
@@ -48,7 +50,8 @@ static func astar(
 	goal: HexCoord,
 	is_passable: Callable,
 	cost_func: Callable = Callable(),
-	max_cost: float = INF
+	max_cost: float = INF,
+	edge_check: Callable = Callable()
 ) -> PathResult:
 	var start_key: String = start.to_key()
 	var goal_key: String = goal.to_key()
@@ -72,6 +75,8 @@ static func astar(
 		# 使用 model 获取邻居
 		for neighbor in model.get_neighbors(current):
 			if not is_passable.call(neighbor):
+				continue
+			if edge_check.is_valid() and not edge_check.call(current, neighbor):
 				continue
 			
 			var move_cost := 1.0
@@ -114,7 +119,10 @@ static func astar_simple(
 	var cost_func := func(from: HexCoord, to: HexCoord) -> float:
 		return model.get_tile_cost(to)
 	
-	return astar(model, start, goal, is_passable, cost_func, max_cost)
+	var edge_check := func(from: HexCoord, to: HexCoord) -> bool:
+		return model.can_traverse(from, to)
+	
+	return astar(model, start, goal, is_passable, cost_func, max_cost, edge_check)
 
 
 ## 重建路径
@@ -192,12 +200,14 @@ static func _heap_sift_down(heap: Array, idx: int) -> void:
 ## @param start: 起点 (HexCoord)
 ## @param max_movement: 最大移动距离 (步数)
 ## @param is_passable: 判断格子是否可通行的回调
+## @param edge_check: 边通行回调 (可选，同 astar)
 ## @return: 所有可达格子的集合 (HexCoord 数组)
 static func reachable(
 	model: GridMapModel,
 	start: HexCoord,
 	max_movement: int,
-	is_passable: Callable
+	is_passable: Callable,
+	edge_check: Callable = Callable()
 ) -> Array[HexCoord]:
 	var start_key: String = start.to_key()
 	var visited: Dictionary = { start_key: start }
@@ -208,9 +218,12 @@ static func reachable(
 		for coord in fringes[k - 1]:
 			for neighbor in model.get_neighbors(coord):
 				var neighbor_key: String = neighbor.to_key()
-				if neighbor_key not in visited and is_passable.call(neighbor):
-					visited[neighbor_key] = neighbor
-					fringes[k].append(neighbor)
+				if neighbor_key in visited or not is_passable.call(neighbor):
+					continue
+				if edge_check.is_valid() and not edge_check.call(coord, neighbor):
+					continue
+				visited[neighbor_key] = neighbor
+				fringes[k].append(neighbor)
 	
 	var result: Array[HexCoord] = []
 	for coord in visited.values():
@@ -226,7 +239,9 @@ static func reachable_simple(
 ) -> Array[HexCoord]:
 	var is_passable := func(coord: HexCoord) -> bool:
 		return model.is_passable(coord)
-	return reachable(model, start, max_movement, is_passable)
+	var edge_check := func(from: HexCoord, to: HexCoord) -> bool:
+		return model.can_traverse(from, to)
+	return reachable(model, start, max_movement, is_passable, edge_check)
 
 
 ## BFS 可达性分析 (带代价)
@@ -236,13 +251,15 @@ static func reachable_simple(
 ## @param max_cost: 最大移动代价
 ## @param is_passable: 判断格子是否可通行的回调
 ## @param cost_func: 移动代价回调
+## @param edge_check: 边通行回调 (可选，同 astar)
 ## @return: Dictionary { key: { "coord": HexCoord, "cost": float } }
 static func reachable_with_cost(
 	model: GridMapModel,
 	start: HexCoord,
 	max_cost: float,
 	is_passable: Callable,
-	cost_func: Callable = Callable()
+	cost_func: Callable = Callable(),
+	edge_check: Callable = Callable()
 ) -> Dictionary:
 	var start_key: String = start.to_key()
 	var visited: Dictionary = { start_key: { "coord": start, "cost": 0.0 } }
@@ -255,6 +272,8 @@ static func reachable_with_cost(
 		
 		for neighbor in model.get_neighbors(current):
 			if not is_passable.call(neighbor):
+				continue
+			if edge_check.is_valid() and not edge_check.call(current, neighbor):
 				continue
 			
 			var move_cost := 1.0
@@ -284,7 +303,9 @@ static func reachable_with_cost_simple(
 		return model.is_passable(coord)
 	var cost_func := func(from: HexCoord, to: HexCoord) -> float:
 		return model.get_tile_cost(to)
-	return reachable_with_cost(model, start, max_cost, is_passable, cost_func)
+	var edge_check := func(from: HexCoord, to: HexCoord) -> bool:
+		return model.can_traverse(from, to)
+	return reachable_with_cost(model, start, max_cost, is_passable, cost_func, edge_check)
 
 
 # ========== 线段绘制 ==========
