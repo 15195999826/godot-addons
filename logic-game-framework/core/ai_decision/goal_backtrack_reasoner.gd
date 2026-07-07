@@ -56,6 +56,13 @@ func _rank_goals(options: Array[DecisionOption], scores: Dictionary,
 	return ranked
 
 
+## 打分明细（breakdown 条目 parts 字段的来源，debug 下钻消费）。
+## 默认空——不需要下钻的项目零成本；实现时通常与 _score 共享一次计算
+## （怎么组织归项目，框架不强求缓存）。
+func _score_parts(_option: DecisionOption, _snapshot: DecisionSnapshot) -> Dictionary:
+	return {}
+
+
 ## reason_key 生成。默认 = 最终目标的 id；项目通常映射为权重因子。
 func _reason_for(goal: DecisionOption, _snapshot: DecisionSnapshot) -> String:
 	return goal.id
@@ -73,12 +80,13 @@ func decide(snapshot: DecisionSnapshot, options: Array[DecisionOption],
 		scores[option.id] = option_score
 		var entry := {
 			"option_id": option.id, "score": option_score,
-			"parts": {}, "rejected": "",
+			"parts": _score_parts(option, snapshot), "rejected": "",
 		}
 		breakdown_by_id[option.id] = entry
 		breakdown.append(entry)
 	for goal in _rank_goals(options, scores, snapshot, rng):
-		var chain := _resolve_chain(goal, options, scores, snapshot)
+		var chain := _plan(goal, options, scores, snapshot,
+			{ goal.id: true }, max_chain_depth)
 		if chain.is_empty():
 			breakdown_by_id[goal.id]["rejected"] = "unreachable"
 			continue
@@ -93,51 +101,64 @@ func decide(snapshot: DecisionSnapshot, options: Array[DecisionOption],
 	return null
 
 
-## 从目标反推当前该做的一步。返回 [当前步, ..., goal]；空 = 当前不可达
-## （缺口无供给 / 超链长 / 供需成环）。
-func _resolve_chain(goal: DecisionOption, options: Array[DecisionOption],
-		scores: Dictionary, snapshot: DecisionSnapshot) -> Array[DecisionOption]:
-	var chain: Array[DecisionOption] = [goal]
-	var visited := { goal.id: true }
-	var cursor := goal
-	while true:
-		var unmet := _first_unmet(cursor, snapshot)
-		if unmet.is_empty():
-			return chain
-		if chain.size() >= max_chain_depth:
+## 从 cursor 反推执行链（浅递归回溯——仍是供需查表，不模拟世界状态）。
+## 可达性 = cursor 的**每个**未满足条件都能在预算内找到可行供给链——
+## 任一缺口无解即整体不可达（防「挣了钱却发现装备槽永远腾不出」的白跑）；
+## 某缺口的最优供给者自身不可行时，自动尝试次优（分降序、同分 id 字典序）。
+## 返回 [当前步, ..., cursor]：当前步取第一个缺口的可行供给链头——多缺口
+## 不产出树形计划，其余缺口靠每步重验在后续决策中自然轮到。
+## budget = 单条路径的剩余长度（含 cursor 自身）；visited = 当前路径上的
+## 节点（成环防护，分支间各自复制）。空 = 不可达。
+func _plan(cursor: DecisionOption, options: Array[DecisionOption],
+		scores: Dictionary, snapshot: DecisionSnapshot,
+		visited: Dictionary, budget: int) -> Array[DecisionOption]:
+	var unmet_list := _unmet_requirements(cursor, snapshot)
+	if unmet_list.is_empty():
+		return [cursor]
+	if budget <= 1:
+		return []
+	var head_chain: Array[DecisionOption] = []
+	for requirement in unmet_list:
+		var tag := _requirement_tag(requirement)
+		var solved: Array[DecisionOption] = []
+		for provider in _ranked_providers(tag, options, scores, visited):
+			var branch_visited := visited.duplicate()
+			branch_visited[provider.id] = true
+			solved = _plan(provider, options, scores, snapshot,
+				branch_visited, budget - 1)
+			if not solved.is_empty():
+				break
+		if solved.is_empty():
 			return []
-		var tag := _requirement_tag(unmet)
-		var prep := _best_provider(tag, options, scores, visited)
-		if prep == null:
-			return []
-		chain.push_front(prep)
-		visited[prep.id] = true
-		cursor = prep
-	return []
+		if head_chain.is_empty():
+			head_chain = solved
+	var chain := head_chain.duplicate()
+	chain.append(cursor)
+	return chain
 
 
-## requires 定义序里第一个未满足的条件；全满足返回 {}（值类型无结果惯例）。
-func _first_unmet(option: DecisionOption, snapshot: DecisionSnapshot) -> Dictionary:
+## requires 定义序里全部未满足的条件（定义序即遍历序，确定性）。
+func _unmet_requirements(option: DecisionOption,
+		snapshot: DecisionSnapshot) -> Array[Dictionary]:
+	var unmet: Array[Dictionary] = []
 	for requirement in option.requires:
 		if not _is_requirement_met(requirement, snapshot):
-			return requirement
-	return {}
+			unmet.append(requirement)
+	return unmet
 
 
-## provides 含 tag 的候选中分最高者（同分 id 字典序；跳过链上已访问的——
-## 供需成环的防护）。无供给者返回 null。
-func _best_provider(tag: String, options: Array[DecisionOption],
-		scores: Dictionary, visited: Dictionary) -> DecisionOption:
-	var best: DecisionOption = null
+## provides 含 tag 的候选，按分降序、同分 id 字典序（确定性兜底）；
+## 跳过当前路径上已访问的（成环防护）。
+func _ranked_providers(tag: String, options: Array[DecisionOption],
+		scores: Dictionary, visited: Dictionary) -> Array[DecisionOption]:
+	var providers: Array[DecisionOption] = []
 	for option in options:
-		if visited.has(option.id) or not option.provides.has(tag):
-			continue
-		if best == null:
-			best = option
-			continue
-		var option_score: float = scores[option.id]
-		var best_score: float = scores[best.id]
-		if option_score > best_score \
-				or (option_score == best_score and option.id < best.id):
-			best = option
-	return best
+		if not visited.has(option.id) and option.provides.has(tag):
+			providers.append(option)
+	providers.sort_custom(func(a: DecisionOption, b: DecisionOption) -> bool:
+		var score_a: float = scores[a.id]
+		var score_b: float = scores[b.id]
+		if score_a != score_b:
+			return score_a > score_b
+		return a.id < b.id)
+	return providers
