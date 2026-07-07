@@ -30,6 +30,8 @@ static func run(snapshot: DecisionSnapshot, provider: OptionProvider,
 	if result != null:
 		Log.assert_crash(result.selected != null,
 			"DecisionPipeline", "DecisionResult.selected 为空")
+		Log.assert_crash(options.has(result.selected),
+			"DecisionPipeline", "selected 不在候选集内（Reasoner 必须返回 Provider 产出的原实例）")
 		Log.assert_crash(not result.reason_key.is_empty(),
 			"DecisionPipeline", "reason_key 为空（违反可解释性合同）")
 	return result
