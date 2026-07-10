@@ -16,7 +16,7 @@
 ## [codeblock]
 ## var config := ActiveUseConfig.builder() \
 ##     .trigger(...)                                      # 1. 何时触发（可选，有默认值）
-##     .timeline_id(TIMELINE_ID.SLASH)                    # 2. 使用哪个时间线
+##     .timeline(SLASH_TIMELINE)                          # 2. 绑定时间线（设查找键+携带注册来源）
 ##     .on_timeline_start([StageCueAction...])            # 3a. 同步：每轮 timeline 开始
 ##     .on_tag(TimelineTags.HIT, [DamageAction...])       # 3b. 异步：timeline 时间点
 ##     .on_timeline_end([...])                            # 3c. 同步：每轮 timeline 结束（可选）
@@ -143,11 +143,6 @@ class ActiveUseConfigBuilder:
 		Log.assert_crash(data != null and data.id != "", "ActiveUseConfig", "timeline(data) 要求非空且 id 非空")
 		_timeline_data = data
 		_timeline_id = data.id
-		return self
-
-	## [迁移期兼容, W2 全线切换后删除] 仅设查找键不携带资产, 注册仍靠外部手动 register。
-	func timeline_id(value: String) -> ActiveUseConfigBuilder:
-		_timeline_id = value
 		return self
 	
 	## 添加 Tag -> Actions 映射（异步，按 timeline tag_time 触发）

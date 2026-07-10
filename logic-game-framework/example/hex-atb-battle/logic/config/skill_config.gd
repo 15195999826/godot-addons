@@ -2,8 +2,8 @@
 ##
 ## 每个职业的默认技能直接返回 AbilityConfig；不再走 SkillType 枚举中转。
 ## 加一个职业绑定的新技能：
-##   1. 在 skills/ 下新建技能文件并导出 ABILITY static var
-##   2. 在 skills/all_skills.gd::_build_manifest() 加一行 _Entry.new(ABILITY, [TIMELINES...])
+##   1. 在 logic/abilities/active/ 下新建技能文件并导出 ABILITY static var
+##   2. 在 shared/all_skills.gd::_build_manifest() 加一行 config（timeline 随 config 自动注册）
 ##   3. 在这里 get_class_skill 的 match 加一条职业 → Class.ABILITY
 class_name HexBattleSkillConfig
 

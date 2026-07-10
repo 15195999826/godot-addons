@@ -62,7 +62,7 @@ static func _on_apply_actions() -> Array[Action.BaseAction]:
 		_BreakPassivesAction.new(),
 		StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
-			Resolvers.str_val("control_broken"),
+			Resolvers.str_val(HexBattleCues.CONTROL_BROKEN),
 		),
 	]
 	return arr

@@ -41,13 +41,14 @@ static func create_config(totem_lifetime_ms: float) -> AbilityConfig:
 		.description("在身旁召唤一个图腾, 自动每 3s 攻击最近敌人, %.1fs 后消失" % (totem_lifetime_ms / 1000.0))
 		.ability_tags(["skill", "active", "self", "summon"])
 		.meta(HexBattleSkillMetaKeys.RANGE, 0)
+		.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_SELF)
 		.meta("totem_lifetime_ms", totem_lifetime_ms)
 		.active_use(
 			HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-			.timeline_id(TIMELINE_ID)
+			.timeline(SUMMON_TIMELINE)
 			.on_timeline_start([StageCueAction.new(
 				HexBattleTargetSelectors.ability_owner(),
-				Resolvers.str_val("summon_totem_cast"),
+				Resolvers.str_val(HexBattleCues.SUMMON_TOTEM_CAST),
 			)])
 			.on_tag(TimelineTags.HIT, [
 				HexBattleSpawnActorAction.new(

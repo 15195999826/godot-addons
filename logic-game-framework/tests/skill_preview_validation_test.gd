@@ -20,12 +20,11 @@ func _init() -> void:
 # ========== 测试夹具 ==========
 
 func _ensure_timelines_registered() -> void:
-	# 注册 strike / swift_strike timeline,occupy 计算需要从 TimelineRegistry 取 total_duration。
-	# Idempotent: TimelineRegistry.has(...) 检查避免重复注册 warning。
-	if not TimelineRegistry.has(HexBattleStrike.TIMELINE_ID):
-		TimelineRegistry.register(HexBattleStrike.STRIKE_TIMELINE)
-	if not TimelineRegistry.has(HexBattleSwiftStrike.TIMELINE_ID):
-		TimelineRegistry.register(HexBattleSwiftStrike.SWIFT_STRIKE_TIMELINE)
+	# 从 config 树收集注册(strike 走共享 std timeline, swift_strike 自有), occupy 计算
+	# 需要从 TimelineRegistry 取 total_duration。register 对同引用幂等, 无需 has() 前置检查。
+	for cfg: AbilityConfig in [HexBattleStrike.ABILITY, HexBattleSwiftStrike.ABILITY]:
+		for tl in cfg.collect_timelines():
+			TimelineRegistry.register(tl)
 
 
 func _strike_resolver() -> Callable:

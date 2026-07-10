@@ -37,7 +37,7 @@ static var ABILITY := (
 	.ability_tags(["basic_attack", "active", "enemy"])
 	.active_use(
 		ActiveUseConfig.builder()
-		.timeline_id(TIMELINE_ID)
+		.timeline(BASIC_ATTACK_TIMELINE)
 		.on_timeline_start([Dota2AttackStartedAction.new(
 			Dota2TargetSelectors.current_target(),
 			CONFIG_ID,

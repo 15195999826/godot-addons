@@ -31,12 +31,13 @@ static var ABILITY := (
 	.description("治疗友方单位，恢复生命值")
 	.ability_tags(["skill", "active", "heal", "ally"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 3)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HOLY_HEAL_TIMELINE)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("magic_heal")
+			Resolvers.str_val(HexBattleCues.MAGIC_HEAL)
 		)])
 		.on_tag(TimelineTags.HEAL, [HexBattleHealAction.new(
 			HexBattleTargetSelectors.current_target(),

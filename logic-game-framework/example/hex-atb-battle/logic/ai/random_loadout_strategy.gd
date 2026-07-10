@@ -55,7 +55,7 @@ func _decide_skill(
 	debug: Dictionary,
 	phase: String
 ) -> Dictionary:
-	if skill.has_ability_tag("self") and battle.can_use_skill_on(actor, skill, actor):
+	if skill.has_ability_tag(HexBattleSkillTags.TAG_SELF) and battle.can_use_skill_on(actor, skill, actor):
 		return _make_targeted_skill_decision(skill, actor)
 
 	var candidates := _collect_valid_targets(actor, skill, battle)
@@ -71,7 +71,7 @@ func _decide_skill(
 			debug["%s_reason" % phase] = "all_targets_have_status:%s" % status_config_id
 			return {}
 
-	if skill.has_ability_tag("heal"):
+	if skill.has_ability_tag(HexBattleSkillTags.TAG_HEAL):
 		var wounded := _filter_wounded(candidates)
 		debug["%s_wounded_targets" % phase] = wounded.size()
 		if wounded.is_empty():
@@ -79,7 +79,7 @@ func _decide_skill(
 			return {}
 		return _make_targeted_skill_decision(skill, _select_lowest_hp_percent(wounded))
 
-	if skill.has_ability_tag("ally"):
+	if skill.has_ability_tag(HexBattleSkillTags.TAG_ALLY):
 		return _make_targeted_skill_decision(skill, _select_lowest_hp_percent(candidates))
 
 	return _make_targeted_skill_decision(skill, _select_lowest_hp(candidates))
@@ -134,11 +134,11 @@ func _filter_targets_without_status(
 
 
 func _should_skip_target(actor: CharacterActor, skill: Ability, target: CharacterActor) -> bool:
-	if skill.has_ability_tag("enemy"):
+	if skill.has_ability_tag(HexBattleSkillTags.TAG_ENEMY):
 		return target.get_team_id() == actor.get_team_id()
-	if skill.has_ability_tag("ally"):
+	if skill.has_ability_tag(HexBattleSkillTags.TAG_ALLY):
 		return target.get_team_id() != actor.get_team_id()
-	if skill.has_ability_tag("self"):
+	if skill.has_ability_tag(HexBattleSkillTags.TAG_SELF):
 		return target.get_id() != actor.get_id()
 	return target.get_id() == actor.get_id()
 
@@ -153,7 +153,12 @@ func _filter_wounded(candidates: Array[CharacterActor]) -> Array[CharacterActor]
 
 func _make_targeted_skill_decision(skill: Ability, target: CharacterActor) -> Dictionary:
 	var decision := _make_skill_decision(skill, target)
-	if skill.has_ability_tag("cone"):
+	# COORD 型技能(锥形等)的 activate 事件必须带 target_coord —— 判据是 TARGETING
+	# 协议元数据, 不嗅探 "cone" 描述 tag(新 coord 技能忘带 tag 会静默漏参数)。
+	var targeting := str(skill.metadata.get(
+		HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR
+	))
+	if targeting == HexBattleSkillMetaKeys.TARGETING_COORD:
 		decision["target_coord"] = target.hex_position
 	return decision
 

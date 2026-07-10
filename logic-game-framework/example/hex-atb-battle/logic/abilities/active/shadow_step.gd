@@ -130,11 +130,12 @@ static var ABILITY := (AbilityConfig.builder()
 	.description("瞬移到目标背侧并造成 150% 攻击力的一击")
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 4)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(SHADOW_STEP_TIMELINE)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("melee_slash")
+			Resolvers.str_val(HexBattleCues.MELEE_SLASH)
 		)])
 		.on_tag(TimelineTags.CAST, [_ShadowStepTeleportAction.new(
 			HexBattleTargetSelectors.current_target()

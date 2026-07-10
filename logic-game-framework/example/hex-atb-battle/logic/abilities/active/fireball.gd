@@ -6,7 +6,7 @@
 ##   3. CAST tag: 施法动作（仅动画占位，无 Action 注册）
 ##   4. LAUNCH tag: 发射火球投射物（MOBA 追踪型）
 ##   5. 投射物飞行中...
-##   6. projectileHit 事件触发 → FIREBALL_HIT_TIMELINE → 造成伤害
+##   6. projectileHit 事件触发 → 共享 HIT_RESPONSE_100 timeline → 造成伤害
 ##
 ## 【投射物伤害技能 = 四件套手装, 投射物模板】(precise_shot / chain_lightning 同构):
 ##   ① active_use on_tag(LAUNCH, [LaunchProjectileAction]) 发射弹体
@@ -22,35 +22,11 @@ class_name HexBattleFireball
 
 
 const CONFIG_ID := "skill_fireball"
-const TIMELINE_ID_CAST := "skill_fireball"
-const TIMELINE_ID_HIT := "skill_fireball_hit"
 const COOLDOWN_MS := 4000.0
 ## 火球伤害 (固定值, 不随 atk 缩放; 与法师 atk 80 相等纯属巧合)。
 ## 单一来源: 同时喂 projectile CFG_DAMAGE (仅 projectileHit 事件 payload, 表演/replay
 ## metadata, 不实际扣 HP) 与 hit-timeline DamageAction (真正结算伤害的那行)。
 const DAMAGE := 80.0
-
-
-## 发射阶段 Timeline
-static var FIREBALL_TIMELINE := TimelineData.new(
-	TIMELINE_ID_CAST,
-	600.0,
-	{
-		TimelineTags.CAST: 200.0,    # 施法动作（占位）
-		TimelineTags.LAUNCH: 400.0,
-		TimelineTags.END: 600.0,
-	}
-)
-
-
-## 命中响应 Timeline
-static var FIREBALL_HIT_TIMELINE := TimelineData.new(
-	TIMELINE_ID_HIT,
-	100.0,
-	{
-		TimelineTags.END: 100.0,
-	}
-)
 
 
 static var ABILITY := (
@@ -60,12 +36,13 @@ static var ABILITY := (
 	.description("远程魔法攻击，发射追踪火球")
 	.ability_tags(["skill", "active", "ranged", "magic", "enemy", "projectile"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 5)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID_CAST)
+		.timeline(HexBattleStdTimelines.CAST_LAUNCH_600)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("magic_fireball")
+			Resolvers.str_val(HexBattleCues.MAGIC_FIREBALL)
 		)])
 		.on_tag(TimelineTags.LAUNCH, [LaunchProjectileAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -89,7 +66,7 @@ static var ABILITY := (
 			ProjectileEvents.PROJECTILE_HIT_EVENT,
 			HexBattleSkillHelpers.projectile_hit_filter
 		))
-		.timeline_id(TIMELINE_ID_HIT)
+		.timeline(HexBattleStdTimelines.HIT_RESPONSE_100)
 		.on_timeline_start([HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
 			Resolvers.float_val(DAMAGE),

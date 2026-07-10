@@ -57,7 +57,7 @@ static func _on_apply_actions() -> Array[Action.BaseAction]:
 	var arr: Array[Action.BaseAction] = [
 		StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
-			Resolvers.str_val("control_silenced"),
+			Resolvers.str_val(HexBattleCues.CONTROL_SILENCED),
 		),
 	]
 	return arr

@@ -22,23 +22,12 @@ class_name HexBattleAngleCone
 
 
 const CONFIG_ID := "skill_angle_cone"
-const TIMELINE_ID := "skill_angle_cone"
 const COOLDOWN_MS := 8000.0
 const CONE_RANGE := 3
 const HALF_ANGLE_DEG := 45.0
 const HALF_ANGLE_RAD := deg_to_rad(HALF_ANGLE_DEG)
 ## 浮点 epsilon: 让边界目标不抖动 (45° 边上的目标稳定命中或稳定不命中, 取决于 grid 几何).
 const ANGLE_EPSILON_RAD := 0.001
-
-
-static var ANGLE_CONE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
@@ -217,12 +206,13 @@ static var ABILITY := (
 	.description("以 caster 为顶点, 朝目标方向 半角 %d° 锥形, 范围 %d 格, 命中所有敌方 (atk 物理)" % [int(HALF_ANGLE_DEG), CONE_RANGE])
 	.ability_tags(["skill", "active", "melee", "enemy", "cone", "aoe"])
 	.meta(HexBattleSkillMetaKeys.RANGE, CONE_RANGE)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_COORD)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
-			Resolvers.str_val("angle_cone_cast"),
+			Resolvers.str_val(HexBattleCues.ANGLE_CONE_CAST),
 			_DEBUG_PARAMS_RESOLVER,
 		)])
 		.on_tag(TimelineTags.HIT, [

@@ -22,19 +22,8 @@ class_name HexBattleKnockbackPunch
 
 
 const CONFIG_ID := "skill_knockback_punch"
-const TIMELINE_ID := "skill_knockback_punch"
 const COOLDOWN_MS := 4000.0
 const KNOCKBACK_DISTANCE := 1
-
-
-static var KNOCKBACK_PUNCH_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 ## 基础伤害 = caster.atk (与 Strike 同模式)
@@ -49,9 +38,10 @@ static var ABILITY := (
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
 	.meta(HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, [HexBattleActor.KIND_CHARACTER])
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(
 				HexBattleTargetSelectors.current_target(),

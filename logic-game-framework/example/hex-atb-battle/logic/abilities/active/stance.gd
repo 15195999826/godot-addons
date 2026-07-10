@@ -98,6 +98,7 @@ static var ABILITY := (AbilityConfig.builder()
 	.description("在 Wrath (造伤/受伤 +50%) 与 Calm (造伤/受伤 -25%) 间切换")
 	.ability_tags(["skill", "active", "self", "stance"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 0)  # self-cast; 显式声明 0 与其它 self 技能对齐 (缺省会被读成 1)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_SELF)
 	.component_config(NoInstanceConfig.builder()
 		.on_apply_actions(_on_apply_actions())
 		.on_remove_actions(_on_remove_actions())
@@ -105,10 +106,10 @@ static var ABILITY := (AbilityConfig.builder()
 	.component_config(_incoming_pre_event())
 	.component_config(_outgoing_pre_event())
 	.active_use(HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(STANCE_TIMELINE)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
-			Resolvers.str_val("melee_slash")
+			Resolvers.str_val(HexBattleCues.MELEE_SLASH)
 		)])
 		.on_tag(TimelineTags.HIT, [FlowAction.if_(
 			_has_wrath,

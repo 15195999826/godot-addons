@@ -7,7 +7,6 @@ extends SkillScenario
 
 
 const TEST_DAMAGE := 10.0
-const TIMELINE_ID := HexBattleStrike.TIMELINE_ID
 
 
 static var PHYSICAL_HIT := _build_hit_ability(
@@ -43,7 +42,7 @@ static func _build_hit_ability(
 		.ability_tags(["skill", "active", "test"])
 		.active_use(
 			ActiveUseConfig.builder()
-			.timeline_id(TIMELINE_ID)
+			.timeline(HexBattleStdTimelines.MELEE_500)
 			.on_tag(TimelineTags.HIT, [HexBattleDamageAction.new(
 				HexBattleTargetSelectors.current_target(),
 				Resolvers.float_val(TEST_DAMAGE),

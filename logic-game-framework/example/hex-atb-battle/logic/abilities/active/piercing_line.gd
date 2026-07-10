@@ -16,19 +16,8 @@ class_name HexBattlePiercingLine
 
 
 const CONFIG_ID := "skill_piercing_line"
-const TIMELINE_ID := "skill_piercing_line"
 const COOLDOWN_MS := 8000.0
 const LINE_LENGTH := 3
-
-
-static var PIERCING_LINE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
@@ -108,12 +97,13 @@ static var ABILITY := (
 	.description("沿目标方向直线穿透 %d 格, 命中所有敌方角色 (atk 物理)" % LINE_LENGTH)
 	.ability_tags(["skill", "active", "ranged", "enemy", "line", "aoe"])
 	.meta(HexBattleSkillMetaKeys.RANGE, LINE_LENGTH)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("piercing_line_cast"),
+			Resolvers.str_val(HexBattleCues.PIERCING_LINE_CAST),
 		)])
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(

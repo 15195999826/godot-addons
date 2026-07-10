@@ -212,11 +212,12 @@ func can_use_skill_on(actor: CharacterActor, skill: Ability, target: HexBattleAc
 		var character_target := target as CharacterActor
 		var same_team := actor.get_team_id() == character_target.get_team_id()
 		var is_self := actor.get_id() == character_target.get_id()
-		if skill.has_ability_tag("enemy") and same_team:
+		if skill.has_ability_tag(HexBattleSkillTags.TAG_ENEMY) and same_team:
 			return false
-		if skill.has_ability_tag("ally") and not same_team:
+		if skill.has_ability_tag(HexBattleSkillTags.TAG_ALLY) and not same_team:
 			return false
-		if skill.has_ability_tag("ally") and is_self and not skill.has_ability_tag("self"):
+		if skill.has_ability_tag(HexBattleSkillTags.TAG_ALLY) and is_self \
+				and not skill.has_ability_tag(HexBattleSkillTags.TAG_SELF):
 			return false
 
 	var skill_range := skill.get_meta_int(HexBattleSkillMetaKeys.RANGE, 1)
@@ -224,4 +225,23 @@ func can_use_skill_on(actor: CharacterActor, skill: Ability, target: HexBattleAc
 	if distance > skill_range:
 		return false
 
+	return true
+
+
+## 判断 actor 能否对 coord 施放 COORD 型技能(TARGETING == coord, 如锥形)。
+## 检查: 技能确为 coord 施法、格子在图内、施法距离。
+## ACTOR/SELF 型技能的合法性走 can_use_skill_on; 二者是 TARGETING 协议的两个入口。
+func can_use_skill_at(actor: CharacterActor, skill: Ability, coord: HexCoord) -> bool:
+	var targeting := str(skill.metadata.get(
+		HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR
+	))
+	if targeting != HexBattleSkillMetaKeys.TARGETING_COORD:
+		return false
+	if coord == null or not coord.is_valid():
+		return false
+	if not grid.has_tile(coord):
+		return false
+	var skill_range := skill.get_meta_int(HexBattleSkillMetaKeys.RANGE, 1)
+	if actor.hex_position.distance_to(coord) > skill_range:
+		return false
 	return true

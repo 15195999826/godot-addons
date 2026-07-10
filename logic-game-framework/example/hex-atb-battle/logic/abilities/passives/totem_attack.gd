@@ -14,7 +14,7 @@ class_name HexBattleTotemAttack
 const CONFIG_ID := "passive_totem_attack"
 const TICK_TIMELINE_ID := "passive_totem_attack_tick"
 const TICK_INTERVAL_MS := 3000.0
-const STAGE_CUE_ID := "totem_attack"
+const STAGE_CUE_ID := HexBattleCues.TOTEM_ATTACK
 
 
 static var TICK_TIMELINE := TimelineData.periodic(TICK_TIMELINE_ID, TICK_INTERVAL_MS)
@@ -103,7 +103,7 @@ static var ABILITY := (
 	.component_config(
 		ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.GRANTED_SELF)
-		.timeline_id(TICK_TIMELINE_ID)
+		.timeline(TICK_TIMELINE)
 		.on_timeline_end([_TotemAttackAction.new()])
 		.build()
 	)

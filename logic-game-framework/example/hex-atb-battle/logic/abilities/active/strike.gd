@@ -21,18 +21,7 @@ class_name HexBattleStrike
 
 
 const CONFIG_ID := "skill_strike"
-const TIMELINE_ID := "skill_strike"
 const COOLDOWN_MS := 2000.0
-
-
-static var STRIKE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 ## caster.atk 作为基础伤害；resolve 在 DamageAction.execute() 时按 ctx 读取
@@ -105,12 +94,13 @@ static var ABILITY := (
 	.description("近战攻击，对敌人造成物理伤害（暴击/特效由装备 grant 的 PreBasicAttackEvent passive 决定）")
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_basic_attack_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("melee_slash")
+			Resolvers.str_val(HexBattleCues.MELEE_SLASH)
 		)])
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(

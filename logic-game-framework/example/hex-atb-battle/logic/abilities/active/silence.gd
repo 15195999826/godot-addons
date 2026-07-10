@@ -1,55 +1,32 @@
 ## Silence #B1 - 沉默主动技能 (soft control)
 ##
-## 命中目标后 grant HexBattleSilenceBuff (duration 默认 2000ms)。
-## 阻挡目标"真正的 active skill" (Fireball / Poison / Stun / etc), 不挡 Strike / Move。
+## 命中目标后 grant HexBattleSilenceBuff。阻挡目标"真正的 active skill"
+## (Fireball / Poison / Stun / etc), 不挡 Strike / Move —— gate 语义与
+## 多实例并存契约见 HexBattleSilenceBuff 头注释。
 ##
-## 与 Stun 相同的契约: HexBattleSilenceBuff.create_config(duration_ms) 让 ApplyBuffAction
-## 在 execute 时 grant 独立 buff Ability 实例; 多次 silence 不 refresh 不合并 duration。
+## 骨架走 HexBattleSkillPresets.buff_applier; 展开后的完整 builder 链范本见 poison.gd。
 class_name HexBattleSilence
 
 
 const CONFIG_ID := "skill_silence"
-const TIMELINE_ID := "skill_silence"
 const SILENCE_DURATION_MS := 2000.0
 const COOLDOWN_MS := 6000.0
-
-
-static var SILENCE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 static var ABILITY := create_config(SILENCE_DURATION_MS)
 
 
 static func create_config(duration_ms: float) -> AbilityConfig:
-	return (
-		AbilityConfig.builder()
-		.config_id(CONFIG_ID)
-		.display_name("沉默")
-		.description("命中目标后使其 %.1f 秒内无法施放主动技能" % (duration_ms / 1000.0))
-		.ability_tags(["skill", "active", "melee", "enemy", "control", "silence"])
-		.meta(HexBattleSkillMetaKeys.RANGE, 1)
-		.meta("silence_duration_ms", duration_ms)
-		.active_use(
-			HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-			.timeline_id(TIMELINE_ID)
-			.on_timeline_start([StageCueAction.new(
-				HexBattleTargetSelectors.current_target(),
-				Resolvers.str_val("melee_slash"),
-			)])
-			.on_tag(TimelineTags.HIT, [
-				HexBattleApplyBuffAction.new(
-					HexBattleTargetSelectors.current_target(),
-					HexBattleSilenceBuff.create_config(duration_ms),
-				),
-			])
-			.build()
-		)
-		.build()
+	return HexBattleSkillPresets.buff_applier(
+		CONFIG_ID,
+		"沉默",
+		"命中目标后使其 %.1f 秒内无法施放主动技能" % (duration_ms / 1000.0),
+		["skill", "active", "melee", "enemy", "control", "silence"],
+		1,
+		HexBattleSkillMetaKeys.TARGETING_ACTOR,
+		COOLDOWN_MS,
+		HexBattleSilenceBuff.create_config(duration_ms),
+		HexBattleCues.MELEE_SLASH,
+		false,
+		{ "silence_duration_ms": duration_ms },
 	)

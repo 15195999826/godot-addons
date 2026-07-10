@@ -13,7 +13,7 @@ extends SkillScenario
 
 
 const CASTER_ATK := 50.0
-const KILL_CUE := "execute_kill"
+const KILL_CUE := HexBattleCues.EXECUTE_KILL
 
 
 func get_name() -> String:

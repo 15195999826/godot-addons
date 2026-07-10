@@ -1,4 +1,4 @@
-## Poison - 施毒近战技能
+## Poison - 施毒近战技能【buff_applier 家族的显式教学范本】
 ##
 ## 近战范围（RANGE=1），对 current_target 施加 HexBattlePoisonBuff（默认 3 层）。
 ## 本技能不自己造成直接伤害 —— 全部伤害由 DOT buff 每 2s tick 产生。
@@ -8,23 +8,14 @@
 ##   - Poison 类 Action：on_tag(HIT, [HexBattleApplyBuffAction])，只 grant buff，后续由 buff 自治
 ##   - Buff 自身层数语义来自 Ability 一级属性 stacks，其驱动来自 ActivateInstanceConfig + GRANTED_SELF
 ##
-## Timeline：500ms 短 cast，HIT @ 300ms（对齐 Strike，动画节奏一致）
+## 【家族范本地位】stun/silence/break/expose/ward/双盾/surge 8 个同骨架技能已收进
+## HexBattleSkillPresets.buff_applier —— 本文件保持全显式 builder 链，就是那个 preset
+## 展开后的样子。想理解 preset 内部结构 / 做带独有机制的变体时，从这里抄起。
 class_name HexBattlePoison
 
 
 const CONFIG_ID := "skill_poison"
-const TIMELINE_ID := "skill_poison"
 const COOLDOWN_MS := 3000.0
-
-
-static var POISON_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 static var ABILITY := (
@@ -34,12 +25,13 @@ static var ABILITY := (
 	.description("对目标施加中毒 debuff（3 层，每 2 秒造成 = 当前层数的 PURE 伤害，层数递减）")
 	.ability_tags(["skill", "active", "melee", "enemy", "debuff"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("melee_slash")
+			Resolvers.str_val(HexBattleCues.MELEE_SLASH)
 		)])
 		.on_tag(TimelineTags.HIT, [
 			HexBattleApplyBuffAction.new(
