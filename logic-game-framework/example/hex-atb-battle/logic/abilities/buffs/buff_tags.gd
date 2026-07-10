@@ -5,11 +5,13 @@
 ##   - 新加 buff 引用 const, 不会 typo "negative" 成 "negtive" 导致 cleanse 静默漏清
 ##   - cleanse 的优先级匹配与 buff 声明用同一来源, 改一处即对齐
 ##
-## 语义约定:
-##   - BUFF: 所有 buff/debuff ability 都带 (区分于 skill/passive)
-##   - NEGATIVE / POSITIVE: 增益 vs 减益。注意 ward_buff 是防御 buff 却带 NEGATIVE —
-##     那是为了让"按 tag 找 buff"逻辑统一处理 (见 ward_buff.gd 头注释), 实际增减益由
-##     各 PreEvent/Action 自解释。cleanse 清 NEGATIVE 时会波及 ward — 见设计债文档待评估项。
+## 语义约定 — ability_tags 两轴模型:
+##   - 载体轴 (互斥, 必带一个): "skill" / "passive" / BUFF / "intrinsic" / "status"。
+##     BUFF = 可被 grant 的状态实例 (出现在 buff 栏、可被 cleanse 作用、被
+##     SkillPreview 选单排除)。被动永远不带 BUFF — "增益被动"的增益语义走极性轴。
+##   - 极性轴 (正交, 可挂任何载体; buff 实例必带其一): NEGATIVE / POSITIVE。
+##     "是否增益"一律查极性 tag, 与载体无关 (恶魔形态 = passive+positive,
+##     护盾 = buff+positive, 中毒 = buff+negative)。
 ##   - CONTROL: 硬控 (stun/silence/break)。cleanse 最高优先清除。
 ##   - PASSIVE_BREAK: 破甲类 (break)。cleanse 次优先。
 class_name HexBattleBuffTags

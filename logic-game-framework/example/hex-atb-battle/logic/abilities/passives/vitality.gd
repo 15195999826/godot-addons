@@ -14,7 +14,7 @@ static var ABILITY: AbilityConfig = (
 	.config_id(CONFIG_ID)
 	.display_name("生命力")
 	.description("max_hp 越高，atk 越高（atk += max_hp * 0.01）")
-	.ability_tags(["passive", "buff", "dynamic"])
+	.ability_tags(["passive", "positive", "dynamic"])
 	.component_config(DynamicStatModifierComponentConfig.new(
 		DynamicStatModifierConfig.new(
 			HexBattleCharacterAttributeSet.max_hp_attribute,  # 源
