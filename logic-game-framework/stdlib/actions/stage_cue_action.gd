@@ -20,6 +20,12 @@ func _init(
 	_cue_id = cue_id
 	_cue_params = cue_params
 
+## 只读探查口: cue 为固定值(Resolvers.str_val)时返回该值, 动态 resolver 返回 ""。
+## 供 manifest lint 在不构造 ExecutionContext 的情况下收集全部静态 cue 做存在性断言。
+func get_fixed_cue() -> String:
+	return _cue_id.fixed_value if _cue_id.is_fixed else ""
+
+
 func execute(ctx: ExecutionContext) -> ActionResult:
 	if ctx.ability_ref == null:
 		push_error("[StageCueAction] ctx.ability_ref is required")
