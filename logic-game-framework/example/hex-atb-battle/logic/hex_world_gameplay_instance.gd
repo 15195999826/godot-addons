@@ -199,6 +199,14 @@ func broadcast_projectile_events() -> void:
 ## 兜底 env 不会被现有技能误选; "打墙"等技能在 ability config 里显式 opt-in。
 ## 阵营/self 检查仅对 character target 有意义 (env 没有 team_id), 包在 type 分支里。
 func can_use_skill_on(actor: CharacterActor, skill: Ability, target: HexBattleActor) -> bool:
+	# TARGETING 协议双入口: 本函数只裁决 ACTOR/SELF; COORD 型(锥形等)一律走
+	# can_use_skill_at —— 在这里放行会绕过 coord 模式与 has_tile 检查(codex W7-P2)。
+	var targeting := str(skill.metadata.get(
+		HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR
+	))
+	if targeting == HexBattleSkillMetaKeys.TARGETING_COORD:
+		return false
+
 	if target.is_dead():
 		return false
 

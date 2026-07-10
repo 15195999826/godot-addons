@@ -91,15 +91,15 @@ func emit_pre_basic_attack(p_value: bool = true) -> HexBattleDamageAction:
 	return self
 
 
-## 重写 _freeze 以冻结回调 Action
-func _freeze() -> void:
-	super._freeze()
-	for callback in _on_hit_callbacks:
-		callback._freeze()
-	for callback in _on_critical_callbacks:
-		callback._freeze()
-	for callback in _on_kill_callbacks:
-		callback._freeze()
+## 重写标准 child API 暴露回调链(on_hit / on_critical / on_kill):
+## 基类 _freeze 经它统一冻结; manifest lint 经它做静态 DFS 收集
+## (cue 断言覆盖回调与 FlowAction 分支里的 StageCue)。
+func get_child_actions() -> Array[Action.BaseAction]:
+	var out: Array[Action.BaseAction] = []
+	out.append_array(_on_hit_callbacks)
+	out.append_array(_on_critical_callbacks)
+	out.append_array(_on_kill_callbacks)
+	return out
 
 
 # ============================================================
@@ -122,16 +122,6 @@ func on_critical(action: Action.BaseAction) -> HexBattleDamageAction:
 func on_kill(action: Action.BaseAction) -> HexBattleDamageAction:
 	_on_kill_callbacks.append(action)
 	return self
-
-
-## 只读探查口: 合并返回全部已注册回调 action(on_hit / on_critical / on_kill),
-## 供 manifest lint 收集回调链上的 StageCue 等静态声明。执行路径不使用。
-func get_callback_actions() -> Array[Action.BaseAction]:
-	var out: Array[Action.BaseAction] = []
-	out.append_array(_on_hit_callbacks)
-	out.append_array(_on_critical_callbacks)
-	out.append_array(_on_kill_callbacks)
-	return out
 
 
 # ============================================================

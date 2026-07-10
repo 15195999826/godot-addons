@@ -11,11 +11,10 @@
 ##   4. tag 词表 + active 技能 RANGE / TARGETING meta 必填
 ##      (tag typo 静默漏行为; RANGE 缺省被读成 1 是踩过的坑)
 ##
-## 覆盖边界: cue 收集走 StageCueAction.get_fixed_cue()(str_val 静态值)与
-## HexBattleDamageAction.get_callback_actions(); FlowAction 分支内今天没有 cue,
-## 不递归(新增"分支里发 cue"的技能时把该分支 action 暴露给本 lint)。
-## 直接 GameEvent.StageCue.create 的调用点(demon_form/totem_attack)靠
-## 「必须引用 HexBattleCues 常量」的约定覆盖, 静态收集不到。
+## 覆盖边界: cue 收集 = 顶层 action + 经 Action.get_child_actions() 的通用 DFS
+## (覆盖 FlowAction then/else 分支、DamageAction 回调链、未来任意嵌套组合器)。
+## 直接 GameEvent.StageCue.create 的调用点(demon_form/totem_attack)静态收集不到,
+## 靠「必须引用 HexBattleCues 常量」的约定覆盖。
 extends Node
 
 
@@ -129,27 +128,31 @@ func _check_cues(configs: Array[AbilityConfig], failures: Array[String]) -> void
 					failures.append("%s: cue '%s' 不在 frontend 注册表也不在豁免名单(会静默无视觉)" % [cfg.config_id, cue])
 
 
-## 收集 config 树上全部静态可达 action(含 DamageAction 回调链)。
+## 收集 config 树上全部静态可达 action:
+## 顶层(timeline start/end/tag + NoInstance 三组)为根, 经 get_child_actions() DFS 展开
+## (FlowAction 分支 / DamageAction 回调链 / 未来嵌套组合器一体覆盖)。
 func _collect_actions(cfg: AbilityConfig) -> Array[Action.BaseAction]:
-	var out: Array[Action.BaseAction] = []
+	var roots: Array[Action.BaseAction] = []
 	for au in cfg.active_use_components:
-		_append_component_actions(out, au.on_timeline_start_actions, au.on_timeline_end_actions, au.tag_actions)
+		_append_component_actions(roots, au.on_timeline_start_actions, au.on_timeline_end_actions, au.tag_actions)
 	for comp in cfg.components:
 		if comp is ActivateInstanceConfig:
 			var aic := comp as ActivateInstanceConfig
-			_append_component_actions(out, aic.on_timeline_start_actions, aic.on_timeline_end_actions, aic.tag_actions)
+			_append_component_actions(roots, aic.on_timeline_start_actions, aic.on_timeline_end_actions, aic.tag_actions)
 		elif comp is NoInstanceConfig:
 			var nic := comp as NoInstanceConfig
-			out.append_array(nic.actions)
-			out.append_array(nic.on_apply_actions)
-			out.append_array(nic.on_remove_actions)
-	# DamageAction 回调链(execute 的 on_kill cue 藏在这里)
-	var with_callbacks: Array[Action.BaseAction] = []
-	for a in out:
-		with_callbacks.append(a)
-		if a is HexBattleDamageAction:
-			with_callbacks.append_array((a as HexBattleDamageAction).get_callback_actions())
-	return with_callbacks
+			roots.append_array(nic.actions)
+			roots.append_array(nic.on_apply_actions)
+			roots.append_array(nic.on_remove_actions)
+	var out: Array[Action.BaseAction] = []
+	var stack: Array[Action.BaseAction] = roots.duplicate()
+	while not stack.is_empty():
+		var action: Action.BaseAction = stack.pop_back()
+		if action == null:
+			continue
+		out.append(action)
+		stack.append_array(action.get_child_actions())
+	return out
 
 
 func _append_component_actions(

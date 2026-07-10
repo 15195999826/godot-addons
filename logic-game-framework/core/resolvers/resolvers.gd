@@ -49,12 +49,9 @@ static func int_fn(callable: Callable) -> IntResolver:
 # ============================================================
 
 ## 创建固定 String 值的解析器
-## 回填 is_fixed/fixed_value 元数据, 供工装无 ctx 静态读值(如 lint 的 cue 断言)。
+## 构造期绑定固定值元数据, 供工装无 ctx 静态读值(如 lint 的 cue 断言)。
 static func str_val(v: String) -> StringResolver:
-	var r := StringResolver.new(func(_ctx): return v)
-	r.is_fixed = true
-	r.fixed_value = v
-	return r
+	return StringResolver.new(func(_ctx): return v, true, v)
 
 ## 创建动态 String 值的解析器
 static func str_fn(callable: Callable) -> StringResolver:

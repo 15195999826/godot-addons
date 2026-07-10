@@ -66,6 +66,7 @@ static func _build_manifest() -> Array[AbilityConfig]:
 	arr.append(HexBattleShieldBuffs.MAGICAL_SHIELD_BUFF)
 	arr.append(HexBattleSurgeBuff.SURGE_BUFF)
 	arr.append(HexBattleExposeBuff.EXPOSE_BUFF)
+	arr.append(HexBattleInspireBuff.INSPIRE_BUFF)
 	arr.append(HexBattleStunBuff.create_config(HexBattleStunBuff.DEFAULT_DURATION_MS))
 	arr.append(HexBattleSilenceBuff.create_config(HexBattleSilenceBuff.DEFAULT_DURATION_MS))
 	arr.append(HexBattleBreakBuff.create_config(HexBattleBreakBuff.DEFAULT_DURATION_MS))

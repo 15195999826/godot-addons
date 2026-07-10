@@ -2,6 +2,8 @@
 class_name HexBattleInspireBuff
 
 
+const CONFIG_ID := "buff_inspire"
+
 ## 振奋 Buff 持续时间（毫秒）
 const INSPIRE_DURATION_MS := 2000.0
 
@@ -16,7 +18,7 @@ const INSPIRE_DEF_BONUS := 10.0
 ## - 标签：buff, inspire
 static var INSPIRE_BUFF := (
 	AbilityConfig.builder()
-	.config_id("buff_inspire")
+	.config_id(CONFIG_ID)
 	.display_name("振奋")
 	.description("防御力 +10，持续 2 秒")
 	.ability_tags(["buff", "positive"])

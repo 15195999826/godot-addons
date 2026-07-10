@@ -23,7 +23,7 @@ func _init(
 ## 只读探查口: cue 为固定值(Resolvers.str_val)时返回该值, 动态 resolver 返回 ""。
 ## 供 manifest lint 在不构造 ExecutionContext 的情况下收集全部静态 cue 做存在性断言。
 func get_fixed_cue() -> String:
-	return _cue_id.fixed_value if _cue_id.is_fixed else ""
+	return _cue_id.try_get_fixed_value()
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
