@@ -185,7 +185,7 @@ tests/skill_scenarios/
 4. ✅ utils/hex_battle_damage_utils.gd::apply_damage 插入 resolver 调用 + on_break 在 remove_actor 前触发
 5. ✅ skills/thorn.gd 加 actual_life_damage > 0 过滤
 6. ✅ actions/apply_shield_action.gd
-7. ✅ buffs/ward_buff.gd + skills/ward.gd（V1 independent 策略）+ skills/all_skills.gd 注册 WARD_TIMELINE
+7. ✅ abilities/buffs/ward_buff.gd + abilities/active/ward.gd（V1 independent 策略）+ abilities/shared/all_skills.gd manifest 登记（timeline 随 config 自动注册）
 8. ✅ tests/skill_scenarios/shield_{basic_absorb, full_absorb_no_thorns, priority_order}_scenario.gd
 9. ✅ Codex 审查后修复（P1/P2/P3）：
    - frontend: visualizers/damage_visualizer.gd 飘字/血条/闪白按 actual_life_damage 走，额外飘 "护盾 -N"
