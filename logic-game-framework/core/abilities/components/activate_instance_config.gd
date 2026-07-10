@@ -36,6 +36,11 @@ extends AbilityComponentConfig
 ## Timeline ID
 var timeline_id: String
 
+## 本组件携带的 timeline 资产（注册来源）。经 builder.timeline(data) 设置时非 null，
+## 注册链路（如 register_all_timelines）从 config 树收集它统一注册；
+## timeline_id 仍是执行期查找键（AbilityExecutionInstance 按 id 查 registry）。
+var timeline_data: TimelineData = null
+
 ## Tag → Actions 映射列表（异步，按 timeline tag_time 触发）
 var tag_actions: Array[TagActionsEntry]
 
@@ -58,7 +63,8 @@ func _init(
 	triggers: Array[TriggerConfig] = [],
 	trigger_mode: String = "any",
 	on_timeline_start_actions: Array[Action.BaseAction] = [],
-	on_timeline_end_actions: Array[Action.BaseAction] = []
+	on_timeline_end_actions: Array[Action.BaseAction] = [],
+	timeline_data: TimelineData = null
 ) -> void:
 	self.timeline_id = timeline_id
 	self.tag_actions = tag_actions
@@ -66,6 +72,7 @@ func _init(
 	self.trigger_mode = trigger_mode
 	self.on_timeline_start_actions = on_timeline_start_actions
 	self.on_timeline_end_actions = on_timeline_end_actions
+	self.timeline_data = timeline_data
 
 
 ## 创建对应的 ActivateInstanceComponent 实例
@@ -88,6 +95,7 @@ class ActivateInstanceConfigBuilder:
 	extends RefCounted
 
 	var _timeline_id: String = ""
+	var _timeline_data: TimelineData = null
 	var _tag_actions: Array[TagActionsEntry] = []
 	var _triggers: Array[TriggerConfig] = []
 	var _trigger_mode: String = "any"
@@ -111,8 +119,16 @@ class ActivateInstanceConfigBuilder:
 	
 	# ========== 2. 时间线配置 ==========
 	
-	## 设置 Timeline ID（必填）
-	## 指定执行时使用的时间线定义
+	## 绑定 timeline（必填）：一次调用同时设置执行期查找键（timeline_id = data.id）
+	## 并让 config 携带该 TimelineData 作为注册来源（注册链路从 config 树收集统一注册）。
+	## timeline 必须是 static 声明的常量实例——registry 对同 id 异引用会 crash。
+	func timeline(data: TimelineData) -> ActivateInstanceConfigBuilder:
+		Log.assert_crash(data != null and data.id != "", "ActivateInstanceConfig", "timeline(data) 要求非空且 id 非空")
+		_timeline_data = data
+		_timeline_id = data.id
+		return self
+
+	## [迁移期兼容, W2 全线切换后删除] 仅设查找键不携带资产, 注册仍靠外部手动 register。
 	func timeline_id(value: String) -> ActivateInstanceConfigBuilder:
 		_timeline_id = value
 		return self
@@ -135,12 +151,13 @@ class ActivateInstanceConfigBuilder:
 	## 构建 ActivateInstanceConfig
 	## 验证必填字段，缺失时触发断言错误
 	func build() -> ActivateInstanceConfig:
-		Log.assert_crash(_timeline_id != "", "ActivateInstanceConfig", "timeline_id is required")
+		Log.assert_crash(_timeline_id != "", "ActivateInstanceConfig", "timeline is required")
 		return ActivateInstanceConfig.new(
 			_timeline_id,
 			_tag_actions,
 			_triggers,
 			_trigger_mode,
 			_on_timeline_start_actions,
-			_on_timeline_end_actions
+			_on_timeline_end_actions,
+			_timeline_data
 		)

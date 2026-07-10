@@ -78,6 +78,22 @@ func _init(
 	self.overflow_policy = overflow_policy
 
 
+## 收集本 config 树携带的全部 TimelineData（builder.timeline(data) 写入的注册来源）。
+## 注册链路（如 example 层的 register_all_timelines）遍历所有 config 调用此方法统一注册，
+## 消灭「技能声明 timeline 后还要在 manifest 手抄注册列表」的双重记账。
+func collect_timelines() -> Array[TimelineData]:
+	var out: Array[TimelineData] = []
+	for active_use_config in active_use_components:
+		if active_use_config.timeline_data != null:
+			out.append(active_use_config.timeline_data)
+	for component in components:
+		if component is ActivateInstanceConfig:
+			var activate_config := component as ActivateInstanceConfig
+			if activate_config.timeline_data != null:
+				out.append(activate_config.timeline_data)
+	return out
+
+
 ## 创建 Builder
 static func builder() -> AbilityConfigBuilder:
 	return AbilityConfigBuilder.new()
