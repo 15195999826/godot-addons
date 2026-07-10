@@ -35,6 +35,23 @@ static func projectile_hit_filter(event_dict: Dictionary, ctx: AbilityLifecycleC
 		and event.ability_config_id == ability.config_id
 
 
+# ========== Caster 解析 ==========
+
+## 从 ctx 解析 caster CharacterActor(ability owner)。
+## 拿不到(无 ability_ref / 不在 world / 非 Character)返回 null;
+## **不判死活** —— 需要"活的 caster"由调用方自查 is_dead()(有的场景只要坐标)。
+## 此前"取 owner_id → 判空 → get_actor → is CharacterActor → cast"五行式在
+## 各 resolver / action 里逐字重复, 收口到此。
+static func caster(ctx: ExecutionContext) -> CharacterActor:
+	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
+	if owner_id.is_empty():
+		return null
+	var actor := GameWorld.get_actor(owner_id)
+	if actor == null or not (actor is CharacterActor):
+		return null
+	return actor as CharacterActor
+
+
 # ========== Resolver ==========
 
 ## 从事件中读 target_coord Dictionary
@@ -48,14 +65,8 @@ static func target_coord_from_event() -> DictResolver:
 ## 从 Ability owner 获取位置（hex 坐标转 Vector3）
 static func owner_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:
-		var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-		if owner_id == "":
-			return Vector3.ZERO
-		var actor := GameWorld.get_actor(owner_id)
-		if actor == null or not (actor is CharacterActor):
-			return Vector3.ZERO
-		var char_actor := actor as CharacterActor
-		if not char_actor.hex_position.is_valid():
+		var char_actor := caster(ctx)
+		if char_actor == null or not char_actor.hex_position.is_valid():
 			return Vector3.ZERO
 		return Vector3(char_actor.hex_position.q, char_actor.hex_position.r, 0)
 	)
@@ -67,13 +78,10 @@ static func owner_position_resolver() -> Vector3Resolver:
 ## 集中到此。固定值伤害用 Resolvers.float_val(x) 直接写, 不需 helper。
 static func caster_atk_damage(mult: float = 1.0) -> FloatResolver:
 	return Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
-		var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-		if owner_id == "":
+		var char_actor := caster(ctx)
+		if char_actor == null:
 			return 0.0
-		var actor := GameWorld.get_actor(owner_id)
-		if actor == null or not (actor is CharacterActor):
-			return 0.0
-		return (actor as CharacterActor).attribute_set.atk * mult
+		return char_actor.attribute_set.atk * mult
 	)
 
 

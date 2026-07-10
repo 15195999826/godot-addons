@@ -41,13 +41,10 @@ static var _EXECUTE_DAMAGE: FloatResolver = Resolvers.float_fn(func(ctx: Executi
 		# 斩杀:打穿能挡 PURE 的护盾段后,生命恰好归零(+1 保证致死)
 		return effective_hp + 1.0
 	# 高血退化为普攻 = caster.atk(strike.gd 模板)
-	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-	if owner_id == "":
+	var caster := HexBattleSkillHelpers.caster(ctx)
+	if caster == null:
 		return 0.0
-	var caster := GameWorld.get_actor(owner_id)
-	if caster == null or not (caster is CharacterActor):
-		return 0.0
-	return (caster as CharacterActor).attribute_set.atk
+	return caster.attribute_set.atk
 )
 
 

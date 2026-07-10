@@ -103,13 +103,10 @@ static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: Ex
 	var target_coord_dict: Dictionary = event.get("target_coord", {}) as Dictionary
 	if not (target_coord_dict.has("q") and target_coord_dict.has("r")):
 		return {}
-	var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
-	if owner_id.is_empty():
+	var caster := HexBattleSkillHelpers.caster(ctx)
+	if caster == null:
 		return {}
-	var actor := GameWorld.get_actor(owner_id)
-	if actor == null or not (actor is CharacterActor):
-		return {}
-	var caster_pos: HexCoord = (actor as CharacterActor).hex_position
+	var caster_pos: HexCoord = caster.hex_position
 	var target_coord := HexCoord.from_dict(target_coord_dict)
 	if caster_pos.equals(target_coord):
 		return {}
