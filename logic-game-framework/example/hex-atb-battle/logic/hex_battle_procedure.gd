@@ -177,7 +177,7 @@ static func actor_has_executing_ability(actor: CharacterActor) -> bool:
 
 static func actor_has_blocking_execution(actor: CharacterActor) -> bool:
 	for ability in actor.ability_set.get_abilities():
-		if ability.has_ability_tag("intrinsic"):
+		if ability.has_ability_tag(HexBattleSkillTags.TAG_INTRINSIC):
 			continue
 		if ability.get_executing_instances().size() > 0:
 			return true

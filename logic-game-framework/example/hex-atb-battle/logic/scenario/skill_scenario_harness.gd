@@ -252,7 +252,7 @@ static func run_with_actions(
 						# 由 periodic timeline 驱动, 一旦 granted 永不停止, 不能让它阻塞 idle
 						# 判定; 否则任何 scenario 都会跑到 max_ticks. Demon Form 类需要 stacks
 						# 累积的场景仍走 max_ticks 路径 (它没有 intrinsic tag, 不被过滤).
-						if ability.has_ability_tag("intrinsic"):
+						if ability.has_ability_tag(HexBattleSkillTags.TAG_INTRINSIC):
 							continue
 						if ability.get_executing_instances().size() > 0:
 							still_executing = true
