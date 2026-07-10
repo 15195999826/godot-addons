@@ -40,6 +40,16 @@ const BUFF_REGISTRY := {
 		"color": Color(0.3, 0.5, 1.0),
 		"primary_source": PrimarySource.SHIELD_REMAINING,
 	},
+	HexBattleShieldBuffs.PHYSICAL_CONFIG_ID: {
+		"short": "PS",
+		"color": Color(0.7, 0.75, 0.8),  # 钢灰 - 物理甲即视感, 区分 Ward 蓝
+		"primary_source": PrimarySource.SHIELD_REMAINING,
+	},
+	HexBattleShieldBuffs.MAGICAL_CONFIG_ID: {
+		"short": "MS",
+		"color": Color(0.5, 0.3, 0.95),  # 蓝紫 - 法术屏障即视感, 区分 Silence 紫
+		"primary_source": PrimarySource.SHIELD_REMAINING,
+	},
 	HexBattleSurgeBuff.CONFIG_ID: {
 		"short": "U",
 		"color": Color(0.95, 0.6, 0.2),
