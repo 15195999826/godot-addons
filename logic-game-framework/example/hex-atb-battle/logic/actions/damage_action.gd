@@ -124,6 +124,16 @@ func on_kill(action: Action.BaseAction) -> HexBattleDamageAction:
 	return self
 
 
+## 只读探查口: 合并返回全部已注册回调 action(on_hit / on_critical / on_kill),
+## 供 manifest lint 收集回调链上的 StageCue 等静态声明。执行路径不使用。
+func get_callback_actions() -> Array[Action.BaseAction]:
+	var out: Array[Action.BaseAction] = []
+	out.append_array(_on_hit_callbacks)
+	out.append_array(_on_critical_callbacks)
+	out.append_array(_on_kill_callbacks)
+	return out
+
+
 # ============================================================
 # 执行
 # ============================================================

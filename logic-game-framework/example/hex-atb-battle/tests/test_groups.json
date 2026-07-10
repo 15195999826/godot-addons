@@ -5,6 +5,7 @@
     "regression": {
       "required": true,
       "scenes": [
+        "battle/smoke_manifest_lint.tscn",
         "battle/smoke_skill_scenarios.tscn",
         "battle/smoke_mid_spawn_production_replay.tscn",
         "battle/smoke_hex_item_domain.tscn",
