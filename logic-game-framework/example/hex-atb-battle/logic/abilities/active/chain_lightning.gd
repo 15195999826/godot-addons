@@ -5,7 +5,12 @@
 ## 实现模式 (per phase-01-chain-lightning.md):
 ##   1. ABILITY_ACTIVATE_EVENT → cast timeline 发射首段 lightning projectile
 ##   2. projectileHit → hit timeline 跑 DamageAction
-##   3. DamageAction.on_hit hook 跑 FlowAction.if_(has_next, [LaunchProjectileAction]) 链发下一段
+##   3. DamageAction.on_hit hook: _ComputeNextChainAction 把「下一跳数据」**算一次**
+##      写进 execution_state["chain_lightning.next"], 随后 FlowAction.if_(便签非空,
+##      [LaunchProjectileAction]) 链发下一段 —— predicate / selector / 4 个 resolver
+##      全部只读便签, 不再各自重算(收敛计划 P8: 消灭"6 次调用间世界不变"的隐式
+##      一致性假设; shadow_step 的 teleport_success 同款 pattern)。每次 projectileHit
+##      新建 hit-timeline execution 实例 = 新 execution_state, 跨跳天然隔离。
 ##   4. 下一段 projectile customData 带 ability_instance_id / chain_id / hit_index+1 /
 ##      damage*0.8 / visited_actor_ids; 触发新一轮 projectileHit
 ##
@@ -30,6 +35,8 @@ const BASE_DAMAGE := 60.0
 const MAX_HITS := 3
 const FALLOFF := 0.2
 const COOLDOWN_MS := 5000.0
+## execution_state 便签 key: _ComputeNextChainAction 写, 下游只读。
+const NEXT_CHAIN_STATE_KEY := "chain_lightning.next"
 
 
 # ============================================================
@@ -89,10 +96,31 @@ static func _chain_damage_resolver() -> FloatResolver:
 
 
 # ============================================================
-# Next chain target 计算 (hit on_hit hook 内调用)
+# Next chain 计算与便签 (hit on_hit hook 内: 算一次, 下游只读)
 # ============================================================
 
+## on_hit 链头 action: 调 _next_chain_data 一次, 结果(可为空 dict)写进
+## execution_state 便签。predicate / selector / resolvers 只读便签。
+class _ComputeNextChainAction:
+	extends Action.SkillLocalAction
+
+	func _init() -> void:
+		super._init(HexBattleTargetSelectors.ability_owner(), HexBattleChainLightning.CONFIG_ID)
+		type = "chain_lightning_compute_next"
+
+	func _execute_local(ctx: ExecutionContext) -> ActionResult:
+		var data := HexBattleChainLightning._next_chain_data(ctx)
+		ctx.set_execution_state(HexBattleChainLightning.NEXT_CHAIN_STATE_KEY, data)
+		return ActionResult.create_success_result([], { "has_next_chain": not data.is_empty() })
+
+
+## 下游统一读口: _ComputeNextChainAction 未跑过 / 链终止时返回 {}。
+static func _next_chain_state(ctx: ExecutionContext) -> Dictionary:
+	return ctx.get_execution_state(NEXT_CHAIN_STATE_KEY, {}) as Dictionary
+
+
 ## 计算下一跳数据; 找不到合法目标返回空 dict。
+## **只被 _ComputeNextChainAction 调用一次** —— 其余消费方走 _next_chain_state 读便签。
 ##
 ## 输入: hit-timeline 内 on_hit callback ctx (event_dict_chain 末 = damage event,
 ## 原始 = projectileHit event)。
@@ -156,18 +184,18 @@ static func _nearest_unvisited_enemy(team: int, from_pos: HexCoord,
 	return best
 
 
-## predicate for FlowAction.if_
+## predicate for FlowAction.if_ —— 只读便签(由链头 _ComputeNextChainAction 写入)
 static func _has_next_chain_target(ctx: ExecutionContext) -> bool:
-	return not _next_chain_data(ctx).is_empty()
+	return not _next_chain_state(ctx).is_empty()
 
 
 # ============================================================
-# Next chain projectile params (FlowAction.if_ then branch)
+# Next chain projectile params (FlowAction.if_ then branch, 全部只读便签)
 # ============================================================
 
 class _NextChainTargetSelector extends TargetSelector:
 	func select(ctx: ExecutionContext) -> Array[String]:
-		var data := HexBattleChainLightning._next_chain_data(ctx)
+		var data := HexBattleChainLightning._next_chain_state(ctx)
 		var tid := str(data.get("target_actor_id", ""))
 		var result: Array[String] = []
 		if tid != "":
@@ -177,7 +205,7 @@ class _NextChainTargetSelector extends TargetSelector:
 
 static func _next_chain_projectile_config_resolver() -> DictResolver:
 	return Resolvers.dict_fn(func(ctx: ExecutionContext) -> Dictionary:
-		var data := _next_chain_data(ctx)
+		var data := _next_chain_state(ctx)
 		var damage_value := float(data.get("damage", BASE_DAMAGE * (1.0 - FALLOFF)))
 		return {
 			ProjectileActor.CFG_PROJECTILE_TYPE: ProjectileActor.PROJECTILE_TYPE_MOBA,
@@ -202,21 +230,21 @@ static func _actor_world_pos(actor_id: String, battle: HexWorldGameplayInstance)
 
 static func _next_chain_start_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:
-		var data := _next_chain_data(ctx)
+		var data := _next_chain_state(ctx)
 		return _actor_world_pos(str(data.get("start_actor_id", "")), ctx.game_state_provider)
 	)
 
 
 static func _next_chain_target_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:
-		var data := _next_chain_data(ctx)
+		var data := _next_chain_state(ctx)
 		return _actor_world_pos(str(data.get("target_actor_id", "")), ctx.game_state_provider)
 	)
 
 
 static func _next_chain_custom_data_resolver() -> DictResolver:
 	return Resolvers.dict_fn(func(ctx: ExecutionContext) -> Dictionary:
-		var data := _next_chain_data(ctx)
+		var data := _next_chain_state(ctx)
 		var visited_arr: Array = (data.get("visited_actor_ids", []) as Array).duplicate()
 		return {
 			"ability_instance_id": ctx.ability_ref.id if ctx.ability_ref != null else "",
@@ -273,7 +301,8 @@ static var ABILITY := (AbilityConfig.builder()
 	.build())
 
 
-# DamageAction.on_hit(FlowAction.if_(_has_next_chain_target, [next-chain LaunchProjectileAction]))
+# on_hit 链: [算一次写便签] → [便签非空 ? 链发下一段]
+# DamageAction.on_hit(_ComputeNextChainAction).on_hit(FlowAction.if_(...))
 static func _build_hit_damage_action() -> HexBattleDamageAction:
 	var damage_action := HexBattleDamageAction.new(
 		HexBattleTargetSelectors.current_target(),
@@ -290,5 +319,6 @@ static func _build_hit_damage_action() -> HexBattleDamageAction:
 			_next_chain_custom_data_resolver()
 		)
 	]
+	damage_action.on_hit(_ComputeNextChainAction.new())
 	damage_action.on_hit(FlowAction.if_(_has_next_chain_target, then_actions))
 	return damage_action
