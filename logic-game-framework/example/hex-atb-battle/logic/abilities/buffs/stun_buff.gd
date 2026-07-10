@@ -55,7 +55,7 @@ static func _on_apply_actions() -> Array[Action.BaseAction]:
 		HexBattleCancelActiveExecutionsAction.new(HexBattleTargetSelectors.ability_owner()),
 		StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
-			Resolvers.str_val("control_stunned"),
+			Resolvers.str_val(HexBattleCues.CONTROL_STUNNED),
 		),
 	]
 	return arr

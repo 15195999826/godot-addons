@@ -16,20 +16,8 @@ class_name HexBattleExecute
 
 
 const CONFIG_ID := "skill_execute"
-const TIMELINE_ID := "skill_execute"
 const COOLDOWN_MS := 6000.0
 const KILL_HP_THRESHOLD := 0.2
-const KILL_CUE := "execute_kill"
-
-
-static var EXECUTE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 ## HIT tag 时按 ctx 解析一次。target 取自当前事件(与 current_target selector
@@ -70,12 +58,13 @@ static var ABILITY := (
 	.description("有效血量低于 20% 的敌人被斩杀(造成等同其有效血量的真实伤害),否则普通攻击")
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("melee_heavy")
+			Resolvers.str_val(HexBattleCues.MELEE_HEAVY)
 		)])
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(
@@ -85,7 +74,7 @@ static var ABILITY := (
 			).on_kill(
 				StageCueAction.new(
 					HexBattleTargetSelectors.current_target(),
-					Resolvers.str_val(KILL_CUE)
+					Resolvers.str_val(HexBattleCues.EXECUTE_KILL)
 				)
 			),
 		])

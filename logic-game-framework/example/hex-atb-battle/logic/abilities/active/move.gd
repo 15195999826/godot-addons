@@ -33,7 +33,7 @@ static var ABILITY := (
 			GameEvent.ABILITY_ACTIVATE_EVENT,
 			HexBattleSkillHelpers.ability_activate_filter
 		))
-		.timeline_id(TIMELINE_ID)
+		.timeline(MOVE_TIMELINE)
 		.on_timeline_start([HexBattleStartMoveAction.new(
 			HexBattleTargetSelectors.ability_owner(),
 			HexBattleSkillHelpers.target_coord_from_event()

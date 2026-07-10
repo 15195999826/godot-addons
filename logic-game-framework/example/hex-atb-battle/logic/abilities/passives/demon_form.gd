@@ -14,7 +14,7 @@ class_name HexBattleDemonForm
 
 const CONFIG_ID := "passive_demon_form"
 const TICK_TIMELINE_ID := "passive_demon_form_tick"
-const CUE_DEMON_FORM_PULSE := "demon_form_pulse"
+const CUE_DEMON_FORM_PULSE := HexBattleCues.DEMON_FORM_PULSE
 const TICK_INTERVAL_MS := 3000.0
 const ATK_PER_STACK := 2.0
 const MAX_STACKS := 999999
@@ -77,7 +77,7 @@ static var ABILITY := (AbilityConfig.builder()
 		.build())
 	.component_config(ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.GRANTED_SELF)
-		.timeline_id(TICK_TIMELINE_ID)
+		.timeline(DEMON_FORM_TICK_TIMELINE)
 		.on_timeline_end([_DemonFormTickAction.new()])
 		.build())
 	.build())

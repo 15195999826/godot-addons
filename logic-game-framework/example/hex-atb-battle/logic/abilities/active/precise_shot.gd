@@ -5,7 +5,7 @@
 ##   2. START tag: 发送动画提示
 ##   3. LAUNCH tag: 发射箭矢投射物（MOBA 追踪型）
 ##   4. 投射物飞行中...
-##   5. projectileHit 事件触发 → PRECISE_SHOT_HIT_TIMELINE → 造成伤害
+##   5. projectileHit 事件触发 → 共享 HIT_RESPONSE_100 timeline → 造成伤害
 ##
 ## 投射物伤害四件套 (弹体 0 HP 伤害, 伤害只在 hit-timeline DamageAction; 为何不抽 factory)
 ## 见 fireball.gd 头注释的"投射物模板"段。
@@ -14,27 +14,17 @@ class_name HexBattlePreciseShot
 
 const CONFIG_ID := "skill_precise_shot"
 const TIMELINE_ID_CAST := "skill_precise_shot"
-const TIMELINE_ID_HIT := "skill_precise_shot_hit"
 const COOLDOWN_MS := 2500.0
 
 
-## 发射阶段 Timeline：发射后结束，投射物继续飞行
+## 发射阶段 Timeline：快弓节奏(LAUNCH@300/500), 快于标准 CAST_LAUNCH_600, 保留自定义。
+## 命中响应走共享 HexBattleStdTimelines.HIT_RESPONSE_100。
 static var PRECISE_SHOT_TIMELINE := TimelineData.new(
 	TIMELINE_ID_CAST,
 	500.0,
 	{
 		TimelineTags.LAUNCH: 300.0,
 		TimelineTags.END: 500.0,
-	}
-)
-
-
-## 命中响应 Timeline（投射物命中触发）
-static var PRECISE_SHOT_HIT_TIMELINE := TimelineData.new(
-	TIMELINE_ID_HIT,
-	100.0,
-	{
-		TimelineTags.END: 100.0,
 	}
 )
 
@@ -46,13 +36,14 @@ static var ABILITY := (
 	.description("远程攻击，发射箭矢精准命中敌人")
 	.ability_tags(["skill", "active", "ranged", "enemy", "projectile"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 4)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	# 主动使用组件：发射投射物
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID_CAST)
+		.timeline(PRECISE_SHOT_TIMELINE)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("ranged_arrow")
+			Resolvers.str_val(HexBattleCues.RANGED_ARROW)
 		)])
 		.on_tag(TimelineTags.LAUNCH, [LaunchProjectileAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -77,7 +68,7 @@ static var ABILITY := (
 			ProjectileEvents.PROJECTILE_HIT_EVENT,
 			HexBattleSkillHelpers.projectile_hit_filter
 		))
-		.timeline_id(TIMELINE_ID_HIT)
+		.timeline(HexBattleStdTimelines.HIT_RESPONSE_100)
 		.on_timeline_start([HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
 			Resolvers.float_val(45.0),

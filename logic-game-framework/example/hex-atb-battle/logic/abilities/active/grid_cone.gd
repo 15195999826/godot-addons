@@ -24,19 +24,8 @@ class_name HexBattleGridCone
 
 
 const CONFIG_ID := "skill_grid_cone"
-const TIMELINE_ID := "skill_grid_cone"
 const COOLDOWN_MS := 8000.0
 const CONE_RANGE := 3
-
-
-static var GRID_CONE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
@@ -226,12 +215,13 @@ static var ABILITY := (
 	.description("以目标格为锥形起点, 沿 caster→目标格方向展开 3 层固定格子锥形, 命中所有敌方 (atk 物理)")
 	.ability_tags(["skill", "active", "melee", "enemy", "cone", "aoe"])
 	.meta(HexBattleSkillMetaKeys.RANGE, CONE_RANGE)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_COORD)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.ability_owner(),
-			Resolvers.str_val("grid_cone_cast"),
+			Resolvers.str_val(HexBattleCues.GRID_CONE_CAST),
 			_DEBUG_PARAMS_RESOLVER,
 		)])
 		.on_tag(TimelineTags.HIT, [

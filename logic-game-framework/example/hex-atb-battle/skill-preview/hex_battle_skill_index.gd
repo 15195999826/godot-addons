@@ -48,7 +48,7 @@ static func get_by_id(config_id: String) -> AbilityConfig:
 static func _build_all() -> Array[AbilityConfig]:
 	var out: Array[AbilityConfig] = []
 	for cfg in HexBattleAllSkills.all_abilities():
-		if cfg.ability_tags.has("buff"):
+		if cfg.ability_tags.has(HexBattleBuffTags.TAG_BUFF):
 			continue
 		out.append(cfg)
 	return out

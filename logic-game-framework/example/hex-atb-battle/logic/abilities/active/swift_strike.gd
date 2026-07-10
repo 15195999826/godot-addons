@@ -28,12 +28,13 @@ static var ABILITY := (
 	.description("快速近战攻击，三连击")
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(SWIFT_STRIKE_TIMELINE)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("melee_combo"),
+			Resolvers.str_val(HexBattleCues.MELEE_COMBO),
 			Resolvers.dict_val({ "hits": 3 })
 		)])
 		.on_tag(TimelineTags.HIT1, [HexBattleDamageAction.new(

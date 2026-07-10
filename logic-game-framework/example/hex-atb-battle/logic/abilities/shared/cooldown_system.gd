@@ -70,7 +70,7 @@ static func create_timed_cooldown_cost(duration: float) -> TimedCooldownCost:
 # 用法(链头包装, helper 在传入 builder 上 apply 后返回它, 后续继续链):
 #   .active_use(
 #       HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-#       .timeline_id(...)
+#       .timeline(...)
 #       .on_tag(...)
 #       .build()
 #   )

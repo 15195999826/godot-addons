@@ -12,21 +12,21 @@ extends FrontendBaseVisualizer
 # ========== 需要播放攻击特效的 cue_id ==========
 
 const MELEE_ATTACK_CUES := [
-	"melee_slash",   # 横扫斩
-	"melee_heavy",   # 毁灭重击
-	"melee_combo",   # 疾风连刺
-	"totem_attack",  # 图腾自动攻击
+	HexBattleCues.MELEE_SLASH,   # 横扫斩
+	HexBattleCues.MELEE_HEAVY,   # 毁灭重击
+	HexBattleCues.MELEE_COMBO,   # 疾风连刺
+	HexBattleCues.TOTEM_ATTACK,  # 图腾自动攻击
 ]
 
 # ========== 需要播放治疗特效的 cue_id ==========
 
 const HEAL_CUES := [
-	"magic_heal",    # 圣光治愈
+	HexBattleCues.MAGIC_HEAL,    # 圣光治愈
 ]
 
 # ========== 斩杀击杀醒目特效 cue_id ==========
 
-const EXECUTE_KILL_CUE := "execute_kill"  # Execute 命中击杀:猩红冲击波(放大)
+const EXECUTE_KILL_CUE := HexBattleCues.EXECUTE_KILL  # Execute 命中击杀:猩红冲击波(放大)
 ## 比普通 attack_vfx 明显更长,确保"斩杀"收尾醒目、肉眼可辨(也便于回放定格验证)。
 const EXECUTE_KILL_VFX_DURATION := 0.8
 ## 略延迟:让起手 melee_heavy 挥击先淡出,斩杀爆作为独立收尾炸出来,不糊在一起。
@@ -38,48 +38,48 @@ const EXECUTE_KILL_VFX_DELAY := 0.15
 ## 复用 FrontendFloatingTextAction (已存在的飘字系统), 不为单技能搭独立 VFX。
 ## 加新 control 飘字 = 多写一行配置即可。
 const CONTROL_FLOATING_TEXTS := {
-	"control_stunned": {
+	HexBattleCues.CONTROL_STUNNED: {
 		"text": "眩晕!",
 		"color": Color(0.95, 0.85, 0.2),  # 金黄, 与 BuffVisualizer Stun entry 同色
 		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
 	},
-	"control_silenced": {
+	HexBattleCues.CONTROL_SILENCED: {
 		"text": "沉默!",
 		"color": Color(0.55, 0.35, 0.85),  # 紫色, 与 BuffVisualizer Silence entry 同色
 		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
 	},
-	"control_broken": {
+	HexBattleCues.CONTROL_BROKEN: {
 		"text": "破坏!",
 		"color": Color(0.45, 0.45, 0.55),  # 暗紫灰, 与 BuffVisualizer Break entry 同色
 		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
 	},
 	# Phase 2+ 进阶技能 floating text (Cleanse / Swap / Lifesteal / Piercing Line / Summon / Fire Tile)
-	"control_cleansed": {
+	HexBattleCues.CONTROL_CLEANSED: {
 		"text": "净化!",
 		"color": Color(0.95, 0.95, 1.0),  # 白光, 净化的圣洁感
 		"style": FrontendFloatingTextAction.FloatingTextStyle.HEAL,
 	},
-	"swap_blink": {
+	HexBattleCues.SWAP_BLINK: {
 		"text": "换位!",
 		"color": Color(0.6, 0.85, 0.95),  # 浅青蓝, 瞬移感
 		"style": FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
 	},
-	"summon_totem_cast": {
+	HexBattleCues.SUMMON_TOTEM_CAST: {
 		"text": "图腾!",
 		"color": Color(0.75, 0.55, 0.3),  # 木褐, 图腾木质感
 		"style": FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
 	},
-	"fire_tile_cast": {
+	HexBattleCues.FIRE_TILE_CAST: {
 		"text": "火地!",
 		"color": Color(1.0, 0.45, 0.1),  # 橘红, 火焰即视感
 		"style": FrontendFloatingTextAction.FloatingTextStyle.CRITICAL,
 	},
-	"piercing_line_cast": {
+	HexBattleCues.PIERCING_LINE_CAST: {
 		"text": "穿透!",
 		"color": Color(0.6, 0.85, 1.0),  # 锐青, 直线穿透感
 		"style": FrontendFloatingTextAction.FloatingTextStyle.NORMAL,
 	},
-	"lifesteal_drain": {
+	HexBattleCues.LIFESTEAL_DRAIN: {
 		"text": "汲血!",
 		"color": Color(0.85, 0.15, 0.25),  # 暗红, 吸血的血色
 		"style": FrontendFloatingTextAction.FloatingTextStyle.HEAL,
@@ -89,7 +89,7 @@ const CONTROL_FLOATING_TEXTS := {
 # ========== Phase E: Cone debug overlay ==========
 
 ## Cone cast cue_id → 是否走 cone 检查区域 overlay path.
-const CONE_DEBUG_CUES := ["grid_cone_cast", "angle_cone_cast"]
+const CONE_DEBUG_CUES := [HexBattleCues.GRID_CONE_CAST, HexBattleCues.ANGLE_CONE_CAST]
 
 const CONE_DEBUG_DURATION_MS := 1500.0
 const CONE_DEBUG_FILL_Y := 0.06

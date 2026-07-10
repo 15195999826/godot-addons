@@ -14,19 +14,8 @@ class_name HexBattleLifesteal
 
 
 const CONFIG_ID := "skill_lifesteal"
-const TIMELINE_ID := "skill_lifesteal"
 const COOLDOWN_MS := 6000.0
 const LIFESTEAL_RATIO := 0.5
-
-
-static var LIFESTEAL_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
@@ -83,17 +72,18 @@ static var ABILITY := (
 	.description("近战物理攻击, 按实际生命伤害的 %d%% 治疗自己" % int(LIFESTEAL_RATIO * 100))
 	.ability_tags(["skill", "active", "melee", "enemy", "lifesteal"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([
 			StageCueAction.new(
 				HexBattleTargetSelectors.current_target(),
-				Resolvers.str_val("melee_slash"),
+				Resolvers.str_val(HexBattleCues.MELEE_SLASH),
 			),
 			StageCueAction.new(
 				HexBattleTargetSelectors.ability_owner(),
-				Resolvers.str_val("lifesteal_drain"),
+				Resolvers.str_val(HexBattleCues.LIFESTEAL_DRAIN),
 			),
 		])
 		.on_tag(TimelineTags.HIT, [

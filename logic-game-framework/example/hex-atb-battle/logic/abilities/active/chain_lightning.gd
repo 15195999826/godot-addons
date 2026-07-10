@@ -26,23 +26,10 @@ class_name HexBattleChainLightning
 
 
 const CONFIG_ID := "skill_chain_lightning"
-const CAST_TIMELINE_ID := "skill_chain_lightning"
-const HIT_TIMELINE_ID := "skill_chain_lightning_hit"
 const BASE_DAMAGE := 60.0
 const MAX_HITS := 3
 const FALLOFF := 0.2
 const COOLDOWN_MS := 5000.0
-
-
-static var CHAIN_LIGHTNING_CAST_TIMELINE := TimelineData.new(CAST_TIMELINE_ID, 600.0, {
-	TimelineTags.CAST: 200.0,
-	TimelineTags.LAUNCH: 400.0,
-	TimelineTags.END: 600.0,
-})
-
-static var CHAIN_LIGHTNING_HIT_TIMELINE := TimelineData.new(HIT_TIMELINE_ID, 100.0, {
-	TimelineTags.END: 100.0,
-})
 
 
 # ============================================================
@@ -251,11 +238,12 @@ static var ABILITY := (AbilityConfig.builder()
 	.description("对目标造成魔法伤害,弹跳至最近的其他敌人,每跳衰减 20%,最多 3 跳")
 	.ability_tags(["skill", "active", "ranged", "magic", "enemy", "projectile"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 5)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(CAST_TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.CAST_LAUNCH_600)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("magic_fireball")
+			Resolvers.str_val(HexBattleCues.MAGIC_FIREBALL)
 		)])
 		.on_tag(TimelineTags.LAUNCH, [LaunchProjectileAction.new(
 			HexBattleTargetSelectors.current_target(),
@@ -279,7 +267,7 @@ static var ABILITY := (AbilityConfig.builder()
 			ProjectileEvents.PROJECTILE_HIT_EVENT,
 			_projectile_hit_filter
 		))
-		.timeline_id(HIT_TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.HIT_RESPONSE_100)
 		.on_timeline_start([_build_hit_damage_action()])
 		.build())
 	.build())

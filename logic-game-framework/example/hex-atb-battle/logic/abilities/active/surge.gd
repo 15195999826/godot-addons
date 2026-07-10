@@ -1,45 +1,24 @@
 ## Surge - 自施"涌动"主动技能
 ##
-## RANGE 0:caster 给自己挂 HexBattleSurgeBuff(独立实例)。Buff 立即生效,
-## 之后每 2s tick 一次,共 3 次。
+## caster 给自己挂 HexBattleSurgeBuff(独立实例)。Buff 立即生效(grant 与首 tick
+## 同帧), 之后每 2s tick 一次共 3 次 —— 同帧 ADD+UPDATE 的 BuffVisualizer 验证
+## 场景, 语义见 HexBattleSurgeBuff 头注释。
 ##
-## 设计目的:复现并验证 frontend BuffVisualizer 在 GRANTED_SELF + on_timeline_start
-## 场景下的 stacks 显示序列(grant 与首 tick 同帧)。
+## 骨架走 HexBattleSkillPresets.buff_applier; 展开后的完整 builder 链范本见 poison.gd。
 class_name HexBattleSurge
 
 
 const CONFIG_ID := "skill_surge"
-const TIMELINE_ID := "skill_surge"
 const COOLDOWN_MS := 5000.0
 
 
-static var SURGE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
-
-
-static var ABILITY := (
-	AbilityConfig.builder()
-	.config_id(CONFIG_ID)
-	.display_name("涌动")
-	.description("自施涌动 buff(3 stacks,每 2s 减 1,立即生效)")
-	.ability_tags(["skill", "active", "self", "surge"])
-	.meta(HexBattleSkillMetaKeys.RANGE, 0)
-	.active_use(
-		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
-		.on_tag(TimelineTags.HIT, [
-			HexBattleApplyBuffAction.new(
-				HexBattleTargetSelectors.ability_owner(),
-				HexBattleSurgeBuff.SURGE_BUFF
-			),
-		])
-		.build()
-	)
-	.build()
+static var ABILITY := HexBattleSkillPresets.buff_applier(
+	CONFIG_ID,
+	"涌动",
+	"自施涌动 buff(3 stacks,每 2s 减 1,立即生效)",
+	["skill", "active", "self", "surge"],
+	0,
+	HexBattleSkillMetaKeys.TARGETING_SELF,
+	COOLDOWN_MS,
+	HexBattleSurgeBuff.SURGE_BUFF,
 )

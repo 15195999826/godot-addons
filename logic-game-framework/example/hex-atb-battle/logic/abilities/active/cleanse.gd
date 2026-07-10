@@ -18,18 +18,7 @@ class_name HexBattleCleanse
 
 
 const CONFIG_ID := "skill_cleanse"
-const TIMELINE_ID := "skill_cleanse"
 const COOLDOWN_MS := 8000.0
-
-
-static var CLEANSE_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 # 优先级 (low int = high priority)
@@ -112,12 +101,13 @@ static var ABILITY := (
 	.description("移除友方目标身上 1 个负面 buff (control → passive_break → 其它)")
 	.ability_tags(["skill", "active", "ranged", "ally", "self", "cleanse"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 3)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("control_cleansed"),
+			Resolvers.str_val(HexBattleCues.CONTROL_CLEANSED),
 		)])
 		.on_tag(TimelineTags.HIT, [_CleanseAction.new()])
 		.build()

@@ -92,7 +92,7 @@ static var ABILITY := (
 	.component_config(
 		ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.GRANTED_SELF)
-		.timeline_id(TICK_TIMELINE_ID)
+		.timeline(PULSE_TIMELINE)
 		.on_timeline_end([_FireTilePulseAction.new()])
 		.build()
 	)

@@ -7,18 +7,7 @@ class_name HexBattleWallBreaker
 
 
 const CONFIG_ID := "skill_wall_breaker"
-const TIMELINE_ID := "skill_wall_breaker"
 const COOLDOWN_MS := 3000.0
-
-
-static var WALL_BREAKER_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_damage()
@@ -32,9 +21,10 @@ static var ABILITY := (
 	.ability_tags(["skill", "active", "melee", "enemy"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 1)
 	.meta(HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS, [HexBattleActor.KIND_CHARACTER, HexBattleActor.KIND_ENVIRONMENT])
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_tag(TimelineTags.HIT, [
 			HexBattleDamageAction.new(
 				HexBattleTargetSelectors.current_target(),

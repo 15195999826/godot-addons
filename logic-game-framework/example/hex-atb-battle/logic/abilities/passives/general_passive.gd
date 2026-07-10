@@ -113,7 +113,7 @@ static var ABILITY: AbilityConfig = (
 	.component_config(
 		ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.GRANTED_SELF)
-		.timeline_id(REGEN_TIMELINE_ID)
+		.timeline(REGEN_TIMELINE)
 		.on_timeline_end([HexBattleRegenerateAction.new(
 			HexBattleTargetSelectors.ability_owner(),
 			"hp",

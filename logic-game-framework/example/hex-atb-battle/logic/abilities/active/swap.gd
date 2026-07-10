@@ -11,19 +11,8 @@ class_name HexBattleSwap
 
 
 const CONFIG_ID := "skill_swap"
-const TIMELINE_ID := "skill_swap"
 const COOLDOWN_MS := 8000.0
 const DISPLACEMENT_KIND := "swap"
-
-
-static var SWAP_TIMELINE := TimelineData.new(
-	TIMELINE_ID,
-	500.0,
-	{
-		TimelineTags.HIT: 300.0,
-		TimelineTags.END: 500.0,
-	}
-)
 
 
 class _SwapPositionsAction:
@@ -119,12 +108,13 @@ static var ABILITY := (
 	.description("与 3 格内的角色原子交换位置 (自己 / 友方 / 敌方都可)")
 	.ability_tags(["skill", "active", "ranged", "swap"])
 	.meta(HexBattleSkillMetaKeys.RANGE, 3)
+	.meta(HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR)
 	.active_use(
 		HexBattleCooldownSystem.apply_standard_active_gating(ActiveUseConfig.builder(), COOLDOWN_MS)
-		.timeline_id(TIMELINE_ID)
+		.timeline(HexBattleStdTimelines.MELEE_500)
 		.on_timeline_start([StageCueAction.new(
 			HexBattleTargetSelectors.current_target(),
-			Resolvers.str_val("swap_blink"),
+			Resolvers.str_val(HexBattleCues.SWAP_BLINK),
 		)])
 		.on_tag(TimelineTags.HIT, [_SwapPositionsAction.new()])
 		.build()

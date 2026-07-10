@@ -38,7 +38,7 @@ static var POISON_BUFF := (
 	.component_config(
 		ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.GRANTED_SELF)
-		.timeline_id(TICK_TIMELINE_ID)
+		.timeline(POISON_TICK_TIMELINE)
 		.on_timeline_end([HexBattlePoisonTickAction.new()])
 		.build()
 	)

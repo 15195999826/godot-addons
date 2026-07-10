@@ -29,7 +29,7 @@ static var SURGE_BUFF := (
 	.component_config(
 		ActivateInstanceConfig.builder()
 		.trigger(TriggerConfig.GRANTED_SELF)
-		.timeline_id(TICK_TIMELINE_ID)
+		.timeline(SURGE_TICK_TIMELINE)
 		.on_timeline_start([HexBattleSurgeTickAction.new()])
 		.build()
 	)
