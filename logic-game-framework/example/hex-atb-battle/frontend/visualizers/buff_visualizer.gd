@@ -55,6 +55,11 @@ const BUFF_REGISTRY := {
 		"color": Color(0.95, 0.6, 0.2),
 		"primary_source": PrimarySource.STACKS,
 	},
+	HexBattleInspireBuff.CONFIG_ID: {
+		"short": "I",
+		"color": Color(0.3, 0.85, 0.8),  # 青绿 - 鼓舞增益, 避开 Ward 蓝/Vitality 绿
+		"primary_source": PrimarySource.NONE,  # def+10 定值, 仅 duration
+	},
 	HexBattleThorn.CONFIG_ID: {
 		"short": "T",
 		"color": Color(1.0, 0.5, 0.2),

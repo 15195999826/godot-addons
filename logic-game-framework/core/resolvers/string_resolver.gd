@@ -17,14 +17,21 @@ extends RefCounted
 
 var _resolver: Callable
 
-## 固定值元数据: Resolvers.str_val() 创建时回填, 供工装(如 manifest lint 的 cue
-## 存在性断言)在无 ExecutionContext 时读出静态值。str_fn 动态解析器恒为 is_fixed=false。
-var is_fixed: bool = false
-var fixed_value: String = ""
+## 固定值元数据: 构造时一次绑定(Resolvers.str_val 传入), 与 _resolver 不可脱钩 ——
+## 工装(如 manifest lint 的 cue 存在性断言)经 try_get_fixed_value() 无 ctx 静态读值。
+## str_fn 动态解析器无元数据。字段私有: 事后改写会造成"lint 查 A、运行时 resolve B"假绿。
+var _is_fixed: bool = false
+var _fixed_value: String = ""
 
-func _init(resolver: Callable) -> void:
+func _init(resolver: Callable, p_is_fixed: bool = false, p_fixed_value: String = "") -> void:
 	_resolver = resolver
+	_is_fixed = p_is_fixed
+	_fixed_value = p_fixed_value
 
 ## 解析值
 func resolve(ctx: ExecutionContext) -> String:
 	return _resolver.call(ctx) as String
+
+## 静态读固定值: 固定解析器返回构造时绑定的值, 动态解析器返回 ""。
+func try_get_fixed_value() -> String:
+	return _fixed_value if _is_fixed else ""

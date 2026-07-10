@@ -113,11 +113,19 @@ func _collect_valid_targets(
 	skill: Ability,
 	battle: HexWorldGameplayInstance
 ) -> Array[CharacterActor]:
+	# TARGETING 双入口分流: COORD 型(锥形)以候选 actor 站位为锚点走 can_use_skill_at
+	# (coord 模式 + has_tile + range); ACTOR/SELF 走 can_use_skill_on(阵营/种类/range)。
+	var use_coord := str(skill.metadata.get(
+		HexBattleSkillMetaKeys.TARGETING, HexBattleSkillMetaKeys.TARGETING_ACTOR
+	)) == HexBattleSkillMetaKeys.TARGETING_COORD
 	var targets: Array[CharacterActor] = []
 	for target in battle.get_alive_actors():
 		if _should_skip_target(actor, skill, target):
 			continue
-		if battle.can_use_skill_on(actor, skill, target):
+		if use_coord:
+			if battle.can_use_skill_at(actor, skill, target.hex_position):
+				targets.append(target)
+		elif battle.can_use_skill_on(actor, skill, target):
 			targets.append(target)
 	return targets
 
