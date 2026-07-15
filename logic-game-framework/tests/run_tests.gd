@@ -50,26 +50,29 @@ func _ready() -> void:
 	_test_framework = load("res://addons/logic-game-framework/tests/test_framework.gd").new()
 	add_child(_test_framework)
 
-	# 加载所有测试脚本
-	_load_test_scripts()
+	# 加载所有测试脚本；加载失败必须计入退出码，禁止 parse error 假绿。
+	var load_failures := _load_test_scripts()
 
 	# 运行所有测试
-	var failures: int = _test_framework.run()
+	var failures: int = _test_framework.run() + load_failures
 
 	# 退出并返回失败数
 	get_tree().quit(failures)
 
-func _load_test_scripts() -> void:
+func _load_test_scripts() -> int:
+	var failures := 0
 	for test_path in TEST_PATHS:
 		var script: GDScript = load(test_path) as GDScript
 		if script == null:
 			push_error("Failed to load test script: %s" % test_path)
+			failures += 1
 			continue
 		# 挂到 scene tree 下：触发 _init() 注册测试（test 文件的约定），
 		# 并让 Godot 在 quit 时随场景树统一释放，避免 Node 局部变量泄漏。
 		# TestFramework._suites 里 bound-method 持 test_instance 强引用，
 		# 不 add_child 就没有 Node.free 触发点，test_instance + 其 GDScript 永不释放。
 		add_child(script.new())
+	return failures
 
 ## 自动发现测试
 

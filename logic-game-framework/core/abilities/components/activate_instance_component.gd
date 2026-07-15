@@ -16,6 +16,7 @@ var _timeline_id: String = ""
 var _tag_actions: Array[TagActionsEntry] = []
 var _on_timeline_start_actions: Array[Action.BaseAction] = []
 var _on_timeline_end_actions: Array[Action.BaseAction] = []
+var _on_cancel_actions: Array[Action.BaseAction] = []
 
 func _init(config: ActivateInstanceConfig):
 	type = TYPE
@@ -23,19 +24,28 @@ func _init(config: ActivateInstanceConfig):
 	_tag_actions = config.tag_actions
 	_on_timeline_start_actions = config.on_timeline_start_actions
 	_on_timeline_end_actions = config.on_timeline_end_actions
+	_on_cancel_actions = config.on_cancel_actions
 	_trigger_mode = config.trigger_mode
 	_triggers = AbilityComponent.convert_triggers(config.triggers)
 	# Debug: 冻结所有 Action，检测无状态约束
 	_freeze_all_actions()
 
 func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> bool:
-	if _check_triggers(event_dict, context):
-		_activate_execution(event_dict, context, game_state_provider)
-		return true
-	return false
+	if not _check_triggers(event_dict, context):
+		return false
+	if not _is_timeline_available():
+		Log.error("ActivateInstanceComponent", "Timeline not found: %s" % _timeline_id)
+		return false
+	_activate_execution(event_dict, context, game_state_provider)
+	return true
 
 func _check_triggers(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	return AbilityComponent.match_triggers(_triggers, _trigger_mode, event_dict, context)
+
+
+func _is_timeline_available() -> bool:
+	return TimelineRegistry.has(_timeline_id)
+
 
 func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> void:
 	var ability := context.ability
@@ -47,7 +57,8 @@ func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContex
 		_on_timeline_start_actions,
 		_on_timeline_end_actions,
 		event_dict,
-		game_state_provider
+		game_state_provider,
+		_on_cancel_actions
 	)
 	Log.debug("ActivateInstanceComponent", "开始执行")
 
@@ -66,4 +77,6 @@ func _freeze_all_actions() -> void:
 	for action in _on_timeline_start_actions:
 		action._freeze()
 	for action in _on_timeline_end_actions:
+		action._freeze()
+	for action in _on_cancel_actions:
 		action._freeze()
