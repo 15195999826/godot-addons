@@ -41,5 +41,5 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 				continue
 			if ability.get_executing_instances().is_empty():
 				continue
-			ability.cancel_all_executions()
+			ability.cancel_all_executions(ctx.game_state_provider)
 	return ActionResult.create_success_result([])
