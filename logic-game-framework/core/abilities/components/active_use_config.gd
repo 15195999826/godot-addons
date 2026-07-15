@@ -49,6 +49,9 @@ var on_timeline_start_actions: Array[Action.BaseAction]
 ## Timeline 结束时同步触发的 actions（timeline 完成 / loop 每轮结束）
 var on_timeline_end_actions: Array[Action.BaseAction]
 
+## Execution 被取消时同步触发的清理 actions（仅取消，不等同于成功结束）
+var on_cancel_actions: Array[Action.BaseAction]
+
 ## 触发器列表（可选，默认监听 AbilityActivateEvent）
 var triggers: Array[TriggerConfig]
 
@@ -70,7 +73,8 @@ func _init(
 	triggers: Array[TriggerConfig] = [],
 	trigger_mode: String = "any",
 	on_timeline_start_actions: Array[Action.BaseAction] = [],
-	on_timeline_end_actions: Array[Action.BaseAction] = []
+	on_timeline_end_actions: Array[Action.BaseAction] = [],
+	on_cancel_actions: Array[Action.BaseAction] = []
 ) -> void:
 	self.timeline_id = timeline_id
 	self.tag_actions = tag_actions
@@ -80,6 +84,7 @@ func _init(
 	self.trigger_mode = trigger_mode
 	self.on_timeline_start_actions = on_timeline_start_actions
 	self.on_timeline_end_actions = on_timeline_end_actions
+	self.on_cancel_actions = on_cancel_actions
 
 
 ## 创建对应的 ActiveUseComponent 实例
@@ -109,6 +114,7 @@ class ActiveUseConfigBuilder:
 	var _costs: Array[Cost] = []
 	var _on_timeline_start_actions: Array[Action.BaseAction] = []
 	var _on_timeline_end_actions: Array[Action.BaseAction] = []
+	var _on_cancel_actions: Array[Action.BaseAction] = []
 	
 	# ========== 1. 触发配置 ==========
 	
@@ -149,6 +155,11 @@ class ActiveUseConfigBuilder:
 		_on_timeline_end_actions.append_array(actions)
 		return self
 
+	## 配置 execution 被取消时必跑的清理 actions。
+	func on_cancel(actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
+		_on_cancel_actions.append_array(actions)
+		return self
+
 	# ========== 3. 条件和消耗 ==========
 
 	## 添加前置条件（可选）
@@ -175,5 +186,6 @@ class ActiveUseConfigBuilder:
 			_triggers,
 			_trigger_mode,
 			_on_timeline_start_actions,
-			_on_timeline_end_actions
+			_on_timeline_end_actions,
+			_on_cancel_actions
 		)

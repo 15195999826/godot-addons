@@ -45,7 +45,8 @@ extends RefCounted
 var _events: Array[Dictionary] = []
 
 func push(event_dict: Dictionary) -> Dictionary:
-	_events.append(event_dict)
+	# 录像批保存独立深拷贝；Post listener 对原事件的误修改不能反向篡改 replay。
+	_events.append(event_dict.duplicate(true))
 	return event_dict
 
 func collect() -> Array[Dictionary]:
