@@ -38,6 +38,10 @@ static var ABILITY := (
 			HexBattleTargetSelectors.ability_owner(),
 			HexBattleSkillHelpers.target_coord_from_event()
 		)])
+		.on_cancel([HexBattleCancelMoveAction.new(
+			HexBattleTargetSelectors.ability_owner(),
+			HexBattleSkillHelpers.target_coord_from_event()
+		)])
 		.on_tag(TimelineTags.EXECUTE, [HexBattleApplyMoveAction.new(
 			HexBattleTargetSelectors.ability_owner(),
 			HexBattleSkillHelpers.target_coord_from_event()

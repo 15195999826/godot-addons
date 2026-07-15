@@ -36,7 +36,7 @@ class FixedSelector extends TargetSelector:
 class RecordingAction:
 	extends Action.PrimitiveAction
 
-	var calls: Array[String] = []
+	const EVENT_KIND := "no_instance_test_recording"
 	var tag: String
 
 	func _init(p_tag: String) -> void:
@@ -44,9 +44,13 @@ class RecordingAction:
 		type = "recording_" + p_tag
 		tag = p_tag
 
-	func execute(_ctx: ExecutionContext) -> ActionResult:
-		calls.append(tag)
-		return ActionResult.create_success_result([])
+	func execute(ctx: ExecutionContext) -> ActionResult:
+		var event_dict := {
+			"kind": EVENT_KIND,
+			"tag": tag,
+		}
+		ctx.event_collector.push(event_dict)
+		return ActionResult.create_success_result([event_dict])
 
 
 var _instance: GameplayInstance
@@ -61,6 +65,7 @@ func _init() -> void:
 
 
 func _setup() -> void:
+	GameWorld.event_collector.clear()
 	_instance = GameWorld.create_instance(func(): return GameplayInstance.new("no_instance_test"))
 
 
@@ -80,6 +85,15 @@ func _make_actor() -> Array:
 func _build_ability(cfg: NoInstanceConfig, owner_id: String) -> Ability:
 	var ability_config := AbilityConfig.new("test_ability", "", "", "", [], [], [cfg])
 	return Ability.new(ability_config, owner_id)
+
+
+func _recorded_count(tag: String) -> int:
+	var count := 0
+	for event_dict in GameWorld.event_collector.collect():
+		if (event_dict.get("kind", "") as String) == RecordingAction.EVENT_KIND \
+				and (event_dict.get("tag", "") as String) == tag:
+			count += 1
+	return count
 
 
 func _test_lifecycle_only() -> void:
@@ -108,7 +122,7 @@ func _test_on_apply_runs() -> void:
 	var ability := _build_ability(cfg, owner_id)
 	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null)
 	ability.apply_effects(ctx)
-	TestFramework.assert_equal(1, apply_act.calls.size())
+	TestFramework.assert_equal(1, _recorded_count("apply"))
 	_teardown()
 
 
@@ -123,9 +137,9 @@ func _test_on_remove_runs() -> void:
 	var ability := _build_ability(cfg, owner_id)
 	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null)
 	ability.apply_effects(ctx)
-	TestFramework.assert_true(remove_act.calls.size() == 0, "on_remove must not fire on apply")
+	TestFramework.assert_true(_recorded_count("remove") == 0, "on_remove must not fire on apply")
 	ability.remove_effects()
-	TestFramework.assert_equal(1, remove_act.calls.size())
+	TestFramework.assert_equal(1, _recorded_count("remove"))
 	_teardown()
 
 
@@ -176,5 +190,5 @@ func _test_trigger_still_works() -> void:
 	ability.apply_effects(ctx)
 	var comp: NoInstanceComponent = ability.get_all_components()[0] as NoInstanceComponent
 	comp.on_event({"kind": "test_kind"}, ctx, null)
-	TestFramework.assert_equal(1, trigger_act.calls.size())
+	TestFramework.assert_equal(1, _recorded_count("trigger"))
 	_teardown()

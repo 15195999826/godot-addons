@@ -26,7 +26,8 @@ func _init(config: ActiveUseConfig):
 		triggers_to_use,
 		config.trigger_mode,
 		config.on_timeline_start_actions,
-		config.on_timeline_end_actions
+		config.on_timeline_end_actions,
+		config.on_cancel_actions
 	)
 	super._init(parent_config)
 	type = COMPONENT_TYPE
@@ -38,6 +39,9 @@ func _init(config: ActiveUseConfig):
 
 func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> bool:
 	if not _check_triggers(event_dict, context):
+		return false
+	if not _is_timeline_available():
+		Log.error("ActiveUseComponent", "Timeline not found: %s" % _timeline_id)
 		return false
 	if not _check_conditions(context, event_dict, game_state_provider):
 		return false

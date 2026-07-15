@@ -113,16 +113,20 @@ func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 	_execution_instances = _execution_instances.filter(_is_executing_instance)
 	return all_triggered
 
-## p_game_state_provider 只用于激活瞬间 fire_sync_actions(__timeline_start__)；
-## 不存入 AbilityExecutionInstance 字段，避免 battle ↔ exec_instance 循环强引用。
+## p_game_state_provider 用于激活瞬间 start Action，并由 execution 仅以 WeakRef 保留，
+## 供 revoke/expire 等无显式 provider 的取消清理使用；不会形成 battle ↔ execution 强引用环。
 func activate_new_execution_instance(
 	p_timeline_id: String,
 	p_tag_actions: Array[TagActionsEntry],
 	p_on_timeline_start_actions: Array[Action.BaseAction],
 	p_on_timeline_end_actions: Array[Action.BaseAction],
 	p_trigger_event_dict: Dictionary,
-	p_game_state_provider: Variant
+	p_game_state_provider: Variant,
+	p_on_cancel_actions: Array[Action.BaseAction] = []
 ) -> AbilityExecutionInstance:
+	if not TimelineRegistry.has(p_timeline_id):
+		Log.error("Ability", "Cannot activate missing timeline: %s" % p_timeline_id)
+		return null
 	var ability_ref := AbilityRef.from_ability(self)
 	var instance := AbilityExecutionInstance.new(
 		p_timeline_id,
@@ -130,14 +134,18 @@ func activate_new_execution_instance(
 		p_on_timeline_start_actions,
 		p_on_timeline_end_actions,
 		p_trigger_event_dict,
-		ability_ref
+		ability_ref,
+		p_on_cancel_actions,
+		p_game_state_provider
 	)
 	_execution_instances.append(instance)
 	for callback in _on_execution_callbacks:
 		if callback.is_valid():
 			callback.call(instance)
-	# 激活瞬间同步触发 on_timeline_start（如 StageCueAction / reserve_tile）
-	instance.fire_sync_actions(p_on_timeline_start_actions, "__timeline_start__", p_game_state_provider)
+	# Callback 可同步取消；取消后不得再执行 start Action（否则会在 cleanup 后重新占用资源）。
+	if instance.is_executing():
+		instance.fire_sync_actions(
+			p_on_timeline_start_actions, "__timeline_start__", p_game_state_provider)
 	return instance
 
 func get_executing_instances() -> Array[AbilityExecutionInstance]:
@@ -146,10 +154,10 @@ func get_executing_instances() -> Array[AbilityExecutionInstance]:
 func get_all_execution_instances() -> Array[AbilityExecutionInstance]:
 	return _execution_instances
 
-func cancel_all_executions() -> void:
+func cancel_all_executions(game_state_provider: Variant = null) -> void:
 	for instance in _execution_instances:
 		if instance:
-			instance.cancel()
+			instance.cancel(game_state_provider)
 	_execution_instances = []
 
 func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> void:
@@ -275,6 +283,7 @@ func expire(reason: String) -> void:
 	if _state == STATE_EXPIRED:
 		return
 	_expire_reason = reason
+	cancel_all_executions()
 	remove_effects()
 	_state = STATE_EXPIRED
 
