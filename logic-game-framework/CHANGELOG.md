@@ -38,6 +38,7 @@
 - **死类 `GameEvent.AbilityActivated` 及其 `ABILITY_ACTIVATED_EVENT` 常量（线 3 轮 B）**：与 `AbilityActivate` 仅差一字母、全仓 create/from_dict/is_match 调用为 0 的占位类，从未有生产路径 emit 该 kind——直接删除消除命名混淆源（enforcing-lgf skill 文档清单同步）。
 
 ### Fixed
+- **测试 runner load 失败 fail-open**：`tests/run_tests.gd` 原先对 `load()` 返回 null 的测试脚本仅 `push_error` + continue，退出码只统计断言失败——一个 parse error 会让套件静默缩水成"全绿"。现在 load null / `can_instantiate()` false / `new()` 非 Node 三类都记入 load_failures 并打印 `TEST LOAD FAILURE:` 行，`quit(failures + load_failures)`。why：退出码是 CI/门禁的唯一真值，加载失败必须与断言失败同权重判死。
 - **`ProjectileHit` 的 kind 常量归 core 注册表**：`GameEvent` 新增 `PROJECTILE_HIT_EVENT` 常量，`ProjectileHit` 改用之；stdlib `ProjectileEvents.PROJECTILE_HIT_EVENT` 转引 core 常量（值不变 `"projectileHit"`，行为逐位等价）——消除投射物工厂迁 stdlib 后 `game_event.gd` 对其残留的 core→stdlib 反向引用（codex review P2）。
 - 文档漂移：`docs/README.md` 已知债务节按线 3 提案裁决重写（原 D2 条目「反向引用 ProjectileSystem」描述经查证不实）；hex `core/README.md` 重写为共享数据层职责（作废「阶段 5 Actor 下沉」旧路线）；`frontend/README.md` 修正死亡动画路径描述（走 `actor_died` Event 路径而非 `update_state` 推断）、删除已下线的 `FrontendBattleReplayScene` 使用段、Director/RenderWorld 的 signal 与方法签名对齐现行强类型；清理 `HexBattle` 已删除类的亡灵注释（2 处）。
 
