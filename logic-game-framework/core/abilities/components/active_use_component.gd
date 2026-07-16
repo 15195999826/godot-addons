@@ -51,6 +51,47 @@ func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_sta
 	_activate_execution(event_dict, context, game_state_provider)
 	return true
 
+
+## 激活门的纯查询干跑（零副作用、可重入）：按激活路径同序评估
+## timeline 可用性 → 全部 Condition.check → 全部 Cost.can_pay。
+## 不扣资源、不 push AbilityActivateFailed、不创建 execution、不改任何状态。
+##
+## UI / AI / tooltip 的合法性 Query 借此与真实激活门共享同一份 Condition/Cost
+## 真相——不必 dry-run cast 流程，也不必在业务层复刻门控规则（双源真相会漂移）。
+##
+## 有意不做 trigger 匹配：trigger 表达"何时把事件派给本组件"，cast 前查询没有
+## 事件可匹配；event_dict 只是透传给 check/can_pay 的拟真输入（无目标语境传 {}）。
+##
+## 返回形状见 AbilityActivationQuery；reason 来自 get_fail_reason（与激活失败
+## 事件同源），failed_component_type 与 AbilityActivateFailed 同词汇。
+func can_activate(
+	context: AbilityLifecycleContext,
+	event_dict: Dictionary = {},
+	game_state_provider: Variant = null,
+) -> Dictionary:
+	if not _is_timeline_available():
+		return AbilityActivationQuery.denied(
+			"timeline not found: %s" % _timeline_id, AbilityActivationQuery.FAILED_TIMELINE)
+	for condition in _conditions:
+		var passed := condition.check(context, event_dict, game_state_provider)
+		condition._verify_unchanged()
+		if not passed:
+			var condition_reason := condition.get_fail_reason(context, event_dict, game_state_provider)
+			if condition_reason == "":
+				condition_reason = condition.get_condition_type()
+			return AbilityActivationQuery.denied(
+				condition_reason, AbilityActivationQuery.FAILED_CONDITION)
+	for cost in _costs:
+		var payable := cost.can_pay(context, event_dict, game_state_provider)
+		cost._verify_unchanged()
+		if not payable:
+			var cost_reason := cost.get_fail_reason(context, event_dict, game_state_provider)
+			if cost_reason == "":
+				cost_reason = cost.type
+			return AbilityActivationQuery.denied(
+				cost_reason, AbilityActivationQuery.FAILED_COST)
+	return AbilityActivationQuery.allowed()
+
 func _check_conditions(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> bool:
 	for condition in _conditions:
 		if not condition.check(ctx, event_dict, game_state):
@@ -58,7 +99,7 @@ func _check_conditions(ctx: AbilityLifecycleContext, event_dict: Dictionary, gam
 			if reason == "":
 				reason = condition.get_condition_type()
 			Log.debug("ActiveUseComponent", "条件不满足: %s" % reason)
-			_push_activate_failed(ctx, event_dict, reason, "condition")
+			_push_activate_failed(ctx, event_dict, reason, AbilityActivationQuery.FAILED_CONDITION)
 			# Debug: 验证 Condition 状态未被修改
 			condition._verify_unchanged()
 			return false
@@ -73,7 +114,7 @@ func _check_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_sta
 			if reason == "":
 				reason = cost.type
 			Log.debug("ActiveUseComponent", "消耗不足: %s" % reason)
-			_push_activate_failed(ctx, event_dict, reason, "cost")
+			_push_activate_failed(ctx, event_dict, reason, AbilityActivationQuery.FAILED_COST)
 			# Debug: 验证 Cost 状态未被修改（can_pay 不应修改状态）
 			cost._verify_unchanged()
 			return false

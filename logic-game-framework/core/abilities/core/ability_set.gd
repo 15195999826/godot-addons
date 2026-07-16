@@ -130,6 +130,27 @@ func receive_event(event_dict: Dictionary, game_state_provider: Variant) -> void
 		ability.receive_event(event_dict, context, game_state_provider)
 	)
 
+## 激活门的纯查询干跑（零副作用、可重入）：UI / AI / tooltip 三源共用的合法性
+## Query 入口。与 receive_event 派发路径共用同一份 lifecycle context 构造，
+## Condition/Cost 在"查询"与"真实激活"两条路径读到的是同一个世界。
+##
+## event_dict 是透传给 Condition.check / Cost.can_pay 的拟真输入（如带
+## target_actor_id 的预设目标语境）；无目标语境传 {}。返回形状见
+## AbilityActivationQuery：{allowed, reason, failed_component_type}。
+##
+## ability 必须属于本 AbilitySet——跨 set 查询构造出的 context 会谎报 owner，
+## 属调用方编程错误，直接 crash 而非静默给出错误答案。
+func can_activate(
+	ability: Ability,
+	event_dict: Dictionary = {},
+	game_state_provider: Variant = null,
+) -> Dictionary:
+	Log.assert_crash(ability != null, "AbilitySet", "can_activate 要求非空 ability")
+	Log.assert_crash(_abilities.has(ability), "AbilitySet",
+		"can_activate: ability '%s' 不属于本 AbilitySet (owner=%s)" % [ability.id, owner_actor_id])
+	var context: AbilityLifecycleContext = _create_lifecycle_context(ability)
+	return ability.can_activate(context, event_dict, game_state_provider)
+
 func get_abilities() -> Array[Ability]:
 	return _abilities
 
