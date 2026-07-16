@@ -5,10 +5,12 @@ extends Node
 
 
 func _init() -> void:
-	TestFramework.register_test("Pipeline - 空候选返回 null", _test_empty_options)
+	TestFramework.register_test("Pipeline - 空候选返回 NO_OPTIONS（typed outcome）", _test_empty_options)
+	TestFramework.register_test("Pipeline - 全不可行返回 NO_FEASIBLE_OPTION 且 breakdown 恒携带", _test_no_feasible_outcome)
 	TestFramework.register_test("Pipeline - 乱序输入与有序输入同结果（确定性）", _test_order_independence)
 	TestFramework.register_test("Pipeline - 同 seed 双跑同结果", _test_same_seed_same_result)
-	TestFramework.register_test("Pipeline - snapshot 只读校验通过（content_hash 路径）", _test_snapshot_hash_ok)
+	TestFramework.register_test("Pipeline - 加权抽样真正消耗 RNG 且同 seed 双跑一致", _test_weighted_sampling_same_seed)
+	TestFramework.register_test("Pipeline - snapshot 只读校验通过（content_hash 覆盖 Provider+Reasoner 全程）", _test_snapshot_hash_ok)
 	TestFramework.register_test("Backtrack - requires 满足时直接选目标, chain 为空", _test_direct_goal)
 	TestFramework.register_test("Backtrack - requires 缺口回溯到准备步, chain 正确", _test_backtrack_chain)
 	TestFramework.register_test("Backtrack - depth=1 禁回溯, 落到次优可行目标", _test_depth_limit)
@@ -84,6 +86,33 @@ class BacktrackStub:
 		return str(requirement["type"])
 
 
+## 加权抽样替身：_rank_goals 覆写为轮盘不放回抽样——真正消耗 RNG（默认
+## argmax 排序不吃 rng，同 seed 合同在该路径上原先无覆盖，ADR 0022 修订④）。
+class WeightedStub:
+	extends BacktrackStub
+
+	func _rank_goals(options: Array[DecisionOption], scores: Dictionary,
+			_snapshot: DecisionSnapshot, rng: RandomNumberGenerator) -> Array[DecisionOption]:
+		var pool := options.duplicate()
+		var ranked: Array[DecisionOption] = []
+		while not pool.is_empty():
+			var total := 0.0
+			for option in pool:
+				total += maxf(float(scores[option.id]), 0.0)
+			if total <= 0.0:
+				ranked.append_array(pool)
+				break
+			var roll := rng.randf() * total
+			var cursor := 0.0
+			for i in pool.size():
+				cursor += maxf(float(scores[pool[i].id]), 0.0)
+				if roll < cursor or i == pool.size() - 1:
+					ranked.append(pool[i])
+					pool.remove_at(i)
+					break
+		return ranked
+
+
 ## 标准小世界：买剑（高分，要钱）/ 挣钱（低分，供钱）/ 散步（中分，无门槛）。
 func _standard_specs() -> Array[Dictionary]:
 	return [
@@ -94,12 +123,18 @@ func _standard_specs() -> Array[Dictionary]:
 	]
 
 
-func _run(specs: Array[Dictionary], facts: Dictionary, depth := 2,
-		reverse := false, seed_value := 1234) -> DecisionResult:
+func _run_outcome(specs: Array[Dictionary], facts: Dictionary, depth := 2,
+		reverse := false, seed_value := 1234) -> DecisionOutcome:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	return DecisionPipeline.run(SnapshotStub.new(facts),
 		ProviderStub.new(specs, reverse), BacktrackStub.new(depth), rng)
+
+
+## SELECTED 用例的便捷解包（未选中会解出 null，由用例自身断言暴露）。
+func _run(specs: Array[Dictionary], facts: Dictionary, depth := 2,
+		reverse := false, seed_value := 1234) -> DecisionResult:
+	return _run_outcome(specs, facts, depth, reverse, seed_value).result
 
 
 # ============================================================
@@ -108,8 +143,24 @@ func _run(specs: Array[Dictionary], facts: Dictionary, depth := 2,
 
 func _test_empty_options() -> void:
 	var empty_specs: Array[Dictionary] = []
-	var result := _run(empty_specs, { "money": true })
-	TestFramework.assert_true(result == null, "空候选应返回 null")
+	var outcome := _run_outcome(empty_specs, { "money": true })
+	TestFramework.assert_equal(DecisionOutcome.NO_OPTIONS, outcome.status)
+	TestFramework.assert_true(outcome.result == null, "NO_OPTIONS 不应携带 result")
+	TestFramework.assert_true(outcome.breakdown.is_empty(), "无候选就没有明细")
+
+
+func _test_no_feasible_outcome() -> void:
+	# 唯一候选要 money 且无供给者：有候选但全不可行——必须与无候选可区分，
+	# 且 breakdown 保留 rejected 原因（「为什么发呆」的下钻数据）。
+	var specs: Array[Dictionary] = [
+		{ "id": "buy_sword", "score": 100.0,
+			"requires": [ { "type": "money" } ], "provides": [] },
+	]
+	var outcome := _run_outcome(specs, {})
+	TestFramework.assert_equal(DecisionOutcome.NO_FEASIBLE_OPTION, outcome.status)
+	TestFramework.assert_true(outcome.result == null, "未选中不应携带 result")
+	TestFramework.assert_equal(1, outcome.breakdown.size())
+	TestFramework.assert_equal("unreachable", outcome.breakdown[0]["rejected"])
 
 
 func _test_order_independence() -> void:
@@ -126,8 +177,27 @@ func _test_same_seed_same_result() -> void:
 	TestFramework.assert_equal(first.reason_key, second.reason_key)
 
 
+func _test_weighted_sampling_same_seed() -> void:
+	# 覆写 _rank_goals 为轮盘抽样：先证 RNG 真被消耗（state 变化），再证
+	# 同 seed 双跑逐字段一致——随机路径的确定性合同（ADR 0022 修订④）。
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+	var state_before := rng.state
+	var first := DecisionPipeline.run(SnapshotStub.new({ "money": true }),
+		ProviderStub.new(_standard_specs()), WeightedStub.new(2), rng)
+	TestFramework.assert_true(rng.state != state_before, "加权抽样路径应真正消耗 RNG")
+	rng.seed = 4242
+	var second := DecisionPipeline.run(SnapshotStub.new({ "money": true }),
+		ProviderStub.new(_standard_specs()), WeightedStub.new(2), rng)
+	TestFramework.assert_equal(DecisionOutcome.SELECTED, first.status)
+	TestFramework.assert_equal(first.result.selected.id, second.result.selected.id)
+	TestFramework.assert_equal(first.result.chain, second.result.chain)
+	TestFramework.assert_equal(first.result.reason_key, second.result.reason_key)
+
+
 func _test_snapshot_hash_ok() -> void:
-	# SnapshotStub 实现了 content_hash；decide 不改快照 → 只读校验静默通过。
+	# SnapshotStub 实现了 content_hash（Provider 之前采集、decide 之后复验，
+	# 全程受检）；Provider/Reasoner 都不改快照 → 只读校验静默通过。
 	var result := _run(_standard_specs(), { "money": true })
 	TestFramework.assert_true(result != null, "只读校验不应误伤正常决策")
 
@@ -184,10 +254,10 @@ func _test_cycle_guard() -> void:
 	# a/b 直接可行。这里需要 x/y 永不满足的替身。
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	var result := DecisionPipeline.run(SnapshotStub.new({}),
+	var outcome := DecisionPipeline.run(SnapshotStub.new({}),
 		ProviderStub.new(specs), CycleStub.new(3), rng)
-	TestFramework.assert_true(result != null, "环防护后应落到可行兜底")
-	TestFramework.assert_equal("stroll", result.selected.id)
+	TestFramework.assert_equal(DecisionOutcome.SELECTED, outcome.status)
+	TestFramework.assert_equal("stroll", outcome.result.selected.id)
 
 
 ## 环测试替身：x/y 条件永不满足（深度放到 3 以证明是环防护挡住而非链长）。
