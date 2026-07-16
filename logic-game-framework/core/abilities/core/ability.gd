@@ -180,6 +180,37 @@ func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext, gam
 				callback.call(event_dict, triggered_components)
 
 
+## 激活门的纯查询干跑（零副作用、可重入）：本 Ability 现在能否通过 ActiveUse 激活门。
+##
+## 先镜像 receive_event 的顶层短路（未 granted / disabled 时事件根本到不了组件，
+## 查询必须给出同一答案），再逐个评估全部 active ActiveUseComponent 的
+## Condition/Cost（见 ActiveUseComponent.can_activate），首个失败即返回。
+## 没有 ActiveUseComponent 时门控空真通过——本查询回答"门会不会拦"，
+## "这是不是一个可施放技能"属 ability metadata 的声明式判断，不在此处。
+##
+## 返回形状见 AbilityActivationQuery。通常经 AbilitySet.can_activate 调用
+## （由它构造 lifecycle context）。
+func can_activate(
+	context: AbilityLifecycleContext,
+	event_dict: Dictionary = {},
+	game_state_provider: Variant = null,
+) -> Dictionary:
+	if _state != STATE_GRANTED:
+		return AbilityActivationQuery.denied(
+			"ability is not granted: %s" % _state, AbilityActivationQuery.FAILED_ABILITY)
+	if is_disabled():
+		return AbilityActivationQuery.denied(
+			"ability is disabled", AbilityActivationQuery.FAILED_ABILITY)
+	for component in _components:
+		var active_use := component as ActiveUseComponent
+		if active_use == null or not active_use.is_active():
+			continue
+		var gate_result := active_use.can_activate(context, event_dict, game_state_provider)
+		if not AbilityActivationQuery.is_allowed(gate_result):
+			return gate_result
+	return AbilityActivationQuery.allowed()
+
+
 # ========== Phase B2 (Break) passive disabled-source 引用计数 API ==========
 
 ## 是否处于 disabled 状态（至少有一个 disabled source 引用）。
