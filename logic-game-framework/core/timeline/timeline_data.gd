@@ -43,15 +43,23 @@ func get_tag_names() -> Array[String]:
 	return result
 
 
-## 获取按时间排序的 tags
+## 获取按时间排序的 tags。
+## 同 time 的 tag 按定义序（tags 声明顺序）做显式二级排序——sort_custom 不稳定，
+## 缺 tie-break 时同刻 tag 顺序不可复现（与 AbilityExecutionInstance 触发序同一规则）。
 func get_sorted_tags() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
+	var definition_index := 0
 	for tag_name in tags.keys():
 		result.append({
 			"name": tag_name,
-			"time": float(tags[tag_name])
+			"time": float(tags[tag_name]),
+			"definitionIndex": definition_index,
 		})
-	result.sort_custom(func(a: Dictionary, b: Dictionary): return a["time"] < b["time"])
+		definition_index += 1
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if float(a["time"]) != float(b["time"]):
+			return float(a["time"]) < float(b["time"])
+		return int(a["definitionIndex"]) < int(b["definitionIndex"]))
 	return result
 
 

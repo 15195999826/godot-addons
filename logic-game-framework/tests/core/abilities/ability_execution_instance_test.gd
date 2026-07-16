@@ -34,6 +34,7 @@ func _init() -> void:
 	TestFramework.register_test("AbilityExecutionInstance fires sync + async actions", _test_trigger_tags)
 	TestFramework.register_test("AbilityExecutionInstance matches wildcard", _test_wildcard)
 	TestFramework.register_test("AbilityExecutionInstance completes and cancels", _test_complete_cancel)
+	TestFramework.register_test("AbilityExecutionInstance fires same-timestamp tags in definition order", _test_same_timestamp_tag_order)
 	TestFramework.register_test("AbilityExecutionInstance end cancellation stays cancelled", _test_end_cancel)
 	TestFramework.register_test("AbilityExecutionInstance §0.4 shares execution_state across tags", _test_execution_state_shared)
 	TestFramework.register_test("AbilityExecutionInstance §0.4 different instances have isolated state", _test_execution_state_isolated)
@@ -100,6 +101,41 @@ func _test_wildcard() -> void:
 	TestFramework.assert_equal(1, triggered.size())
 	TestFramework.assert_equal("hit-1", triggered[0])
 	TestFramework.assert_equal(1, action.calls.size())
+
+## 同 timestamp 的多个 tag 必须按 timeline 定义序触发（显式二级排序，
+## 不依赖 sort_custom 稳定性）。定义序特意用非字母序排布以暴露隐式排序。
+func _test_same_timestamp_tag_order() -> void:
+	TimelineRegistry.reset()
+	TimelineRegistry.register(TimelineData.new(
+		"t-tag-order",
+		1.0,
+		{
+			"zeta": 0.5,
+			"alpha": 0.5,
+			"mid": 0.3,
+			"omega": 0.5,
+		}
+	))
+	GameWorld.init()
+
+	var empty_list: Array[Action.BaseAction] = []
+	var instance := AbilityExecutionInstance.new(
+		"t-tag-order",
+		[],
+		empty_list,
+		empty_list,
+		{},
+		AbilityRef.new("a-order", "c-order")
+	)
+
+	# 一次 tick 覆盖全部 tag：时间序在先（mid@0.3），同刻组按定义序 zeta → alpha → omega
+	var triggered := instance.tick(1.0, null)
+	TestFramework.assert_equal(4, triggered.size())
+	TestFramework.assert_equal("mid", triggered[0])
+	TestFramework.assert_equal("zeta", triggered[1])
+	TestFramework.assert_equal("alpha", triggered[2])
+	TestFramework.assert_equal("omega", triggered[3])
+
 
 func _test_complete_cancel() -> void:
 	TimelineRegistry.reset()
