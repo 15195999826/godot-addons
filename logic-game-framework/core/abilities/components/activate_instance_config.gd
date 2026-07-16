@@ -50,6 +50,9 @@ var on_timeline_start_actions: Array[Action.BaseAction]
 ## Timeline 结束时同步触发的 actions（timeline 完成 / loop 每轮结束）
 var on_timeline_end_actions: Array[Action.BaseAction]
 
+## Execution 被取消时同步触发的清理 actions（仅取消，不等同于成功结束）
+var on_cancel_actions: Array[Action.BaseAction]
+
 ## 触发器列表
 var triggers: Array[TriggerConfig]
 
@@ -64,6 +67,7 @@ func _init(
 	trigger_mode: String = "any",
 	on_timeline_start_actions: Array[Action.BaseAction] = [],
 	on_timeline_end_actions: Array[Action.BaseAction] = [],
+	on_cancel_actions: Array[Action.BaseAction] = [],
 	timeline_data: TimelineData = null
 ) -> void:
 	self.timeline_id = timeline_id
@@ -72,6 +76,7 @@ func _init(
 	self.trigger_mode = trigger_mode
 	self.on_timeline_start_actions = on_timeline_start_actions
 	self.on_timeline_end_actions = on_timeline_end_actions
+	self.on_cancel_actions = on_cancel_actions
 	self.timeline_data = timeline_data
 
 
@@ -101,6 +106,7 @@ class ActivateInstanceConfigBuilder:
 	var _trigger_mode: String = "any"
 	var _on_timeline_start_actions: Array[Action.BaseAction] = []
 	var _on_timeline_end_actions: Array[Action.BaseAction] = []
+	var _on_cancel_actions: Array[Action.BaseAction] = []
 	
 	# ========== 1. 触发配置 ==========
 	
@@ -143,6 +149,11 @@ class ActivateInstanceConfigBuilder:
 		_on_timeline_end_actions.append_array(actions)
 		return self
 
+	## 配置 execution 被取消时必跑的清理 actions。
+	func on_cancel(actions: Array[Action.BaseAction]) -> ActivateInstanceConfigBuilder:
+		_on_cancel_actions.append_array(actions)
+		return self
+
 	## 构建 ActivateInstanceConfig
 	## 验证必填字段，缺失时触发断言错误
 	func build() -> ActivateInstanceConfig:
@@ -154,5 +165,6 @@ class ActivateInstanceConfigBuilder:
 			_trigger_mode,
 			_on_timeline_start_actions,
 			_on_timeline_end_actions,
+			_on_cancel_actions,
 			_timeline_data
 		)
