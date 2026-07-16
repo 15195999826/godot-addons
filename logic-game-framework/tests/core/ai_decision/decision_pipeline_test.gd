@@ -179,20 +179,30 @@ func _test_same_seed_same_result() -> void:
 
 func _test_weighted_sampling_same_seed() -> void:
 	# 覆写 _rank_goals 为轮盘抽样：先证 RNG 真被消耗（state 变化），再证
-	# 同 seed 双跑逐字段一致——随机路径的确定性合同（ADR 0022 修订④）。
+	# 同 seed 下乱序 Provider 输入与有序输入逐字段一致——随机路径的确定性
+	# 合同含候选序独立性（删掉 Pipeline 的 id 排序此测必红）。同分候选
+	# 放大顺序敏感度（ADR 0022 修订④）。
+	var specs: Array[Dictionary] = [
+		{ "id": "a", "score": 10.0, "requires": [], "provides": [] },
+		{ "id": "b", "score": 10.0, "requires": [], "provides": [] },
+		{ "id": "c", "score": 10.0, "requires": [], "provides": [] },
+	]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4242
 	var state_before := rng.state
-	var first := DecisionPipeline.run(SnapshotStub.new({ "money": true }),
-		ProviderStub.new(_standard_specs()), WeightedStub.new(2), rng)
+	var first := DecisionPipeline.run(SnapshotStub.new({}),
+		ProviderStub.new(specs), WeightedStub.new(2), rng)
 	TestFramework.assert_true(rng.state != state_before, "加权抽样路径应真正消耗 RNG")
+	var state_after_first := rng.state
 	rng.seed = 4242
-	var second := DecisionPipeline.run(SnapshotStub.new({ "money": true }),
-		ProviderStub.new(_standard_specs()), WeightedStub.new(2), rng)
+	var second := DecisionPipeline.run(SnapshotStub.new({}),
+		ProviderStub.new(specs, true), WeightedStub.new(2), rng)
 	TestFramework.assert_equal(DecisionOutcome.SELECTED, first.status)
 	TestFramework.assert_equal(first.result.selected.id, second.result.selected.id)
 	TestFramework.assert_equal(first.result.chain, second.result.chain)
 	TestFramework.assert_equal(first.result.reason_key, second.result.reason_key)
+	TestFramework.assert_true(rng.state == state_after_first,
+		"乱序输入不改变 RNG 消耗轨迹（候选序独立性）")
 
 
 func _test_snapshot_hash_ok() -> void:

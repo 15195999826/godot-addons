@@ -30,6 +30,9 @@ static func run(snapshot: DecisionSnapshot, provider: OptionProvider,
 	Log.assert_crash(result != null, "DecisionPipeline",
 		"decide() 返回 null——判全不可行应返回 selected 为空的 DecisionResult（带 breakdown）")
 	if result.selected == null:
+		# 全不可行仍须保留全量明细（走到这里候选至少 1，空 = Reasoner 忘填）。
+		Log.assert_crash(not result.breakdown.is_empty(), "DecisionPipeline",
+			"NO_FEASIBLE_OPTION 的 breakdown 为空（判全不可行必须携带全量打分明细）")
 		return DecisionOutcome.no_feasible(result.breakdown)
 	Log.assert_crash(options.has(result.selected),
 		"DecisionPipeline", "selected 不在候选集内（Reasoner 必须返回 Provider 产出的原实例）")
