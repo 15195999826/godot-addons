@@ -14,6 +14,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Ability 激活门纯查询 `can_activate`（`AbilitySet` / `Ability` / `ActiveUseComponent` 三级同名 API）**：零副作用干跑任意 ActiveUse 激活门——不扣资源、不 push `AbilityActivateFailed`、不创建 execution、可重入；按激活路径同序评估 timeline 可用性 → 全部 `Condition.check` → 全部 `Cost.can_pay`，并镜像 `receive_event` 的顶层短路（未 granted / disabled 同判拒绝）。返回结构化 Dictionary `{allowed, reason, failed_component_type}`，键与取值常量收口在新类 `AbilityActivationQuery`（`core/abilities/shared/ability_activation_query.gd`）；`reason` 与激活失败事件同源（`get_fail_reason`），`failed_component_type` 与 `GameEvent.AbilityActivateFailed` 同词汇（"condition"/"cost"，真实路径的字面量同步改引同一常量源，另有 ability 级 "ability" 与 timeline 未注册 "timeline"）。有意不含 trigger 匹配——trigger 表达"何时把事件派给组件"，cast 前查询没有事件可匹配；`event_dict` 仅作透传给 check/can_pay 的拟真输入。why：UI / AI / tooltip 三源合法性 Query 此前拿不到 Condition/Cost 这份运行时门控真相——要么带副作用地 dry-run cast 流程，要么在业务层复刻冷却/资源规则形成双源漂移；cast 前过滤的 metadata 声明式路径不变（见 CLAUDE.md 配置归属表），本 API 只补"已配置门控的无副作用复核"这一缺口。测试 `tests/core/abilities/active_use_query_test.gd`（7 用例：零副作用/可重入、condition/cost 结构化拒绝、查询不 push 失败事件（对照真实路径 push）、disabled/expired 同判、timeline 缺失、查询不预扣真实支付、多组件首败返回）。
+
 ### Changed
 - **timeline 声明-注册一体化：builder `.timeline(data)` 全线取代 `.timeline_id(String)`（breaking）**：`ActiveUseConfig` / `ActivateInstanceConfig` builder 的 `timeline_id(String)` 删除，唯一入口 `.timeline(data: TimelineData)`——一次调用同时设置执行期查找键（`timeline_id = data.id`）并让 config 携带该 TimelineData（新字段 `timeline_data`）；`AbilityConfig.collect_timelines()` 从 config 树收集全部携带 timeline，注册链路（hex `register_all_timelines()`）改为遍历 manifest × collect 统一注册，manifest 的 `_Entry` 双列（config + 手抄 timeline 列表）退化为单列 config。why：timeline 信息此前要写三遍（声明 / timeline_id 引用 / manifest 注册列），抄漏注册列 = 运行时才炸的静默失效面；id 间接层从未提供拷贝隔离（registry 存引用取引用），真实价值只是序列化查找键——保留该键、消灭三处记账。全库 44 处迁移（hex 全部技能/buff/passive + dota2 basic attack + scenario/test 夹具）。
 - **`TimelineRegistry.register` 三态化 + 注册即冻结**：同引用重注册幂等 no-op；同 id 异引用 `assert_crash`（原 last-write-wins 静默互踩）；注册时 `tags.make_read_only()`。why：19 个 hex 技能共享标准节奏 TimelineData 后，共享实例被运行时篡改或同名 timeline 互踩都会跨技能污染——两道闸把「timeline 必须 static 声明、构造后不可变」从注释约定焊成机器规则。
@@ -38,6 +41,8 @@
 - **死类 `GameEvent.AbilityActivated` 及其 `ABILITY_ACTIVATED_EVENT` 常量（线 3 轮 B）**：与 `AbilityActivate` 仅差一字母、全仓 create/from_dict/is_match 调用为 0 的占位类，从未有生产路径 emit 该 kind——直接删除消除命名混淆源（enforcing-lgf skill 文档清单同步）。
 
 ### Fixed
+- **同 timestamp 的多个 timeline tag 缺显式二级排序**：`AbilityExecutionInstance` 的 tag 触发与 `TimelineData.get_sorted_tags()` 补齐定义序（tags 声明顺序）tie-break，同刻 tag 按 (tag_time, 定义序) 全序执行。why：`Array.sort_custom` 不稳定，缺 tie-break 时同刻 tag 的执行序取决于排序算法内部实现与容器遍历序——同一份 timeline 在不同运行里可能给出不同的 Action 执行序，破坏 replay 确定性；定义序让作者声明顺序即执行顺序。回归：`ability_execution_instance_test.gd`（tick 同刻四 tag 定义序触发）、`timeline_test.gd`（get_sorted_tags tie-break）。
+- **loop timeline 跨周期时超出周期的时间余量被丢弃**：本轮溢出 `total_duration` 的余量现结转为下一轮的起始 `_elapsed`，且结转窗口 `(0, carry]` 内的 tag 在同一次 tick 补触发（不补扫会被下一次 tick 的窗口起点跳过）；max_loops 达成的终轮维持原语义不结转。why：余量清零把每个实际周期拉长到 tick 边界，周期节奏随调用方 dt 漂移（如 100ms 周期在 dt=60 下变 120ms，300ms 只跑 2 轮而非 3 轮），DOT/HOT 的 tick 总数与配置周期脱钩且不可跨 dt 复现；dt 恰为周期整倍数时（现有 example 均如此）行为逐位不变。回归：`timeline_loop_test.gd`（余量结转+补触发、节奏不漂移、终轮不结转）。
 - **`ProjectileHit` 的 kind 常量归 core 注册表**：`GameEvent` 新增 `PROJECTILE_HIT_EVENT` 常量，`ProjectileHit` 改用之；stdlib `ProjectileEvents.PROJECTILE_HIT_EVENT` 转引 core 常量（值不变 `"projectileHit"`，行为逐位等价）——消除投射物工厂迁 stdlib 后 `game_event.gd` 对其残留的 core→stdlib 反向引用（codex review P2）。
 - 文档漂移：`docs/README.md` 已知债务节按线 3 提案裁决重写（原 D2 条目「反向引用 ProjectileSystem」描述经查证不实）；hex `core/README.md` 重写为共享数据层职责（作废「阶段 5 Actor 下沉」旧路线）；`frontend/README.md` 修正死亡动画路径描述（走 `actor_died` Event 路径而非 `update_state` 推断）、删除已下线的 `FrontendBattleReplayScene` 使用段、Director/RenderWorld 的 signal 与方法签名对齐现行强类型；清理 `HexBattle` 已删除类的亡灵注释（2 处）。
 
