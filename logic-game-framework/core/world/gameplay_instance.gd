@@ -4,6 +4,7 @@ extends RefCounted
 var id: String
 var type: String = "instance"
 var _systems: Array[System] = []
+var _system_seq_counter: int = 0
 var _actors: Array[Actor] = []
 var _actor_id_2_actor_dic: Dictionary = {}
 var _logic_time: float = 0.0
@@ -137,9 +138,18 @@ func add_system(system: System) -> void:
 		if existing.type == system.type:
 			Log.warning("GameplayInstance", "System already exists: %s" % system.type)
 			return
+	# (priority, 注册序) 双键 = 全序：sort_custom 不稳定，单键 priority 下
+	# 同档相对序无合同，中途 add_system 会整表乱重排（ADR 0027）。
+	system._registration_seq = _system_seq_counter
+	_system_seq_counter += 1
 	_systems.append(system)
-	_systems.sort_custom(func(a: System, b: System) -> bool: return a.priority < b.priority)
+	_systems.sort_custom(func(a: System, b: System) -> bool:
+		if a.priority != b.priority:
+			return a.priority < b.priority
+		return a._registration_seq < b._registration_seq
+	)
 	system.on_register(self)
+	_log_tick_order("add_system:%s" % system.type)
 
 func remove_system(system_type: String) -> bool:
 	for i in range(_systems.size()):
@@ -147,8 +157,16 @@ func remove_system(system_type: String) -> bool:
 			var system := _systems[i]
 			system.on_unregister()
 			_systems.remove_at(i)
+			_log_tick_order("remove_system:%s" % system_type)
 			return true
 	return false
+
+## debug 日志：系统表每次变更打一行完整 tick 顺序。不进事件流/录制/存档。
+func _log_tick_order(action: String) -> void:
+	var parts: Array[String] = []
+	for system in _systems:
+		parts.append("%s(%d)" % [system.type, system.priority])
+	Log.info("GameplayInstance", "[%s] tick order: %s" % [action, " -> ".join(parts)])
 
 func get_system(system_type: String) -> System:
 	for system in _systems:
