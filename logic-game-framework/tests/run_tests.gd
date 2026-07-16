@@ -55,13 +55,13 @@ func _ready() -> void:
 	var load_failures := _load_test_scripts()
 
 	# 运行所有测试
-	var failures: int = _test_framework.run()
+	var failures: int = _test_framework.run() + load_failures
 
 	if load_failures > 0:
 		print("TEST SUITE LOAD FAILURES: %d (see TEST LOAD FAILURE lines above)" % load_failures)
 
-	# 退出码 = 断言失败数 + 加载失败数
-	get_tree().quit(failures + load_failures)
+	# 退出并返回失败数（failures 已含 load_failures，不双计）
+	get_tree().quit(failures)
 
 func _load_test_scripts() -> int:
 	var load_failures := 0

@@ -25,10 +25,26 @@ class TestComponentConfig:
 
 	func create_component() -> AbilityComponent:
 		return TestComponent.new()
+
+
+class RecordingAction:
+	extends Action.BaseAction
+
+	var calls := 0
+
+	func _init() -> void:
+		super._init(TargetSelector.new())
+
+	func execute(_ctx: ExecutionContext) -> ActionResult:
+		calls += 1
+		return ActionResult.create_success_result([])
+
+
 func _init() -> void:
 	TestFramework.register_test("Ability applies/removes and expires", _test_lifecycle)
 	TestFramework.register_test("Ability triggers component listeners", _test_triggered_listener)
 	TestFramework.register_test("Ability ticks execution instances", _test_execution_instances)
+	TestFramework.register_test("Ability callback cancellation skips timeline start", _test_callback_cancel)
 
 func _test_lifecycle() -> void:
 	var owner_actor_id := "actor-1"
@@ -100,3 +116,19 @@ func _test_execution_instances() -> void:
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 	ability.tick_executions(1.0, null)
 	TestFramework.assert_equal(0, ability.get_executing_instances().size())
+
+
+func _test_callback_cancel() -> void:
+	TimelineRegistry.reset()
+	TimelineRegistry.register(TimelineData.new("t-callback-cancel", 1.0, {}))
+	var ability := Ability.new(AbilityConfig.new("callback_cancel"), "actor-4")
+	var start_action := RecordingAction.new()
+	var start_actions: Array[Action.BaseAction] = [start_action]
+	var empty_actions: Array[Action.BaseAction] = []
+	ability.add_execution_activated_listener(
+		func(instance: AbilityExecutionInstance) -> void:
+			instance.cancel())
+	var instance := ability.activate_new_execution_instance(
+		"t-callback-cancel", [], start_actions, empty_actions, {}, null)
+	TestFramework.assert_true(instance.is_cancelled())
+	TestFramework.assert_equal(0, start_action.calls)
