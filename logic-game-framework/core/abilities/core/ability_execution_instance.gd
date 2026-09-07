@@ -11,8 +11,10 @@ var _timeline: TimelineData = null
 var _tag_actions: Array[TagActionsEntry] = []
 var _on_timeline_start_actions: Array[Action.BaseAction] = []
 var _on_timeline_end_actions: Array[Action.BaseAction] = []
+var _on_cancel_actions: Array[Action.BaseAction] = []
 var _trigger_event_dict: Dictionary = {}
 var _ability_ref: AbilityRef = null
+var _game_state_provider_ref: WeakRef = null
 var _elapsed: float = 0.0
 var _loops_completed: int = 0
 var _state: String = STATE_EXECUTING
@@ -33,18 +35,19 @@ var _triggered_tags: Dictionary = {}
 ## - replay 路径 = 重 execute 推导 (event stream 不记录 execution_state)。
 var _execution_state: Dictionary = {}
 
-## game_state_provider 不再作为字段缓存。
+## game_state_provider 不作为强引用字段缓存。
 ##
-## 框架约定 provider 是"调用时参数流"（对齐 HandlerContext / ExecutionContext / Component.on_event 等），
-## 由 tick 调用链每次传入。缓存会形成循环强引用（battle → ability → exec_instance → provider=battle），
-## 导致战斗对象图无法释放。
+## 正常 tick 仍由调用链传入；这里只保留 WeakRef，供 revoke/expire 等取消路径执行
+## on_cancel 清理。这样既能释放 reservation/gate，又不会形成 battle → ability → execution → battle 强引用环。
 func _init(
 	p_timeline_id: String,
 	p_tag_actions: Array[TagActionsEntry],
 	p_on_timeline_start_actions: Array[Action.BaseAction],
 	p_on_timeline_end_actions: Array[Action.BaseAction],
 	p_trigger_event_dict: Dictionary,
-	p_ability_ref: AbilityRef
+	p_ability_ref: AbilityRef,
+	p_on_cancel_actions: Array[Action.BaseAction] = [],
+	p_game_state_provider: Variant = null
 ) -> void:
 	id = IdGenerator.generate("execution")
 	timeline_id = p_timeline_id
@@ -52,8 +55,11 @@ func _init(
 	_tag_actions = p_tag_actions
 	_on_timeline_start_actions = p_on_timeline_start_actions
 	_on_timeline_end_actions = p_on_timeline_end_actions
+	_on_cancel_actions = p_on_cancel_actions
 	_trigger_event_dict = p_trigger_event_dict
 	_ability_ref = p_ability_ref
+	if p_game_state_provider is Object:
+		_game_state_provider_ref = weakref(p_game_state_provider)
 	if _timeline == null:
 		Log.warning("AbilityExecutionInstance", "Timeline not found: %s" % timeline_id)
 
@@ -78,7 +84,8 @@ func get_trigger_event() -> Dictionary:
 ## 同步触发 timeline 生命周期 action（on_timeline_start 在 activate / loop 重启时调；
 ## on_timeline_end 在 timeline 完成本轮时调）。
 ## current_tag 用于构建 ExecutionContext 的 current_tag 字段，外部传入描述性标识。
-func fire_sync_actions(actions: Array[Action.BaseAction], current_tag: String, game_state_provider: Variant) -> void:
+func fire_sync_actions(actions: Array[Action.BaseAction], current_tag: String,
+		game_state_provider: Variant, stop_on_terminal: bool = true) -> void:
 	if actions.is_empty():
 		return
 	var exec_context := _build_execution_context(current_tag, game_state_provider)
@@ -86,6 +93,8 @@ func fire_sync_actions(actions: Array[Action.BaseAction], current_tag: String, g
 		if action != null:
 			action.execute(exec_context)
 			action._verify_unchanged()
+			if stop_on_terminal and _state != STATE_EXECUTING:
+				break
 		else:
 			Log.warning("AbilityExecutionInstance", "sync action entry is null")
 
@@ -107,54 +116,88 @@ func tick(dt: float, game_state_provider: Variant) -> Array[String]:
 	var previous_elapsed := _elapsed
 	_elapsed += dt
 
-	var triggered_this_tick: Array[Dictionary] = []
-	var tags: Dictionary = _timeline.tags
-	for tag_name in tags.keys():
-		var tag_time := float(tags[tag_name])
-		if _triggered_tags.has(tag_name):
-			continue
-		if not _should_trigger(previous_elapsed, tag_time):
-			continue
-		_triggered_tags[tag_name] = true
-		triggered_this_tick.append({
-			"tagName": tag_name,
-			"tagTime": tag_time,
-			"elapsed": _elapsed,
-		})
-
-	triggered_this_tick.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["tagTime"] < b["tagTime"])
-
 	var triggered_tags: Array[String] = []
-	for entry in triggered_this_tick:
-		var tag_name: String = entry["tagName"]
-		var actions := _resolve_actions_for_tag(tag_name)
-		Log.debug("AbilityExecutionInstance", "触发 %s" % tag_name)
-		_execute_actions_for_tag(tag_name, actions, game_state_provider)
-		triggered_tags.append(tag_name)
+	_fire_tags_in_window(previous_elapsed, game_state_provider, triggered_tags)
+	if _state != STATE_EXECUTING:
+		return triggered_tags
 
 	if _elapsed >= _timeline.total_duration:
-		# 本轮结束：先跑 on_timeline_end
+		# 超出本轮的时间余量。loop 下必须结转到下一轮：直接清零会把每个周期拉长到
+		# tick 边界，周期节奏随调用方 dt 漂移（如 2000ms DOT 在 dt=300 下变 2100ms）。
+		var carry_over := _elapsed - _timeline.total_duration
+		# 本轮结束：先跑 on_timeline_end；回调可取消，取消后不得覆盖为 completed。
 		fire_sync_actions(_on_timeline_end_actions, "__timeline_end__", game_state_provider)
+		if _state != STATE_EXECUTING:
+			return triggered_tags
 		if _timeline.loop and (_timeline.max_loops <= 0 or _loops_completed + 1 < _timeline.max_loops):
-			# 进入下一轮：重置计时器 + 已触发 tags，跑 on_timeline_start
+			# 进入下一轮：结转余量 + 重置已触发 tags，跑 on_timeline_start
 			_loops_completed += 1
-			_elapsed = 0.0
+			_elapsed = carry_over
 			_triggered_tags.clear()
 			fire_sync_actions(_on_timeline_start_actions, "__timeline_start__", game_state_provider)
+			if _state != STATE_EXECUTING:
+				return triggered_tags
+			if carry_over > 0.0:
+				# 结转窗口 (0, carry_over] 属于本次 tick 覆盖的真实时间；只改
+				# _elapsed 不补扫的话，窗口内的 tag 会被下一次 tick 的起点跳过。
+				_fire_tags_in_window(0.0, game_state_provider, triggered_tags)
 		else:
 			_state = STATE_COMPLETED
 			Log.debug("AbilityExecutionInstance", "执行完成")
 
 	return triggered_tags
 
-func cancel() -> void:
-	if _state == STATE_EXECUTING:
-		_state = STATE_CANCELLED
-		Log.debug("AbilityExecutionInstance", "执行取消")
+func cancel(game_state_provider: Variant = null) -> void:
+	if _state != STATE_EXECUTING:
+		return
+	_state = STATE_CANCELLED
+	var provider := game_state_provider
+	if provider == null and _game_state_provider_ref != null:
+		provider = _game_state_provider_ref.get_ref()
+	fire_sync_actions(_on_cancel_actions, "__timeline_cancel__", provider, false)
+	Log.debug("AbilityExecutionInstance", "执行取消")
 
 ## 判断 tag 是否应在当前 tick 触发（纯数学区间判断：previous < tag_time <= current）
 func _should_trigger(previous_elapsed: float, tag_time: float) -> bool:
 	return previous_elapsed < tag_time and _elapsed >= tag_time
+
+## 触发 (window_start, _elapsed] 窗口内尚未触发的 tags，追加进 out_triggered_tags。
+##
+## 同 timestamp 的多个 tag 按 timeline 定义序（tags 声明顺序）做显式二级排序：
+## Array.sort_custom 不稳定，缺 tie-break 时同刻 tag 的执行序取决于容器遍历序
+## 与排序算法内部实现，破坏 replay 确定性。
+func _fire_tags_in_window(window_start: float, game_state_provider: Variant, out_triggered_tags: Array[String]) -> void:
+	var pending: Array[Dictionary] = []
+	var tags: Dictionary = _timeline.tags
+	var definition_index := 0
+	for tag_name in tags.keys():
+		var tag_time := float(tags[tag_name])
+		var tag_definition_index := definition_index
+		definition_index += 1
+		if _triggered_tags.has(tag_name):
+			continue
+		if not _should_trigger(window_start, tag_time):
+			continue
+		_triggered_tags[tag_name] = true
+		pending.append({
+			"tagName": tag_name,
+			"tagTime": tag_time,
+			"definitionIndex": tag_definition_index,
+		})
+
+	pending.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if float(a["tagTime"]) != float(b["tagTime"]):
+			return float(a["tagTime"]) < float(b["tagTime"])
+		return int(a["definitionIndex"]) < int(b["definitionIndex"]))
+
+	for entry in pending:
+		var pending_tag: String = entry["tagName"]
+		var actions := _resolve_actions_for_tag(pending_tag)
+		Log.debug("AbilityExecutionInstance", "触发 %s" % pending_tag)
+		_execute_actions_for_tag(pending_tag, actions, game_state_provider)
+		out_triggered_tags.append(pending_tag)
+		if _state != STATE_EXECUTING:
+			return
 
 func _execute_actions_for_tag(tag_name: String, actions: Array[Action.BaseAction], game_state_provider: Variant) -> void:
 	if actions.is_empty():
@@ -165,6 +208,8 @@ func _execute_actions_for_tag(tag_name: String, actions: Array[Action.BaseAction
 			action.execute(exec_context)
 			# Debug: 验证 Action 状态未被修改
 			action._verify_unchanged()
+			if _state != STATE_EXECUTING:
+				break
 		else:
 			Log.warning("AbilityExecutionInstance", "ExecutionInstance missing action")
 

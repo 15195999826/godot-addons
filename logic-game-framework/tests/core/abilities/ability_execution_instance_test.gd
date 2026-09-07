@@ -12,10 +12,30 @@ class TestAction:
 		calls.append(ctx)
 		return ActionResult.create_success_result([])
 
+
+class CancelExecutionAction:
+	extends Action.BaseAction
+
+	var _instance_ref: WeakRef
+
+	func _init() -> void:
+		super._init(TargetSelector.new())
+
+	func bind(instance: AbilityExecutionInstance) -> void:
+		_instance_ref = weakref(instance)
+
+	func execute(ctx: ExecutionContext) -> ActionResult:
+		var instance := _instance_ref.get_ref() as AbilityExecutionInstance
+		instance.cancel(ctx.game_state_provider)
+		return ActionResult.create_success_result([])
+
+
 func _init() -> void:
 	TestFramework.register_test("AbilityExecutionInstance fires sync + async actions", _test_trigger_tags)
 	TestFramework.register_test("AbilityExecutionInstance matches wildcard", _test_wildcard)
 	TestFramework.register_test("AbilityExecutionInstance completes and cancels", _test_complete_cancel)
+	TestFramework.register_test("AbilityExecutionInstance fires same-timestamp tags in definition order", _test_same_timestamp_tag_order)
+	TestFramework.register_test("AbilityExecutionInstance end cancellation stays cancelled", _test_end_cancel)
 	TestFramework.register_test("AbilityExecutionInstance §0.4 shares execution_state across tags", _test_execution_state_shared)
 	TestFramework.register_test("AbilityExecutionInstance §0.4 different instances have isolated state", _test_execution_state_isolated)
 	TestFramework.register_test("ExecutionContext §0.4 set/get rejects namespace-less key", _test_execution_state_namespace_assert)
@@ -82,6 +102,41 @@ func _test_wildcard() -> void:
 	TestFramework.assert_equal("hit-1", triggered[0])
 	TestFramework.assert_equal(1, action.calls.size())
 
+## 同 timestamp 的多个 tag 必须按 timeline 定义序触发（显式二级排序，
+## 不依赖 sort_custom 稳定性）。定义序特意用非字母序排布以暴露隐式排序。
+func _test_same_timestamp_tag_order() -> void:
+	TimelineRegistry.reset()
+	TimelineRegistry.register(TimelineData.new(
+		"t-tag-order",
+		1.0,
+		{
+			"zeta": 0.5,
+			"alpha": 0.5,
+			"mid": 0.3,
+			"omega": 0.5,
+		}
+	))
+	GameWorld.init()
+
+	var empty_list: Array[Action.BaseAction] = []
+	var instance := AbilityExecutionInstance.new(
+		"t-tag-order",
+		[],
+		empty_list,
+		empty_list,
+		{},
+		AbilityRef.new("a-order", "c-order")
+	)
+
+	# 一次 tick 覆盖全部 tag：时间序在先（mid@0.3），同刻组按定义序 zeta → alpha → omega
+	var triggered := instance.tick(1.0, null)
+	TestFramework.assert_equal(4, triggered.size())
+	TestFramework.assert_equal("mid", triggered[0])
+	TestFramework.assert_equal("zeta", triggered[1])
+	TestFramework.assert_equal("alpha", triggered[2])
+	TestFramework.assert_equal("omega", triggered[3])
+
+
 func _test_complete_cancel() -> void:
 	TimelineRegistry.reset()
 	TimelineRegistry.register(TimelineData.new(
@@ -106,11 +161,33 @@ func _test_complete_cancel() -> void:
 		{}
 	))
 
+	var cancel_action := TestAction.new()
+	var cancel_actions: Array[Action.BaseAction] = [cancel_action]
 	var cancelled := AbilityExecutionInstance.new(
-		"t-cancel", [], empty_list, empty_list, {}, AbilityRef.new()
+		"t-cancel", [], empty_list, empty_list, {}, AbilityRef.new(), cancel_actions
 	)
 	cancelled.cancel()
+	cancelled.cancel()
 	TestFramework.assert_true(cancelled.is_cancelled())
+	TestFramework.assert_equal(1, cancel_action.calls.size())
+
+
+func _test_end_cancel() -> void:
+	TimelineRegistry.reset()
+	TimelineRegistry.register(TimelineData.new("t-end-cancel", 0.1, {}))
+	var cancel_action := CancelExecutionAction.new()
+	var skipped_action := TestAction.new()
+	var cleanup_action := TestAction.new()
+	var empty_actions: Array[Action.BaseAction] = []
+	var end_actions: Array[Action.BaseAction] = [cancel_action, skipped_action]
+	var cancel_actions: Array[Action.BaseAction] = [cleanup_action]
+	var instance := AbilityExecutionInstance.new(
+		"t-end-cancel", [], empty_actions, end_actions, {}, AbilityRef.new(), cancel_actions)
+	cancel_action.bind(instance)
+	instance.tick(0.1, null)
+	TestFramework.assert_true(instance.is_cancelled())
+	TestFramework.assert_equal(0, skipped_action.calls.size())
+	TestFramework.assert_equal(1, cleanup_action.calls.size())
 
 
 # ========== §0.4 execution_state ==========

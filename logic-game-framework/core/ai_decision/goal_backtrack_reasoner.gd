@@ -98,7 +98,11 @@ func decide(snapshot: DecisionSnapshot, options: Array[DecisionOption],
 				result.chain.append(link.id)
 		result.breakdown = breakdown
 		return result
-	return null
+	# 全部目标不可行：selected 留空、breakdown 保留（Pipeline 据此产出
+	# NO_FEASIBLE_OPTION——「为什么发呆」的下钻数据，ADR 0022 修订）。
+	var infeasible := DecisionResult.new()
+	infeasible.breakdown = breakdown
+	return infeasible
 
 
 ## 从 cursor 反推执行链（浅递归回溯——仍是供需查表，不模拟世界状态）。

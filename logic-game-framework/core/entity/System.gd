@@ -11,6 +11,10 @@ const SystemPriority = {
 
 var type: String = "system"
 var priority: int = SystemPriority.NORMAL
+## 注册序号：同 priority 档内 tick 顺序的 tie-breaker，add_system 那刻由所属 instance 发号（-1 = 未注册）。
+## (priority, _registration_seq) 双键使 tick 顺序全序确定——sort_custom 不稳定，单键同档顺序无合同。
+## 不进序列化/事件流：这是运行期顺序合同，不是存档语义。
+var _registration_seq: int = -1
 var _enabled := true
 ## 所属 GameplayInstance 的弱引用。
 ##
