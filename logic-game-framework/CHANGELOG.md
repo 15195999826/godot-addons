@@ -34,6 +34,7 @@
 - **目录归位（零行为，线 3 轮 A）**：recorder 家族（`BattleRecorder` / `RecordingContext` / `RecordingUtils` / `ReplayData` / `ReplayLogPrinter`）`stdlib/replay/` → `core/playback/`——录像是 core 事件系统一等公民（`BattleProcedure.finish()` 返回值即 recorder 输出）；投射物家族（`ProjectileActor` / `ProjectileEvents` / `ProjectileSystem` / collision detector ×4）`core/` + `stdlib/systems/` → `stdlib/projectile/`——仅 hex 使用的可选玩法件，不再让全部 example 白带；hex 的 `HexWorldGameplayInstance` / `HexBattleProcedure` `core/` → `logic/`——两类签名依赖 logic 类型，按单向依赖归位，hex `core/` 只剩共享事件定义。**全部类名不变，引用方零改动。** 裁决与执行切分见 `docs/proposals/2026-07-03-known-debt-and-hex-architecture-proposal.md`。
 
 ### Removed
+- Tiny Swords 示例资产、两个专用 catalog 和纯美术海岛场景迁出到独立的 `topdown-art` 项目；美术资产与风格探索由该项目维护，插件不再携带这套资源。框架 core、Hex 与 Dota2 示例无调用依赖。
 - **录像 v3 一揽子删除**：`PROTOCOL_VERSION` 与录像 `version` 字段（单一架构、录像是短命数据无多版本共存；防呆改必需字段检查——`BattleRecord.from_dict` 对缺 `world_snapshot`/`timeline` 直接 crash，坏文件炸得响不静默播空场）；顶层 `configs`/`mapConfig`/`initialActors` key（迁入 `world_snapshot`，`configs` 唯一实际内容 positionFormats 随迁；inkmon animator 对 `configs.animation` 的死读——recorder 侧从未写过该 key——改 `create_default()`）；`ActorInitData.abilities`/`tags` 字段（A 层铁律"Playback 不重建逻辑层"下全仓零消费，B 层 deterministic 重算若做需要的是配置+种子而非实例快照；Actor 的 `get_ability_snapshot()/get_tag_snapshot()` 方法保留——hex GI 观察快照与 skill_preview tags 面板仍消费）；`start_recording_events_only()`（并入唯一路径）。
 - **死类 `GameEvent.AbilityActivated` 及其 `ABILITY_ACTIVATED_EVENT` 常量（线 3 轮 B）**：与 `AbilityActivate` 仅差一字母、全仓 create/from_dict/is_match 调用为 0 的占位类，从未有生产路径 emit 该 kind——直接删除消除命名混淆源（enforcing-lgf skill 文档清单同步）。
 
