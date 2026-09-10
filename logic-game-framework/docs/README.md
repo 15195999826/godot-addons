@@ -314,7 +314,7 @@ addons/logic-game-framework/
 │   ├── abilities/          # Ability 系统
 │   ├── events/             # 事件系统
 │   ├── playback/           # 录像（BattleRecorder / PlaybackData）
-│   └── timeline/           # Timeline 系统
+│   └── timeline/           # TimelineData（技能时间轴；builder .timeline() 声明即冻结 tags）
 ├── stdlib/                  # 标准库
 │   ├── actions/            # 通用 Action（StageCueAction 等）
 │   └── projectile/         # 投射物（ProjectileActor / ProjectileSystem / detectors）

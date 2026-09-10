@@ -51,8 +51,3 @@ static var ABILITY := (
 	)
 	.build()
 )
-
-
-## 战斗启动时调一次，把基础攻击 timeline 注册进 TimelineRegistry。
-static func register_timelines() -> void:
-	TimelineRegistry.register(BASIC_ATTACK_TIMELINE)

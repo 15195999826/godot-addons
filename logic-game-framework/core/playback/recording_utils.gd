@@ -63,15 +63,13 @@ static func record_ability_set_changes(ability_set: AbilitySet, ctx: RecordingCo
 		var ability_config_id := ability.config_id
 		var unsubscribe := ability.add_execution_activated_listener(
 			func(instance: AbilityExecutionInstance) -> void:
-				var instance_id: String = instance.id if "id" in instance else ""
-				var timeline_id: String = instance.timeline_id if "timeline_id" in instance else ""
 				ctx.push_event(
 					GameEvent.ExecutionActivated.create(
 						ctx.actor_id,
 						ability_id,
 						ability_config_id,
-						instance_id,
-						timeline_id
+						instance.id,
+						instance.timeline_id
 					).to_dict()
 				)
 		)
@@ -158,16 +156,10 @@ static func record_tag_changes(tag_container: TagContainer, ctx: RecordingContex
 
 ## 订阅 Actor 生命周期事件
 ##
-## 监听 Actor 的生成和销毁，自动转换为对应事件。
+## 监听 Actor 的销毁（despawn）并转换为 ActorDestroyed；生成事件（ActorSpawned）
+## 由 BattleRecorder.register_actor 在中途补录时推送，不在这里订阅。
 static func record_actor_lifecycle(actor: Actor, ctx: RecordingContext) -> Array[Callable]:
 	var unsubscribes: Array[Callable] = []
-
-	# 订阅 Actor 生成事件
-	var spawn_listener := func() -> void:
-		ctx.push_event(
-			GameEvent.ActorSpawned.create(actor.id, actor.to_dict()).to_dict()
-		)
-	unsubscribes.append(actor.add_spawn_listener(spawn_listener))
 
 	# 订阅 Actor 销毁事件
 	var despawn_listener := func() -> void:

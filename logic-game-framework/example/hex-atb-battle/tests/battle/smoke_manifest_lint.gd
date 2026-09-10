@@ -2,8 +2,8 @@
 ##
 ## 收敛计划(inkmon docs/plan/hex-skill-applayer-convergence-plan.md) P2。
 ## 遍历 HexBattleAllSkills 总花名册做四断言, 覆盖四类静默失效面:
-##   1. timeline 可解析: 每个 config 引用的 timeline_id 在 register_all_timelines()
-##      后必须命中 TimelineRegistry(抓漏注册 / 改 id 没同步)
+##   1. timeline 合法且唯一: 每个 config 携带的 TimelineData validate() 为空、tags 已冻结,
+##      跨 manifest 同 id 必须同一实例(抓两处各造同名 timeline 互踩 / 工厂内联 new)
 ##   2. BUFF_REGISTRY 覆盖: 带 buff tag 的 config_id ∈ BuffVisualizer 白名单
 ##      (不接图标 = buff 永远不显示, 无报错)
 ##   3. cue 存在性: 全部静态声明的 cue ⊆ frontend 认识的 cue 集合
@@ -47,7 +47,6 @@ const DESCRIPTIVE_TAGS: Array[String] = [
 func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 	print("=== Smoke Test: manifest lint (P2 四断言) ===")
-	HexBattleAllSkills.register_all_timelines()
 
 	var failures: Array[String] = []
 	var configs := HexBattleAllSkills.all_abilities()
@@ -67,19 +66,11 @@ func _ready() -> void:
 
 
 # ============================================================
-# 断言 1: timeline 可解析
+# 断言 1: timeline 合法且唯一
 # ============================================================
 
 func _check_timelines(configs: Array[AbilityConfig], failures: Array[String]) -> void:
-	for cfg in configs:
-		for au in cfg.active_use_components:
-			if not TimelineRegistry.has(au.timeline_id):
-				failures.append("%s: active_use timeline '%s' 未注册" % [cfg.config_id, au.timeline_id])
-		for comp in cfg.components:
-			if comp is ActivateInstanceConfig:
-				var aic := comp as ActivateInstanceConfig
-				if not TimelineRegistry.has(aic.timeline_id):
-					failures.append("%s: component timeline '%s' 未注册" % [cfg.config_id, aic.timeline_id])
+	failures.append_array(AbilityConfig.lint_timelines(configs))
 
 
 # ============================================================

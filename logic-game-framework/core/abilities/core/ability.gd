@@ -116,7 +116,7 @@ func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 ## p_game_state_provider 用于激活瞬间 start Action，并由 execution 仅以 WeakRef 保留，
 ## 供 revoke/expire 等无显式 provider 的取消清理使用；不会形成 battle ↔ execution 强引用环。
 func activate_new_execution_instance(
-	p_timeline_id: String,
+	p_timeline: TimelineData,
 	p_tag_actions: Array[TagActionsEntry],
 	p_on_timeline_start_actions: Array[Action.BaseAction],
 	p_on_timeline_end_actions: Array[Action.BaseAction],
@@ -124,12 +124,9 @@ func activate_new_execution_instance(
 	p_game_state_provider: Variant,
 	p_on_cancel_actions: Array[Action.BaseAction] = []
 ) -> AbilityExecutionInstance:
-	if not TimelineRegistry.has(p_timeline_id):
-		Log.error("Ability", "Cannot activate missing timeline: %s" % p_timeline_id)
-		return null
 	var ability_ref := AbilityRef.from_ability(self)
 	var instance := AbilityExecutionInstance.new(
-		p_timeline_id,
+		p_timeline,
 		p_tag_actions,
 		p_on_timeline_start_actions,
 		p_on_timeline_end_actions,

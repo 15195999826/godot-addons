@@ -61,7 +61,6 @@ func _ready() -> void:
 func _run_phase_1_spawn() -> void:
 	var phase := "1. spawn"
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -95,7 +94,6 @@ func _run_phase_1_spawn() -> void:
 func _run_phase_2_drive() -> void:
 	var phase := "2. actor_drive"
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -140,7 +138,6 @@ func _run_phase_2_drive() -> void:
 func _run_phase_3_replay() -> void:
 	var phase := "3. replay_recording"
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -206,7 +203,6 @@ func _run_phase_3_replay() -> void:
 func _run_phase_4_manual_remove() -> void:
 	var phase := "4a. manual_remove_release"
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -252,7 +248,6 @@ func _run_phase_4_manual_remove() -> void:
 func _run_phase_4b_ttl_lifecycle() -> void:
 	var phase := "4b. ttl_lifecycle_on_remove"
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT

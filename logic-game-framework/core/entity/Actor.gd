@@ -6,7 +6,6 @@ var _instance_id: String = ""
 var type: String = "actor"
 var _team: String = ""
 var _display_name: String = ""
-var _on_spawn_callbacks: Array[Callable] = []
 var _on_despawn_callbacks: Array[Callable] = []
 
 
@@ -73,22 +72,14 @@ func get_display_name() -> String:
 func set_display_name(value: String) -> void:
 	_display_name = value
 
+## 加入 GameplayInstance 后的钩子（add_actor 末尾调用，子类可覆盖）。
 func on_spawn() -> void:
-	for callback in _on_spawn_callbacks:
-		if callback.is_valid():
-			callback.call()
+	pass
 
 func on_despawn() -> void:
 	for callback in _on_despawn_callbacks:
 		if callback.is_valid():
 			callback.call()
-
-func add_spawn_listener(callback: Callable) -> Callable:
-	_on_spawn_callbacks.append(callback)
-	return func() -> void:
-		var index := _on_spawn_callbacks.find(callback)
-		if index != -1:
-			_on_spawn_callbacks.remove_at(index)
 
 func add_despawn_listener(callback: Callable) -> Callable:
 	_on_despawn_callbacks.append(callback)

@@ -15,8 +15,6 @@ const KEY_FAILED_COMPONENT_TYPE := "failed_component_type"
 
 ## failed_component_type 取值：Ability 级短路（未 granted / disabled）
 const FAILED_ABILITY := "ability"
-## failed_component_type 取值：timeline 未注册（激活路径会 error 拒绝，查询同判）
-const FAILED_TIMELINE := "timeline"
 ## failed_component_type 取值：Condition.check 未通过
 const FAILED_CONDITION := "condition"
 ## failed_component_type 取值：Cost.can_pay 未通过

@@ -72,7 +72,6 @@ func start(config: Dictionary = {}) -> void:
 	_place_team_randomly(right_team, placement_ranges["right"])
 
 	_apply_inspire_buff_to_all()
-	HexBattleAllSkills.register_all_timelines()
 
 	print("战斗开始")
 	_print_battle_info()

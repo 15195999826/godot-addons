@@ -5,8 +5,8 @@
 ## 个性的技能(蓄力 / 多段 / 两阶段位移 / 召唤 / buff tick / precise_shot 快弓)保留自定义。
 ##
 ## 共享安全前提(收敛计划 P6 已核实): TimelineData 是纯数据资产(构造后无写点),
-## 执行游标全在 AbilityExecutionInstance(每次施法新实例); 并发执行本就共享 registry
-## 里同一引用。注册端双闸: registry 三态注册(同 id 异引用 assert) + tags.make_read_only()。
+## 执行游标全在 AbilityExecutionInstance(每次施法新实例); 并发执行本就共享同一引用。
+## tags 在 builder .timeline() 声明时冻结, 同 id 唯一性由 smoke_manifest_lint 静态断言守。
 ##
 ## replay 影响: 录像 timeline_id 字段显示 std_* 而非技能名; 定位技能用事件里的
 ## ability config_id。

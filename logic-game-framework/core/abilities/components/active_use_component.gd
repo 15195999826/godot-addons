@@ -21,7 +21,7 @@ func _init(config: ActiveUseConfig):
 	else:
 		triggers_to_use = [TriggerConfig.ABILITY_ACTIVATE]
 	var parent_config := ActivateInstanceConfig.new(
-		config.timeline_id,
+		config.timeline_data,
 		config.tag_actions,
 		triggers_to_use,
 		config.trigger_mode,
@@ -40,9 +40,6 @@ func _init(config: ActiveUseConfig):
 func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> bool:
 	if not _check_triggers(event_dict, context):
 		return false
-	if not _is_timeline_available():
-		Log.error("ActiveUseComponent", "Timeline not found: %s" % _timeline_id)
-		return false
 	if not _check_conditions(context, event_dict, game_state_provider):
 		return false
 	if not _check_costs(context, event_dict, game_state_provider):
@@ -53,7 +50,7 @@ func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_sta
 
 
 ## 激活门的纯查询干跑（零副作用、可重入）：按激活路径同序评估
-## timeline 可用性 → 全部 Condition.check → 全部 Cost.can_pay。
+## 全部 Condition.check → 全部 Cost.can_pay。
 ## 不扣资源、不 push AbilityActivateFailed、不创建 execution、不改任何状态。
 ##
 ## UI / AI / tooltip 的合法性 Query 借此与真实激活门共享同一份 Condition/Cost
@@ -69,9 +66,6 @@ func can_activate(
 	event_dict: Dictionary = {},
 	game_state_provider: Variant = null,
 ) -> Dictionary:
-	if not _is_timeline_available():
-		return AbilityActivationQuery.denied(
-			"timeline not found: %s" % _timeline_id, AbilityActivationQuery.FAILED_TIMELINE)
 	for condition in _conditions:
 		var passed := condition.check(context, event_dict, game_state_provider)
 		condition._verify_unchanged()

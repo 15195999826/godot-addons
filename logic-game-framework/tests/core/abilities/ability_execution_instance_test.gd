@@ -41,22 +41,14 @@ func _init() -> void:
 	TestFramework.register_test("ExecutionContext §0.4 set/get rejects namespace-less key", _test_execution_state_namespace_assert)
 
 func _test_trigger_tags() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(
-		"t-tags",
-		1.0,
-		{
-			"impact": 0.5,
-		}
-	))
-	GameWorld.init()
+	var timeline := TimelineData.new("t-tags", 1.0, {"impact": 0.5})
 
 	var sync_action := TestAction.new()
 	var async_action := TestAction.new()
 	var sync_list: Array[Action.BaseAction] = [sync_action]
 	var end_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-tags",
+		timeline,
 		[TagActionsEntry.new("impact", [async_action])],
 		sync_list,
 		end_list,
@@ -76,20 +68,12 @@ func _test_trigger_tags() -> void:
 	TestFramework.assert_equal(1, async_action.calls.size())
 
 func _test_wildcard() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(
-		"t-wild",
-		1.0,
-		{
-			"hit-1": 0.2,
-		}
-	))
-	GameWorld.init()
+	var timeline := TimelineData.new("t-wild", 1.0, {"hit-1": 0.2})
 
 	var action := TestAction.new()
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-wild",
+		timeline,
 		[TagActionsEntry.new("hit*", [action])],
 		empty_list,
 		empty_list,
@@ -105,22 +89,16 @@ func _test_wildcard() -> void:
 ## 同 timestamp 的多个 tag 必须按 timeline 定义序触发（显式二级排序，
 ## 不依赖 sort_custom 稳定性）。定义序特意用非字母序排布以暴露隐式排序。
 func _test_same_timestamp_tag_order() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(
-		"t-tag-order",
-		1.0,
-		{
-			"zeta": 0.5,
-			"alpha": 0.5,
-			"mid": 0.3,
-			"omega": 0.5,
-		}
-	))
-	GameWorld.init()
+	var timeline := TimelineData.new("t-tag-order", 1.0, {
+		"zeta": 0.5,
+		"alpha": 0.5,
+		"mid": 0.3,
+		"omega": 0.5,
+	})
 
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-tag-order",
+		timeline,
 		[],
 		empty_list,
 		empty_list,
@@ -138,33 +116,23 @@ func _test_same_timestamp_tag_order() -> void:
 
 
 func _test_complete_cancel() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(
-		"t-complete",
-		0.1,
-		{}
-	))
+	var complete_timeline := TimelineData.new("t-complete", 0.1, {})
 
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-complete", [], empty_list, empty_list, {}, AbilityRef.new()
+		complete_timeline, [], empty_list, empty_list, {}, AbilityRef.new()
 	)
 
 	TestFramework.assert_true(instance.is_executing())
 	instance.tick(0.1, null)
 	TestFramework.assert_true(instance.is_completed())
 
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(
-		"t-cancel",
-		1.0,
-		{}
-	))
+	var cancel_timeline := TimelineData.new("t-cancel", 1.0, {})
 
 	var cancel_action := TestAction.new()
 	var cancel_actions: Array[Action.BaseAction] = [cancel_action]
 	var cancelled := AbilityExecutionInstance.new(
-		"t-cancel", [], empty_list, empty_list, {}, AbilityRef.new(), cancel_actions
+		cancel_timeline, [], empty_list, empty_list, {}, AbilityRef.new(), cancel_actions
 	)
 	cancelled.cancel()
 	cancelled.cancel()
@@ -173,8 +141,7 @@ func _test_complete_cancel() -> void:
 
 
 func _test_end_cancel() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new("t-end-cancel", 0.1, {}))
+	var timeline := TimelineData.new("t-end-cancel", 0.1, {})
 	var cancel_action := CancelExecutionAction.new()
 	var skipped_action := TestAction.new()
 	var cleanup_action := TestAction.new()
@@ -182,7 +149,7 @@ func _test_end_cancel() -> void:
 	var end_actions: Array[Action.BaseAction] = [cancel_action, skipped_action]
 	var cancel_actions: Array[Action.BaseAction] = [cleanup_action]
 	var instance := AbilityExecutionInstance.new(
-		"t-end-cancel", [], empty_actions, end_actions, {}, AbilityRef.new(), cancel_actions)
+		timeline, [], empty_actions, end_actions, {}, AbilityRef.new(), cancel_actions)
 	cancel_action.bind(instance)
 	instance.tick(0.1, null)
 	TestFramework.assert_true(instance.is_cancelled())
@@ -219,16 +186,14 @@ class ReadStateAction:
 
 
 func _test_execution_state_shared() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new("t-state-shared", 1.0, { "later": 0.5 }))
-	GameWorld.init()
+	var timeline := TimelineData.new("t-state-shared", 1.0, { "later": 0.5 })
 
 	var write := WriteStateAction.new("test.flag", true)
 	var read := ReadStateAction.new("test.flag")
 	var sync_list: Array[Action.BaseAction] = [write]
 	var end_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-state-shared",
+		timeline,
 		[TagActionsEntry.new("later", [read])],
 		sync_list,
 		end_list,
@@ -244,16 +209,14 @@ func _test_execution_state_shared() -> void:
 
 
 func _test_execution_state_isolated() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new("t-iso", 1.0, {}))
-	GameWorld.init()
+	var timeline := TimelineData.new("t-iso", 1.0, {})
 
 	var empty_list: Array[Action.BaseAction] = []
 	var inst1 := AbilityExecutionInstance.new(
-		"t-iso", [], empty_list, empty_list, {}, AbilityRef.new("a1", "c1")
+		timeline, [], empty_list, empty_list, {}, AbilityRef.new("a1", "c1")
 	)
 	var inst2 := AbilityExecutionInstance.new(
-		"t-iso", [], empty_list, empty_list, {}, AbilityRef.new("a2", "c2")
+		timeline, [], empty_list, empty_list, {}, AbilityRef.new("a2", "c2")
 	)
 	var write1 := WriteStateAction.new("test.x", "from_inst1")
 	var write2 := WriteStateAction.new("test.x", "from_inst2")

@@ -103,15 +103,14 @@ func _test_triggered_listener() -> void:
 	TestFramework.assert_equal(1, result["components"].size())
 	TestFramework.assert_equal("TestComponent", result["components"][0])
 func _test_execution_instances() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new("t-ability", 1.0, {}))
+	var timeline := TimelineData.new("t-ability", 1.0, {})
 
 	var owner_actor_id := "actor-3"
 	var config := AbilityConfig.new("blink")
 	var ability := Ability.new(config, owner_actor_id)
 
 	var empty_actions: Array[Action.BaseAction] = []
-	ability.activate_new_execution_instance("t-ability", [], empty_actions, empty_actions, {}, null)
+	ability.activate_new_execution_instance(timeline, [], empty_actions, empty_actions, {}, null)
 
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 	ability.tick_executions(1.0, null)
@@ -119,8 +118,7 @@ func _test_execution_instances() -> void:
 
 
 func _test_callback_cancel() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new("t-callback-cancel", 1.0, {}))
+	var timeline := TimelineData.new("t-callback-cancel", 1.0, {})
 	var ability := Ability.new(AbilityConfig.new("callback_cancel"), "actor-4")
 	var start_action := RecordingAction.new()
 	var start_actions: Array[Action.BaseAction] = [start_action]
@@ -129,6 +127,6 @@ func _test_callback_cancel() -> void:
 		func(instance: AbilityExecutionInstance) -> void:
 			instance.cancel())
 	var instance := ability.activate_new_execution_instance(
-		"t-callback-cancel", [], start_actions, empty_actions, {}, null)
+		timeline, [], start_actions, empty_actions, {}, null)
 	TestFramework.assert_true(instance.is_cancelled())
 	TestFramework.assert_equal(0, start_action.calls)

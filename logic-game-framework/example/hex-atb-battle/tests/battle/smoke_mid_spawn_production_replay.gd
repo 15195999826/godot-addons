@@ -80,7 +80,6 @@ func _phase_fire_tile() -> bool:
 
 func _run_production_skill(skill_config: AbilityConfig, target_mode: String, tick_count: int) -> Dictionary:
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 
 	var world := GameWorld.create_instance(func() -> GameplayInstance:
 		var inst := HexWorldGameplayInstance.new()

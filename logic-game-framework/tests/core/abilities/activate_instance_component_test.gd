@@ -3,18 +3,14 @@ extends Node
 func _init() -> void:
 	TestFramework.register_test("ActivateInstanceComponent any trigger", _test_any_trigger)
 	TestFramework.register_test("ActivateInstanceComponent all trigger", _test_all_trigger)
+	TestFramework.register_test("ActivateInstanceConfig builder freezes timeline tags", _test_builder_freezes_tags)
 
 func _test_any_trigger() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(
-		"t-any",
-		1.0,
-		{}
-	))
+	var timeline := TimelineData.new("t-any", 1.0, {})
 
 	var owner_actor_id := "actor-1"
 	var component_config := ActivateInstanceConfig.new(
-		"t-any",
+		timeline,
 		[],
 		[
 			TriggerConfig.new("hit"),
@@ -41,16 +37,11 @@ func _test_any_trigger() -> void:
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 
 func _test_all_trigger() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(
-		"t-all",
-		1.0,
-		{}
-	))
+	var timeline := TimelineData.new("t-all", 1.0, {})
 
 	var owner_actor_id := "actor-2"
 	var component_config := ActivateInstanceConfig.new(
-		"t-all",
+		timeline,
 		[],
 		[
 			TriggerConfig.new("hit"),
@@ -75,3 +66,16 @@ func _test_all_trigger() -> void:
 	var triggered := component.on_event({"kind": "hit"}, context, null)
 	TestFramework.assert_true(not triggered)
 	TestFramework.assert_equal(0, ability.get_executing_instances().size())
+
+## builder.timeline(data) 声明即冻结 tags；共享实例重复声明幂等；config 直接持引用。
+func _test_builder_freezes_tags() -> void:
+	var timeline := TimelineData.new("t-freeze", 1.0, {"hit": 0.5})
+	TestFramework.assert_false(timeline.tags.is_read_only())
+	var config := (ActivateInstanceConfig.builder()
+		.trigger(TriggerConfig.new("hit"))
+		.timeline(timeline)
+		.build())
+	TestFramework.assert_true(timeline.tags.is_read_only())
+	TestFramework.assert_true(config.timeline_data == timeline)
+	var shared_again := ActiveUseConfig.builder().timeline(timeline).build()
+	TestFramework.assert_true(shared_again.timeline_data == timeline)

@@ -17,7 +17,7 @@ graph TB
         Abilities[Ability System<br/>Ability/AbilitySet]
         Events[Event System<br/>EventProcessor]
         Actions[Action System<br/>BaseAction]
-        Timeline[Timeline System<br/>TimelineRegistry]
+        Timeline[Timeline System<br/>TimelineData]
         Tags[Tag System<br/>TagContainer]
         Playback[Playback System<br/>BattleRecorder]
     end

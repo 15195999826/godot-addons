@@ -12,7 +12,6 @@ func _ready() -> void:
 	print("=== Smoke Test: TARGETING dual-entry protocol ===")
 
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 
 	var battle := GameWorld.create_instance(func() -> GameplayInstance:
 		var inst := HexWorldGameplayInstance.new()

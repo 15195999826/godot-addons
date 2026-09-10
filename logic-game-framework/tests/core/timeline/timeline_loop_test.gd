@@ -40,17 +40,14 @@ func _test_periodic_factory() -> void:
 	TestFramework.assert_true(timeline.tags.has("tick"))
 
 func _test_max_loops() -> void:
-	TimelineRegistry.reset()
 	var timeline := TimelineData.new("t-max", 100.0, {"hit": 50.0})
 	timeline.loop = true
 	timeline.max_loops = 3
-	TimelineRegistry.register(timeline)
-	GameWorld.init()
 
 	var action := TestAction.new()
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-max",
+		timeline,
 		[TagActionsEntry.new("hit", [action])],
 		empty_list,
 		empty_list,
@@ -68,17 +65,14 @@ func _test_max_loops() -> void:
 	TestFramework.assert_equal(3, action.calls)
 
 func _test_infinite_loop() -> void:
-	TimelineRegistry.reset()
 	var timeline := TimelineData.new("t-inf", 100.0, {"hit": 50.0})
 	timeline.loop = true
 	timeline.max_loops = -1
-	TimelineRegistry.register(timeline)
-	GameWorld.init()
 
 	var action := TestAction.new()
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-inf",
+		timeline,
 		[TagActionsEntry.new("hit", [action])],
 		empty_list,
 		empty_list,
@@ -93,16 +87,14 @@ func _test_infinite_loop() -> void:
 	TestFramework.assert_equal(10, action.calls)
 
 func _test_sync_actions_non_loop() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new("t-sync-nl", 100.0, {}))
-	GameWorld.init()
+	var timeline := TimelineData.new("t-sync-nl", 100.0, {})
 
 	var start_action := TestAction.new()
 	var end_action := TestAction.new()
 	var start_list: Array[Action.BaseAction] = [start_action]
 	var end_list: Array[Action.BaseAction] = [end_action]
 	var instance := AbilityExecutionInstance.new(
-		"t-sync-nl",
+		timeline,
 		[],
 		start_list,
 		end_list,
@@ -121,19 +113,16 @@ func _test_sync_actions_non_loop() -> void:
 	TestFramework.assert_equal(1, end_action.calls)    # 触发 1 次
 
 func _test_sync_actions_loop() -> void:
-	TimelineRegistry.reset()
 	var timeline := TimelineData.new("t-sync-loop", 100.0, {})
 	timeline.loop = true
 	timeline.max_loops = 3
-	TimelineRegistry.register(timeline)
-	GameWorld.init()
 
 	var start_action := TestAction.new()
 	var end_action := TestAction.new()
 	var start_list: Array[Action.BaseAction] = [start_action]
 	var end_list: Array[Action.BaseAction] = [end_action]
 	var instance := AbilityExecutionInstance.new(
-		"t-sync-loop",
+		timeline,
 		[],
 		start_list,
 		end_list,
@@ -164,17 +153,14 @@ func _test_sync_actions_loop() -> void:
 
 ## 溢出余量必须进入下一轮计时，且结转窗口 (0, carry] 内的 tag 在同一次 tick 补触发。
 func _test_loop_carry_over() -> void:
-	TimelineRegistry.reset()
 	var timeline := TimelineData.new("t-carry", 100.0, {"hit": 50.0})
 	timeline.loop = true
 	timeline.max_loops = -1
-	TimelineRegistry.register(timeline)
-	GameWorld.init()
 
 	var action := TestAction.new()
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-carry",
+		timeline,
 		[TagActionsEntry.new("hit", [action])],
 		empty_list,
 		empty_list,
@@ -199,12 +185,9 @@ func _test_loop_carry_over() -> void:
 ## 周期节奏不随 dt 漂移：100ms 周期在 dt=60 下，300ms 内应完成 3 轮
 ## （若余量被清零，每轮被拉长到 120ms，只会完成 2 轮）。
 func _test_loop_cadence_no_drift() -> void:
-	TimelineRegistry.reset()
 	var timeline := TimelineData.new("t-cadence", 100.0, {"hit": 50.0})
 	timeline.loop = true
 	timeline.max_loops = -1
-	TimelineRegistry.register(timeline)
-	GameWorld.init()
 
 	var tag_action := TestAction.new()
 	var start_action := TestAction.new()
@@ -212,7 +195,7 @@ func _test_loop_cadence_no_drift() -> void:
 	var start_list: Array[Action.BaseAction] = [start_action]
 	var end_list: Array[Action.BaseAction] = [end_action]
 	var instance := AbilityExecutionInstance.new(
-		"t-cadence",
+		timeline,
 		[TagActionsEntry.new("hit", [tag_action])],
 		start_list,
 		end_list,
@@ -233,17 +216,14 @@ func _test_loop_cadence_no_drift() -> void:
 
 ## max_loops 达成时终轮溢出不得结转：不重启、不补触发新一轮 tag。
 func _test_loop_no_carry_past_max_loops() -> void:
-	TimelineRegistry.reset()
 	var timeline := TimelineData.new("t-carry-max", 100.0, {"hit": 50.0})
 	timeline.loop = true
 	timeline.max_loops = 1
-	TimelineRegistry.register(timeline)
-	GameWorld.init()
 
 	var action := TestAction.new()
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-carry-max",
+		timeline,
 		[TagActionsEntry.new("hit", [action])],
 		empty_list,
 		empty_list,
@@ -258,16 +238,13 @@ func _test_loop_no_carry_past_max_loops() -> void:
 
 
 func _test_serialize_loops() -> void:
-	TimelineRegistry.reset()
 	var timeline := TimelineData.new("t-ser", 100.0, {})
 	timeline.loop = true
 	timeline.max_loops = 5
-	TimelineRegistry.register(timeline)
-	GameWorld.init()
 
 	var empty_list: Array[Action.BaseAction] = []
 	var instance := AbilityExecutionInstance.new(
-		"t-ser", [], empty_list, empty_list, {}, AbilityRef.new("a", "c")
+		timeline, [], empty_list, empty_list, {}, AbilityRef.new("a", "c")
 	)
 
 	instance.tick(100.0, null)

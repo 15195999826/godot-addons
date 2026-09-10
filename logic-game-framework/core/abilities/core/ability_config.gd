@@ -78,20 +78,49 @@ func _init(
 	self.overflow_policy = overflow_policy
 
 
-## 收集本 config 树携带的全部 TimelineData（builder.timeline(data) 写入的注册来源）。
-## 注册链路（如 example 层的 register_all_timelines）遍历所有 config 调用此方法统一注册，
-## 消灭「技能声明 timeline 后还要在 manifest 手抄注册列表」的双重记账。
+## 收集本 config 树携带的全部 TimelineData（builder.timeline(data) 写入）。
+## 唯一消费方是静态检查（hex smoke_manifest_lint：合法性 + tags 已冻结 + 同 id 同实例）。
+## 执行期不经过这里——timeline 由 component 直传 AbilityExecutionInstance。
 func collect_timelines() -> Array[TimelineData]:
 	var out: Array[TimelineData] = []
 	for active_use_config in active_use_components:
-		if active_use_config.timeline_data != null:
-			out.append(active_use_config.timeline_data)
+		out.append(active_use_config.timeline_data)
 	for component in components:
 		if component is ActivateInstanceConfig:
-			var activate_config := component as ActivateInstanceConfig
-			if activate_config.timeline_data != null:
-				out.append(activate_config.timeline_data)
+			out.append((component as ActivateInstanceConfig).timeline_data)
 	return out
+
+
+## 校验一批 config 携带的 timeline：合法性 + tags 已冻结 + 同 id 必须是同一实例。
+## 返回人类可读的问题列表（空 = 干净），由各 manifest 的 lint smoke 调用。
+##
+## 这是「同 id 异实例」的唯一机器守卫：timeline id 只剩录像标签用途，两份不同节奏顶着
+## 同一个 id 会让回放里的 timelineId 静默串味。放 core 而非某个 example，是因为三个
+## 消费者（hex / inkmon / dota2）各有自己的 manifest，守卫不能只长在一家。
+static func lint_timelines(configs: Array[AbilityConfig]) -> Array[String]:
+	var failures: Array[String] = []
+	var seen_by_id: Dictionary = {}       # timeline id → 首次见到的实例
+	var checked_instances: Dictionary = {}  # 实例 id → true
+	for cfg in configs:
+		for timeline in cfg.collect_timelines():
+			if timeline == null:
+				failures.append("%s: 组件未绑定 timeline(builder.timeline(data) 必填)" % cfg.config_id)
+				continue
+			# 按实例去重而非按 id：共享的标准节奏被十几个 config 携带同一引用，
+			# 重复跑 validate() 结论必然相同；但同 id 的第二个实例恰恰最该查，
+			# 按 id 去重会让它整个跳过校验。
+			if not checked_instances.has(timeline.get_instance_id()):
+				checked_instances[timeline.get_instance_id()] = true
+				for err in timeline.validate():
+					failures.append("%s: timeline '%s' 不合法: %s" % [cfg.config_id, timeline.id, err])
+				if not timeline.tags.is_read_only():
+					failures.append("%s: timeline '%s' tags 未冻结(必须经 builder.timeline(data) 声明)" % [cfg.config_id, timeline.id])
+			var existing: TimelineData = seen_by_id.get(timeline.id, null)
+			if existing == null:
+				seen_by_id[timeline.id] = timeline
+			elif existing != timeline:
+				failures.append("%s: timeline id '%s' 与另一实例冲突(timeline 必须 static 单例声明, 不许内联 new)" % [cfg.config_id, timeline.id])
+	return failures
 
 
 ## 创建 Builder

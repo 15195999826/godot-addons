@@ -336,7 +336,9 @@ func _finalize_trace(trace: Dictionary) -> void:
 ## 获取事件调用链摘要（用于错误信息）
 func _get_event_chain_summary() -> String:
 	if _traces.is_empty():
-		return "  (no trace available)"
+		# trace_level 默认 0（不累积 trace），所以这里通常是空的。
+		# 事件链是排查事件循环的主要线索，提示怎么把它打开。
+		return "  (no trace available; 重跑时传 EventProcessorConfig.new(max_depth, 1) 以记录事件链)"
 	
 	var lines: Array[String] = []
 	# 只显示最近的事件链（最多 10 个）

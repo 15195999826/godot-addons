@@ -601,9 +601,6 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		)
 		add_system(_projectile_system)
 
-		# Timeline 注册
-		HexBattleAllSkills.register_all_timelines()
-
 		# 创建角色 → 放入 left_team / right_team
 		var caster_cfg: Dictionary = config.get("caster", {})
 		var dummies_cfg: Array = config.get("dummies", [])

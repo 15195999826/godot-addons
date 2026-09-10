@@ -90,7 +90,7 @@ layout_mode = 2
 theme_override_constants/separation = 3
 
 ; =============== SkillPreviewTimeline ===============
-; 命名 SkillPreview 前缀: 与 LGF core TimelineRegistry / Ability timeline 概念区分,
+; 命名 SkillPreview 前缀: 与 LGF core TimelineData / Ability timeline 概念区分,
 ; 这里是技能预览 UI 的多 actor 时间轴, 不是 ability animation timeline。
 [node name="SkillPreviewTimeline" type="ScrollContainer" parent="ConfigUI/Root/LeftPanel/InspectorVBox/InspectorTabs"]
 layout_mode = 2

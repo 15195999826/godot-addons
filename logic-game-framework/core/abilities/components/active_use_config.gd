@@ -16,7 +16,7 @@
 ## [codeblock]
 ## var config := ActiveUseConfig.builder() \
 ##     .trigger(...)                                      # 1. 何时触发（可选，有默认值）
-##     .timeline(SLASH_TIMELINE)                          # 2. 绑定时间线（设查找键+携带注册来源）
+##     .timeline(SLASH_TIMELINE)                          # 2. 绑定时间线（声明即冻结 tags）
 ##     .on_timeline_start([StageCueAction...])            # 3a. 同步：每轮 timeline 开始
 ##     .on_tag(TimelineTags.HIT, [DamageAction...])       # 3b. 异步：timeline 时间点
 ##     .on_timeline_end([...])                            # 3c. 同步：每轮 timeline 结束（可选）
@@ -37,12 +37,8 @@ class_name ActiveUseConfig
 extends AbilityComponentConfig
 
 
-## Timeline ID
-var timeline_id: String
-
-## 本组件携带的 timeline 资产（注册来源）。经 builder.timeline(data) 设置时非 null，
-## 注册链路（如 register_all_timelines）从 config 树收集它统一注册；
-## timeline_id 仍是执行期查找键（AbilityExecutionInstance 按 id 查 registry）。
+## 本组件执行的 timeline（builder.timeline(data) 写入，声明时 tags 已冻结）。
+## 执行期直传 AbilityExecutionInstance，没有 id 间接层。
 var timeline_data: TimelineData = null
 
 ## Tag → Actions 映射列表（异步，按 timeline tag_time 触发）
@@ -71,7 +67,7 @@ var costs: Array[Cost] = []
 
 
 func _init(
-	timeline_id: String = "",
+	timeline: TimelineData,
 	tag_actions: Array[TagActionsEntry] = [],
 	conditions: Array[Condition] = [],
 	costs: Array[Cost] = [],
@@ -79,10 +75,9 @@ func _init(
 	trigger_mode: String = "any",
 	on_timeline_start_actions: Array[Action.BaseAction] = [],
 	on_timeline_end_actions: Array[Action.BaseAction] = [],
-	on_cancel_actions: Array[Action.BaseAction] = [],
-	timeline_data: TimelineData = null
+	on_cancel_actions: Array[Action.BaseAction] = []
 ) -> void:
-	self.timeline_id = timeline_id
+	self.timeline_data = timeline
 	self.tag_actions = tag_actions
 	self.conditions.assign(conditions)
 	self.costs.assign(costs)
@@ -91,7 +86,6 @@ func _init(
 	self.on_timeline_start_actions = on_timeline_start_actions
 	self.on_timeline_end_actions = on_timeline_end_actions
 	self.on_cancel_actions = on_cancel_actions
-	self.timeline_data = timeline_data
 
 
 ## 创建对应的 ActiveUseComponent 实例
@@ -107,13 +101,12 @@ static func builder() -> ActiveUseConfigBuilder:
 ## ActiveUseConfig Builder
 ##
 ## 使用链式调用构建 ActiveUseConfig，提供清晰的可读性。
-## 必填字段：timeline_id
+## 必填字段：timeline
 ##
-## 推荐调用顺序：trigger → timeline_id → on_tag → condition → cost
+## 推荐调用顺序：trigger → timeline → on_tag → condition → cost
 class ActiveUseConfigBuilder:
 	extends RefCounted
 
-	var _timeline_id: String = ""
 	var _timeline_data: TimelineData = null
 	var _tag_actions: Array[TagActionsEntry] = []
 	var _triggers: Array[TriggerConfig] = []
@@ -142,13 +135,13 @@ class ActiveUseConfigBuilder:
 	
 	# ========== 2. 时间线配置 ==========
 	
-	## 绑定 timeline（必填）：一次调用同时设置执行期查找键（timeline_id = data.id）
-	## 并让 config 携带该 TimelineData 作为注册来源（注册链路从 config 树收集统一注册）。
-	## timeline 必须是 static 声明的常量实例——registry 对同 id 异引用会 crash。
+	## 绑定 timeline（必填）。声明即冻结 tags：TimelineData 是多技能共享的 static 资产，
+	## 运行时篡改会污染所有共享者；make_read_only 幂等，共享实例重复经过无副作用。
+	## 同 id 异实例的唯一性由 hex manifest lint 静态断言守，这里不查重。
 	func timeline(data: TimelineData) -> ActiveUseConfigBuilder:
 		Log.assert_crash(data != null and data.id != "", "ActiveUseConfig", "timeline(data) 要求非空且 id 非空")
+		data.tags.make_read_only()
 		_timeline_data = data
-		_timeline_id = data.id
 		return self
 	
 	## 添加 Tag -> Actions 映射（异步，按 timeline tag_time 触发）
@@ -188,9 +181,9 @@ class ActiveUseConfigBuilder:
 	## 构建 ActiveUseConfig
 	## 验证必填字段，缺失时触发断言错误
 	func build() -> ActiveUseConfig:
-		Log.assert_crash(_timeline_id != "", "ActiveUseConfig", "timeline is required")
+		Log.assert_crash(_timeline_data != null, "ActiveUseConfig", "timeline is required")
 		return ActiveUseConfig.new(
-			_timeline_id,
+			_timeline_data,
 			_tag_actions,
 			_conditions,
 			_costs,
@@ -198,6 +191,5 @@ class ActiveUseConfigBuilder:
 			_trigger_mode,
 			_on_timeline_start_actions,
 			_on_timeline_end_actions,
-			_on_cancel_actions,
-			_timeline_data
+			_on_cancel_actions
 		)

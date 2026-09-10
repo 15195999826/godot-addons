@@ -47,10 +47,9 @@ func _init(world: Dota2WorldGameplayInstance, opts: Dictionary = {}) -> void:
 
 # ========== 生命周期 ==========
 
-## 战斗起手：注册基础攻击 timeline，左右各刷一波 lane creep（spawner 不发 intent）。
+## 战斗起手：左右各刷一波 lane creep（spawner 不发 intent）。
 func start() -> void:
 	super.start()
-	Dota2BasicAttackAbility.register_timelines()
 	_spawn_wave(Dota2LaneConfig.TEAM_LEFT)
 	_spawn_wave(Dota2LaneConfig.TEAM_RIGHT)
 

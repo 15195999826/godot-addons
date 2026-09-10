@@ -12,7 +12,7 @@ const TYPE := "ActivateInstanceComponent"
 
 var _triggers: Array[Dictionary] = []
 var _trigger_mode: String = "any"
-var _timeline_id: String = ""
+var _timeline: TimelineData = null
 var _tag_actions: Array[TagActionsEntry] = []
 var _on_timeline_start_actions: Array[Action.BaseAction] = []
 var _on_timeline_end_actions: Array[Action.BaseAction] = []
@@ -20,7 +20,8 @@ var _on_cancel_actions: Array[Action.BaseAction] = []
 
 func _init(config: ActivateInstanceConfig):
 	type = TYPE
-	_timeline_id = config.timeline_id
+	_timeline = config.timeline_data
+	Log.assert_crash(_timeline != null, "ActivateInstanceComponent", "config 缺 timeline（builder.timeline(data) 必填）")
 	_tag_actions = config.tag_actions
 	_on_timeline_start_actions = config.on_timeline_start_actions
 	_on_timeline_end_actions = config.on_timeline_end_actions
@@ -33,26 +34,18 @@ func _init(config: ActivateInstanceConfig):
 func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> bool:
 	if not _check_triggers(event_dict, context):
 		return false
-	if not _is_timeline_available():
-		Log.error("ActivateInstanceComponent", "Timeline not found: %s" % _timeline_id)
-		return false
 	_activate_execution(event_dict, context, game_state_provider)
 	return true
 
 func _check_triggers(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	return AbilityComponent.match_triggers(_triggers, _trigger_mode, event_dict, context)
 
-
-func _is_timeline_available() -> bool:
-	return TimelineRegistry.has(_timeline_id)
-
-
 func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> void:
 	var ability := context.ability
 	if ability == null:
 		return
 	ability.activate_new_execution_instance(
-		_timeline_id,
+		_timeline,
 		_tag_actions,
 		_on_timeline_start_actions,
 		_on_timeline_end_actions,
@@ -66,7 +59,7 @@ func serialize() -> Dictionary:
 	return {
 		"triggersCount": _triggers.size(),
 		"triggerMode": _trigger_mode,
-		"timelineId": _timeline_id,
+		"timelineId": _timeline.id,
 		"tagActionsCount": _tag_actions.size(),
 	}
 

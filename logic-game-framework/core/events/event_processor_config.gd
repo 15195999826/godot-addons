@@ -5,7 +5,7 @@
 ## ========== 配置项 ==========
 ##
 ## - max_depth: 最大递归深度（防止无限循环），默认 10
-## - trace_level: 追踪级别，默认 1
+## - trace_level: 追踪级别，默认 0（不累积追踪记录；调试时显式传 1 / 2）
 ##   - 0: 不记录追踪
 ##   - 1: 记录基本追踪（事件、结果）
 ##   - 2: 记录详细追踪（包括每个处理器的意图）
@@ -22,7 +22,7 @@ extends RefCounted
 
 
 const DEFAULT_MAX_DEPTH := 10
-const DEFAULT_TRACE_LEVEL := 1
+const DEFAULT_TRACE_LEVEL := 0
 
 
 ## 最大递归深度

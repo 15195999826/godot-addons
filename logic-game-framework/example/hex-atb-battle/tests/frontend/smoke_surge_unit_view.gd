@@ -34,8 +34,6 @@ func _ready() -> void:
 	print("=== Smoke: Surge UnitView (grant+tick same frame) ===")
 	Log.set_level(Log.LogLevel.WARNING)
 
-	HexBattleAllSkills.register_all_timelines()
-
 	# 构造最小 PlaybackData:1 actor(team A),frame 0 同帧 grant Surge + first tick
 	# (3→2),frame 20 tick(2→1),frame 40 tick(1→0)+remove。
 	var record := PlaybackData.BattleRecord.new()

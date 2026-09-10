@@ -8,7 +8,7 @@ extends RefCounted
 ## skill_preview.gd 纯平移拆出, 函数体逻辑逐行不变, 仅把对宿主状态/方法的引用改
 ## 为 `_host.` 前缀。
 ##
-## 命名 SPT 前缀 = SkillPreviewTimeline, 与 LGF core TimelineRegistry / Ability
+## 命名 SPT 前缀 = SkillPreviewTimeline, 与 LGF core TimelineData / Ability
 ## timeline 概念严格区分: 这是技能预览 UI 的多 actor 时间轴, 不是 ability animation
 ## timeline。视图全部从 _host._actors[i] 派生, 不引入新数据 (除 _spt_max_override 一个 int)。
 ##

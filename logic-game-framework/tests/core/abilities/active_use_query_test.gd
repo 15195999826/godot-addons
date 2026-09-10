@@ -7,11 +7,15 @@ extends Node
 ##  - condition / cost 失败的结构化 denied 结果（reason 与 get_fail_reason 同源）
 ##  - 查询失败不 push AbilityActivateFailed（对照真实激活路径会 push）
 ##  - Ability 级短路与 receive_event 同判（disabled / expired）
-##  - timeline 未注册同判拒绝
 ##  - 查询 allowed 后真实激活仍正常支付（查询不预扣）
 ##  - 多 ActiveUse 组件：首个失败门返回
 
 const QUERY_TIMELINE_ID := "t-active-use-query"
+
+
+## 夹具 timeline：单实例，两个建夹具的函数共用。
+## 用 static var 而非工厂函数——工厂每次 new 出「同 id 异实例」，正是 manifest lint 禁的形状。
+static var QUERY_TIMELINE := TimelineData.new(QUERY_TIMELINE_ID, 100.0, {})
 
 
 func _init() -> void:
@@ -19,18 +23,14 @@ func _init() -> void:
 	TestFramework.register_test("can_activate denies on condition without pushing events", _test_denied_by_condition)
 	TestFramework.register_test("can_activate denies on cost and keeps resources", _test_denied_by_cost)
 	TestFramework.register_test("can_activate mirrors receive_event short-circuits", _test_ability_level_shortcircuits)
-	TestFramework.register_test("can_activate denies on missing timeline", _test_missing_timeline)
 	TestFramework.register_test("can_activate does not pre-pay real activation", _test_query_then_real_activation)
 	TestFramework.register_test("can_activate returns first failing gate across components", _test_multi_component_first_failure)
 
 
 ## 构造 "granted ability + ability_set" 夹具；conditions/costs 注入唯一的 ActiveUseConfig。
-func _build_fixture(conditions: Array[Condition], costs: Array[Cost],
-		timeline_id: String = QUERY_TIMELINE_ID) -> Dictionary:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(QUERY_TIMELINE_ID, 100.0, {}))
+func _build_fixture(conditions: Array[Condition], costs: Array[Cost]) -> Dictionary:
 	GameWorld.init()
-	var active_use := ActiveUseConfig.new(timeline_id, [], conditions, costs)
+	var active_use := ActiveUseConfig.new(QUERY_TIMELINE, [], conditions, costs)
 	var active_use_list: Array[ActiveUseConfig] = [active_use]
 	var config := AbilityConfig.new("q-skill", "", "", "", [], active_use_list, [])
 	var ability := Ability.new(config, "actor-q")
@@ -135,19 +135,6 @@ func _test_ability_level_shortcircuits() -> void:
 		expired_result[AbilityActivationQuery.KEY_FAILED_COMPONENT_TYPE])
 
 
-func _test_missing_timeline() -> void:
-	var conditions: Array[Condition] = []
-	var costs: Array[Cost] = []
-	var fixture := _build_fixture(conditions, costs, "t-query-not-registered")
-	var ability_set: AbilitySet = fixture["set"]
-	var ability: Ability = fixture["ability"]
-
-	var result := ability_set.can_activate(ability)
-	TestFramework.assert_false(AbilityActivationQuery.is_allowed(result))
-	TestFramework.assert_equal(AbilityActivationQuery.FAILED_TIMELINE,
-		result[AbilityActivationQuery.KEY_FAILED_COMPONENT_TYPE])
-
-
 func _test_query_then_real_activation() -> void:
 	var conditions: Array[Condition] = []
 	var costs: Array[Cost] = [Cost.ConsumeTagCost.new("ammo", 1)]
@@ -174,14 +161,13 @@ func _test_query_then_real_activation() -> void:
 
 
 func _test_multi_component_first_failure() -> void:
-	TimelineRegistry.reset()
-	TimelineRegistry.register(TimelineData.new(QUERY_TIMELINE_ID, 100.0, {}))
 	GameWorld.init()
+	var timeline := QUERY_TIMELINE
 	var pass_conditions: Array[Condition] = []
 	var no_costs: Array[Cost] = []
 	var blocked_conditions: Array[Condition] = [Condition.NoTagCondition.new("sealed")]
-	var first_use := ActiveUseConfig.new(QUERY_TIMELINE_ID, [], pass_conditions, no_costs)
-	var second_use := ActiveUseConfig.new(QUERY_TIMELINE_ID, [], blocked_conditions, no_costs)
+	var first_use := ActiveUseConfig.new(timeline, [], pass_conditions, no_costs)
+	var second_use := ActiveUseConfig.new(timeline, [], blocked_conditions, no_costs)
 	var active_use_list: Array[ActiveUseConfig] = [first_use, second_use]
 	var config := AbilityConfig.new("q-multi", "", "", "", [], active_use_list, [])
 	var ability := Ability.new(config, "actor-q")

@@ -2,7 +2,7 @@
 ##
 ## 不依赖 UI scene, 直接调 SkillPreviewValidation 的 static helper。
 ## 用真实的 HexBattleStrike / HexBattleSwiftStrike AbilityConfig, 走真的
-## TimelineRegistry + TimedCooldownCost 路径, 保证与 UI 调点行为一致。
+## config 树 timeline + TimedCooldownCost 路径, 保证与 UI 调点行为一致。
 extends Node
 
 
@@ -19,14 +19,6 @@ func _init() -> void:
 
 # ========== 测试夹具 ==========
 
-func _ensure_timelines_registered() -> void:
-	# 从 config 树收集注册(strike 走共享 std timeline, swift_strike 自有), occupy 计算
-	# 需要从 TimelineRegistry 取 total_duration。register 对同引用幂等, 无需 has() 前置检查。
-	for cfg: AbilityConfig in [HexBattleStrike.ABILITY, HexBattleSwiftStrike.ABILITY]:
-		for tl in cfg.collect_timelines():
-			TimelineRegistry.register(tl)
-
-
 func _strike_resolver() -> Callable:
 	# mock skill_resolver: 只识别 strike / swift_strike, 别的返回 null
 	return func(sid: String) -> AbilityConfig:
@@ -40,7 +32,6 @@ func _strike_resolver() -> Callable:
 # ========== ability_occupy_ms ==========
 
 func _test_occupy_strike() -> void:
-	_ensure_timelines_registered()
 	# Strike: timeline=500ms (cooldown 2000ms 不再计入 occupy)
 	TestFramework.assert_equal(500, SkillPreviewValidation.ability_occupy_ms(HexBattleStrike.ABILITY))
 	# SwiftStrike: timeline=400ms
@@ -62,7 +53,6 @@ func _test_cooldown_strike() -> void:
 # ========== find_track_occupy_violation ==========
 
 func _test_violation_empty() -> void:
-	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
 	# 空 track
 	TestFramework.assert_equal("",
@@ -74,7 +64,6 @@ func _test_violation_empty() -> void:
 
 
 func _test_violation_overlap() -> void:
-	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
 	# 同 skill 间隔 200ms < occupy 500ms (timeline) → 必有错误
 	var track: Array = [
@@ -90,7 +79,6 @@ func _test_violation_overlap() -> void:
 
 
 func _test_violation_legal_gap() -> void:
-	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
 	# 同 skill 间隔 500ms == occupy (timeline) → 边界合法 (严格小于才冲突)
 	var track: Array = [
@@ -110,7 +98,6 @@ func _test_violation_legal_gap() -> void:
 
 
 func _test_violation_diff_skills() -> void:
-	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
 	# 不同 skill = 不同 ability instance, LGF 原生支持同 actor 多 instance 并发 tick
 	# (Ability._execution_instances 本身是 Array)。preview 替代 ATB 决策层, 不该把
@@ -150,7 +137,6 @@ func _test_violation_diff_skills() -> void:
 # ========== next_free_time_ms_in_track ==========
 
 func _test_next_free_bump() -> void:
-	_ensure_timelines_registered()
 	var resolver := _strike_resolver()
 	# 已有 t=0 Strike, candidate Strike 想放 t=200 (在 occupy 500 内) → bump 到 t=500
 	var track: Array = [{"time_ms": 0, "skill": HexBattleStrike.CONFIG_ID}]

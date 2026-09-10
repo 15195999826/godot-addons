@@ -41,9 +41,10 @@ static func ability_occupy_ms(cfg: AbilityConfig) -> int:
 		return 0
 	var occupy: float = 0.0
 	for au in cfg.active_use_components:
-		var tl := TimelineRegistry.get_timeline(au.timeline_id)
-		if tl != null:
-			occupy = maxf(occupy, tl.total_duration)
+		# 缺 timeline 不在这里炸: 本函数服务 SkillPreview / SkillValidator 工具路径,
+		# 入参可能是运行时编译的 AI 技能脚本; 缺失由 manifest lint 报告, 这里按 0 贡献跳过。
+		if au.timeline_data != null:
+			occupy = maxf(occupy, au.timeline_data.total_duration)
 	return int(occupy)
 
 

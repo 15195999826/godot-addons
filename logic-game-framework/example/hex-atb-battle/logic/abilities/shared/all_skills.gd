@@ -1,13 +1,9 @@
 ## HexBattle 技能 / Buff 总清单(单一花名册)
 ##
-## 一份 manifest 同时驱动:
-##   - register_all_timelines() - 战斗启动时把所有 timeline 注册到 TimelineRegistry
-##   - all_abilities()           - SkillPreview / 工具层枚举所有 AbilityConfig
-##
-## 加新技能 / Buff = 加一行 config;它的 timeline 经 builder.timeline(data) 已挂在
-## config 树上, register_all_timelines() 用 collect_timelines() 自动收集注册 ——
-## 不再手抄 timeline 列表(旧 _Entry 双列记账已删, 抄漏第二列的失效面不复存在)。
-## 共享标准节奏(HexBattleStdTimelines)被多个 config 携带同一引用, 注册幂等。
+## all_abilities() 供 SkillPreview / 工具层 / manifest lint 枚举所有 AbilityConfig。
+## 加新技能 / Buff = 加一行 config;它的 timeline 经 builder.timeline(data) 挂在
+## config 树上直传执行期, 共享标准节奏(HexBattleStdTimelines)被多个 config 携带同一引用;
+## 同 id 异实例由 smoke_manifest_lint 静态断言抓, 运行时不查重。
 class_name HexBattleAllSkills
 
 
@@ -71,14 +67,6 @@ static func _build_manifest() -> Array[AbilityConfig]:
 	arr.append(HexBattleSilenceBuff.create_config(HexBattleSilenceBuff.DEFAULT_DURATION_MS))
 	arr.append(HexBattleBreakBuff.create_config(HexBattleBreakBuff.DEFAULT_DURATION_MS))
 	return arr
-
-
-## 把所有 timeline 注册进 TimelineRegistry。战斗启动时调一次。
-## 来源 = 各 config 树携带的 TimelineData(builder.timeline 写入), 同引用重复注册幂等。
-static func register_all_timelines() -> void:
-	for cfg in _build_manifest():
-		for tl in cfg.collect_timelines():
-			TimelineRegistry.register(tl)
 
 
 ## 返回 manifest 里所有 AbilityConfig(含 skill / passive / buff)

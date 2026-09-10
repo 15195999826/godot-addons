@@ -51,7 +51,6 @@ func _ready() -> void:
 
 func _phase_can_use_skill_on() -> bool:
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 
 	var battle := GameWorld.create_instance(func() -> GameplayInstance:
 		var inst := HexWorldGameplayInstance.new()
@@ -502,7 +501,6 @@ func _phase_action_lock_metadata_and_status() -> bool:
 
 func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	GameWorld.init()
-	HexBattleAllSkills.register_all_timelines()
 
 	var battle := GameWorld.create_instance(func() -> GameplayInstance:
 		var inst := HexWorldGameplayInstance.new()

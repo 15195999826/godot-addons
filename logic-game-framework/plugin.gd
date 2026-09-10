@@ -17,8 +17,6 @@ const TEST_SCENE := "res://addons/logic-game-framework/example/hex-atb-battle/lo
 # Log 和 IdGenerator 已移至 lomolib 插件
 const AUTOLOAD_GAME_WORLD := "GameWorld"
 const AUTOLOAD_GAME_WORLD_PATH := "res://addons/logic-game-framework/core/world/game_world.gd"
-const AUTOLOAD_TIMELINE_REGISTRY := "TimelineRegistry"
-const AUTOLOAD_TIMELINE_REGISTRY_PATH := "res://addons/logic-game-framework/core/timeline/timeline.gd"
 
 var _menu: PopupMenu
 
@@ -74,11 +72,9 @@ func _run_headless_test() -> void:
 func _register_autoloads() -> void:
 	# Log 和 IdGenerator 由 lomolib 插件提供
 	_ensure_autoload(AUTOLOAD_GAME_WORLD, AUTOLOAD_GAME_WORLD_PATH)
-	_ensure_autoload(AUTOLOAD_TIMELINE_REGISTRY, AUTOLOAD_TIMELINE_REGISTRY_PATH)
 
 func _unregister_autoloads() -> void:
 	_remove_autoload_if_matches(AUTOLOAD_GAME_WORLD, AUTOLOAD_GAME_WORLD_PATH)
-	_remove_autoload_if_matches(AUTOLOAD_TIMELINE_REGISTRY, AUTOLOAD_TIMELINE_REGISTRY_PATH)
 
 func _ensure_autoload(name: String, path: String) -> void:
 	if ProjectSettings.has_setting("autoload/%s" % name):

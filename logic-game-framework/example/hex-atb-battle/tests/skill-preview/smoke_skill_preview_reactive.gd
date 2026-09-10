@@ -93,7 +93,6 @@ func _start_next_battle() -> void:
 
 	var collision_detector := MobaCollisionDetector.new()
 	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
-	HexBattleAllSkills.register_all_timelines()
 
 	# caster: WARRIOR@(0,0), dummy: WARRIOR@(1,0)
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)

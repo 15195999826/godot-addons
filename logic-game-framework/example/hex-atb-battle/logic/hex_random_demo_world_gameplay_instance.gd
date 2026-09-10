@@ -27,7 +27,6 @@ var _loadout_summary: Array[Dictionary] = []
 func _init() -> void:
 	super._init()
 	type = "hex_random_demo"
-	HexBattleAllSkills.register_all_timelines()
 
 
 func _setup_teams(config: Dictionary, _grid_config: GridMapConfig) -> void:

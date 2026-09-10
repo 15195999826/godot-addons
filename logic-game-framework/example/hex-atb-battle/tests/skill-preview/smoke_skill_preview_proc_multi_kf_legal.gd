@@ -47,7 +47,6 @@ func _ready() -> void:
 
 	var collision_detector := MobaCollisionDetector.new()
 	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
-	HexBattleAllSkills.register_all_timelines()
 
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	caster._display_name = "caster"

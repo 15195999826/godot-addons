@@ -6,8 +6,15 @@ const STATE_COMPLETED := "completed"
 const STATE_CANCELLED := "cancelled"
 
 var id: String
-var timeline_id: String
 var _timeline: TimelineData = null
+
+## 录像 / 事件侧读的 timeline 标识（BattleRecorder / RecordingUtils）。
+## 派生而非存副本：副本要靠「没人再写 _timeline」这条隐式不变量才不漂。
+## 类内自己读 _timeline.id，不绕这个 getter——tick 链上的读点不值得多一个调用帧。
+var timeline_id: String:
+	get:
+		return _timeline.id
+
 var _tag_actions: Array[TagActionsEntry] = []
 var _on_timeline_start_actions: Array[Action.BaseAction] = []
 var _on_timeline_end_actions: Array[Action.BaseAction] = []
@@ -40,7 +47,7 @@ var _execution_state: Dictionary = {}
 ## 正常 tick 仍由调用链传入；这里只保留 WeakRef，供 revoke/expire 等取消路径执行
 ## on_cancel 清理。这样既能释放 reservation/gate，又不会形成 battle → ability → execution → battle 强引用环。
 func _init(
-	p_timeline_id: String,
+	p_timeline: TimelineData,
 	p_tag_actions: Array[TagActionsEntry],
 	p_on_timeline_start_actions: Array[Action.BaseAction],
 	p_on_timeline_end_actions: Array[Action.BaseAction],
@@ -49,9 +56,9 @@ func _init(
 	p_on_cancel_actions: Array[Action.BaseAction] = [],
 	p_game_state_provider: Variant = null
 ) -> void:
+	Log.assert_crash(p_timeline != null, "AbilityExecutionInstance", "timeline is required")
 	id = IdGenerator.generate("execution")
-	timeline_id = p_timeline_id
-	_timeline = TimelineRegistry.get_timeline(timeline_id)
+	_timeline = p_timeline
 	_tag_actions = p_tag_actions
 	_on_timeline_start_actions = p_on_timeline_start_actions
 	_on_timeline_end_actions = p_on_timeline_end_actions
@@ -60,8 +67,6 @@ func _init(
 	_ability_ref = p_ability_ref
 	if p_game_state_provider is Object:
 		_game_state_provider_ref = weakref(p_game_state_provider)
-	if _timeline == null:
-		Log.warning("AbilityExecutionInstance", "Timeline not found: %s" % timeline_id)
 
 func get_elapsed() -> float:
 	return _elapsed
@@ -101,16 +106,15 @@ func fire_sync_actions(actions: Array[Action.BaseAction], current_tag: String,
 func tick(dt: float, game_state_provider: Variant) -> Array[String]:
 	if _state != STATE_EXECUTING:
 		return []
-	if _timeline == null:
-		_state = STATE_COMPLETED
-		return []
 
-	# loop 模式下要求 dt <= total_duration，否则单次 tick 会跨越整个周期导致漏 tick
-	if _timeline.loop:
+	# loop 模式下要求 dt <= total_duration，否则单次 tick 会跨越整个周期导致漏 tick。
+	# 先判条件再进 assert_crash：message 是普通 String 参数，写成 assert_crash(dt <= …, msg)
+	# 会让每个 periodic execution 每 tick 都白建一次格式化字符串。
+	if _timeline.loop and dt > _timeline.total_duration:
 		Log.assert_crash(
-			dt <= _timeline.total_duration,
+			false,
 			"AbilityExecutionInstance",
-			"Loop timeline requires dt <= total_duration (dt=%f, total=%f, timeline=%s)" % [dt, _timeline.total_duration, timeline_id]
+			"Loop timeline requires dt <= total_duration (dt=%f, total=%f, timeline=%s)" % [dt, _timeline.total_duration, _timeline.id]
 		)
 
 	var previous_elapsed := _elapsed
@@ -225,7 +229,7 @@ func _resolve_actions_for_tag(tag_name: String) -> Array[Action.BaseAction]:
 ## chain 的增长由 ExecutionContext.create_callback_context() 负责（Action 产生回调事件时追加）。
 ## 每次调用都会创建新的单元素数组，确保各 tag 时间点的 ExecutionContext 互相独立。
 func _build_execution_context(current_tag: String, game_state_provider: Variant) -> ExecutionContext:
-	var exec_info := AbilityExecutionInfo.create(id, timeline_id, _elapsed, current_tag)
+	var exec_info := AbilityExecutionInfo.create(id, _timeline.id, _elapsed, current_tag)
 	return ExecutionContext.create(
 		[_trigger_event_dict],
 		game_state_provider,
@@ -238,7 +242,7 @@ func _build_execution_context(current_tag: String, game_state_provider: Variant)
 func serialize() -> Dictionary:
 	return {
 		"id": id,
-		"timelineId": timeline_id,
+		"timelineId": _timeline.id,
 		"elapsed": _elapsed,
 		"loopsCompleted": _loops_completed,
 		"state": _state,

@@ -2598,8 +2598,7 @@ func _on_keyframe_target_field_changed(actor_idx: int, kf_idx: int, field: Strin
 ## SkillPreviewTimeline 在 track 里找下一个空闲 time_ms。
 ##
 ## 算 occupy / 找冲突的纯逻辑住在 SkillPreviewValidation, 这里只是注入
-## skill_resolver = 实例级 skill lookup, 不让 UI 文件再依赖
-## TimelineRegistry / HexBattleCooldownSystem。
+## skill_resolver = 实例级 skill lookup, 不让 UI 文件再依赖 HexBattleCooldownSystem。
 func _next_free_time_ms_in_track(
 	track: Array, candidate_skill_id: String, start_ms: int, skip_kf_idx: int = -1
 ) -> int:
@@ -2680,7 +2679,6 @@ func _reset_world_to_model_unguarded() -> bool:
 		_queue_inspector_rebuild()
 	var collision_detector := MobaCollisionDetector.new()
 	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
-	HexBattleAllSkills.register_all_timelines()
 
 	for i in _actors.size():
 		_spawn_one_actor(i)
