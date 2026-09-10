@@ -1,9 +1,9 @@
 extends Node
 
 
-## Mock Actor 实现 IAbilitySetOwner 协议
+## Mock Actor: 最小 BattleActor (只实现 get_ability_set)
 class TestActor:
-	extends Actor
+	extends BattleActor
 
 	var _ability_set: AbilitySet
 
@@ -67,7 +67,6 @@ func _test_apply_loose() -> void:
 	var ability_set := AbilitySet.create("temp", null)
 	var actor := _create_test_actor(ability_set)
 	var actor_id := actor.get_id()
-	ability_set.owner_actor_id = actor_id
 	var ctx := _build_context({"kind": "apply"})
 
 	var action := TagAction.ApplyTagAction.new(
@@ -86,7 +85,6 @@ func _test_apply_auto_duration() -> void:
 	var ability_set := AbilitySet.create("temp", null)
 	var actor := _create_test_actor(ability_set)
 	var actor_id := actor.get_id()
-	ability_set.owner_actor_id = actor_id
 	var ctx := _build_context({"kind": "apply", "logicTime": 1.0})
 
 	var action := TagAction.ApplyTagAction.new(
@@ -108,7 +106,6 @@ func _test_remove_tag() -> void:
 	var ability_set := AbilitySet.create("temp", null)
 	var actor := _create_test_actor(ability_set)
 	var actor_id := actor.get_id()
-	ability_set.owner_actor_id = actor_id
 	ability_set.add_loose_tag("charge", 3)
 	var ctx := _build_context({"kind": "remove"})
 
@@ -128,7 +125,6 @@ func _test_has_tag_action() -> void:
 	var ability_set := AbilitySet.create("temp", null)
 	var actor := _create_test_actor(ability_set)
 	var actor_id := actor.get_id()
-	ability_set.owner_actor_id = actor_id
 	ability_set.add_loose_tag("ready", 1)
 	var ctx := _build_context({"kind": "check"})
 

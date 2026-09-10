@@ -35,15 +35,13 @@ class Result extends RefCounted:
 ##
 ## 调用方需对每个 broken=true 的记录在伤害事件 push 之后、actor 移除之前
 ## 触发 ShieldComponent.on_break 回调并 expire 对应 ability。
-static func resolve(actor: Object, incoming_damage: float, damage_type: String) -> Result:
+static func resolve(actor: Actor, incoming_damage: float, damage_type: String) -> Result:
 	var result := Result.new()
 	if actor == null or incoming_damage <= 0.0:
 		result.life_damage = maxf(0.0, incoming_damage)
 		return result
 
-	var ability_set: AbilitySet = null
-	if "ability_set" in actor:
-		ability_set = actor.get("ability_set") as AbilitySet
+	var ability_set := BattleActor.ability_set_of(actor)
 	if ability_set == null:
 		result.life_damage = incoming_damage
 		return result
@@ -82,12 +80,10 @@ static func resolve(actor: Object, incoming_damage: float, damage_type: String) 
 ## 与实际消耗逻辑同源 —— 只算真挡得住这次类型伤害的盾。
 ## 用例:Execute 按「有效血量」判斩杀(PURE 只被 universal/["all"] 盾挡,
 ## physical/magical 盾不计入)。不产生副作用,不改护盾状态。
-static func sum_absorbable_capacity(actor: Object, damage_type: String) -> float:
+static func sum_absorbable_capacity(actor: Actor, damage_type: String) -> float:
 	if actor == null:
 		return 0.0
-	var ability_set: AbilitySet = null
-	if "ability_set" in actor:
-		ability_set = actor.get("ability_set") as AbilitySet
+	var ability_set := BattleActor.ability_set_of(actor)
 	if ability_set == null:
 		return 0.0
 	var total := 0.0

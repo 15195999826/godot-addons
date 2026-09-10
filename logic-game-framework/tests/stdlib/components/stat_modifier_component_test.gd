@@ -14,7 +14,7 @@ extends Node
 
 
 class TestActor:
-	extends Actor
+	extends BattleActor
 
 	var ability_set: AbilitySet
 	var attribute_set: HexBattleCharacterAttributeSet
@@ -26,6 +26,9 @@ class TestActor:
 
 	func get_ability_set() -> AbilitySet:
 		return ability_set
+
+	func get_attribute_set() -> BaseGeneratedAttributeSet:
+		return attribute_set
 
 
 var _instance: GameplayInstance
@@ -53,7 +56,6 @@ func _teardown() -> void:
 
 func _make_actor() -> TestActor:
 	var actor: TestActor = _instance.add_actor(TestActor.new("test_actor")) as TestActor
-	actor.ability_set.owner_actor_id = actor.get_id()
 	return actor
 
 

@@ -81,20 +81,19 @@ func on_remove(_context: AbilityLifecycleContext) -> void:
 ##
 ## 返回 null 的条件：
 ## - actor 不存在（已从 GameWorld 移除 / 测试未注册）
+## - actor 不是 BattleActor 或没有 AbilitySet（纯数据 actor）
 ## - actor 覆盖了 is_pre_event_responsive 返回 false（如死亡/沉默）
 ## - ability 已从 AbilitySet._abilities 移除（revoke 后的幽灵 handler 兜底）
 ##
 ## 任一条件不满足 → 上层 lambda 返回 pass_intent，handler 不执行。
 static func _rebuild_context(owner_id: String, ability_id: String) -> AbilityLifecycleContext:
-	var actor := GameWorld.get_actor(owner_id)
+	var actor := GameWorld.get_actor(owner_id) as BattleActor
 	if actor == null:
 		return null
 	if not actor.is_pre_event_responsive():
 		return null
 
-	var ab_set: AbilitySet = null
-	if "ability_set" in actor:
-		ab_set = actor.get("ability_set")
+	var ab_set := actor.get_ability_set()
 	if ab_set == null:
 		return null
 
@@ -102,11 +101,9 @@ static func _rebuild_context(owner_id: String, ability_id: String) -> AbilityLif
 	if ability == null:
 		return null
 
-	var attr_set: BaseGeneratedAttributeSet = null
-	if "attribute_set" in actor:
-		attr_set = actor.get("attribute_set")
-
-	return AbilityLifecycleContext.new(owner_id, attr_set, ability, ab_set, GameWorld.event_processor)
+	return AbilityLifecycleContext.new(
+		owner_id, actor.get_attribute_set(), ability, ab_set, GameWorld.event_processor
+	)
 
 
 func serialize() -> Dictionary:

@@ -37,6 +37,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/resolvers/resolvers_test.gd",
 	"res://addons/logic-game-framework/tests/core/timeline/timeline_test.gd",
 	"res://addons/logic-game-framework/tests/core/timeline/timeline_loop_test.gd",
+	"res://addons/logic-game-framework/tests/core/entity/battle_actor_test.gd",
 	"res://addons/logic-game-framework/tests/core/world/world_test.gd",
 	"res://addons/logic-game-framework/tests/core/world/refcount_release_test.gd",
 	"res://addons/logic-game-framework/tests/core/ai_decision/decision_pipeline_test.gd",

@@ -166,7 +166,7 @@ func _subscribe_actor(actor: Actor) -> void:
 
 
 func _record_existing_actor_abilities(actor: Actor) -> void:
-	var ability_set := IAbilitySetOwner.get_ability_set(actor)
+	var ability_set := BattleActor.ability_set_of(actor)
 	if ability_set == null:
 		return
 	for ability in ability_set.get_abilities():

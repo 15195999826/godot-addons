@@ -68,8 +68,8 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		all_events.append(dmg_evt)
 
 		# ===== 死亡判定 =====
-		if hp_after <= 0.0 and not target.is_dead():
-			target.mark_dead()
+		# mark_dead 自带首次闩, 返回 true 即本次是首次进入死亡态 —— 死亡事件只发一遍。
+		if hp_after <= 0.0 and target.mark_dead():
 			var died := Dota2BattleEvents.make_unit_died(target_id, source_id)
 			event_collector.push(died)
 			all_events.append(died)

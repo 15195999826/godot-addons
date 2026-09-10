@@ -19,7 +19,7 @@ const REMOVE_ALL_STACKS := -1
 
 static func _get_ability_set_for_target(_ctx: ExecutionContext, target_id: String) -> AbilitySet:
 	var actor := GameWorld.get_actor(target_id)
-	return IAbilitySetOwner.get_ability_set(actor)
+	return BattleActor.ability_set_of(actor)
 
 static func _get_logic_time(ctx: ExecutionContext) -> float:
 	var event := ctx.get_current_event()

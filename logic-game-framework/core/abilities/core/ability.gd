@@ -151,6 +151,14 @@ func get_executing_instances() -> Array[AbilityExecutionInstance]:
 func get_all_execution_instances() -> Array[AbilityExecutionInstance]:
 	return _execution_instances
 
+## 是否有执行中的 instance。与 get_executing_instances().size() > 0 同义，但不构造
+## 中间数组——战斗主循环每 actor 每 tick 都问一次。
+func has_executing_instance() -> bool:
+	for instance in _execution_instances:
+		if _is_executing_instance(instance):
+			return true
+	return false
+
 func cancel_all_executions(game_state_provider: Variant = null) -> void:
 	for instance in _execution_instances:
 		if instance:
@@ -293,18 +301,17 @@ func remove_effects() -> void:
 ## 因此通过 GameWorld.get_actor(owner_actor_id) 查到 actor 并取其 attribute_set / ability_set 即可；
 ## 其它字段（owner_actor_id / event_processor）on_remove 路径上无消费者，传 null 安全。
 ##
-## 若 actor 未注册到 GameWorld（如隔离单元测试），attribute_set / ability_set 为 null —
-## 对 no-op 的 on_remove（如 PreEventComponent / TestComponent）完全不影响；
-## 对会读取这些字段的 component（StatModifier / Tag / DynamicStatModifier），测试须注册 mock actor。
+## 若 actor 未注册到 GameWorld（如隔离单元测试）或不是 BattleActor，attribute_set /
+## ability_set 为 null —— 对 no-op 的 on_remove（如 PreEventComponent / TestComponent）
+## 完全不影响；对会读取这些字段的 component（StatModifier / Tag / DynamicStatModifier），
+## 测试须注册 mock actor。
 func _build_remove_context() -> AbilityLifecycleContext:
 	var attr_set: BaseGeneratedAttributeSet = null
 	var ab_set: AbilitySet = null
-	var actor := GameWorld.get_actor(owner_actor_id)
+	var actor := GameWorld.get_actor(owner_actor_id) as BattleActor
 	if actor != null:
-		if "attribute_set" in actor:
-			attr_set = actor.get("attribute_set")
-		if "ability_set" in actor:
-			ab_set = actor.get("ability_set")
+		attr_set = actor.get_attribute_set()
+		ab_set = actor.get_ability_set()
 	return AbilityLifecycleContext.new(owner_actor_id, attr_set, self, ab_set, null)
 
 func expire(reason: String) -> void:

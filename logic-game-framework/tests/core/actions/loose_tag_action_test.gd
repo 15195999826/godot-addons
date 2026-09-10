@@ -8,7 +8,7 @@ extends Node
 ## - Remove 多 stack 时按数量扣，全清用 REMOVE_ALL_STACKS
 
 class TestActor:
-	extends Actor
+	extends BattleActor
 
 	var _ability_set: AbilitySet
 
@@ -53,7 +53,6 @@ func _teardown() -> void:
 func _make_actor() -> Array:
 	var aset := AbilitySet.create("dummy", null)
 	var actor: TestActor = _instance.add_actor(TestActor.new(aset)) as TestActor
-	aset.owner_actor_id = actor.get_id()
 	return [aset, actor.get_id()]
 
 

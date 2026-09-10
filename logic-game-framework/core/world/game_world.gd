@@ -125,10 +125,14 @@ func _matches_instance_type(instance: GameplayInstance, type_value: String) -> b
 ## Actor ID 格式: "{instance_id}:{local_id}"
 ## 如果 ID 格式无效或找不到，返回 null
 func get_actor(actor_id: String) -> Actor:
-	var parsed: Dictionary = ActorId.parse(actor_id)
-	if parsed.instance_id.is_empty():
-		return null
-	var instance := get_instance_by_id(parsed.instance_id)
+	var instance := get_instance_of_actor(actor_id)
 	if instance == null:
 		return null
 	return instance.get_actor(actor_id)
+
+
+## 通过完整 Actor ID 反查它所属的 GameplayInstance
+## 与 Actor.get_owner_gameplay_instance() 同一机制（id 自描述归属），但不需要先拿到 Actor。
+## 如果 ID 格式无效或实例不存在，返回 null
+func get_instance_of_actor(actor_id: String) -> GameplayInstance:
+	return get_instance_by_id(ActorId.extract_instance_id(actor_id))

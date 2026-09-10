@@ -21,7 +21,7 @@ const REMOVE_ALL_STACKS := -1
 
 static func _get_ability_set(target_id: String) -> AbilitySet:
 	var actor := GameWorld.get_actor(target_id)
-	return IAbilitySetOwner.get_ability_set(actor)
+	return BattleActor.ability_set_of(actor)
 
 
 class Apply:

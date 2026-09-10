@@ -43,6 +43,12 @@ func _init(world: Dota2WorldGameplayInstance, opts: Dictionary = {}) -> void:
 	_world_instance = world
 	_tick_interval = float(opts.get("tick_interval_ms", DOTA2_TICK_INTERVAL_MS))
 	movement_adapter = Dota2MovementAdapter.new()
+	# 本 example 的产出物是 Dota2LogicFrame，不是可播的战斗录像：开战快照在 spawn 之前
+	# 拍（恒空）、无 grid map_config、无 positionFormats，finish() 的返回值所有调用点都丢弃。
+	# 开着 recorder 只会让 BattleActor 的默认订阅把 attributeChanged / tagChanged 灌进
+	# 同一个 event_collector，挤爆 lane 场景那 14 行 debug 面板，并把死兵的订阅一路留到战斗结束
+	# （死兵走 remove_actor，没有对应的 recorder unregister）。
+	_recording_enabled = false
 
 
 # ========== 生命周期 ==========
@@ -156,7 +162,7 @@ func _advance_intents(dt_seconds: float, step_ms: float, logic_time_ms: float) -
 
 	# 5c. 推进已激活的基础攻击 Timeline 执行（到 attack point 触发伤害 Action）。
 	for unit in alive:
-		if unit.ability_set != null and _has_active_execution(unit):
+		if unit.ability_set != null and unit.ability_set.has_executing_instances():
 			unit.ability_set.tick_executions(step_ms, _world_instance)
 
 	# 5d. ATTACK_TARGET：在攻击距离内且基础攻击合法 → 发 ABILITY_ACTIVATE_EVENT
@@ -172,7 +178,7 @@ func _advance_intents(dt_seconds: float, step_ms: float, logic_time_ms: float) -
 			continue
 		if not Dota2TargetingSystem.is_in_attack_range(_world_instance, unit, target_id):
 			continue
-		if _has_active_execution(unit):
+		if unit.ability_set != null and unit.ability_set.has_executing_instances():
 			continue
 		_request_basic_attack(unit, target_id, logic_time_ms)
 
@@ -216,13 +222,6 @@ func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_m
 		ability.id, unit.get_id(), logic_time_ms, target_id
 	).to_dict()
 	unit.ability_set.receive_event(event, _world_instance)
-
-
-func _has_active_execution(unit: Dota2UnitActor) -> bool:
-	for ability in unit.ability_set.get_abilities():
-		if ability.get_executing_instances().size() > 0:
-			return true
-	return false
 
 
 # ========== step 7：death cleanup ==========
@@ -279,7 +278,7 @@ func _build_actor_snapshot(unit: Dota2UnitActor) -> Dictionary:
 		"movement_goal_x": ms.get("goal_x", 0.0),
 		"movement_goal_y": ms.get("goal_y", 0.0),
 		"movement_block_reason": ms.get("block_reason", ""),
-		"attack_executing": _has_active_execution(unit),
+		"attack_executing": unit.ability_set != null and unit.ability_set.has_executing_instances(),
 		"attack_on_cooldown": on_cd,
 		"attack_target_id": unit.debug_current_target_id,
 	}

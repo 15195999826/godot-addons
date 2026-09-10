@@ -1,7 +1,8 @@
 ## CharacterActor - 角色 Actor
 ##
 ## HexBattleActor 的子类, 实现 ATB 系统、AI 策略、职业技能。
-## 公共基础设施 (hex_position / ability_set / is_dead / check_death / 录像) 由 HexBattleActor 提供。
+## 公共基础设施 (hex_position / ability_set / 录像) 由 HexBattleActor 提供,
+## 死亡锁存与 team_id 由更上层的 BattleActor 提供。
 class_name CharacterActor
 extends HexBattleActor
 
@@ -27,9 +28,6 @@ var _move_ability_id: String = ""
 
 ## 职业技能 Ability ID
 var _skill_ability_id: String = ""
-
-## 队伍 ID
-var _team_id: int = -1
 
 ## ATB 行动条 (0-100)
 var _atb_gauge: float = 0.0
@@ -116,15 +114,10 @@ func get_attribute_set() -> HexBattleActorAttributeSet:
 
 # ========== 队伍 ==========
 
-func set_team_id(id: int) -> void:
-	_team_id = id
-	_team = str(id)
+func set_team_id(p_team_id: int) -> void:
+	super.set_team_id(p_team_id)
 	# §0.3: 队伍变化重设默认朝向 (A 队 EAST, B 队 WEST)。
-	_facing_direction = HexFacing.default_for_team(id)
-
-
-func get_team_id() -> int:
-	return _team_id
+	_facing_direction = HexFacing.default_for_team(p_team_id)
 
 
 # ========== Facing (§0.3) ==========
@@ -206,11 +199,6 @@ func reset_atb() -> void:
 ## 配置 ID 用职业名, 让 replay 能区分不同职业的视觉 / 数值
 func _get_config_id() -> String:
 	return HexBattleClassConfig.class_to_string(character_class)
-
-
-## 队伍 ID
-func _get_team_int() -> int:
-	return _team_id
 
 
 ## 角色 attribute snapshot 含完整 stats + facing (Phase F: replay 重建朝向必须从 init data 读)

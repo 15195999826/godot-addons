@@ -7,14 +7,16 @@ extends Node
 ## 因此每个测试都走完整注册流程，不能直接 new AbilitySet 用硬编码 owner_id。
 
 class MockActor:
-	extends Actor
+	extends BattleActor
 
-	## 必须叫 ability_set（生产代码 CharacterActor 也是这个字段名）
-	## PreEventComponent._rebuild_context 通过 `"ability_set" in actor` 探测
+	## PreEventComponent._rebuild_context 走 BattleActor.get_ability_set()
 	var ability_set: AbilitySet
 
 	func _init() -> void:
 		type = "MockActor"
+
+	func get_ability_set() -> AbilitySet:
+		return ability_set
 
 
 class MockInstance:
@@ -43,6 +45,7 @@ func _init() -> void:
 	TestFramework.register_test("PreEventComponent - registers handler when granted", _test_registration)
 	TestFramework.register_test("PreEventComponent - unregisters handler when revoked", _test_unregistration)
 	TestFramework.register_test("PreEventComponent - modifies event values", _test_modify_event)
+	TestFramework.register_test("PreEventComponent - dead actor stops responding", _test_dead_actor_stops_responding)
 	TestFramework.register_test("PreEventComponent - cancels event", _test_cancel_event)
 
 
@@ -175,4 +178,39 @@ func _test_cancel_event() -> void:
 
 	TestFramework.assert_true(mutable.cancelled)
 	TestFramework.assert_equal("immune", mutable.cancel_reason)
+	_teardown_env(env)
+
+
+## 死者不再触发 PreEvent handler（反伤 / 护盾等被动死后失效）。
+##
+## 真正执行短路的是 `PreEventComponent._rebuild_context` 里那句
+## `if not actor.is_pre_event_responsive(): return null`，所以断言必须打在派发结果上——
+## 只断言 `is_pre_event_responsive()` 的返回值钉不住这条链。
+func _test_dead_actor_stops_responding() -> void:
+	var env := _setup_env()
+
+	var component_config := PreEventConfig.new(
+		"pre_damage",
+		func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
+			return EventPhase.modify_intent(ctx.ability.id, [
+				Modification.multiply("damage", 0.5),
+			])
+	)
+	var ability_config := AbilityConfig.new("buff_thorns", "", "", "", [], [], [component_config])
+	env.ability_set.grant_ability(Ability.new(ability_config, env.owner_id))
+
+	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	TestFramework.assert_near(
+		float(env.event_processor.process_pre_event(event, env.state).get_current_value("damage")),
+		50.0, 0.0001, "活着时 handler 应生效")
+
+	env.actor.mark_dead()
+	TestFramework.assert_near(
+		float(env.event_processor.process_pre_event(event, env.state).get_current_value("damage")),
+		100.0, 0.0001, "死后 handler 不应再改事件")
+
+	env.actor.set_death_latch(false)
+	TestFramework.assert_near(
+		float(env.event_processor.process_pre_event(event, env.state).get_current_value("damage")),
+		50.0, 0.0001, "解闩后 handler 应恢复（注册没被销毁）")
 	_teardown_env(env)

@@ -82,7 +82,7 @@ func tick_once() -> void:
 
 	# ATB 与技能执行互斥: 施法期间 ATB 冻结, 不继续充能(经典 ATB 模式)。
 	for actor in get_alive_characters():
-		if HexBattleProcedure.tick_actor_ability_runtime(actor, _tick_interval, cur_logic_time, world):
+		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time, world):
 			continue
 		actor.accumulate_atb(_tick_interval)
 		if actor.can_act():
@@ -102,10 +102,9 @@ func tick_once() -> void:
 			var h := actor as HexBattleActor
 			if seen_ids.has(h.get_id()):
 				continue
-			# CharacterActor mid-spawn: tick + executions (与 production 主循环对齐, 但不进 ATB/AI)
-			# EnvironmentActor (fire tile): 同上 tick + executions
-			h.ability_set.tick(_tick_interval, cur_logic_time)
-			h.ability_set.tick_executions(_tick_interval, world)
+			# CharacterActor mid-spawn: 与 production 主循环同一条 runtime tick, 但不进 ATB/AI
+			# EnvironmentActor (fire tile): 同上
+			h.ability_set.tick_runtime(_tick_interval, cur_logic_time, world)
 
 	record_current_frame_events()
 
@@ -167,42 +166,6 @@ func get_result() -> String:
 
 
 # ========== 战斗主循环辅助 ==========
-
-static func actor_has_executing_ability(actor: CharacterActor) -> bool:
-	for ability in actor.ability_set.get_abilities():
-		if ability.get_executing_instances().size() > 0:
-			return true
-	return false
-
-
-static func actor_has_blocking_execution(actor: CharacterActor) -> bool:
-	for ability in actor.ability_set.get_abilities():
-		if ability.has_ability_tag(HexBattleSkillTags.TAG_INTRINSIC):
-			continue
-		if ability.get_executing_instances().size() > 0:
-			return true
-	return false
-
-
-## 正式 hex battle 的 ability runtime tick。
-## SkillPreviewProcedure 复用这里, 只替换"选择/启动 action"阶段, 不另写 ability tick 合同。
-static func tick_actor_ability_runtime(
-	actor: CharacterActor,
-	tick_interval: float,
-	logic_time: float,
-	world: HexWorldGameplayInstance,
-) -> bool:
-	actor.ability_set.tick(tick_interval, logic_time)
-	var has_any_execution := HexBattleProcedure.actor_has_executing_ability(actor)
-	var has_blocking_execution := HexBattleProcedure.actor_has_blocking_execution(actor)
-	if has_any_execution:
-		actor.ability_set.tick_executions(tick_interval, world)
-	return has_blocking_execution
-
-
-func _is_actor_executing(actor: CharacterActor) -> bool:
-	return HexBattleProcedure.actor_has_blocking_execution(actor)
-
 
 func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 	var world := _world_instance

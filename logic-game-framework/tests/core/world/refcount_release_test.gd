@@ -26,8 +26,9 @@ const TAG_POST := "release_probe_post"
 
 
 ## 带 ability_set + attribute_set 的探针 actor。
+## 生命周期 / 录像订阅全走 BattleActor 默认实现——本测试也是那套默认订阅的释放硬关卡。
 class ReleaseProbeActor:
-	extends Actor
+	extends BattleActor
 
 	var ability_set: AbilitySet
 	var attribute_set: ExampleHeroAttributeSet
@@ -39,24 +40,15 @@ class ReleaseProbeActor:
 		attribute_set = ExampleHeroAttributeSet.new()
 		ability_set = AbilitySet.create("", attribute_set)
 
-	func _on_id_assigned() -> void:
-		ability_set.owner_actor_id = get_id()
-		ability_set.tag_container.owner_id = get_id()
-		attribute_set.actor_id = get_id()
-
 	func get_ability_set() -> AbilitySet:
 		return ability_set
 
-	func get_attribute_snapshot() -> Dictionary:
-		return {"attack": attribute_set.attack, "max_hp": attribute_set.max_hp}
+	func get_attribute_set() -> BaseGeneratedAttributeSet:
+		return attribute_set
 
 	func setup_recording(ctx: RecordingContext) -> Array[Callable]:
 		probe_sink["recording_context:%s" % get_id()] = weakref(ctx)
-		var unsubscribes: Array[Callable] = []
-		unsubscribes.append_array(RecordingUtils.record_attribute_changes(attribute_set, ctx))
-		unsubscribes.append_array(RecordingUtils.record_ability_set_changes(ability_set, ctx))
-		unsubscribes.append_array(RecordingUtils.record_actor_lifecycle(self, ctx))
-		return unsubscribes
+		return super.setup_recording(ctx)
 
 
 ## 选中 ability 拥有者本人（无状态，只读 ctx）。

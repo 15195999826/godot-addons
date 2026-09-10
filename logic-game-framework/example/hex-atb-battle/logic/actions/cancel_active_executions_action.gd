@@ -29,7 +29,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		self_ability_id = ctx.ability_ref.id
 	for target_id in get_targets(ctx):
 		var actor := GameWorld.get_actor(target_id)
-		var ability_set := IAbilitySetOwner.get_ability_set(actor)
+		var ability_set := BattleActor.ability_set_of(actor)
 		if ability_set == null:
 			continue
 		for ability in ability_set.get_abilities():

@@ -42,7 +42,7 @@ func get_actor(actor_id: String) -> Dota2BattleActor:
 
 
 ## 存活 actor id 集合，服务 EventProcessor.process_post_event 广播。
-## 过滤 ability_set == null 的纯 data actor（post_event 走 IAbilitySetOwner 后 assert 非 null）。
+## 过滤 ability_set == null 的纯 data actor（post_event 走 BattleActor.ability_set_of 后 assert 非 null）。
 func get_alive_actor_ids() -> Array[String]:
 	var result: Array[String] = []
 	for actor in get_actors():

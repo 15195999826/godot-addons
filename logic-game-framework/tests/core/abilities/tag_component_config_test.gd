@@ -14,10 +14,8 @@ const REASON_TAG := "test_reason"
 
 
 class TestActor:
-	extends Actor
+	extends BattleActor
 
-	# Ability._build_remove_context 使用 "ability_set" in actor 属性检测,
-	# 所以这里暴露为公共属性而非私有 + getter。
 	var ability_set: AbilitySet
 
 	func _init(ability_set_value: AbilitySet) -> void:
@@ -52,7 +50,6 @@ func _teardown() -> void:
 func _make_actor() -> Array:
 	var aset := AbilitySet.create("dummy", null)
 	var actor: TestActor = _instance.add_actor(TestActor.new(aset)) as TestActor
-	aset.owner_actor_id = actor.get_id()
 	return [aset, actor.get_id()]
 
 

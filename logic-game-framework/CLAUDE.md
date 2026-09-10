@@ -12,7 +12,7 @@ Godot 回合制 / ATB 战斗框架的核心模块依赖与数据流总览。
 graph TB
     subgraph "Core"
         World[GameWorld<br/>Autoload]
-        Entity[Entity System<br/>Actor/System]
+        Entity[Entity System<br/>Actor/BattleActor/System]
         Attributes[Attribute System<br/>RawAttributeSet]
         Abilities[Ability System<br/>Ability/AbilitySet]
         Events[Event System<br/>EventProcessor]

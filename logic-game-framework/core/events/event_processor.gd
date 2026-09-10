@@ -22,7 +22,7 @@
 ##
 ## Post 阶段（process_post_event）：
 ## - 在效果应用**之后**调用
-## - 通过 GameWorld.get_actor() + IAbilitySetOwner 广播事件到所有存活角色
+## - 通过 GameWorld.get_actor() + BattleActor.ability_set_of() 广播事件到所有存活角色
 ## - 可能触发被动技能（如反伤、吸血）产生新事件
 ##
 ## ========== 使用示例 ==========
@@ -244,8 +244,13 @@ func _process_post_event_impl(event_dict: Dictionary, actor_ids: Array[String], 
 		var actor: Actor = GameWorld.get_actor(actor_id)
 		if actor == null:
 			continue
-		var ability_set := IAbilitySetOwner.get_ability_set(actor)
-		Log.assert_crash(ability_set != null, "EventProcessor", "Actor '%s' in actor_ids must implement IAbilitySetOwner" % actor_id)
+		var ability_set := BattleActor.ability_set_of(actor)
+		if ability_set == null:
+			# assert 在 debug 下只中止它自己那一帧，不接管控制流——不 continue 的话
+			# 下一行会对 null 调方法，把这条清楚的报错埋进一条无关的引擎报错里。
+			Log.assert_crash(false, "EventProcessor",
+				"Actor '%s' in actor_ids has no AbilitySet (pure data actor?)" % actor_id)
+			continue
 		ability_set.receive_event(event_dict, game_state_provider)
 
 	_current_depth -= 1

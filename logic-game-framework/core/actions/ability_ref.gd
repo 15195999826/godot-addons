@@ -8,7 +8,7 @@ extends RefCounted
 ##
 ## 解析路径：
 ## GameWorld.get_actor(owner_actor_id) → Actor
-## IAbilitySetOwner.get_ability_set(actor) → AbilitySet
+## BattleActor.ability_set_of(actor) → AbilitySet
 ## ability_set.find_ability_by_id(id) → Ability
 
 ## Ability 实例 ID
@@ -65,13 +65,13 @@ static func create(
 ##
 ## 解析路径：
 ## 1. GameWorld.get_actor(owner_actor_id) → Actor
-## 2. IAbilitySetOwner.get_ability_set(actor) → AbilitySet
+## 2. BattleActor.ability_set_of(actor) → AbilitySet
 ## 3. ability_set.find_ability_by_id(id) → Ability
 ##
 ## 返回 null 的情况：
 ## - owner_actor_id 为空
 ## - Actor 不存在
-## - Actor 未实现 IAbilitySetOwner 协议
+## - Actor 不是 BattleActor 或没有 AbilitySet（纯数据 actor）
 ## - AbilitySet 中找不到对应 Ability
 func resolve() -> Ability:
 	if owner_actor_id.is_empty():
@@ -81,7 +81,7 @@ func resolve() -> Ability:
 	if actor == null:
 		return null
 	
-	var ability_set := IAbilitySetOwner.get_ability_set(actor)
+	var ability_set := BattleActor.ability_set_of(actor)
 	if ability_set == null:
 		return null
 	

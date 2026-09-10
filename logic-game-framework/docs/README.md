@@ -160,7 +160,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
     
     # ... 业务逻辑
     
-    # Post 阶段：EventProcessor 通过 GameWorld.get_actor() + IAbilitySetOwner 获取 AbilitySet
+    # Post 阶段：EventProcessor 通过 GameWorld.get_actor() + BattleActor.ability_set_of() 获取 AbilitySet
     event_processor.process_post_event(damage_event, alive_actor_ids, battle)
 ```
 
@@ -653,7 +653,7 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 
 框架演进中固化下来的不可违反约束（蒸馏自历史架构决策，违反会重新引入已根治的 bug）：
 
-- **Ability lifecycle hook**：框架层只暴露中性的 `is_pre_event_responsive()` 钩子、永不内置"死亡 / 沉默"等领域语义，由项目层 override 决定 PreEvent 是否短路响应 —— 框架不该代管亡语的 `alive_actor_ids` 时序契约。
+- **Ability lifecycle hook**：`is_pre_event_responsive()` 是中性钩子，`Actor` 恒 `true`、不含任何领域语义。`BattleActor` 作为 **opt-in** 的战斗基类只提供一个默认答案（`not is_dead()`），项目层照旧 override 说了算 —— 想让亡语在死后再吃一次 PreEvent，覆盖回 `true` 即可。核心约束不变：框架不代管亡语的 `alive_actor_ids` 时序契约，`check_death` 只按 hp 锁存一次，"留尸体还是 tick 末移除"是项目层决定。
 - **Ability 状态不随死亡清除**：死亡时绝不 `revoke_ability`（那会清掉冷却 / execution / modifier，破坏复活语义）。三层分离 —— Ability 本体跟 actor 永存、PreEvent handler 跟战斗走（`end()` 时 `remove_handlers_by_owner_id`）、运行时响应跟 `is_dead` 状态走。
 - **Config 驱动跨属性 clamp**：跨属性约束（如 hp ≤ max_hp）必须声明在 attribute config 的 `maxRef` / `minRef`、由生成器产出 `register_cross_attr_clamp` 调用；**禁止**在 Actor 里用 `set_pre_change` 注入 Callable —— lambda 捕获 owner 会形成无法 GC 的闭包循环。
 - **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 `WeakRef`（类型明确时，如 `AbilityComponent._ability`）或调用链参数流（类型是 Variant 接口时，如 `game_state_provider` 不缓存而每次 tick 传入）—— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
@@ -665,7 +665,7 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 
 ## 版本历史
 
-- **v0.4.0** - Actor ID 规范化，GameWorld.get_actor() 统一入口，IAbilitySetOwner 接口模式
+- **v0.4.0** - Actor ID 规范化，GameWorld.get_actor() 统一入口，BattleActor 战斗骨架基类
 - **v0.3.0** - 重命名 `gameplay_state` → `game_state_provider`，添加 GameStateUtils 最佳实践
 - **v0.2.0** - Action 构造函数重构：Dictionary → 类型化参数
 - **v0.1.0** - 初始版本，从 TypeScript 迁移
@@ -699,7 +699,7 @@ GameWorld (Autoload 单例)
                     └── Actor
                           ├── get_id() → "{instance_id}:{local_id}"
                           ├── get_local_id() → "local_id"
-                          └── get_ability_set()  ← IAbilitySetOwner 协议
+                          └── (BattleActor) get_ability_set() / get_attribute_set()
 ```
 
 ### 查询 Actor
@@ -708,8 +708,8 @@ GameWorld (Autoload 单例)
 
 ```gdscript
 # ✅ 正确：框架层使用 GameWorld 查询
-var actor = GameWorld.get_actor(actor_ref.id)
-var ability_set = IAbilitySetOwner.get_ability_set(actor)
+var actor := GameWorld.get_actor(actor_ref.id)
+var ability_set := BattleActor.ability_set_of(actor)
 
 # ❌ 错误：框架层不应依赖 game_state_provider 的具体类型
 var actor = game_state_provider.get_actor(actor_ref.id)
@@ -737,29 +737,42 @@ var actor := CharacterActor.new(class_config)
 # actor.get_id() → "Character_001"（缺少 instance_id 前缀）
 ```
 
-### IAbilitySetOwner 协议
+### BattleActor 协议
 
-Actor 如果持有 AbilitySet，需要实现 `get_ability_set()` 方法：
+参与战斗管线的 Actor 继承 `BattleActor`（`core/entity/battle_actor.gd`）。基类**不**声明
+`ability_set` / `attribute_set` 字段 —— 子类各持强类型字段，用协变返回覆盖两个虚函数：
 
 ```gdscript
 class_name CharacterActor
-extends Actor
+extends BattleActor
 
 var ability_set: BattleAbilitySet
+var attribute_set: HexBattleCharacterAttributeSet
 
-## 实现 IAbilitySetOwner 协议
 func get_ability_set() -> BattleAbilitySet:
     return ability_set
+
+func get_attribute_set() -> HexBattleActorAttributeSet:
+    return attribute_set
 ```
 
-框架层通过 `IAbilitySetOwner` 工具类安全获取：
+两个虚函数默认返回 `null`：只想共享位置 / 录像形状的**纯数据 actor**（overworld 玩家、NPC）
+直接继承即可，`check_death()` 对它们恒返回 false（`has_hp()` 把"没血条"与"血条为 0"分开），
+`setup_recording()` 只订阅生命周期一条。
+
+框架层拿到的是 `Actor` 基类引用，用静态查询安全取 AbilitySet：
 
 ```gdscript
-# 安全获取，未实现协议返回 null
-var ability_set := IAbilitySetOwner.get_ability_set(actor)
+# 非 BattleActor（或纯数据 BattleActor）返回 null
+var ability_set := BattleActor.ability_set_of(actor)
 if ability_set != null:
-    ability_set.apply_tag("buff", 1)
+    ability_set.add_loose_tag("buff", 1)
 ```
+
+回合 / ATB 主循环里，一帧 ability runtime 走 `AbilitySet.tick_runtime(dt, logic_time, provider) -> bool`：
+内部顺序固定为 `tick` → 算 blocking → `tick_executions`，返回本帧是否有阻塞执行。
+"哪些 ability 算阻塞"由项目子类覆盖 `_is_blocking_execution(ability)` 表达（默认全部阻塞）。
+自行编排相位的实时 example（dota2）不走它，直接用 `has_executing_instances()` + `tick_executions()`。
 
 ### 设计原则
 
@@ -768,7 +781,7 @@ if ability_set != null:
 | **GameWorld 是唯一入口** | 框架层通过 GameWorld.get_actor() 查询 |
 | **GameplayInstance 持有 Actor** | Actor 生命周期绑定到实例 |
 | **ID 自描述归属** | `{instance_id}:{local_id}` 格式 |
-| **接口协议化** | 使用 `IXxx` 静态工具类检测协议 |
+| **Actor 中性 / BattleActor opt-in** | 战斗设施（死亡锁存 / AbilitySet / 录像默认订阅）住子类，`Actor` 不假设任何玩法 |
 
 ## 未来规划 / 已知债务
 

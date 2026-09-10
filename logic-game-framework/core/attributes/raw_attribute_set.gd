@@ -131,7 +131,7 @@ func set_base(attr_name: String, value: float) -> void:
 		return
 
 	# 记录所有属性 before 值
-	var before := _snapshot_all_values()
+	var before := snapshot_current_values()
 
 	_base_values[attr_name] = clamped_value
 	_mark_dirty(attr_name)
@@ -233,7 +233,7 @@ func add_modifier(modifier: AttributeModifier) -> void:
 			Log.warning("AttributeSet", "Modifier already exists: %s" % modifier.id)
 			return
 
-	var before := _snapshot_all_values()
+	var before := snapshot_current_values()
 	mods.append(modifier)
 	_add_to_source_index(modifier)
 	_mark_dirty(modifier.attribute_name)
@@ -251,7 +251,7 @@ func remove_modifier(modifier_id: String) -> bool:
 				index = i
 				break
 		if index != -1:
-			var before := _snapshot_all_values()
+			var before := snapshot_current_values()
 			var removed_mod := mods[index]
 			mods.remove_at(index)
 			_remove_from_source_index(removed_mod)
@@ -279,7 +279,7 @@ func remove_modifiers_by_source(source: String) -> int:
 		affected_attrs[mod.attribute_name].append(mod)
 
 	var count := source_mods.size()
-	var before := _snapshot_all_values()
+	var before := snapshot_current_values()
 
 	# 从各属性的修改器列表中移除
 	for attr_name in affected_attrs.keys():
@@ -309,7 +309,7 @@ func update_modifier(modifier_id: String, new_value: float) -> bool:
 		var mods := _get_modifiers_typed(attr_name)
 		for mod in mods:
 			if mod.id == modifier_id:
-				var before := _snapshot_all_values()
+				var before := snapshot_current_values()
 				mod.value = new_value
 				_mark_dirty(attr_name)
 				_solve_dynamic_deps()
@@ -651,8 +651,9 @@ func _find_modifier_by_id(modifier_id: String) -> AttributeModifier:
 	return null
 
 
-## 内部辅助：记录所有属性的当前值快照（用于 before/after 对比）
-func _snapshot_all_values() -> Dictionary:
+## 全属性当前值快照 {name: current}。内部用于 before/after 对比，
+## 也是录像层「actor 属性快照」的唯一来源——两处必须是同一份定义。
+func snapshot_current_values() -> Dictionary:
 	var snapshot: Dictionary = {}
 	for attr_name in _base_values.keys():
 		snapshot[attr_name] = get_current_value(attr_name)

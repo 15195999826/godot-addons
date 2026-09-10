@@ -92,7 +92,7 @@ class _BreakPassivesAction:
 			return ActionResult.create_success_result([], {})
 		var owner_id := self_ability.owner_actor_id
 		var actor := GameWorld.get_actor(owner_id)
-		var aset := IAbilitySetOwner.get_ability_set(actor)
+		var aset := BattleActor.ability_set_of(actor)
 		if aset == null:
 			return ActionResult.create_success_result([], {})
 		var disabled_count := 0
@@ -125,7 +125,7 @@ class _UnbreakPassivesAction:
 			return ActionResult.create_success_result([], {})
 		var owner_id := self_ability.owner_actor_id
 		var actor := GameWorld.get_actor(owner_id)
-		var aset := IAbilitySetOwner.get_ability_set(actor)
+		var aset := BattleActor.ability_set_of(actor)
 		if aset == null:
 			return ActionResult.create_success_result([], {})
 		for ab in aset.get_abilities():

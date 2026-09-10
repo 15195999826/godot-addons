@@ -137,9 +137,7 @@ func _grant_item_abilities(item_id: int) -> void:
 		Log.error("HexActorEquipmentContainer",
 			"grant: owner actor %s 未注册到 GameWorld, 跳过 grant (item=%d)" % [owner_actor_id, item_id])
 		return
-	var ability_set: AbilitySet = null
-	if "ability_set" in actor:
-		ability_set = actor.get("ability_set")
+	var ability_set := BattleActor.ability_set_of(actor)
 	if ability_set == null:
 		Log.error("HexActorEquipmentContainer",
 			"grant: actor %s 没有 ability_set, 跳过 grant (item=%d)" % [owner_actor_id, item_id])
@@ -200,9 +198,7 @@ func _revoke_item_abilities(item_id: int) -> void:
 				owner_actor_id, item_id, instance_ids.size()
 			])
 		return
-	var ability_set: AbilitySet = null
-	if "ability_set" in actor:
-		ability_set = actor.get("ability_set")
+	var ability_set := BattleActor.ability_set_of(actor)
 	if ability_set == null:
 		Log.warning("HexActorEquipmentContainer",
 			"revoke: actor %s 没有 ability_set (可能已 shutdown), 跳过 revoke (item=%d)" % [

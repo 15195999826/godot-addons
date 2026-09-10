@@ -37,7 +37,7 @@ static var STANCE_TIMELINE := TimelineData.new(TIMELINE_ID, 300.0, {
 static func _has_wrath(ctx: ExecutionContext) -> bool:
 	var oid := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 	var actor := GameWorld.get_actor(oid)
-	var aset := IAbilitySetOwner.get_ability_set(actor)
+	var aset := BattleActor.ability_set_of(actor)
 	return aset != null and aset.has_tag(WRATH_TAG)
 
 

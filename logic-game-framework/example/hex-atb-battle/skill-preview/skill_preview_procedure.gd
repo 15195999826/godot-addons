@@ -5,7 +5,7 @@
 ## (time_ms / ability_config / target_id)。tick 到达 keyframe.time_ms 时
 ## grant + activate, "所有 keyframe 已 fire 且无 executing instance 且无飞行
 ## 投射物"后 +POST_EXECUTION_TICKS 延迟关停。
-## ability runtime tick 复用 HexBattleProcedure.tick_actor_ability_runtime；本类只替换
+## ability runtime tick 复用 AbilitySet.tick_runtime；本类只替换
 ## 正式战斗里的"AI 决策并启动 action"阶段。
 ##
 ## 寄生在外部常驻 WorldGI 上 —— 不 GameWorld.destroy()，actor 生命周期归
@@ -131,7 +131,7 @@ func tick_once() -> void:
 	# 跑正式 hex battle 的 ability runtime tick；preview 只负责上面的 keyframe 调度。
 	var any_ability_executing := false
 	for actor in _get_alive_participants():
-		if HexBattleProcedure.tick_actor_ability_runtime(actor, _tick_interval, cur_logic_time, world):
+		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time, world):
 			any_ability_executing = true
 
 	# Phase C (Fire Tile): EnvironmentActor 的 ability_set 也要 tick / tick_executions。

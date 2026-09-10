@@ -169,10 +169,7 @@ static func _process_broken_shields(
 	battle: HexWorldGameplayInstance,
 	result: DamageResult
 ) -> void:
-	var ability_set: AbilitySet = null
-	var target_actor := battle.get_actor(target_id)
-	if target_actor != null and "ability_set" in target_actor:
-		ability_set = target_actor.get("ability_set") as AbilitySet
+	var ability_set := BattleActor.ability_set_of(battle.get_actor(target_id))
 	if ability_set == null:
 		return
 

@@ -18,6 +18,13 @@ func _init(p_owner_actor_id: String, p_attribute_set: BaseGeneratedAttributeSet 
 	_attribute_set = p_attribute_set
 	tag_container = TagContainer.create(owner_actor_id)
 
+## 绑定所属 actor 的 id。owner_actor_id 与 tag_container.owner_id 是同一条真相的两个副本
+## （AbilitySet 在 actor 拿到 id 之前就构造好，两处都先揣着空 id），一起换才不会长期漂移。
+## tag_container.owner_id 当前没有读者——它是容器的自述身份，不是本方法在修的 bug。
+func bind_owner(actor_id: String) -> void:
+	owner_actor_id = actor_id
+	tag_container.owner_id = actor_id
+
 func get_event_processor() -> EventProcessor:
 	return GameWorld.event_processor
 
@@ -123,6 +130,38 @@ func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 		all_triggered.append_array(triggered)
 	)
 	return all_triggered
+
+## 一帧 ability runtime：tick → 算 blocking → tick_executions；返回本帧是否有阻塞执行。
+##
+## blocking 必须在 tick_executions **之前**算：本帧内跑完的 execution 也算占用了这一帧，
+## 战斗主循环据此决定「施法期间 ATB 冻结」；先推进再问，刚结束的那帧会被误判成空闲，
+## 角色一帧内既施法又充能。
+func tick_runtime(dt: float, logic_time: float, game_state_provider: Variant) -> bool:
+	tick(dt, logic_time)
+	var has_any_execution := false
+	var blocking := false
+	# 一趟同时算两个答案：本方法每 actor 每 tick 都跑，分两趟遍历纯属白走。
+	for ability in _abilities:
+		if not ability.has_executing_instance():
+			continue
+		has_any_execution = true
+		if _is_blocking_execution(ability):
+			blocking = true
+			break
+	if has_any_execution:
+		tick_executions(dt, game_state_provider)
+	return blocking
+
+## 是否有任一 ability 处于执行中（不区分是否阻塞）。
+func has_executing_instances() -> bool:
+	for ability in _abilities:
+		if ability.has_executing_instance():
+			return true
+	return false
+
+## 执行中的 ability 是否阻塞行动。默认全部阻塞；项目子类按自己的「常驻/内建能力」规则覆盖。
+func _is_blocking_execution(_ability: Ability) -> bool:
+	return true
 
 func receive_event(event_dict: Dictionary, game_state_provider: Variant) -> void:
 	_process_abilities(func(ability: Ability):

@@ -5,6 +5,14 @@ class_name BattleAbilitySet
 extends AbilitySet
 
 
+# ========== 行动阻塞 ==========
+
+## 内建能力 (角色规则桥 / 常驻 passive) 的 execution 不冻结 ATB —— 它们全程在跑,
+## 当成阻塞会让角色永远轮不到行动。
+func _is_blocking_execution(ability: Ability) -> bool:
+	return not ability.has_ability_tag(HexBattleSkillTags.TAG_INTRINSIC)
+
+
 # ========== 冷却系统 ==========
 
 ## 检查技能是否在冷却中

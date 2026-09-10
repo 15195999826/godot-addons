@@ -46,6 +46,12 @@ func _get_config_id() -> String:
 	return environment_kind
 
 
+## 环境物不属于任何一方, 但录像的 team 是个 int: 沿用 0, 渲染层按中立处理。
+## (不能落到 BattleActor 的 -1 —— 环境物从不 set_team_id, 那会把既有回放的队伍号改掉。)
+func _get_team_int() -> int:
+	return 0
+
+
 # ========== 序列化 ==========
 
 func serialize() -> Dictionary:
