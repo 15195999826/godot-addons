@@ -220,7 +220,8 @@ func _test_unregistered_owner() -> void:
 
 ## owner 反查不到 → context 没有事件设施，三条降级路径：PreEvent 不注册 handler、只打一条警告；激活被 Condition
 ## 拦下时失败事件无处可推、跳过——去掉 tag 后同一请求能激活，证明前一次确实走到了失败分支；只发表演 cue 的 action
-## 跳过推送、照常返回成功。守卫退化成报错时引擎只中止出错那一帧，留下的状态与正常降级相同，所以全程挂日志计数器断言零错误。
+## 跳过推送、照常返回成功。前两条的守卫退化成报错时引擎只中止出错那一帧，留下的状态与正常降级相同、只有日志分得开，
+## 所以全程挂日志计数器断言零错误（cue 报错时 execute 返回 null，结果断言也抓得到）。
 func _test_unregistered_owner_without_event_infrastructure() -> void:
 	var owner_id := "no_such_instance:ghost_events"
 	var ability_set := AbilitySet.create(owner_id)

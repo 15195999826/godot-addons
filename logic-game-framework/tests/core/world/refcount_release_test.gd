@@ -117,9 +117,15 @@ class ProbeProcedure:
 
 	var helper := ProbeProcedureHelper.new()
 	var end_world_on_tick := false
+	## 经 finish() 收尾的次数：中止不得走 finish()——子类收尾（存日志 / 写回放 / 改任务状态）只属于正常结束。
+	var finish_calls := 0
 
 	func _get_world() -> ProbeWorld:
 		return super._get_world() as ProbeWorld
+
+	func finish(result: String = "battle_complete") -> Dictionary:
+		finish_calls += 1
+		return super.finish(result)
 
 	func tick_once() -> void:
 		_current_tick += 1
@@ -283,6 +289,7 @@ func _build_and_finish_subclass_procedure_directly(refs: Dictionary) -> void:
 	frames.assign(record.get("timeline", []))
 	TestFramework.assert_true(not frames.is_empty(), "直接 finish 应产出录到事件的录像")
 	TestFramework.assert_false(world.has_active_battle(), "直接 finish 应交还 world 的战斗槽位")
+	TestFramework.assert_equal(1, procedure.finish_calls)
 	TestFramework.assert_equal(2, procedure.helper.observed_actor_count)
 
 	_collect_actor_refs(refs, caster, "caster.")
@@ -341,6 +348,7 @@ func _build_and_end_world_inside_recorded_battle_tick(refs: Dictionary) -> void:
 	TestFramework.assert_true(log_counter.errors == 0, "战斗 tick 里拆世界报了 %d 条错误" % log_counter.errors)
 	TestFramework.assert_equal(0, GameWorld.get_instance_count())
 	TestFramework.assert_false(finish_sink.has("result"), "world 结束优先：不应收尾、发 battle_finished")
+	TestFramework.assert_equal(0, procedure.finish_calls)
 	TestFramework.assert_false(world.has_active_battle(), "world 结束应清掉进行中的战斗")
 	TestFramework.assert_false(recorder.get_is_recording(), "world 结束应中止录像")
 	TestFramework.assert_true(recorder.actor_subscriptions.is_empty(), "中止录像应退订全部被录 actor")

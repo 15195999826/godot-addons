@@ -26,8 +26,8 @@ var _final_replay_data: Dictionary = {}
 var _logging_enabled: bool = true
 var _recording_enabled: bool = true
 
-## 延命到 _on_battle_finished handler 结束: emit 之前 procedure 的 finish() 已交还 _active_battle,
-## 但 handler 还要读 procedure 最终状态。
+## 本 GI 这场战斗的 HexBattleProcedure（强类型句柄）: start() 取 logger、tick() 读帧数、get_replay_data() 在战斗中停录像,
+## _on_battle_finished 读最终结果——那时 finish() 已交还 _active_battle, 只能经这里拿。
 var _hex_procedure: HexBattleProcedure = null
 
 

@@ -22,8 +22,8 @@ func _init(p_actor_id: String, recorder: BattleRecorder) -> void:
 ## 在调用栈穿插发生时,真实时序被自然保留 —— battle_procedure 帧末 flush()
 ## 一次性拿到的就是按发生顺序排列的事件流。
 ##
-## is_recording guard:防 stop_recording 与 unsubscribe 之间的 callback 残响
-## 把脏事件灌进 collector(此时 collector 仍在被复用,无录像消费)。
+## is_recording guard：录像停止后仍会触发的回调（setup_recording 注册了监听却没交回对应的退订闭包）
+## 不再往 collector 推事件——collector 属于 world，停录后仍在复用、无录像消费。
 func push_event(event: Dictionary) -> void:
 	if _recorder.is_recording:
 		_collector.push(event)
