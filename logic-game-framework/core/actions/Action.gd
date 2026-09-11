@@ -1,19 +1,14 @@
 class_name Action
 extends RefCounted
 
-## Action 分层合同
+## Action 两类合同
 ##
-## Action 体系按四层理解和约束（详见 docs/reference/action-architecture.md）:
-##
-## | 层 | 基类 | 是否可进 timeline | 用途 |
+## | 类 | 基类 | 用途 | 放哪 |
 ## |---|---|---|---|
-## | Util / Utils | (不是 Action 子类) | 否 | 最底层结算 / 副作用函数 |
-## | Primitive Action | Action.PrimitiveAction | 是 | 公开领域原语 adapter |
-## | FlowAction | Action.FlowActionBase | 是 | 流程组合器,只组织 child actions |
-## | SkillLocalAction | Action.SkillLocalAction | 是 | 技能私有过程函数,运行时 assert owner |
+## | 公共原语 | Action.BaseAction | 通用积木（伤害 / 治疗 / 上 buff / 发射投射物 / loose tag / stage cue / FlowAction.if_ …），不知道具体技能 | 公共 action 目录，带 class_name |
+## | 技能私有 | Action.SkillLocalAction | 只服务一个 ability 的过程步骤，运行时 assert owner config_id | 内嵌在该技能文件里，不得 class_name |
 ##
-## 新增 Action 必须选择更具体的语义基类，禁止应用层直接 extends Action.BaseAction。
-## 历史既有 Action 走 allowlist (见 tests/core/actions/action_architecture_validator_test.gd)。
+## 最底层的结算 / 副作用函数是 Util，不是 Action 子类。目录规则见 enforcing-lgf/SKILL.md §8。
 
 
 class BaseAction:
@@ -60,35 +55,10 @@ class NoopAction:
 		return ActionResult.create_success_result([])
 
 
-## Primitive Action: 公开领域原语 adapter
-##
-## 薄封装 target selector / resolver / util；不知道具体技能。
-## 必须登记在 public primitive allowlist（见 validator test）。
-## 例: DamageAction / LaunchProjectileAction / ApplyBuffAction / LooseTagAction。
-class PrimitiveAction:
-	extends BaseAction
-
-	func _init(target_selector: TargetSelector) -> void:
-		super._init(target_selector)
-		type = "primitive"
-
-
-## FlowAction 基类: 流程组合器
-##
-## 只能组织 child actions、不承载业务语义。当前只批准 FlowAction.if_。
-## 子类必须重写 get_child_actions() 返回所有 child 引用以参与 _freeze()。
-class FlowActionBase:
-	extends BaseAction
-
-	func _init(target_selector: TargetSelector) -> void:
-		super._init(target_selector)
-		type = "flow"
-
-
 ## SkillLocalAction: 技能私有过程函数
 ##
 ## 只服务一个 Ability，运行时 assert 当前 ability config_id 匹配 owner_config_id。
-## 不允许使用 class_name (validator 强制)，应作为内嵌 class 写在技能/buff 文件内。
+## 不用 class_name，作为内嵌 class 写在技能 / buff 文件内。
 class SkillLocalAction:
 	extends BaseAction
 

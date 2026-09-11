@@ -60,7 +60,7 @@ func _make_actor() -> TestActor:
 
 
 func _build_ability_with_stacks(cfg: StatModifierConfig, owner_id: String, initial_stacks: int) -> Ability:
-	var ability_config := AbilityConfig.new("demon_test", "", "", "", [], [], [cfg], {}, initial_stacks, 999, 0)
+	var ability_config := AbilityConfig.new("demon_test", "", "", "", [], [cfg], {}, initial_stacks, 999, 0)
 	return Ability.new(ability_config, owner_id)
 
 

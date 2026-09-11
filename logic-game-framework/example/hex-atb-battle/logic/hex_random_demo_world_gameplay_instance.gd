@@ -218,11 +218,11 @@ func _build_passive_skill_pool() -> Array[AbilityConfig]:
 func _is_active_loadout_config(cfg: AbilityConfig) -> bool:
 	if cfg == null:
 		return false
-	return not cfg.active_use_components.is_empty() and cfg.ability_tags.has("skill")
+	return not cfg.get_active_use_configs().is_empty() and cfg.ability_tags.has("skill")
 
 
 func _is_passive_loadout_config(cfg: AbilityConfig) -> bool:
-	if cfg == null or not cfg.active_use_components.is_empty():
+	if cfg == null or not cfg.get_active_use_configs().is_empty():
 		return false
 	if not cfg.ability_tags.has("passive"):
 		return false

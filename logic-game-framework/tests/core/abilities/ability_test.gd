@@ -56,7 +56,6 @@ func _test_lifecycle() -> void:
 		"",
 		"",
 		[],
-		[],
 		[test_config]
 	)
 	var ability := Ability.new(config, owner_actor_id)
@@ -81,7 +80,6 @@ func _test_triggered_listener() -> void:
 		"",
 		"",
 		"",
-		[],
 		[],
 		[test_config]
 	)

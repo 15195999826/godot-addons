@@ -72,14 +72,14 @@ static func direction_between(from: HexCoord, to: HexCoord) -> int:
 	return best_dir
 
 
-## 主动技能 face-target action (PrimitiveAction)。任意 active skill 可以在
+## 主动技能 face-target action。任意 active skill 可以在
 ## on_timeline_start_actions 第一项放一个 `HexFacing.face_target_action()`，让
 ## caster 在 cast 起手转向 current target。reason 固定 "active_use"。
 ##
 ## phase 文档 §0.3 提示"集中入口"是 active-use execution 创建; 在不动 core 层
 ## ActiveUseComponent 的前提下, 由 skill 显式插入此 action 是最小入侵实现。
 class _FaceTargetAction:
-	extends Action.PrimitiveAction
+	extends Action.BaseAction
 
 	var _reason: String
 
@@ -111,8 +111,8 @@ class _FaceTargetAction:
 		return ActionResult.create_success_result(events)
 
 
-## 工厂: caster 转向 current target (event.target_actor_id) 的 PrimitiveAction。
-static func face_target_action(reason: String = REASON_ACTIVE_USE) -> Action.PrimitiveAction:
+## 工厂: caster 转向 current target (event.target_actor_id) 的 action。
+static func face_target_action(reason: String = REASON_ACTIVE_USE) -> Action.BaseAction:
 	return _FaceTargetAction.new(HexBattleTargetSelectors.current_target(), reason)
 
 

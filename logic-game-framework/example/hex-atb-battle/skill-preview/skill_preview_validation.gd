@@ -40,7 +40,7 @@ static func ability_occupy_ms(cfg: AbilityConfig) -> int:
 	if cfg == null:
 		return 0
 	var occupy: float = 0.0
-	for au in cfg.active_use_components:
+	for au in cfg.get_active_use_configs():
 		# 缺 timeline 不在这里炸: 本函数服务 SkillPreview / SkillValidator 工具路径,
 		# 入参可能是运行时编译的 AI 技能脚本; 缺失由 manifest lint 报告, 这里按 0 贡献跳过。
 		if au.timeline_data != null:
@@ -54,7 +54,7 @@ static func ability_cooldown_ms(cfg: AbilityConfig) -> int:
 	if cfg == null:
 		return 0
 	var cooldown: float = 0.0
-	for au in cfg.active_use_components:
+	for au in cfg.get_active_use_configs():
 		for cost in au.costs:
 			if cost == null or cost.type != "timed_cooldown":
 				continue

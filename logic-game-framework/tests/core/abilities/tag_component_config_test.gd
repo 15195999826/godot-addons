@@ -76,7 +76,7 @@ func _test_lifecycle_apply() -> void:
 	var aset: AbilitySet = pair[0]
 	var owner_id: String = pair[1]
 	var cfg := TagComponentConfig.builder().tag(STATUS_TAG).tag(ACTION_LOCK_TAG).build()
-	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [], [cfg])
+	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [cfg])
 	var ability := Ability.new(ability_config, owner_id)
 	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
@@ -94,7 +94,7 @@ func _test_lifecycle_remove() -> void:
 	var aset: AbilitySet = pair[0]
 	var owner_id: String = pair[1]
 	var cfg := TagComponentConfig.builder().tag(STATUS_TAG).build()
-	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [], [cfg])
+	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [cfg])
 	var ability := Ability.new(ability_config, owner_id)
 	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
@@ -110,7 +110,7 @@ func _test_independent_from_loose() -> void:
 	var aset: AbilitySet = pair[0]
 	var owner_id: String = pair[1]
 	var cfg := TagComponentConfig.builder().tag(STATUS_TAG).build()
-	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [], [cfg])
+	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [cfg])
 	var ability := Ability.new(ability_config, owner_id)
 	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)

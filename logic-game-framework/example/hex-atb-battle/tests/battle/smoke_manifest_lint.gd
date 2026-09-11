@@ -120,12 +120,10 @@ func _check_cues(configs: Array[AbilityConfig], failures: Array[String]) -> void
 
 
 ## 收集 config 树上全部静态可达 action:
-## 顶层(timeline start/end/tag + NoInstance 三组)为根, 经 get_child_actions() DFS 展开
+## 顶层(ActivateInstance——含 ActiveUse——的 timeline start/end/tag + NoInstance 三组)为根, 经 get_child_actions() DFS 展开
 ## (FlowAction 分支 / DamageAction 回调链 / 未来嵌套组合器一体覆盖)。
 func _collect_actions(cfg: AbilityConfig) -> Array[Action.BaseAction]:
 	var roots: Array[Action.BaseAction] = []
-	for au in cfg.active_use_components:
-		_append_component_actions(roots, au.on_timeline_start_actions, au.on_timeline_end_actions, au.tag_actions)
 	for comp in cfg.components:
 		if comp is ActivateInstanceConfig:
 			var aic := comp as ActivateInstanceConfig
@@ -194,7 +192,7 @@ func _check_tags_and_meta(configs: Array[AbilityConfig], failures: Array[String]
 				failures.append("%s: tag '%s' 不在词表(typo? 新词先入 DESCRIPTIVE_TAGS 或常量类)" % [cfg.config_id, tag])
 		# active 技能(有 active_use 组件)必填 RANGE + TARGETING —— stance 的
 		# "RANGE 缺省被读成 1" 坑从此结构性消灭
-		if cfg.active_use_components.is_empty():
+		if cfg.get_active_use_configs().is_empty():
 			continue
 		if not cfg.metadata.has(HexBattleSkillMetaKeys.RANGE):
 			failures.append("%s: active 技能缺 RANGE meta(缺省会被 can_use_skill_on 读成 1)" % cfg.config_id)

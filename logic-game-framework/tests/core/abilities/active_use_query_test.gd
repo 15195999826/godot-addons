@@ -37,11 +37,15 @@ func _init() -> void:
 	TestFramework.register_test("can_activate returns first failing gate across components", _test_multi_component_first_failure)
 
 
+## 只带 conditions / costs 的 ActiveUseConfig（无 tag action、无自定义 trigger）。
+static func _active_use(timeline: TimelineData, conditions: Array[Condition], costs: Array[Cost]) -> ActiveUseConfig:
+	return ActiveUseConfig.new(timeline, [], [], "any", [], [], [], conditions, costs)
+
+
 ## 构造 "granted ability + ability_set" 夹具；conditions/costs 注入唯一的 ActiveUseConfig。
 func _build_fixture(conditions: Array[Condition], costs: Array[Cost]) -> Dictionary:
-	var active_use := ActiveUseConfig.new(QUERY_TIMELINE, [], conditions, costs)
-	var active_use_list: Array[ActiveUseConfig] = [active_use]
-	return _grant_fixture(AbilityConfig.new("q-skill", "", "", "", [], active_use_list, []))
+	var components: Array[AbilityComponentConfig] = [_active_use(QUERY_TIMELINE, conditions, costs)]
+	return _grant_fixture(AbilityConfig.new("q-skill", "", "", "", [], components))
 
 
 ## 新 instance + 注册的 owner，grant 后清空 collector；返回 {set, ability, collector}。
@@ -182,10 +186,10 @@ func _test_multi_component_first_failure() -> void:
 	var pass_conditions: Array[Condition] = []
 	var no_costs: Array[Cost] = []
 	var blocked_conditions: Array[Condition] = [Condition.NoTagCondition.new("sealed")]
-	var first_use := ActiveUseConfig.new(timeline, [], pass_conditions, no_costs)
-	var second_use := ActiveUseConfig.new(timeline, [], blocked_conditions, no_costs)
-	var active_use_list: Array[ActiveUseConfig] = [first_use, second_use]
-	var fixture := _grant_fixture(AbilityConfig.new("q-multi", "", "", "", [], active_use_list, []))
+	var first_use := _active_use(timeline, pass_conditions, no_costs)
+	var second_use := _active_use(timeline, blocked_conditions, no_costs)
+	var components: Array[AbilityComponentConfig] = [first_use, second_use]
+	var fixture := _grant_fixture(AbilityConfig.new("q-multi", "", "", "", [], components))
 	var ability_set: AbilitySet = fixture["set"]
 	var ability: Ability = fixture["ability"]
 

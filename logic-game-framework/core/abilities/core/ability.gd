@@ -75,7 +75,7 @@ func _init(config: AbilityConfig, owner_actor_id_value: String, source_actor_id_
 	max_stacks = config.max_stacks
 	overflow_policy = config.overflow_policy
 
-	_components = _resolve_components(config.active_use_components, config.components)
+	_components = _resolve_components(config.components)
 
 	for component in _components:
 		component.initialize(self)
@@ -461,12 +461,8 @@ func serialize() -> Dictionary:
 		"executionInstances": serialized_instances,
 	}
 
-func _resolve_components(active_use_configs: Array[ActiveUseConfig], component_configs: Array[AbilityComponentConfig]) -> Array[AbilityComponent]:
+func _resolve_components(component_configs: Array[AbilityComponentConfig]) -> Array[AbilityComponent]:
 	var result: Array[AbilityComponent] = []
-	for cfg in active_use_configs:
-		var component := cfg.create_component()
-		Log.assert_crash(component != null, "Ability", "ActiveUseConfig.create_component() returned null: %s" % cfg.get_script().get_global_name())
-		result.append(component)
 	for cfg in component_configs:
 		var component := cfg.create_component()
 		Log.assert_crash(component != null, "Ability", "AbilityComponentConfig.create_component() returned null: %s" % cfg.get_script().get_global_name())

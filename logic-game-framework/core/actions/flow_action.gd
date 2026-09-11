@@ -23,7 +23,7 @@ static func if_(
 
 
 class IfAction:
-	extends Action.FlowActionBase
+	extends Action.BaseAction
 
 	var _predicate: Callable
 	var _then_actions: Array[Action.BaseAction] = []

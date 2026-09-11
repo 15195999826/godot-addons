@@ -12,7 +12,7 @@
 ##   - actual_amount clamp 到 max - current; 满血时 actual=0 仍 push 事件 (consumer 自查).
 ##   - target 死亡 / 不存在 -> skip 无事件.
 class_name HexBattleRegenerateAction
-extends Action.PrimitiveAction
+extends Action.BaseAction
 
 
 ## resource: "hp" (Phase C). 未来 "mp" 时这一个 Action 继续复用,

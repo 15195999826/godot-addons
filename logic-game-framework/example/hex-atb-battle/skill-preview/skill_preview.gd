@@ -279,7 +279,7 @@ func _init_skill_lookup() -> void:
 	# 选单口径统一走 HexBattleSkillIndex(排除 buff 实例), 不在此处手抄过滤
 	for cfg in HexBattleSkillIndex.all():
 		_skill_config_by_id[cfg.config_id] = cfg
-		if cfg.active_use_components.is_empty():
+		if cfg.get_active_use_configs().is_empty():
 			_passive_skill_configs.append(cfg)
 		else:
 			_active_skill_configs.append(cfg)

@@ -1,6 +1,6 @@
 ## CancelMoveAction - 移动 execution 异常取消时释放目的地预订。
 class_name HexBattleCancelMoveAction
-extends Action.PrimitiveAction
+extends Action.BaseAction
 
 
 var _target_coord: DictResolver

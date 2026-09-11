@@ -22,7 +22,7 @@ class FixedSelector extends TargetSelector:
 
 
 class RecordingAction:
-	extends Action.PrimitiveAction
+	extends Action.BaseAction
 
 	var calls: Array[String] = []
 	var tag: String

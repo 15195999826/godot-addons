@@ -12,7 +12,7 @@
 ##
 ## V1 用例: HexBattleStunBuff on_apply 取消目标当前 in-flight active skill/strike/move execution。
 class_name HexBattleCancelActiveExecutionsAction
-extends Action.PrimitiveAction
+extends Action.BaseAction
 
 
 const ACTIVE_TAG := "active"

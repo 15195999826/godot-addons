@@ -34,7 +34,7 @@ class FixedSelector extends TargetSelector:
 
 
 class RecordingAction:
-	extends Action.PrimitiveAction
+	extends Action.BaseAction
 
 	const EVENT_KIND := "no_instance_test_recording"
 	var tag: String
@@ -81,7 +81,7 @@ func _make_actor() -> Array:
 
 
 func _build_ability(cfg: NoInstanceConfig, owner_id: String) -> Ability:
-	var ability_config := AbilityConfig.new("test_ability", "", "", "", [], [], [cfg])
+	var ability_config := AbilityConfig.new("test_ability", "", "", "", [], [cfg])
 	return Ability.new(ability_config, owner_id)
 
 

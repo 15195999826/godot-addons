@@ -12,7 +12,7 @@
 ## - 失败语义: 邻格全占满 → 返回 success + metadata { spawn_failed: "no_free_neighbor" }
 ##   (不算 action 失败, 不 abort skill timeline; caller 期望简单 best-effort)
 class_name HexBattleSpawnActorAction
-extends Action.PrimitiveAction
+extends Action.BaseAction
 
 
 var _character_class: HexBattleClassConfig.CharacterClass

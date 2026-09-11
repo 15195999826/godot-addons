@@ -1,14 +1,14 @@
 ## ActiveUse 组件配置
 ##
-## 用于配置 ActiveUseComponent，定义主动技能的触发、条件、消耗和执行。
-## 继承 ActivateInstanceConfig 的所有配置，额外增加条件和消耗。
+## 用于配置 ActiveUseComponent：在 ActivateInstanceConfig（触发器 + Timeline 执行）之上加条件和消耗。
+## 配置层级镜像组件层级（ActiveUseComponent extends ActivateInstanceComponent）。
 ## 推荐使用 Builder 模式构造，提供清晰的可读性和 IDE 自动补全。
 ##
 ## [b]默认触发器[/b]
 ##
-## ActiveUseConfig 专为主动技能设计，默认监听 [code]GameEvent.ABILITY_ACTIVATE_EVENT[/code]，
-## 并自动过滤匹配当前 Ability 实例的事件（abilityInstanceId == ability.id）。
-## 因此大多数主动技能无需显式配置 trigger，除非需要自定义触发逻辑。
+## ActiveUseConfig 专为主动技能设计，triggers 为空时 ActiveUseComponent 默认监听
+## [code]GameEvent.ABILITY_ACTIVATE_EVENT[/code]，并自动过滤匹配当前 Ability 实例的事件
+## （abilityInstanceId == ability.id）。因此大多数主动技能无需显式配置 trigger，除非需要自定义触发逻辑。
 ##
 ## [b]推荐链式调用顺序[/b]
 ##
@@ -25,39 +25,10 @@
 ##     .build()
 ## [/codeblock]
 ##
-## [b]on_timeline_start / on_timeline_end 与 on_tag 的区别[/b]
-##
-## - on_timeline_start/end：同步执行（在 activate 调用链 / tick 调用链里立即跑），
-##   用于需要原子保证的操作（如 grid.reserve_tile、StageCueAction 发送动画提示）
-## - on_tag：异步执行（按 timeline tag_time 在对应 tick 里触发），
-##   用于可以延迟的时间点事件（如 DamageAction 在 HIT tag 时造成伤害）
-##
-## loop 模式下：每轮 timeline 开始/结束都会触发 on_timeline_start/end。
+## on_timeline_start / on_timeline_end 与 on_tag 的区别见 ActivateInstanceConfig。
 class_name ActiveUseConfig
-extends AbilityComponentConfig
+extends ActivateInstanceConfig
 
-
-## 本组件执行的 timeline（builder.timeline(data) 写入，声明时 tags 已冻结）。
-## 执行期直传 AbilityExecutionInstance，没有 id 间接层。
-var timeline_data: TimelineData = null
-
-## Tag → Actions 映射列表（异步，按 timeline tag_time 触发）
-var tag_actions: Array[TagActionsEntry]
-
-## Timeline 开始时同步触发的 actions（activate 瞬间 / loop 每轮开始）
-var on_timeline_start_actions: Array[Action.BaseAction]
-
-## Timeline 结束时同步触发的 actions（timeline 完成 / loop 每轮结束）
-var on_timeline_end_actions: Array[Action.BaseAction]
-
-## Execution 被取消时同步触发的清理 actions（仅取消，不等同于成功结束）
-var on_cancel_actions: Array[Action.BaseAction]
-
-## 触发器列表（可选，默认监听 AbilityActivateEvent）
-var triggers: Array[TriggerConfig]
-
-## 触发模式: "any" 或 "all"
-var trigger_mode: String
 
 ## 条件列表（全部满足才能激活）
 var conditions: Array[Condition] = []
@@ -67,25 +38,20 @@ var costs: Array[Cost] = []
 
 
 func _init(
-	timeline: TimelineData,
-	tag_actions: Array[TagActionsEntry] = [],
-	conditions: Array[Condition] = [],
-	costs: Array[Cost] = [],
-	triggers: Array[TriggerConfig] = [],
-	trigger_mode: String = "any",
-	on_timeline_start_actions: Array[Action.BaseAction] = [],
-	on_timeline_end_actions: Array[Action.BaseAction] = [],
-	on_cancel_actions: Array[Action.BaseAction] = []
+	p_timeline: TimelineData,
+	p_tag_actions: Array[TagActionsEntry] = [],
+	p_triggers: Array[TriggerConfig] = [],
+	p_trigger_mode: String = "any",
+	p_on_timeline_start_actions: Array[Action.BaseAction] = [],
+	p_on_timeline_end_actions: Array[Action.BaseAction] = [],
+	p_on_cancel_actions: Array[Action.BaseAction] = [],
+	p_conditions: Array[Condition] = [],
+	p_costs: Array[Cost] = []
 ) -> void:
-	self.timeline_data = timeline
-	self.tag_actions = tag_actions
-	self.conditions.assign(conditions)
-	self.costs.assign(costs)
-	self.triggers = triggers
-	self.trigger_mode = trigger_mode
-	self.on_timeline_start_actions = on_timeline_start_actions
-	self.on_timeline_end_actions = on_timeline_end_actions
-	self.on_cancel_actions = on_cancel_actions
+	super(p_timeline, p_tag_actions, p_triggers, p_trigger_mode,
+		p_on_timeline_start_actions, p_on_timeline_end_actions, p_on_cancel_actions)
+	conditions.assign(p_conditions)
+	costs.assign(p_costs)
 
 
 ## 创建对应的 ActiveUseComponent 实例
@@ -100,96 +66,71 @@ static func builder() -> ActiveUseConfigBuilder:
 
 ## ActiveUseConfig Builder
 ##
-## 使用链式调用构建 ActiveUseConfig，提供清晰的可读性。
-## 必填字段：timeline
-##
-## 推荐调用顺序：trigger → timeline → on_tag → condition → cost
+## 继承 ActivateInstanceConfigBuilder 的全部链式方法（协变返回覆盖，链上任意位置之后都能接 condition / cost），
+## 额外提供 condition / cost。必填字段：timeline。
 class ActiveUseConfigBuilder:
-	extends RefCounted
+	extends ActivateInstanceConfig.ActivateInstanceConfigBuilder
 
-	var _timeline_data: TimelineData = null
-	var _tag_actions: Array[TagActionsEntry] = []
-	var _triggers: Array[TriggerConfig] = []
-	var _trigger_mode: String = "any"
 	var _conditions: Array[Condition] = []
 	var _costs: Array[Cost] = []
-	var _on_timeline_start_actions: Array[Action.BaseAction] = []
-	var _on_timeline_end_actions: Array[Action.BaseAction] = []
-	var _on_cancel_actions: Array[Action.BaseAction] = []
-	
+
 	# ========== 1. 触发配置 ==========
-	
-	## 添加触发器（可选）
-	## 默认监听 GameEvent.ABILITY_ACTIVATE_EVENT 并匹配当前 Ability 实例。
-	## 仅在需要自定义触发逻辑时调用此方法。
+
+	## 添加触发器（可选）。不配置时 ActiveUseComponent 默认监听 GameEvent.ABILITY_ACTIVATE_EVENT
+	## 并匹配当前 Ability 实例；仅在需要自定义触发逻辑时调用。
 	func trigger(config: TriggerConfig) -> ActiveUseConfigBuilder:
-		_triggers.append(config)
+		super.trigger(config)
 		return self
-	
-	## 设置触发模式（可选，默认 "any"）
-	## "any": 任一触发器匹配即触发
-	## "all": 所有触发器都匹配才触发
+
 	func trigger_mode(value: String) -> ActiveUseConfigBuilder:
-		_trigger_mode = value
+		super.trigger_mode(value)
 		return self
-	
+
 	# ========== 2. 时间线配置 ==========
-	
-	## 绑定 timeline（必填）。声明即冻结 tags：TimelineData 是多技能共享的 static 资产，
-	## 运行时篡改会污染所有共享者；make_read_only 幂等，共享实例重复经过无副作用。
-	## 同 id 异实例的唯一性由 hex manifest lint 静态断言守，这里不查重。
+
 	func timeline(data: TimelineData) -> ActiveUseConfigBuilder:
-		Log.assert_crash(data != null and data.id != "", "ActiveUseConfig", "timeline(data) 要求非空且 id 非空")
-		data.tags.make_read_only()
-		_timeline_data = data
+		super.timeline(data)
 		return self
-	
-	## 添加 Tag -> Actions 映射（异步，按 timeline tag_time 触发）
+
 	func on_tag(tag: String, actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
-		_tag_actions.append(TagActionsEntry.new(tag, actions))
+		super.on_tag(tag, actions)
 		return self
 
-	## 配置 timeline 开始时同步触发的 actions（激活瞬间 / loop 每轮开始）
 	func on_timeline_start(actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
-		_on_timeline_start_actions.append_array(actions)
+		super.on_timeline_start(actions)
 		return self
 
-	## 配置 timeline 结束时同步触发的 actions（timeline 完成 / loop 每轮结束）
 	func on_timeline_end(actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
-		_on_timeline_end_actions.append_array(actions)
+		super.on_timeline_end(actions)
 		return self
 
-	## 配置 execution 被取消时必跑的清理 actions。
 	func on_cancel(actions: Array[Action.BaseAction]) -> ActiveUseConfigBuilder:
-		_on_cancel_actions.append_array(actions)
+		super.on_cancel(actions)
 		return self
 
 	# ========== 3. 条件和消耗 ==========
 
-	## 添加前置条件（可选）
-	## 所有条件满足才能激活技能
+	## 添加前置条件（可选）：所有条件满足才能激活技能
 	func condition(cond: Condition) -> ActiveUseConfigBuilder:
 		_conditions.append(cond)
 		return self
 
-	## 添加消耗（可选）
-	## 激活技能时扣除的资源
+	## 添加消耗（可选）：激活技能时扣除的资源
 	func cost(c: Cost) -> ActiveUseConfigBuilder:
 		_costs.append(c)
 		return self
 
-	## 构建 ActiveUseConfig
-	## 验证必填字段，缺失时触发断言错误
+	## 构建 ActiveUseConfig；缺 timeline 触发断言错误
 	func build() -> ActiveUseConfig:
 		Log.assert_crash(_timeline_data != null, "ActiveUseConfig", "timeline is required")
 		return ActiveUseConfig.new(
 			_timeline_data,
 			_tag_actions,
-			_conditions,
-			_costs,
 			_triggers,
 			_trigger_mode,
 			_on_timeline_start_actions,
 			_on_timeline_end_actions,
-			_on_cancel_actions
+			_on_cancel_actions,
+			_conditions,
+			_costs
 		)

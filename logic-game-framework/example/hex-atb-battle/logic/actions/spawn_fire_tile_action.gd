@@ -10,7 +10,7 @@
 ## spawn 位置: target_selector 选出的第一个 target actor 的 hex_position;
 ## 若无 target 或 target 无 hex_position → spawn 失败 (success no-op).
 class_name HexBattleSpawnFireTileAction
-extends Action.PrimitiveAction
+extends Action.BaseAction
 
 
 var _pulse_interval_ms: float

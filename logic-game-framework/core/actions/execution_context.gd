@@ -33,7 +33,7 @@ extends RefCounted
 ##
 ## §0.4 execution_state: 同一 AbilityExecutionInstance 共享的 transient scratchpad
 ## (CAST 阶段写, HIT 阶段读); ExecutionContext 不拥有这份字典, 只是引用入口。
-## 详见 docs/reference/action-architecture.md（Ability execution-local state 节）。
+## key 带 namespace、值只放可序列化数据，不放 Actor / instance（规则见 enforcing-lgf/SKILL.md §8）。
 
 ## 存活计数（所有构建）：context 只许活在调用栈上，测试在调用返回后断言它回到基线，
 ## 把 context 存进字段或长期存放的 lambda 都会让它回不去。

@@ -33,10 +33,8 @@ var icon: String
 ## 标签列表
 var ability_tags: Array[String]
 
-## 主动使用组件配置列表
-var active_use_components: Array[ActiveUseConfig]
-
-## 效果组件配置列表（被动触发、Buff 等）
+## 全部组件配置（解析顺序 = 同 ability 内的事件响应顺序）：
+## builder.active_use(cfg) 的 ActiveUseConfig 恒排在前，builder.component_config(cfg) 的其它组件按调用顺序排在后。
 var components: Array[AbilityComponentConfig]
 
 ## 自定义元数据（游戏层可自由附加，如施法距离、伤害类型等）
@@ -58,7 +56,6 @@ func _init(
 	description: String = "",
 	icon: String = "",
 	ability_tags: Array[String] = [],
-	active_use_components: Array[ActiveUseConfig] = [],
 	components: Array[AbilityComponentConfig] = [],
 	metadata: Dictionary = {},
 	initial_stacks: int = 1,
@@ -70,7 +67,6 @@ func _init(
 	self.description = description
 	self.icon = icon
 	self.ability_tags = ability_tags
-	self.active_use_components = active_use_components
 	self.components = components
 	self.metadata = metadata
 	self.initial_stacks = initial_stacks
@@ -83,11 +79,20 @@ func _init(
 ## 执行期不经过这里——timeline 由 component 直传 AbilityExecutionInstance。
 func collect_timelines() -> Array[TimelineData]:
 	var out: Array[TimelineData] = []
-	for active_use_config in active_use_components:
-		out.append(active_use_config.timeline_data)
 	for component in components:
 		if component is ActivateInstanceConfig:
 			out.append((component as ActivateInstanceConfig).timeline_data)
+	return out
+
+
+## builder.active_use(cfg) 声明的主动使用配置（按解析顺序）。
+## 工具路径（validator / skill-preview / manifest lint）用它判「是不是主动技能」并读 timeline / conditions / costs；
+## 执行期不经过这里——component 由 Ability 按 components 顺序解析。
+func get_active_use_configs() -> Array[ActiveUseConfig]:
+	var out: Array[ActiveUseConfig] = []
+	for component in components:
+		if component is ActiveUseConfig:
+			out.append(component as ActiveUseConfig)
 	return out
 
 
@@ -140,8 +145,9 @@ class AbilityConfigBuilder:
 	var _description: String = ""
 	var _icon: String = ""
 	var _ability_tags: Array[String] = []
-	var _active_use_components: Array[ActiveUseConfig] = []
 	var _components: Array[AbilityComponentConfig] = []
+	## 已插入 _components 头部的 active_use 数量：下一个 active_use 的插入位置
+	var _active_use_count: int = 0
 	var _metadata: Dictionary = {}
 	var _initial_stacks: int = 1
 	var _max_stacks: int = 1
@@ -173,12 +179,14 @@ class AbilityConfigBuilder:
 		_ability_tags = value
 		return self
 	
-	## 添加主动使用组件
+	## 添加主动使用组件。恒插在普通 component 之前（active_use 之间保持调用顺序）：
+	## component 顺序就是同 ability 内的事件响应顺序，不能跟着 builder 链上 active_use 写在前还是后走。
 	func active_use(config: ActiveUseConfig) -> AbilityConfigBuilder:
-		_active_use_components.append(config)
+		_components.insert(_active_use_count, config)
+		_active_use_count += 1
 		return self
-	
-	## 添加效果组件配置
+
+	## 添加效果组件配置（被动触发、Buff 等），按调用顺序排在全部 active_use 之后
 	func component_config(config: AbilityComponentConfig) -> AbilityConfigBuilder:
 		_components.append(config)
 		return self
@@ -208,7 +216,6 @@ class AbilityConfigBuilder:
 			_description,
 			_icon,
 			_ability_tags,
-			_active_use_components,
 			_components,
 			_metadata,
 			_initial_stacks,

@@ -1,5 +1,7 @@
+## Condition：ActiveUse 激活门的前置条件。与 Cost 同形的共享无状态对象（static var 声明、多 ability 共用），
+## 不是 AbilityComponent——它没有组件生命周期，只在事件到达时被 check。
 class_name Condition
-extends AbilityComponent
+extends RefCounted
 
 var _frozen_hash: int = 0
 

@@ -75,7 +75,7 @@ func _test_registration() -> void:
 			return event.get("targetId") == ctx.owner_actor_id
 	)
 
-	var ability_config := AbilityConfig.new("buff_armor", "", "", "", [], [], [component_config])
+	var ability_config := AbilityConfig.new("buff_armor", "", "", "", [], [component_config])
 	var ability := Ability.new(ability_config, env.owner_id)
 	env.ability_set.grant_ability(ability)
 
@@ -98,7 +98,7 @@ func _test_unregistration() -> void:
 			])
 	)
 
-	var ability_config := AbilityConfig.new("buff_armor", "", "", "", [], [], [component_config])
+	var ability_config := AbilityConfig.new("buff_armor", "", "", "", [], [component_config])
 	var ability := Ability.new(ability_config, env.owner_id)
 	env.ability_set.grant_ability(ability)
 	env.ability_set.revoke_ability(ability.id)
@@ -122,7 +122,7 @@ func _test_modify_event() -> void:
 			])
 	)
 
-	var ability_config := AbilityConfig.new("buff_armor", "", "", "", [], [], [component_config])
+	var ability_config := AbilityConfig.new("buff_armor", "", "", "", [], [component_config])
 	var ability := Ability.new(ability_config, env.owner_id)
 	env.ability_set.grant_ability(ability)
 
@@ -144,7 +144,7 @@ func _test_cancel_event() -> void:
 			return EventPhase.cancel_intent(ctx.ability.id, "immune")
 	)
 
-	var ability_config := AbilityConfig.new("buff_immune", "", "", "", [], [], [component_config])
+	var ability_config := AbilityConfig.new("buff_immune", "", "", "", [], [component_config])
 	var ability := Ability.new(ability_config, env.owner_id)
 	env.ability_set.grant_ability(ability)
 
@@ -170,7 +170,7 @@ func _test_dead_actor_stops_responding() -> void:
 				Modification.multiply("damage", 0.5),
 			])
 	)
-	var ability_config := AbilityConfig.new("buff_thorns", "", "", "", [], [], [component_config])
+	var ability_config := AbilityConfig.new("buff_thorns", "", "", "", [], [component_config])
 	env.ability_set.grant_ability(Ability.new(ability_config, env.owner_id))
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
@@ -202,7 +202,7 @@ func _test_expired_mid_dispatch_skipped() -> void:
 			return EventPhase.pass_intent()
 	)
 	env.ability_set.grant_ability(Ability.new(
-		AbilityConfig.new("buff_expirer", "", "", "", [], [], [expirer_config]), env.owner_id))
+		AbilityConfig.new("buff_expirer", "", "", "", [], [expirer_config]), env.owner_id))
 	var halve_config := PreEventConfig.new(
 		"pre_damage",
 		func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
@@ -211,7 +211,7 @@ func _test_expired_mid_dispatch_skipped() -> void:
 			])
 	)
 	env.ability_set.grant_ability(Ability.new(
-		AbilityConfig.new("buff_halve", "", "", "", [], [], [halve_config]), env.owner_id))
+		AbilityConfig.new("buff_halve", "", "", "", [], [halve_config]), env.owner_id))
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
 	TestFramework.assert_near(
