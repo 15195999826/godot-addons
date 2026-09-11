@@ -117,7 +117,7 @@ class ProbeProcedure:
 
 	var helper := ProbeProcedureHelper.new()
 	var end_world_on_tick := false
-	## 经 finish() 收尾的次数：中止不得走 finish()——子类收尾（存日志 / 写回放 / 改任务状态）只属于正常结束。
+	## 经 finish() 收尾的次数：中止不得走 finish()——子类在 finish() 里的收尾（如 hex 存战斗日志）只属于正常结束。
 	var finish_calls := 0
 
 	func _get_world() -> ProbeWorld:
