@@ -6,7 +6,7 @@ extends Node
 ## remove_effects 注销；死活由 actor 决定：派发时按 id 重建 context，先问 owner 的 is_event_responsive。
 ## 本文件钉住：同 kind 只注册一条、定向投递 kind 永不注册且照常定向投递恰一次、派发顺序（registry 顺序 → grant 顺序）、
 ## revoke / expire / remove_actor / end() 注销、响应钩子与豁免、Break 短路、嵌套派发的深度上限、triggered 监听者只回调一次、
-## on_apply 里已过期的 ability 不注册、注册的 owner 取所在 AbilitySet 的 owner。
+## on_apply 里过期即停止 apply 且不注册、注册的 owner 取所在 AbilitySet 的 owner。
 
 const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
@@ -88,7 +88,7 @@ func _init() -> void:
 	TestFramework.register_test("PostDispatch: disabled ability skipped", _test_disabled_ability_skipped)
 	TestFramework.register_test("PostDispatch: nested dispatch stops at max_depth", _test_nested_dispatch_depth)
 	TestFramework.register_test("PostDispatch: triggered listener fires once with component names", _test_triggered_listener_once)
-	TestFramework.register_test("PostDispatch: ability expired during on_apply registers nothing", _test_expired_during_apply_registers_nothing)
+	TestFramework.register_test("PostDispatch: ability expired during on_apply stops applying and registers nothing", _test_expired_during_apply_stops_applying)
 	TestFramework.register_test("PostDispatch: registration owner is the ability set's owner", _test_registration_owner_follows_ability_set)
 
 
@@ -250,24 +250,29 @@ func _test_triggered_listener_once() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
-## component 的 on_apply 让本 ability 过期（remove_effects 已跑完）：apply_effects 不再注册，否则这条注册没有人注销。
-func _test_expired_during_apply_registers_nothing() -> void:
+## component 的 on_apply 让本 ability 过期（remove_effects 已跑完）：apply_effects 就此停下，排在后面的
+## component 不再 apply（这里的 PreEvent 不注册 pre handler），post handler 也不注册——做了就没有人撤销。
+func _test_expired_during_apply_stops_applying() -> void:
 	var instance := _create_instance("post_dispatch_expire_on_apply")
 	var actor := _spawn(instance)
 	var ability := Ability.new(_ability_config("expire_on_apply", [
-		_no_instance(KIND, AppendLabelAction.new("never")),
 		ExpireOnApplyConfig.new(),
+		PreEventConfig.new(KIND, func(_mutable: MutableEvent, _ctx: AbilityLifecycleContext) -> Intent:
+			return EventPhase.pass_intent()),
+		_no_instance(KIND, AppendLabelAction.new("never")),
 	]), actor.get_id())
 	actor.ability_set.grant_ability(ability)
 
 	TestFramework.assert_true(ability.is_expired())
+	TestFramework.assert_equal(0, (instance.event_processor._pre_handlers.get(KIND, []) as Array).size())
 	TestFramework.assert_equal(0, _registration_count(instance, KIND))
 	TestFramework.assert_true(ability._post_unregisters.is_empty())
 	GameWorld.destroy_instance(instance.id)
 
 
-## 注册的 owner 取 ability 所在 AbilitySet 的 owner，不取 Ability 构造时记下的 owner_actor_id：
-## 派发按它找回 ability，remove_actor 按它注销。
+## 注册的 owner 与 PreEventComponent 同取 context 的 owner（所在 AbilitySet 的 owner）：派发按它找回 ability，
+## remove_actor 按它注销。Ability 构造时记下的 owner 故意留空，只为把两个来源分开；两者不一致本身不受支持
+## （on_remove / 叠层 / Break 的 context 与 execution 仍按 Ability.owner_actor_id 反查）。
 func _test_registration_owner_follows_ability_set() -> void:
 	var instance := _create_instance("post_dispatch_owner")
 	var actor := _spawn(instance)

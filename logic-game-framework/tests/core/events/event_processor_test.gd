@@ -178,7 +178,7 @@ func _test_dispatch_iterates_snapshot() -> void:
 	processor.process_post_event({ "kind": "damage" })
 	var second_event: Array[String] = ["pre-b", "pre-late", "post-b@actor-1", "post-late@actor-1"]
 	TestFramework.assert_equal(second_event, dispatched)
-	# 两个 handler 捕获了 processor：清表断开 processor → 注册 → handler → processor 的环
+	# pre-a / post-a 捕获了 processor：自注销失效时它们留在表里成环，清表免得用例失败时再多出泄漏
 	processor.remove_all_handlers()
 
 ## trace_level 2 时 export_trace_log 打出每个 pre handler 的意图与每个 post handler 是否触发。

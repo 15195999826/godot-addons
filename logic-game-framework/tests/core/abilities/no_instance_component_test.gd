@@ -3,7 +3,7 @@ extends Node
 ## §0.6 NoInstanceConfig / NoInstanceComponent lifecycle actions 单测
 ##
 ## 合同断言:
-## 1. 旧行为 (trigger + action) 不变
+## 1. trigger + action：post 派发到 grant 过的 ability 即跑 action
 ## 2. lifecycle-only config 合法 (无 trigger)
 ## 3. on_apply_actions: Ability apply_effects → 执行 actions
 ## 4. on_remove_actions: Ability remove_effects → 执行 actions
@@ -61,7 +61,7 @@ func _init() -> void:
 	TestFramework.register_test("NoInstance on_apply runs apply-time actions", _test_on_apply_runs)
 	TestFramework.register_test("NoInstance on_remove runs remove-time actions", _test_on_remove_runs)
 	TestFramework.register_test("NoInstance lifecycle actions mutate loose tag via Ability lifecycle", _test_lifecycle_tag_mutation)
-	TestFramework.register_test("NoInstance trigger+action still works after lifecycle extension", _test_trigger_still_works)
+	TestFramework.register_test("NoInstance trigger+action runs on post dispatch", _test_trigger_runs_on_post_dispatch)
 
 
 func _setup() -> void:
@@ -170,8 +170,8 @@ func _test_lifecycle_tag_mutation() -> void:
 	_teardown()
 
 
-func _test_trigger_still_works() -> void:
-	# trigger + action：事件经 instance 的 post 派发送到 grant 过的 ability，匹配 trigger 即跑 action
+func _test_trigger_runs_on_post_dispatch() -> void:
+	# 事件经 instance 的 post 派发送到 grant 过的 ability，匹配 trigger 即跑 action
 	_setup()
 	var pair := _make_actor()
 	var aset: AbilitySet = pair[0]

@@ -77,6 +77,9 @@ func _start_next_battle() -> void:
 	_phase = "rebuild"
 
 	# reset: 上一场残留 actor / grid 全部清掉; view 数应归 0, 旧 actor 的事件注册与派发序号一并注销
+	if _battles_done > 0 and _handler_registration_count() == 0:
+		_fail("reset 前 event_processor 应有上一场荆棘的 handler 注册 (battle=%d)" % _battles_done)
+		return
 	_world.reset()
 	if _world_view.get_unit_view_count() != 0:
 		_fail("reset 后 view 未归 0: %d" % _world_view.get_unit_view_count())
@@ -133,10 +136,10 @@ func _start_next_battle() -> void:
 		_fail("Animator 被重建 (battle=%d)" % (_battles_done + 1))
 		return
 
-	# 发动 strike: 新 actor_setups API, caster t=0 一条 keyframe
+	# 发动 strike: 新 actor_setups API, caster t=0 一条 keyframe; caster 带荆棘 (订阅 damage), reset 前 processor 才真有 handler 注册
 	_world.queue_preview([{
 		"actor_id": _caster_id,
-		"passives": [] as Array[AbilityConfig],
+		"passives": [HexBattleThorn.ABILITY] as Array[AbilityConfig],
 		"track": [{
 			"time_ms": 0,
 			"ability_config": HexBattleStrike.ABILITY,
@@ -195,16 +198,22 @@ func _on_anim_done() -> void:
 
 ## reset 之后 world 的 event_processor 不该再记着任何 actor：返回残留描述，干净时返回空串。
 func _event_registry_leftover() -> String:
+	var registrations := _handler_registration_count()
+	if registrations != 0:
+		return "event_processor 仍有 %d 条 handler 注册" % registrations
+	if not _world.event_processor._owner_seq.is_empty():
+		return "event_processor 仍记着 %d 个 owner 的派发序号" % _world.event_processor._owner_seq.size()
+	return ""
+
+
+## world 的 event_processor 上 pre / post 两张注册表的总条数。
+func _handler_registration_count() -> int:
 	var processor := _world.event_processor
 	var registrations := 0
 	for table: Dictionary in [processor._pre_handlers, processor._post_handlers]:
 		for handlers: Array in table.values():
 			registrations += handlers.size()
-	if registrations != 0:
-		return "event_processor 仍有 %d 条 handler 注册" % registrations
-	if not processor._owner_seq.is_empty():
-		return "event_processor 仍记着 %d 个 owner 的派发序号" % processor._owner_seq.size()
-	return ""
+	return registrations
 
 
 func _pass(reason: String) -> void:

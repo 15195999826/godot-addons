@@ -283,9 +283,10 @@ func apply_effects(context: AbilityLifecycleContext) -> void:
 	_effects_active = true
 	for component in _components:
 		component.on_apply(context)
-	# on_apply 里本 ability 已过期（remove_effects 已跑完）时再注册，就没有人注销了
-	if _effects_active:
-		_register_post_handlers(context)
+		# on_apply 里本 ability 已过期（remove_effects 已跑完）：后面的 component 与 post 注册都不再做，做了就没有人撤销
+		if not _effects_active:
+			return
+	_register_post_handlers(context)
 
 ## on_remove / 叠层 / Break 钩子的 context 由 AbilityLifecycleContext.for_ability 按 owner id 反查建出。
 ## 先注销 post handler：移除中的 ability 不再响应 on_remove 期间派发的事件。
