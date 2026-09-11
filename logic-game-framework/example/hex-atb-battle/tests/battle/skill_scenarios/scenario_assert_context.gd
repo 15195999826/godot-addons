@@ -146,7 +146,7 @@ func total_shield_absorbed_for(target_id: String) -> float:
 
 ## 战斗结束瞬间某 actor 是否还持有某 config_id 的 ability（用于验证 buff 已被 revoke）。
 ##
-## 数据源:HexBattleSkillScenarioHarness.run_with_config 在 GameWorld.destroy 前抓的 final_ability_states 快照，
+## 数据源:HexBattleSkillScenarioHarness.run_with_config 在 GameWorld.shutdown() 前抓的 final_ability_states 快照，
 ## 不依赖 replay 事件流（grant/revoke 不经 event_collector）。
 func actor_has_ability_config(target_id: String, config_id: String) -> bool:
 	var config_ids: Array = final_ability_states.get(target_id, [])

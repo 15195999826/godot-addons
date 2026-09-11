@@ -88,12 +88,10 @@ func should_end() -> bool:
 	return _finished
 
 
-## 结束战斗: 释放 actor_added 补录连接, 清 in_combat tag, 停止 recorder, 返回 timeline。
+## 结束战斗: 与 world 解绑（断开补录连接、交还战斗槽位）, 清 in_combat tag, 停止 recorder, 返回 timeline。
 ## result 传给 recorder 作为战斗结果标签("battle_complete" / "left_win" / "timeout" 等)。
 func finish(result: String = "battle_complete") -> Dictionary:
-	var world := _get_world()
-	if world != null and world.actor_added.is_connected(_on_world_actor_added):
-		world.actor_added.disconnect(_on_world_actor_added)
+	_detach_from_world()
 	for pid in _participant_ids:
 		_mark_in_combat(pid, false)
 	_finished = true
@@ -102,16 +100,24 @@ func finish(result: String = "battle_complete") -> Dictionary:
 	return {}
 
 
-## 中止战斗（world 结束时仍在进行，由 WorldGameplayInstance.on_end 调用）: 释放 actor_added 补录连接、
+## 中止战斗（world 结束时仍在进行，由 WorldGameplayInstance.end 调用）: 与 world 解绑、
 ## 中止录像（退订全部订阅闭包、不产出录像）、标记结束。不清 in_combat、不经子类 finish() 收尾
-## （不存日志 / 不写回放 / 不发信号）—— world 正在结束, 这些产出无人接收。对已 finish() 的战斗是 no-op。
+## （不存日志 / 不写回放 / 不发信号）—— world 正在结束, 这些产出无人接收。对已结束的战斗是 no-op。
 func abort() -> void:
-	var world := _get_world()
-	if world != null and world.actor_added.is_connected(_on_world_actor_added):
-		world.actor_added.disconnect(_on_world_actor_added)
+	_detach_from_world()
 	if _recorder != null:
 		_recorder.abort_recording()
 	_finished = true
+
+
+## 与 world 解绑: 断开 actor_added 补录连接, 并交还 world 的战斗槽位（仍指着本 procedure 时）。
+func _detach_from_world() -> void:
+	var world := _get_world()
+	if world == null:
+		return
+	if world.actor_added.is_connected(_on_world_actor_added):
+		world.actor_added.disconnect(_on_world_actor_added)
+	world._release_battle(self)
 
 
 # ========== 查询 ==========

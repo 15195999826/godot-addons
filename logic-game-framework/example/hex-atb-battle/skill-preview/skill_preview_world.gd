@@ -1,7 +1,7 @@
 ## SkillPreviewWorldGI - 技能预览常驻世界
 ##
 ## HexWorldGameplayInstance 的 skill_preview 子类：一个 skill_preview session
-## 常驻一个实例（UI 打开时 create，关闭时 destroy），编辑态增删 actor 走
+## 常驻一个实例（UI 打开时注册，关闭时随 GameWorld.shutdown() 结束），编辑态增删 actor 走
 ## world.add_actor / remove_actor 触发 FrontendWorldView 响应式刷新；点 START
 ## 走 queue_preview + start_battle -> SkillPreviewProcedure -> battle_finished。
 ##

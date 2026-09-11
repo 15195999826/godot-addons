@@ -38,7 +38,7 @@ func _ready() -> void:
 	_world.configure_grid(cfg)
 
 	var collision_detector := MobaCollisionDetector.new()
-	_world.add_system(ProjectileSystem.new(collision_detector, _world.event_collector, false))
+	_world.add_system(ProjectileSystem.new(collision_detector, false))
 
 	# 3 个 caster (q=0/0/0, r=-2/0/2), 3 个 dummy (q=1, 同 r) 各自的相邻格
 	var caster_positions := [HexCoord.new(0, -2), HexCoord.new(0, 0), HexCoord.new(0, 2)]

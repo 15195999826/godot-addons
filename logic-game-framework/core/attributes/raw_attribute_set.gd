@@ -150,7 +150,7 @@ func get_current_value(attr_name: String) -> float:
 
 
 ## §0.X scenario snapshot helper: 返回已 define 的所有 attribute name。
-## 用于 scenario harness 在 destroy 前批量 snapshot final attribute values。
+## 用于 scenario harness 在 GameWorld.shutdown() 前批量 snapshot final attribute values。
 func get_attribute_names() -> Array[String]:
 	var names: Array[String] = []
 	for k in _base_values.keys():

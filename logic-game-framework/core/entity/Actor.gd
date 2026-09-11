@@ -46,8 +46,8 @@ func get_owner_gameplay_instance() -> GameplayInstance:
 
 ## 是否响应 PreEvent handler 分发
 ##
-## 由于 PreEvent handler 注册在 EventProcessor 全局表，事件触发时框架
-## 会自动遍历所有已注册 handler。此函数给子类一个机会说"我此刻不响应"，
+## PreEvent handler 注册在所属 instance 的 EventProcessor 上，事件触发时框架
+## 会自动遍历该 processor 上所有已注册 handler。此函数给子类一个机会说"我此刻不响应"，
 ## 避免状态异常的 actor（如死亡、沉默、眩晕）意外触发被动。
 ##
 ## 其它触发路径（POST event / tick / receive_event）由项目层自行决定

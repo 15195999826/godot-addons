@@ -35,9 +35,9 @@ extends RefCounted
 ## (CAST 阶段写, HIT 阶段读); ExecutionContext 不拥有这份字典, 只是引用入口。
 ## 详见 docs/reference/action-architecture.md（Ability execution-local state 节）。
 
-## debug 构建下的存活计数（release 不计）：context 只许活在调用栈上，测试在调用返回后断言它回到基线，
+## 存活计数（所有构建）：context 只许活在调用栈上，测试在调用返回后断言它回到基线，
 ## 把 context 存进字段或长期存放的 lambda 都会让它回不去。
-static var _debug_live_count := 0
+static var _live_count := 0
 
 ## 触发事件链（字典形式），记录从原始触发事件到当前回调事件的完整链路。
 ## 每个元素是 GameEvent.to_dict() 的结果。
@@ -86,18 +86,17 @@ func _init(
 	ability_ref = p_ability_ref
 	execution_info = p_execution_info
 	execution_state = p_execution_state
-	if OS.is_debug_build():
-		_debug_live_count += 1
+	_live_count += 1
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE and OS.is_debug_build():
-		_debug_live_count -= 1
+	if what == NOTIFICATION_PREDELETE:
+		_live_count -= 1
 
 
-## 当前存活的实例数（debug 构建；release 恒为 0）。
-static func get_debug_live_count() -> int:
-	return _debug_live_count
+## 当前存活的实例数。
+static func get_live_count() -> int:
+	return _live_count
 
 
 ## 获取当前触发事件（事件链的最后一个元素）
@@ -114,11 +113,6 @@ func get_original_event() -> Dictionary:
 	if event_dict_chain.is_empty():
 		return {}
 	return event_dict_chain.front()
-
-
-## 推送事件到收集器
-func push_event(event_dict: Dictionary) -> Dictionary:
-	return event_collector.push(event_dict)
 
 
 ## §0.4: 写入 execution_state, key 必须包含 namespace (含 ".")

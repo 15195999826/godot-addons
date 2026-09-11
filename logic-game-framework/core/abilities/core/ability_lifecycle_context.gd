@@ -9,8 +9,8 @@ extends RefCounted
 ## 把 context（或 context.instance）存进字段，就接上 instance → actor → ability_set → ability
 ## → component → context → instance 这条环；RefCounted 没有循环 GC，整张图从此不再释放。
 
-## debug 构建下的存活计数（release 不计）：测试在调用返回后断言它回到基线。
-static var _debug_live_count := 0
+## 存活计数（所有构建）：测试在调用返回后断言它回到基线，同 ExecutionContext。
+static var _live_count := 0
 
 ## 能力拥有者的 ID
 var owner_actor_id: String
@@ -49,15 +49,14 @@ func _init(
 	ability = p_ability
 	ability_set = p_ability_set
 	instance = p_instance
-	if OS.is_debug_build():
-		_debug_live_count += 1
+	_live_count += 1
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_PREDELETE and OS.is_debug_build():
-		_debug_live_count -= 1
+	if what == NOTIFICATION_PREDELETE:
+		_live_count -= 1
 
 
-## 当前存活的实例数（debug 构建；release 恒为 0）。
-static func get_debug_live_count() -> int:
-	return _debug_live_count
+## 当前存活的实例数。
+static func get_live_count() -> int:
+	return _live_count

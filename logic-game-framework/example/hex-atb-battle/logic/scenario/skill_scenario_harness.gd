@@ -274,7 +274,7 @@ static func run_with_actions(
 	for env in battle.environments:
 		environment_ids.append(env.get_id())
 
-	# grant/revoke 不经 event_collector,在 destroy 前抓 ability 状态 + hp 快照
+	# grant/revoke 不经 event_collector,在 GameWorld.shutdown() 前抓 ability 状态 + hp 快照
 	var final_ability_states: Dictionary = {}
 	var final_actor_hps: Dictionary = {}
 	# §0.X: 全属性快照 { actor_id: { attr_name: current_value } } —
@@ -590,9 +590,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 
 		# 投射物系统
 		var collision_detector := MobaCollisionDetector.new()
-		_projectile_system = ProjectileSystem.new(
-			collision_detector, event_collector, false
-		)
+		_projectile_system = ProjectileSystem.new(collision_detector, false)
 		add_system(_projectile_system)
 
 		# 创建角色 → 放入 left_team / right_team

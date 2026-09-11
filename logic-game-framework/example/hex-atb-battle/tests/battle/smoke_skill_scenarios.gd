@@ -140,14 +140,16 @@ func _report_and_exit() -> void:
 
 	var total: int = _results.size()
 	var all_pass := pass_count == total
+	var reason := "%d/%d scenarios passed" % [pass_count, total]
 
-	# context 只许活在调用栈上：全部 scenario 跑完，两类 context 的存活数必须归零（debug 构建计数）。
-	var live_contexts := ExecutionContext.get_debug_live_count() + AbilityLifecycleContext.get_debug_live_count()
+	# context 只许活在调用栈上：全部 scenario 跑完，两类 context 的存活数必须归零。
+	var live_contexts := ExecutionContext.get_live_count() + AbilityLifecycleContext.get_live_count()
 	if live_contexts != 0:
 		print("  [FAIL] %d contexts outlived their call stack" % live_contexts)
 		all_pass = false
+		reason += "; %d contexts outlived their call stack" % live_contexts
 
 	print("")
 	var marker := "PASS" if all_pass else "FAIL"
-	print("SMOKE_TEST_RESULT: %s - %d/%d scenarios passed" % [marker, pass_count, total])
+	print("SMOKE_TEST_RESULT: %s - %s" % [marker, reason])
 	get_tree().quit(0 if all_pass else 1)

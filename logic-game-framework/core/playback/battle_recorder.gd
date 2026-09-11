@@ -107,11 +107,14 @@ func abort_recording() -> void:
 
 func _unsubscribe_all() -> void:
 	for subscription in actor_subscriptions.values():
-		for unsub in subscription.get("unsubscribes", []):
-			if unsub is Callable:
-				unsub.call()
+		_release_subscription(subscription)
 	actor_subscriptions.clear()
 	is_recording = false
+
+static func _release_subscription(subscription: Dictionary) -> void:
+	for unsub in subscription.get("unsubscribes", []):
+		if unsub is Callable:
+			unsub.call()
 
 func export_json(result: String = "", pretty: bool = true) -> String:
 	var record := stop_recording(result)
@@ -119,6 +122,10 @@ func export_json(result: String = "", pretty: bool = true) -> String:
 
 func get_is_recording() -> bool:
 	return is_recording
+
+## 构造时注入的 event_collector（所属 world 的 collector）。
+func get_event_collector() -> EventCollector:
+	return _event_collector
 
 func get_current_frame() -> int:
 	return current_frame
@@ -153,10 +160,7 @@ func unregister_actor(actor_id: String, reason: String = "") -> void:
 
 	var subscription: Dictionary = actor_subscriptions.get(actor_id, {}) as Dictionary
 	if not subscription.is_empty():
-		for unsub in subscription.get("unsubscribes", []):
-			if unsub is Callable:
-				unsub.call()
-
+		_release_subscription(subscription)
 		actor_subscriptions.erase(actor_id)
 
 func _subscribe_actor(actor: Actor) -> void:
@@ -165,7 +169,7 @@ func _subscribe_actor(actor: Actor) -> void:
 	if actor_subscriptions.has(actor_id):
 		return
 
-	var ctx := RecordingContext.new(actor_id, self, _event_collector)
+	var ctx := RecordingContext.new(actor_id, self)
 
 	var unsubscribes: Array[Callable] = actor.setup_recording(ctx)
 

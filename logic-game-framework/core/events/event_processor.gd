@@ -4,7 +4,8 @@
 ##
 ## 每个 GameplayInstance 持有自己的 EventProcessor（`instance.event_processor`）：
 ## 有状态（_current_depth, _traces, _pre_handlers），这些状态跟随所属 instance 的生命周期，两个 instance 的 handler 互不可见。
-## 配置随 instance 构造传入：`GameplayInstance._init(id, EventProcessorConfig.new(20, 1))`。
+## 配置经 instance 构造形参传入（`GameplayInstance.new(id, EventProcessorConfig.new(max_depth))` / 子类 `super._init(id, config)`）；
+## 调试时对已有 processor 调 `set_trace_level(1)` 开始记录事件链。
 ## 不持有 instance / Ability / Component 的引用（handler 闭包只捕获 id），instance → processor 是单向强边。
 ##
 ## ========== 核心职责 ==========
@@ -68,6 +69,11 @@ var _pre_handlers: Dictionary = {}
 ## 初始化事件处理器
 func _init(config: EventProcessorConfig = null):
 	_config = config if config != null else EventProcessorConfig.new()
+
+
+## 调整追踪级别（调试用：递归超限报错里的事件链摘要取自 trace）。改的是本 processor 持有的 config 对象。
+func set_trace_level(level: int) -> void:
+	_config.trace_level = level
 
 
 ## 注册 Pre 阶段处理器
@@ -343,7 +349,7 @@ func _get_event_chain_summary() -> String:
 	if _traces.is_empty():
 		# trace_level 默认 0（不累积 trace），所以这里通常是空的。
 		# 事件链是排查事件循环的主要线索，提示怎么把它打开。
-		return "  (no trace available; 重跑时传 EventProcessorConfig.new(max_depth, 1) 以记录事件链)"
+		return "  (no trace available; 重跑前对所属 instance 调 event_processor.set_trace_level(1) 以记录事件链)"
 	
 	var lines: Array[String] = []
 	# 只显示最近的事件链（最多 10 个）

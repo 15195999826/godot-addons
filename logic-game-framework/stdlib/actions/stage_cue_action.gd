@@ -48,6 +48,9 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		params_value
 	)
 
-	ctx.event_collector.push(event.to_dict())
+	# owner 未注册（ctx.instance 为 null）时没有录像队列可推；cue 只服务表演层，跳过推送。
+	var collector := ctx.event_collector
+	if collector != null:
+		collector.push(event.to_dict())
 
 	return ActionResult.create_success_result([event.to_dict()])

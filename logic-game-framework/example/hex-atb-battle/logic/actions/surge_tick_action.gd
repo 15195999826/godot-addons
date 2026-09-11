@@ -33,11 +33,14 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	ability.remove_stacks(1)
 	var stacks_after := ability.get_stacks()
 
-	ctx.event_collector.push(
-		GameEvent.AbilityStacksChanged.create(
-			owner_id, ability.id, ability.config_id, stacks_before, stacks_after
-		).to_dict()
-	)
+	# owner 未注册（ctx.instance 为 null）时没有录像队列：叠层照减，事件跳过。
+	var collector := ctx.event_collector
+	if collector != null:
+		collector.push(
+			GameEvent.AbilityStacksChanged.create(
+				owner_id, ability.id, ability.config_id, stacks_before, stacks_after
+			).to_dict()
+		)
 
 	if stacks_after <= 0:
 		ability.expire("surge_exhausted")

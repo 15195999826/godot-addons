@@ -2678,7 +2678,7 @@ func _reset_world_to_model_unguarded() -> bool:
 	if _sanitize_environment_positions():
 		_queue_inspector_rebuild()
 	var collision_detector := MobaCollisionDetector.new()
-	_world.add_system(ProjectileSystem.new(collision_detector, _world.event_collector, false))
+	_world.add_system(ProjectileSystem.new(collision_detector, false))
 
 	for i in _actors.size():
 		_spawn_one_actor(i)

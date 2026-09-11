@@ -8,7 +8,7 @@ extends Node
 ## context）、NoInstance lifecycle（on_apply 用 AbilitySet 建的 context、on_remove 用 Ability 自建的
 ## context）、execution 的 start / tag / cancel action（cancel 由 revoke 触发，调用方什么也不递）、
 ## PreEvent handler 的重建 context；owner 没注册时老实给 null——而 grant 照样恒投递 AbilityGranted，
-## GRANTED_SELF 照样自激活。叠层 / Break 钩子与 on_remove 共用 Ability._build_remove_context，
+## GRANTED_SELF 照样自激活，拿不到事件设施的几条路径降级而不报错。叠层 / Break 钩子与 on_remove 共用 Ability._build_remove_context，
 ## PreEvent filter 与 handler 共用 _rebuild_context，不另钉。
 
 const PROBE_KIND := "instance_context_probe"
@@ -82,6 +82,7 @@ func _init() -> void:
 	TestFramework.register_test("Instance: execution start/tag/cancel actions resolve owner instance", _test_execution_sees_owner_instance)
 	TestFramework.register_test("Instance: pre handler context sees owner instance", _test_pre_handler_sees_owner_instance)
 	TestFramework.register_test("Instance: unregistered owner gets null yet grant still self-activates", _test_unregistered_owner)
+	TestFramework.register_test("Instance: unregistered owner degrades without event infrastructure", _test_unregistered_owner_without_event_infrastructure)
 
 
 func _test_dispatch_sees_owner_instance() -> void:
@@ -213,6 +214,42 @@ func _test_unregistered_owner() -> void:
 	ability_set.receive_event(probe)
 	TestFramework.assert_equal(NO_INSTANCE, probe.get("filter_instance", ""))
 	TestFramework.assert_equal(NO_INSTANCE, probe.get("action_instance", ""))
+
+
+## owner 反查不到 → context 没有事件设施，三条降级路径各钉一个可观测结果：PreEvent 不注册 handler（只打警告）；
+## 激活被 Condition 拦下时失败事件无处可推、跳过——去掉 tag 后同一请求能激活，证明前一次确实走到了失败分支；
+## 只发表演 cue 的 action 跳过推送、照常返回成功（执行出错时引擎只中止出错那一帧，返回值会是 null）。
+func _test_unregistered_owner_without_event_infrastructure() -> void:
+	var owner_id := "no_such_instance:ghost_events"
+	var ability_set := AbilitySet.create(owner_id)
+	var config := (AbilityConfig.builder()
+		.config_id("instance_ctx_unregistered_events")
+		.component_config(PreEventConfig.new(PRE_KIND, _pre_handler_recording_instance()))
+		.active_use(ActiveUseConfig.builder()
+			.timeline(TimelineData.new("t-instance-context-unregistered-events", 100.0, {}))
+			.condition(Condition.NoTagCondition.new("sealed"))
+			.build())
+		.build())
+	var ability := Ability.new(config, owner_id)
+	ability_set.grant_ability(ability)
+
+	var pre_components := ability.get_all_components().filter(func(c: AbilityComponent) -> bool:
+		return c is PreEventComponent)
+	TestFramework.assert_equal(1, pre_components.size())
+	TestFramework.assert_false((pre_components[0] as PreEventComponent)._unregister.is_valid(),
+		"没有 processor 时不应注册 pre handler")
+
+	ability_set.add_loose_tag("sealed")
+	ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
+	TestFramework.assert_equal(0, ability.get_executing_instances().size())
+	ability_set.remove_loose_tag("sealed")
+	ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
+	TestFramework.assert_equal(1, ability.get_executing_instances().size())
+
+	var cue := StageCueAction.new(TargetSelector.new(), Resolvers.str_val("instance_ctx_cue"))
+	var chain: Array[Dictionary] = [{"kind": PROBE_KIND}]
+	var result := cue.execute(ExecutionContext.create(chain, null, AbilityRef.from_ability(ability)))
+	TestFramework.assert_true(result != null and result.success, "没有 collector 时 cue action 应跳过推送并返回成功")
 
 
 # ========== 夹具 ==========

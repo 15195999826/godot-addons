@@ -46,7 +46,7 @@ func _ready() -> void:
 	_world.configure_grid(cfg)
 
 	var collision_detector := MobaCollisionDetector.new()
-	_world.add_system(ProjectileSystem.new(collision_detector, _world.event_collector, false))
+	_world.add_system(ProjectileSystem.new(collision_detector, false))
 
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	caster._display_name = "caster"

@@ -154,7 +154,7 @@ func _test_data_actor_null_safe() -> void:
 	instance.add_actor(actor)
 	TestFramework.assert_true(actor.is_id_valid(), "_on_id_assigned 不应因两个 set 为 null 中断")
 
-	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}, instance.event_collector), instance.event_collector)
+	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}, instance.event_collector))
 	TestFramework.assert_true(_drain(actor.setup_recording(ctx)) == 1,
 		"没有两个 set 时仍应订阅 actor 生命周期这一条")
 
@@ -249,7 +249,7 @@ func _test_serialize_with_sets() -> void:
 func _test_setup_recording_full() -> void:
 	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_recording"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
-	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}, instance.event_collector), instance.event_collector)
+	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}, instance.event_collector))
 	# 期望条数从三个 RecordingUtils 现算, 免得把数字抄死; 探针订阅当场退订 ——
 	# 它们捕获的 ctx → recorder 不退订会活到进程结束, 泄漏直方图会当场报红。
 	var expected := _drain(RecordingUtils.record_attribute_changes(actor.attribute_set, ctx)) \

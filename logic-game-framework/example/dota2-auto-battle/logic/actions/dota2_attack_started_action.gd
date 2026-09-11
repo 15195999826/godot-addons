@@ -21,5 +21,8 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var targets := get_targets(ctx)
 	var target_id := targets[0] if not targets.is_empty() else ""
 	var evt := Dota2BattleEvents.make_attack_started(source_id, target_id, _config_id)
-	ctx.event_collector.push(evt)
+	# owner 未注册（ctx.instance 为 null）时没有事件队列可推；cue 只服务表演 / 调试面板，跳过推送。
+	var collector := ctx.event_collector
+	if collector != null:
+		collector.push(evt)
 	return ActionResult.create_success_result([evt])

@@ -3,17 +3,17 @@ class_name RecordingContext
 ##
 ## 持有 BattleRecorder 引用，通过直接访问 recorder 属性来获取实时状态，
 ## 避免了原有 Dictionary + 闭包方案中值类型（is_recording/current_frame）被快照拷贝的问题。
-## 同时持有 recorder 注入的 event_collector：属性变化是高频路径，推事件不绕 recorder、不查注册表。
 
 var actor_id: String
 var _recorder: BattleRecorder
+## recorder 注入的 event_collector，构造时取一次：属性变化是高频路径，推事件不再绕 recorder。
 var _collector: EventCollector
 
 
-func _init(p_actor_id: String, recorder: BattleRecorder, collector: EventCollector) -> void:
+func _init(p_actor_id: String, recorder: BattleRecorder) -> void:
 	actor_id = p_actor_id
 	_recorder = recorder
-	_collector = collector
+	_collector = recorder.get_event_collector()
 
 
 ## 推送录像事件

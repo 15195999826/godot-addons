@@ -206,7 +206,7 @@ NoInstanceConfig.builder()
 - 现有 event trigger 语义不变：`trigger(...) + actions(...)` 仍表示 "事件匹配后立即执行 actions，不创建 timeline instance"。
 - 新增 lifecycle actions 不要求 trigger；`build()` 允许 lifecycle-only config。
 - 但若配置了普通 `actions(...)`，仍必须配置至少一个 trigger，避免无触发事件的 action 静默无效。
-- lifecycle actions 构造一个仅用于执行的 `ExecutionContext`：带 `ability_ref`、`event_collector`、内部 lifecycle event dict；`ctx.instance` 与事件触发路径同源（按 owner 的 actor id 反查，owner 未注册时为 `null`）。
+- lifecycle actions 构造一个仅用于执行的 `ExecutionContext`：带 `ability_ref`、内部 lifecycle event dict；`ctx.instance` 与事件触发路径同源（按 owner 的 actor id 反查，owner 未注册时为 `null`），`ctx.event_collector` 由它派生——owner 未注册时同为 `null`，只发表演 cue 的 action（如 `StageCueAction`）判空跳过推送。
 - lifecycle actions 适合 `LooseTagAction` / `StageCueAction` 这类只动 owner / ability / tag_container、或只发表演 cue 的轻量 action；拿得到 instance 不改变这个定位——**不应**用来发 projectile、移动 actor 或结算伤害（lifecycle 由 grant / revoke 触发，不在任何 timeline 上）。
 - 不新增 `GameEvent`，不把 lifecycle action 本身写入 replay；若 action 修改 tag，既有 `RecordingUtils.record_tag_changes()` 会记录 tag 变化。
 - 同一个 `NoInstanceConfig` 内 action 数组按声明顺序执行；同一 Ability 的多个 component config 按 `AbilityConfig` 声明顺序构建 / 执行 lifecycle hook。

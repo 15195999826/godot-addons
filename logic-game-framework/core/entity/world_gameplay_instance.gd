@@ -133,14 +133,21 @@ func get_active_battle() -> BattleProcedure:
 	return _active_battle
 
 
-## world 结束时若仍有进行中的战斗，先中止它（不发 battle_finished、不产出录像），再由基类 despawn actor：
-## 开着录像时 recorder 的订阅闭包与被录 actor 互相强持，不中止就连同全部被录 actor 一起泄漏。
-## 子类覆盖 on_end 须先调 super.on_end()。
-func on_end() -> void:
-	if _active_battle == null:
-		return
-	_active_battle.abort()
-	_active_battle = null
+## procedure 结束（finish / abort）时交还战斗槽位：槽位仍指着它才清空。由 BattleProcedure 收尾时调用——
+## 不论战斗经 tick() 收尾还是被调用方直接 finish()，结束后 has_active_battle() 都不会陈旧。
+func _release_battle(procedure: BattleProcedure) -> void:
+	if _active_battle == procedure:
+		_active_battle = null
+
+
+## world 结束时若仍有进行中的战斗，先中止它（不发 battle_finished、不产出录像），再走基类拆除
+## （on_end → despawn actor → 注销 system → 清 pre handler）：开着录像时 recorder 的订阅闭包与被录 actor
+## 互相强持，不中止就连同全部被录 actor 一起泄漏。写在 end() 而非 on_end()：on_end 是留给子类的空钩子。
+func end() -> void:
+	if _active_battle != null:
+		_active_battle.abort()
+		_active_battle = null
+	super.end()
 
 
 # ========== Tick ==========
@@ -152,11 +159,15 @@ func tick(dt: float) -> void:
 	if _active_battle == null:
 		base_tick(dt)
 		return
+	var battle := _active_battle
 	var remaining := BATTLE_TICKS_PER_WORLD_FRAME
 	while remaining > 0:
-		_active_battle.tick_once()
-		if _active_battle.should_end():
-			var timeline := _active_battle.finish()
+		battle.tick_once()
+		# 战斗 tick 里 world 被结束（end() 已中止战斗并清空槽位）：本帧到此为止。
+		if _active_battle != battle:
+			return
+		if battle.should_end():
+			var timeline := battle.finish()
 			_active_battle = null
 			battle_finished.emit(timeline)
 			return

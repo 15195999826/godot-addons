@@ -2,20 +2,16 @@ class_name ProjectileSystem
 extends System
 
 var collision_detector: CollisionDetector
-var event_collector: EventCollector
 var pending_removal: Dictionary = {}
 var auto_remove: bool = true
 
-func _init(detector: CollisionDetector = null, collector: EventCollector = null, auto_remove_val: bool = true) -> void:
+## 投射物事件推进本 system 所注册 instance 的 event_collector（发事件时经 get_instance() 取，不另存一份）。
+func _init(detector: CollisionDetector = null, auto_remove_val: bool = true) -> void:
 	super(System.SystemPriority.NORMAL)
 	type = "ProjectileSystem"
 
 	collision_detector = detector if detector else DistanceCollisionDetector.new(50.0)
-	event_collector = collector
 	auto_remove = auto_remove_val
-
-func set_event_collector(collector: EventCollector) -> void:
-	event_collector = collector
 
 func tick(actors: Array[Actor], dt: float) -> void:
 	var projectiles: Array[ProjectileActor] = []
@@ -132,7 +128,8 @@ func _process_pending_removal(_actors: Array[Actor]) -> void:
 	pending_removal.clear()
 
 func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_position: Vector3) -> void:
-	if not event_collector:
+	var event_collector := _get_event_collector()
+	if event_collector == null:
 		return
 
 	var source_actor_id := _get_source_id(projectile)
@@ -167,7 +164,8 @@ func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_p
 	event_collector.push(despawn_event)
 
 func _emit_miss_event(projectile: ProjectileActor, reason: String) -> void:
-	if not event_collector:
+	var event_collector := _get_event_collector()
+	if event_collector == null:
 		return
 
 	var source_actor_id := _get_source_id(projectile)
@@ -194,7 +192,8 @@ func _emit_miss_event(projectile: ProjectileActor, reason: String) -> void:
 	event_collector.push(despawn_event)
 
 func _emit_pierce_event(projectile: ProjectileActor, target_actor_id: String, pierce_position: Vector3) -> void:
-	if not event_collector:
+	var event_collector := _get_event_collector()
+	if event_collector == null:
 		return
 
 	var source_actor_id := _get_source_id(projectile)
@@ -209,6 +208,12 @@ func _emit_pierce_event(projectile: ProjectileActor, target_actor_id: String, pi
 	)
 
 	event_collector.push(event)
+
+
+## 所注册 instance 的 event_collector；未注册（或已注销）时为 null，调用方短路。
+func _get_event_collector() -> EventCollector:
+	var instance := get_instance()
+	return instance.event_collector if instance != null else null
 
 
 func _get_source_id(projectile: ProjectileActor) -> String:

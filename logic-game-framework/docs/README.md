@@ -633,7 +633,7 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 
 ### (c) recorder 单 buffer + playback 模型
 
-`BattleProcedure` 持有短命的 `BattleRecorder`，随 procedure 销毁。录像的核心不变量是 **"调用栈真实顺序 = 录像顺序"**：Action 的 `event_collector.push` 与 callback 触发的 AttributeChanged / AbilityGranted 在同一调用栈穿插发生，因此 recorder **不分** `pending_events` / `frame_events` 双容器，而是统一汇入所属 world 的 `event_collector` 单一队列（`BattleRecorder` 构造时注入，Action 经 `ctx.event_collector` 推的是同一个），`record_frame(frame, events)` 每帧只接收 flush 出的一个有序数组。事件设施随 instance 生灭：两个 instance 的 collector / pre handler 互不可见；world 结束时若战斗仍在进行，`WorldGameplayInstance.on_end()` 先中止它（退订录像闭包、不发 `battle_finished`、不产出录像）。
+`BattleProcedure` 持有短命的 `BattleRecorder`，随 procedure 销毁。录像的核心不变量是 **"调用栈真实顺序 = 录像顺序"**：Action 的 `event_collector.push` 与 callback 触发的 AttributeChanged / AbilityGranted 在同一调用栈穿插发生，因此 recorder **不分** `pending_events` / `frame_events` 双容器，而是统一汇入所属 world 的 `event_collector` 单一队列（`BattleRecorder` 构造时注入，Action 经 `ctx.event_collector` 推的是同一个），`record_frame(frame, events)` 每帧只接收 flush 出的一个有序数组。事件设施随 instance 生灭：两个 instance 的 collector / pre handler 互不可见；world 结束时若战斗仍在进行，`WorldGameplayInstance.end()` 先中止它（退订录像闭包、不发 `battle_finished`、不产出录像）。
 
 播放侧钉死两层命名：**A 层 `Playback`（现役）** 只从录像 dict spawn 视觉 view、不重建逻辑层；**B 层 `Replay`（deterministic 重算，未来不一定做）** 仅保留 `BattleReplayPlayer` / `BattleReplaySession` 命名占位。
 
