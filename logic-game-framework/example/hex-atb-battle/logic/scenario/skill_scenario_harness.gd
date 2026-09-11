@@ -310,7 +310,7 @@ static func run_with_actions(
 				continue
 			final_grid_occupants[_grid_coord_key(coord)] = (occupant as Actor).get_id()
 
-	# 兜底: ally/enemy/caster 里上面没快照到的 id 补 0 / {}(死者留在 world, 上面已按实际 hp 快照)
+	# 兜底(当前走不到): caster / ally / enemy 都取自 staging 的 left_team / right_team, 上面的快照已全覆盖
 	for aid in ally_ids + enemy_ids + [caster_id]:
 		if not final_actor_hps.has(aid):
 			final_actor_hps[aid] = 0.0
