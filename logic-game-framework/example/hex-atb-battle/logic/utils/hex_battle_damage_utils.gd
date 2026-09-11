@@ -1,7 +1,7 @@
 ## HexBattleDamageUtils - 伤害流程公共工具
 ##
 ## 提取 DamageAction 和 ReflectDamageAction 共享的
-## 「push 伤害事件 → 扣血 → 日志 → 死亡检测 → 死亡事件广播 → 移除角色」流程。
+## 「push 伤害事件 → 扣血 → 日志 → 死亡检测 → 死亡事件广播 → 清 grid 占用」流程（死者留在 world，不 remove_actor）。
 ##
 ## 注意：**不包含 post damage 广播**。
 ## 调用方需要在回调等后续逻辑完成后，自行调用
@@ -31,9 +31,9 @@ class DamageResult:
 ## 4. 扣血：target.attribute_set.set_hp_base(hp - actual_life_damage)
 ## 5. 日志：battle.logger.damage_dealt(...)
 ## 6. 触发破裂回调：对每个 broken=true 的护盾 push shield_broken event → call on_break → expire ability
-## 7. 死亡检测：check_death() → push death_event → process_post_event(death) → remove_actor
+## 7. 死亡检测：check_death() → push death_event → process_post_event(death) → 清 grid 占用（不 remove_actor）
 ##
-## 关键顺序约束：on_break 必须在 remove_actor 之前调用，否则爆炸类回调拿不到 owner 上下文。
+## 关键顺序约束：on_break 必须在死亡检测之前调用，否则爆炸类回调看到的 owner 已判死、grid 占用已清。
 ##
 ## 不包含 post damage 广播，由调用方自行处理。
 ##
@@ -100,7 +100,7 @@ static func apply_damage(
 				damage_event.is_reflected
 			)
 
-		# ========== 护盾破裂回调（在死亡 / remove_actor 之前） ==========
+		# ========== 护盾破裂回调（在死亡检测之前） ==========
 		if shield_result != null and not shield_result.consumption_records.is_empty():
 			_process_broken_shields(
 				shield_result.consumption_records,

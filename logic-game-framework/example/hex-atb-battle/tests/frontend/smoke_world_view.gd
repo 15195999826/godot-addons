@@ -123,8 +123,8 @@ func _on_anim_done() -> void:
 		return
 
 	# Step 5: 显式 remove_actor 验证 reactive 生命周期
-	# 战斗中 damage_utils 已对死者调用 remove_actor（见 hex_battle_damage_utils.gd:90）,
-	# 所以残存 actor 由 WorldView 当前持有的 view 集合决定。
+	# 战斗中死者留在 world（damage_utils 只清 grid 占用、不 remove_actor），view 集合含死者，
+	# 这里从 WorldView 当前持有的 view 里挑一个显式移除。
 	var view_ids := _world_view.get_unit_views().keys()
 	if view_ids.is_empty():
 		_pass("battle 全灭, 无 view 可移除 (算作通过, 战斗期 remove signal 已验证)")

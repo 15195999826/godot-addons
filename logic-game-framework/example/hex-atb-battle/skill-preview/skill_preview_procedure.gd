@@ -112,7 +112,7 @@ func tick_once() -> void:
 		return
 	_current_tick += 1
 
-	var world := _get_world() as HexWorldGameplayInstance
+	var world := _get_world()
 	if world != null:
 		world.base_tick(_tick_interval)
 
@@ -173,6 +173,11 @@ func tick_once() -> void:
 
 
 # ========== Virtual hooks ==========
+
+## 协变收窄基类的 WeakRef 回指：world._active_battle 强持本 procedure，子类只经本方法触达 world，不另存 world 字段（会成环）。
+func _get_world() -> HexWorldGameplayInstance:
+	return super._get_world() as HexWorldGameplayInstance
+
 
 func _mark_in_combat(actor_id: String, active: bool) -> void:
 	var world := _get_world()
@@ -250,7 +255,7 @@ func _get_alive_participants() -> Array[CharacterActor]:
 	# in-flight execution 不计入 — wait_for_idle 提前退出, pulse 不 fire。
 	# 返回类型放宽为 Array (CharacterActor + EnvironmentActor 公共基类 HexBattleActor,
 	# 但 _get_alive_participants 注解是 Array[CharacterActor]; 我们改用基类提取)。
-	var world := _get_world() as HexWorldGameplayInstance
+	var world := _get_world()
 	if world != null:
 		for actor in world.get_actors():
 			if actor is CharacterActor:

@@ -27,7 +27,7 @@
 ##
 ## 4. 死亡检测：
 ##    - if check_death():
-##        push(death_event) → process_post_event(death_event) → remove_actor()
+##        push(death_event) → process_post_event(death_event) → 清 grid 占用（死者留在 world，不 remove_actor）
 ##
 ## 5. 处理回调：on_hit / on_critical / on_kill
 ##
@@ -238,7 +238,7 @@ func _process_callbacks(damage_event: Dictionary, is_critical: bool, ctx: Execut
 			if result != null and result.event_dicts:
 				events.append_array(result.event_dicts)
 	
-	# on_kill: 检查目标是否死亡
+	# on_kill: 死亡检测只锁存 is_dead()、不把死者移出 world，直接读目标的死亡锁存
 	var is_kill := target_actor.is_dead()
 	if is_kill:
 		for callback in _on_kill_callbacks:

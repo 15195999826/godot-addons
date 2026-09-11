@@ -14,7 +14,7 @@
 ##
 ## 1. 从 current_event 获取 source_actor_id（攻击者）
 ## 2. 产生反伤事件 + 立即应用伤害（原子操作）
-## 3. 死亡检测：push(death_event) → process_post_event → remove_actor
+## 3. 死亡检测：push(death_event) → process_post_event → 清 grid 占用（死者留在 world）
 ## 4. Post 阶段：触发其他被动（如吸血）
 ##
 ## ========== 反伤链防护 ==========

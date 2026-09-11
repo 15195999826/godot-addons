@@ -176,7 +176,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 ### 固定值 vs 执行期计算（Resolver）
 
-数值 / 坐标 / cue 参数一律是 Resolver：固定值用 `Resolvers.*_val`，执行期计算用 `Resolvers.*_fn` 包一个 `func(ctx: ExecutionContext)`：
+Damage / Heal / 移动系与 `StageCueAction` 的数值 / 坐标 / cue 参数是 Resolver（见下方「Resolver 类型的参数」表；Reflect / Push / Regenerate / SpawnFireTile / SpawnActor 等仍有裸值形参，以构造签名为准）。固定值用 `Resolvers.*_val`，执行期计算用 `Resolvers.*_fn` 包一个 `func(ctx: ExecutionContext)`：
 
 ```gdscript
 # 固定值
