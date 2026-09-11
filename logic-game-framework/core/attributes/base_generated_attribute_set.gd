@@ -25,9 +25,9 @@ func add_change_listener(listener: Callable) -> Callable:
 	var wrapper := func(raw_event: Dictionary) -> void:
 		listener.call(GameEvent.AttributeChanged.create(
 			actor_id,
-			raw_event.get("attributeName", ""),
-			raw_event.get("oldValue", 0.0),
-			raw_event.get("newValue", 0.0),
+			raw_event.get("attribute_name", ""),
+			raw_event.get("old_value", 0.0),
+			raw_event.get("new_value", 0.0),
 		))
 	_raw.add_change_listener(wrapper)
 	return func() -> void:

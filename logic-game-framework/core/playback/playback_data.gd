@@ -7,7 +7,7 @@ extends RefCounted
 ##
 ## 录像文件形状:
 ##   { "meta": {...},
-##     "world_snapshot": { "actors": [...], "mapConfig": {...}, "positionFormats": {...} },
+##     "world_snapshot": { "actors": [...], "map_config": {...}, "position_formats": {...} },
 ##     "timeline": [ {"frame": N, "events": [...]}, ... ] }
 ##
 ## 无 version 字段 —— 单一底层架构、录像是短命数据（打完→播完→丢），不做多版本共存;
@@ -45,7 +45,7 @@ class BattleRecord:
 
 
 ## 开战时刻的世界侧状态切片。由 WorldGameplayInstance.capture_world_snapshot() 产出,
-## recorder 只接收不自产。回放器按 positionFormats 解释各 actor 的 position 数组。
+## recorder 只接收不自产。回放器按 position_formats 解释各 actor 的 position 数组。
 class WorldSnapshot:
 	var actors: Array[ActorInitData] = []
 	var map_config: Dictionary = {}
@@ -57,16 +57,16 @@ class WorldSnapshot:
 			actors_arr.append(a.to_dict() if a is ActorInitData else a)
 		return {
 			"actors": actors_arr,
-			"mapConfig": map_config,
-			"positionFormats": position_formats,
+			"map_config": map_config,
+			"position_formats": position_formats,
 		}
 
 	static func from_dict(d: Dictionary) -> WorldSnapshot:
 		var snap := WorldSnapshot.new()
 		for a in d.get("actors", []):
 			snap.actors.append(ActorInitData.from_dict(a))
-		snap.map_config = d.get("mapConfig", {})
-		snap.position_formats = d.get("positionFormats", {})
+		snap.map_config = d.get("map_config", {})
+		snap.position_formats = d.get("position_formats", {})
 		return snap
 
 
@@ -79,19 +79,19 @@ class BattleMeta:
 
 	func to_dict() -> Dictionary:
 		return {
-			"battleId": battle_id,
-			"recordedAt": recorded_at,
-			"tickInterval": tick_interval,
-			"totalFrames": total_frames,
+			"battle_id": battle_id,
+			"recorded_at": recorded_at,
+			"tick_interval": tick_interval,
+			"total_frames": total_frames,
 			"result": result,
 		}
 
 	static func from_dict(d: Dictionary) -> BattleMeta:
 		var meta := BattleMeta.new()
-		meta.battle_id = d.get("battleId", "")
-		meta.recorded_at = d.get("recordedAt", 0)
-		meta.tick_interval = d.get("tickInterval", 100)
-		meta.total_frames = d.get("totalFrames", 0)
+		meta.battle_id = d.get("battle_id", "")
+		meta.recorded_at = d.get("recorded_at", 0)
+		meta.tick_interval = d.get("tick_interval", 100)
+		meta.total_frames = d.get("total_frames", 0)
 		meta.result = d.get("result", "")
 		return meta
 
@@ -135,8 +135,8 @@ class ActorInitData:
 
 	func to_dict() -> Dictionary:
 		return {
-			"id": id, "type": type, "configId": config_id,
-			"displayName": display_name, "team": team,
+			"id": id, "type": type, "config_id": config_id,
+			"display_name": display_name, "team": team,
 			"position": position, "attributes": attributes,
 		}
 
@@ -144,8 +144,8 @@ class ActorInitData:
 		var data := ActorInitData.new()
 		data.id = d.get("id", "")
 		data.type = d.get("type", "")
-		data.config_id = d.get("configId", "")
-		data.display_name = d.get("displayName", "")
+		data.config_id = d.get("config_id", "")
+		data.display_name = d.get("display_name", "")
 		data.team = d.get("team", 0)
 		data.position = d.get("position", [])
 		data.attributes = d.get("attributes", {})

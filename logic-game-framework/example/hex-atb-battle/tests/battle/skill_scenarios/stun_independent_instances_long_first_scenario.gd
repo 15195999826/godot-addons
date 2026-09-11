@@ -129,10 +129,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 func _filter_stun_grants(ctx: ScenarioAssertContext, config_id: String) -> Array:
 	var out: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) != config_id:
+		if str(ability_data.get("config_id", "")) != config_id:
 			continue
 		out.append(e)
 	return out
@@ -141,27 +141,27 @@ func _filter_stun_grants(ctx: ScenarioAssertContext, config_id: String) -> Array
 func _filter_stun_removes(ctx: ScenarioAssertContext, instance_ids: Array) -> Array:
 	var out: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
-		if str(e.get("abilityInstanceId", "")) in instance_ids:
+		if str(e.get("ability_instance_id", "")) in instance_ids:
 			out.append(e)
 	return out
 
 
 func _find_remove_frame(removes: Array, target_inst: String) -> int:
 	for e in removes:
-		if str(e.get("abilityInstanceId", "")) == target_inst:
+		if str(e.get("ability_instance_id", "")) == target_inst:
 			return int(e.get("replay_frame", -1))
 	return -1
 
 
-## AbilityActivateFailed 的 source actor 字段名是 `sourceId` (来自 ActiveUseComponent._push_activate_failed)。
+## AbilityActivateFailed 的 source actor 字段名是 `source_id` (来自 ActiveUseComponent._push_activate_failed)。
 func _filter_activate_failed_for(ctx: ScenarioAssertContext, actor_id: String, config_id: String) -> Array:
 	var out: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_ACTIVATE_FAILED_EVENT):
-		if str(e.get("sourceId", "")) != actor_id:
+		if str(e.get("source_id", "")) != actor_id:
 			continue
-		if str(e.get("abilityConfigId", "")) != config_id:
+		if str(e.get("ability_config_id", "")) != config_id:
 			continue
 		out.append(e)
 	return out

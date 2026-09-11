@@ -418,7 +418,7 @@ func apply_config(config: Dictionary) -> void:
 
 func on_attribute_changed(attr_name: String, callback: Callable) -> Callable:
 	var filtered_listener := func(event: Dictionary) -> void:
-		if event.get("attributeName", "") == attr_name:
+		if event.get("attribute_name", "") == attr_name:
 			callback.call(event)
 	add_change_listener(filtered_listener)
 	return func() -> void:
@@ -661,15 +661,15 @@ func snapshot_current_values() -> Dictionary:
 
 
 ## 内部辅助：对比 before/after 快照，批量通知变化的属性
-## change_type: 通知事件中的 changeType 字段
+## change_type: 通知事件中的 change_type 字段
 func _notify_changes(before: Dictionary, change_type: String) -> void:
 	for attr_name in before.keys():
 		var old_value: float = before[attr_name]
 		var new_value := get_current_value(attr_name)
 		if new_value != old_value:
 			_dispatch_event({
-				"attributeName": attr_name,
-				"oldValue": old_value,
-				"newValue": new_value,
-				"changeType": change_type,
+				"attribute_name": attr_name,
+				"old_value": old_value,
+				"new_value": new_value,
+				"change_type": change_type,
 			})

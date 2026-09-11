@@ -7,7 +7,7 @@
 ## - enemy_1 受 48 magical
 ## - enemy_2 受 38.4 magical
 ## - enemy_3 不应受到伤害 (太远, 链 3 跳后 next chain 找不到它)
-## - projectileLaunched / projectileHit 各 3 个, customData 带 chain_id / hit_index 0/1/2
+## - projectile_launched / projectile_hit 各 3 个, custom_data 带 chain_id / hit_index 0/1/2
 ## - 3 个 damage event 所在 replay frame 严格递增 (证明不是同帧 local loop)
 class_name ChainLightningScenario
 extends SkillScenario
@@ -18,7 +18,7 @@ const FALLOFF := HexBattleChainLightning.FALLOFF
 
 
 func get_name() -> String:
-	return "ChainLightning: 60→48→38.4 三跳, 远敌不被命中, customData chain_id/hit_index 透传"
+	return "ChainLightning: 60→48→38.4 三跳, 远敌不被命中, custom_data chain_id/hit_index 透传"
 
 
 func get_scene_config() -> Dictionary:
@@ -79,30 +79,30 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_eq(d3_arr.size(), 0,
 		"enemy_3 (链外远敌) 不应受到伤害 (3 跳上限)")
 
-	# ---- projectile event 计数 + customData ----
-	# launched event 不带 ability_config_id, 通过 visualType=lightning 过滤; hit 用 ability_config_id。
+	# ---- projectile event 计数 + custom_data ----
+	# launched event 不带 ability_config_id, 通过 visual_type=lightning 过滤; hit 用 ability_config_id。
 	var launches: Array[Dictionary] = []
 	var hits: Array[Dictionary] = []
 	for e in ctx.events:
 		var kind := str(e.get("kind", ""))
-		if kind == "projectileLaunched" and str(e.get("visualType", "")) == "lightning":
+		if kind == "projectile_launched" and str(e.get("visual_type", "")) == "lightning":
 			launches.append(e)
-		elif kind == "projectileHit" and str(e.get("ability_config_id", "")) == HexBattleChainLightning.CONFIG_ID:
+		elif kind == "projectile_hit" and str(e.get("ability_config_id", "")) == HexBattleChainLightning.CONFIG_ID:
 			hits.append(e)
 	ctx.assert_eq(launches.size(), 3,
-		"3 个 chain lightning projectileLaunched (含 hit 后续链发的 2 个)")
+		"3 个 chain lightning projectile_launched (含 hit 后续链发的 2 个)")
 	ctx.assert_eq(hits.size(), 3,
-		"3 个 chain lightning projectileHit")
+		"3 个 chain lightning projectile_hit")
 
-	# customData 验证: launch / hit 都带 chain_id / hit_index 0/1/2 / ability_instance_id 一致
+	# custom_data 验证: launch / hit 都带 chain_id / hit_index 0/1/2 / ability_instance_id 一致
 	var chain_id_set: Dictionary = {}
 	var ability_instance_id_set: Dictionary = {}
 	for i in range(launches.size()):
-		var cd: Dictionary = launches[i].get("customData", {}) as Dictionary
+		var cd: Dictionary = launches[i].get("custom_data", {}) as Dictionary
 		ctx.assert_true(cd.has("chain_id") and str(cd.get("chain_id")) != "",
-			"projectileLaunched[%d] customData.chain_id 非空" % i)
+			"projectile_launched[%d] custom_data.chain_id 非空" % i)
 		ctx.assert_true(cd.has("ability_instance_id") and str(cd.get("ability_instance_id")) != "",
-			"projectileLaunched[%d] customData.ability_instance_id 非空" % i)
+			"projectile_launched[%d] custom_data.ability_instance_id 非空" % i)
 		chain_id_set[str(cd.get("chain_id", ""))] = true
 		ability_instance_id_set[str(cd.get("ability_instance_id", ""))] = true
 
@@ -113,11 +113,11 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# 因为 launches 按事件流入,可能不严格 0/1/2 顺序; 校验 set
 	var indices_seen: Dictionary = {}
 	for e in launches:
-		var cd: Dictionary = e.get("customData", {}) as Dictionary
+		var cd: Dictionary = e.get("custom_data", {}) as Dictionary
 		indices_seen[int(cd.get("hit_index", -1))] = true
 	for i in range(3):
 		ctx.assert_true(indices_seen.has(i),
-			"projectileLaunched hit_index 应包含 %d" % i)
+			"projectile_launched hit_index 应包含 %d" % i)
 
 	# ---- 时序: 3 个 damage event frame 严格递增 ----
 	var damage_frames: Array[int] = []

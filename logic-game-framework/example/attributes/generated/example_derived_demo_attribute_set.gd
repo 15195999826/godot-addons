@@ -27,12 +27,12 @@ func set_damage_base(value: float) -> void:
 	_raw.set_base("damage", value)
 func on_damage_changed(callback: Callable) -> Callable:
 	var wrapper := func(raw_event: Dictionary) -> void:
-		if raw_event.get("attributeName", "") == "damage":
+		if raw_event.get("attribute_name", "") == "damage":
 			callback.call(GameEvent.AttributeChanged.create(
 				actor_id,
-				raw_event.get("attributeName", ""),
-				raw_event.get("oldValue", 0.0),
-				raw_event.get("newValue", 0.0),
+				raw_event.get("attribute_name", ""),
+				raw_event.get("old_value", 0.0),
+				raw_event.get("new_value", 0.0),
 			))
 	_raw.add_change_listener(wrapper)
 	return func() -> void:
@@ -51,12 +51,12 @@ func set_max_hp_base(value: float) -> void:
 	_raw.set_base("max_hp", value)
 func on_max_hp_changed(callback: Callable) -> Callable:
 	var wrapper := func(raw_event: Dictionary) -> void:
-		if raw_event.get("attributeName", "") == "max_hp":
+		if raw_event.get("attribute_name", "") == "max_hp":
 			callback.call(GameEvent.AttributeChanged.create(
 				actor_id,
-				raw_event.get("attributeName", ""),
-				raw_event.get("oldValue", 0.0),
-				raw_event.get("newValue", 0.0),
+				raw_event.get("attribute_name", ""),
+				raw_event.get("old_value", 0.0),
+				raw_event.get("new_value", 0.0),
 			))
 	_raw.add_change_listener(wrapper)
 	return func() -> void:
@@ -75,12 +75,12 @@ func set_strength_base(value: float) -> void:
 	_raw.set_base("strength", value)
 func on_strength_changed(callback: Callable) -> Callable:
 	var wrapper := func(raw_event: Dictionary) -> void:
-		if raw_event.get("attributeName", "") == "strength":
+		if raw_event.get("attribute_name", "") == "strength":
 			callback.call(GameEvent.AttributeChanged.create(
 				actor_id,
-				raw_event.get("attributeName", ""),
-				raw_event.get("oldValue", 0.0),
-				raw_event.get("newValue", 0.0),
+				raw_event.get("attribute_name", ""),
+				raw_event.get("old_value", 0.0),
+				raw_event.get("new_value", 0.0),
 			))
 	_raw.add_change_listener(wrapper)
 	return func() -> void:

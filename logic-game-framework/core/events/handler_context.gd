@@ -46,7 +46,7 @@ func _init(
 ## 转换为 Dictionary（用于日志/调试）
 func to_dict() -> Dictionary:
 	return {
-		"ownerId": owner_id,
-		"abilityId": ability_id,
-		"configId": config_id,
+		"owner_id": owner_id,
+		"ability_id": ability_id,
+		"config_id": config_id,
 	}

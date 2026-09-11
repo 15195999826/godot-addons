@@ -97,14 +97,14 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 			"Case4: ward 实际参与吸收(确认 ward 在场且被算入)")
 
 
-## events 里是否存在 cueId=execute_kill 且 target 包含 actor_id 的 stageCue
+## events 里是否存在 cue_id=execute_kill 且 target 包含 actor_id 的 stage_cue
 func _kill_cue_targets(ctx: ScenarioAssertContext, actor_id: String) -> bool:
 	if actor_id == "":
 		return false
 	for e in ctx.events_of_kind(GameEvent.STAGE_CUE_EVENT):
-		if str(e.get("cueId", "")) != KILL_CUE:
+		if str(e.get("cue_id", "")) != KILL_CUE:
 			continue
-		var targets: Array = e.get("targetActorIds", [])
+		var targets: Array = e.get("target_actor_ids", [])
 		if actor_id in targets:
 			return true
 	return false

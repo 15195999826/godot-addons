@@ -93,7 +93,7 @@ func serialize_base() -> Dictionary:
 		"id": get_id(),
 		"type": type,
 		"team": _team,
-		"displayName": _display_name,
+		"display_name": _display_name,
 	}
 
 
@@ -144,7 +144,7 @@ func _get_position() -> Vector3:
 
 ## 获取位置快照
 ## 返回 [x, y, z] 格式的数组，用于录像存储
-## 具体含义（hex/world/tile）由 configs.positionFormats 声明，渲染层解释
+## 具体含义（hex/world/tile）由 configs.position_formats 声明，渲染层解释
 func get_position_snapshot() -> Array[float]:
 	var pos := _get_position()
 	return [pos.x, pos.y, pos.z]

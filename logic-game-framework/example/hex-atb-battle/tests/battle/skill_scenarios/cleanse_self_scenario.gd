@@ -39,10 +39,10 @@ func get_max_ticks() -> int:
 func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var poison_grant: Dictionary = {}
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) == HexBattlePoisonBuff.CONFIG_ID:
+		if str(ability_data.get("config_id", "")) == HexBattlePoisonBuff.CONFIG_ID:
 			poison_grant = e
 			break
 	ctx.assert_true(not poison_grant.is_empty(), "Poison buff granted on caster")
@@ -52,7 +52,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var poison_inst := str((poison_grant.get("ability", {}) as Dictionary).get("id", ""))
 	var remove_frame := -1
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("abilityInstanceId", "")) == poison_inst:
+		if str(e.get("ability_instance_id", "")) == poison_inst:
 			remove_frame = int(e.get("replay_frame", -1))
 			break
 

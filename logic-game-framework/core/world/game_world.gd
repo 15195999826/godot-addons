@@ -73,10 +73,10 @@ func get_debug_info() -> Dictionary:
 			"id": instance.id,
 			"type": instance.type,
 			"state": instance.get_state(),
-			"actorCount": instance.get_actor_count(),
+			"actor_count": instance.get_actor_count(),
 		})
 	return {
-		"instanceCount": _instances.size(),
+		"instance_count": _instances.size(),
 		"instances": instances_info,
 	}
 

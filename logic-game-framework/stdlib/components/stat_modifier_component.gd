@@ -113,16 +113,16 @@ func serialize() -> Dictionary:
 	var serialized_configs: Array[Dictionary] = []
 	for config in configs:
 		serialized_configs.append({
-			"attributeName": config.attribute_name,
-			"modifierType": AttributeModifier.Type.keys()[config.modifier_type],
+			"attribute_name": config.attribute_name,
+			"modifier_type": AttributeModifier.Type.keys()[config.modifier_type],
 			"value": config.value,
 		})
 	return {
 		"configs": serialized_configs,
 		"scale": current_scale,
-		"scalesByStacks": scales_by_stacks,
+		"scales_by_stacks": scales_by_stacks,
 	}
 
 func deserialize(data: Dictionary) -> void:
 	current_scale = float(data.get("scale", 1.0))
-	scales_by_stacks = bool(data.get("scalesByStacks", false))
+	scales_by_stacks = bool(data.get("scales_by_stacks", false))

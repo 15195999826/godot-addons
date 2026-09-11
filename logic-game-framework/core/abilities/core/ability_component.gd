@@ -108,7 +108,7 @@ func serialize() -> Dictionary:
 	return {}
 
 ## 检查事件是否匹配触发器列表
-## triggers: 触发器字典数组，每个包含 "eventKind" 和可选 "filter"
+## triggers: 触发器字典数组，每个包含 "event_kind" 和可选 "filter"
 ## trigger_mode: "any"（任一匹配）或 "all"（全部匹配）
 static func match_triggers(triggers: Array[Dictionary], trigger_mode: String, event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if triggers.is_empty():
@@ -123,9 +123,9 @@ static func match_triggers(triggers: Array[Dictionary], trigger_mode: String, ev
 			return false
 	return true
 
-## 匹配单个触发器：检查 eventKind 和可选 filter
+## 匹配单个触发器：检查 event_kind 和可选 filter
 static func match_single_trigger(trigger: Dictionary, event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
-	if event_dict.get("kind", "") != str(trigger.get("eventKind", "")):
+	if event_dict.get("kind", "") != str(trigger.get("event_kind", "")):
 		return false
 	if trigger.has("filter") and trigger["filter"] is Callable:
 		return trigger["filter"].call(event_dict, context)
@@ -135,17 +135,17 @@ static func match_single_trigger(trigger: Dictionary, event_dict: Dictionary, co
 static func convert_triggers(configs: Array[TriggerConfig]) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for trigger in configs:
-		var trigger_dict := { "eventKind": trigger.event_kind }
+		var trigger_dict := { "event_kind": trigger.event_kind }
 		if trigger.filter.is_valid():
 			trigger_dict["filter"] = trigger.filter
 		result.append(trigger_dict)
 	return result
 
-## 触发器列表里去重后的 eventKind（按首次出现的顺序），供 get_post_event_kinds 覆盖使用
+## 触发器列表里去重后的 event_kind（按首次出现的顺序），供 get_post_event_kinds 覆盖使用
 static func trigger_event_kinds(triggers: Array[Dictionary]) -> Array[String]:
 	var kinds: Array[String] = []
 	for trigger in triggers:
-		var kind := str(trigger.get("eventKind", ""))
+		var kind := str(trigger.get("event_kind", ""))
 		if kind != "" and not kinds.has(kind):
 			kinds.append(kind)
 	return kinds

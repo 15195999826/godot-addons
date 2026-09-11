@@ -2,7 +2,7 @@
 ##
 ## 订阅 4 类事件,翻译为 ApplyBuffStateAction:
 ##   - AbilityGranted          → ADD     (从 payload 取 stacks / 决定 primary)
-##   - AbilityStacksChanged    → UPDATE  (primary = newStacks)
+##   - AbilityStacksChanged    → UPDATE  (primary = new_stacks)
 ##   - AbilityRemoved          → REMOVE
 ##   - DamageEvent (consumption_records[]) → 每条 record 一次 UPDATE
 ##                              (primary = remaining,定位用 shield_ability_id)
@@ -17,7 +17,7 @@ extends FrontendBaseVisualizer
 
 
 ## primary 取值策略:
-##   STACKS           - 从 ability.stacks(grant)/ AbilityStacksChanged.newStacks 取
+##   STACKS           - 从 ability.stacks(grant)/ AbilityStacksChanged.new_stacks 取
 ##   SHIELD_REMAINING - 从 ShieldComponent.current(grant)/ DamageEvent record.remaining 取
 ##   NONE             - 始终 0(纯被动)
 enum PrimarySource { STACKS, SHIELD_REMAINING, NONE }
@@ -122,13 +122,13 @@ func translate(event: Dictionary, _context: FrontendVisualizerContext) -> Array[
 
 
 func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
-	var actor_id := get_string_field(event, "actorId")
+	var actor_id := get_string_field(event, "actor_id")
 	var payload: Dictionary = event.get("ability", {})
-	var config_id := payload.get("configId", "") as String
+	var config_id := payload.get("config_id", "") as String
 	var rule = BUFF_REGISTRY.get(config_id)
 	if rule == null:
 		return
-	var ability_id := payload.get("instanceId", payload.get("id", "")) as String
+	var ability_id := payload.get("instance_id", payload.get("id", "")) as String
 	if ability_id.is_empty() or actor_id.is_empty():
 		return
 
@@ -136,7 +136,7 @@ func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) ->
 		ability_id, config_id, rule,
 		_resolve_initial_primary(payload, rule["primary_source"])
 	)
-	summary.display_name = payload.get("displayName", "") as String
+	summary.display_name = payload.get("display_name", "") as String
 
 	actions.append(FrontendApplyBuffStateAction.new(
 		actor_id, FrontendApplyBuffStateAction.Op.ADD, ability_id, summary
@@ -144,16 +144,16 @@ func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) ->
 
 
 func _handle_stacks_changed(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
-	var config_id := get_string_field(event, "abilityConfigId")
+	var config_id := get_string_field(event, "ability_config_id")
 	var rule = BUFF_REGISTRY.get(config_id)
 	if rule == null or rule["primary_source"] != PrimarySource.STACKS:
 		return
-	var actor_id := get_string_field(event, "actorId")
-	var ability_id := get_string_field(event, "abilityInstanceId")
+	var actor_id := get_string_field(event, "actor_id")
+	var ability_id := get_string_field(event, "ability_instance_id")
 	if actor_id.is_empty() or ability_id.is_empty():
 		return
 	var summary := _build_summary(
-		ability_id, config_id, rule, float(event.get("newStacks", 0))
+		ability_id, config_id, rule, float(event.get("new_stacks", 0))
 	)
 	actions.append(FrontendApplyBuffStateAction.new(
 		actor_id, FrontendApplyBuffStateAction.Op.UPDATE, ability_id, summary
@@ -162,8 +162,8 @@ func _handle_stacks_changed(event: Dictionary, actions: Array[FrontendVisualActi
 
 func _handle_removed(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
 	# REMOVE 不查白名单,确保即便登记被去掉也保证清理一致。
-	var actor_id := get_string_field(event, "actorId")
-	var ability_id := get_string_field(event, "abilityInstanceId")
+	var actor_id := get_string_field(event, "actor_id")
+	var ability_id := get_string_field(event, "ability_instance_id")
 	if actor_id.is_empty() or ability_id.is_empty():
 		return
 	actions.append(FrontendApplyBuffStateAction.new(

@@ -93,8 +93,8 @@ func to_dict() -> Dictionary:
 		"field": field,
 		"operation": _operation_to_string(operation),
 		"value": value,
-		"sourceId": source_id,
-		"sourceName": source_name,
+		"source_id": source_id,
+		"source_name": source_name,
 	}
 
 

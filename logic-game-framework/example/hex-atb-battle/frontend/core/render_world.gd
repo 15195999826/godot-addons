@@ -14,7 +14,7 @@ extends RefCounted
 ## 角色状态变化信号
 signal actor_state_changed(actor_id: String, state: FrontendActorRenderState)
 
-## Replay 中途 actorSpawned 时创建角色状态
+## Replay 中途 actor_spawned 时创建角色状态
 signal actor_spawned(actor_id: String, state: FrontendActorRenderState)
 
 ## 飘字创建信号
@@ -115,7 +115,7 @@ func initialize_from_replay(record: PlaybackData.BattleRecord) -> void:
 		"录像缺 world_snapshot —— 无法重建开战台面")
 	_position_formats = record.world_snapshot.position_formats
 
-	# 从 mapConfig 创建 GridLayout
+	# 从 map_config 创建 GridLayout
 	if not record.world_snapshot.map_config.is_empty():
 		var grid_config := GridMapConfig.from_dict(record.world_snapshot.map_config)
 		_layout = GridLayout.new(
@@ -164,7 +164,7 @@ func _initialize_actor_from_init_data(actor_init: PlaybackData.ActorInitData) ->
 
 
 ## 应用 replay 事件带来的状态副作用。Visualizer 仍只负责把事件翻译成视觉动作；
-## actorSpawned / actorDestroyed 属于 render-state lifecycle，必须先落入 world。
+## actor_spawned / actor_destroyed 属于 render-state lifecycle，必须先落入 world。
 func apply_event_side_effects(event: Dictionary) -> void:
 	var kind := str(event.get("kind", ""))
 	match kind:
@@ -185,7 +185,7 @@ func _apply_actor_spawned_event(event: Dictionary) -> void:
 		return
 	var actor_init := PlaybackData.ActorInitData.from_dict(actor_data)
 	if actor_init.id.is_empty():
-		actor_init.id = str(event.get("actorId", ""))
+		actor_init.id = str(event.get("actor_id", ""))
 	if actor_init.id.is_empty() or _actors.has(actor_init.id):
 		return
 
@@ -198,7 +198,7 @@ func _apply_actor_spawned_event(event: Dictionary) -> void:
 
 
 func _apply_actor_destroyed_event(event: Dictionary) -> void:
-	var actor_id := str(event.get("actorId", ""))
+	var actor_id := str(event.get("actor_id", ""))
 	if actor_id.is_empty():
 		return
 	var actor: FrontendActorRenderState = _actors.get(actor_id)
@@ -214,13 +214,13 @@ func _apply_attribute_changed_event(event: Dictionary) -> void:
 	var attribute := str(event.get("attribute", ""))
 	if attribute != "max_hp" and attribute != "maxHp":
 		return
-	var actor_id := str(event.get("actorId", ""))
+	var actor_id := str(event.get("actor_id", ""))
 	if actor_id.is_empty():
 		return
 	var actor: FrontendActorRenderState = _actors.get(actor_id)
 	if actor == null:
 		return
-	var new_max_hp := float(event.get("newValue", actor.max_hp))
+	var new_max_hp := float(event.get("new_value", actor.max_hp))
 	actor.max_hp = maxf(0.0, new_max_hp)
 	actor.visual_hp = clampf(actor.visual_hp, 0.0, actor.max_hp)
 	actor.target_hp = clampf(actor.target_hp, 0.0, actor.max_hp)
@@ -228,7 +228,7 @@ func _apply_attribute_changed_event(event: Dictionary) -> void:
 
 
 ## 从位置数组提取六边形坐标
-## 根据 positionFormats 配置解释 position 数组的含义
+## 根据 position_formats 配置解释 position 数组的含义
 func _extract_hex_position(position_arr: Array, actor_type: String) -> HexCoord:
 	if position_arr.is_empty():
 		return HexCoord.zero()

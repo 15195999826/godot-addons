@@ -5,7 +5,7 @@
 ##   (time_ms asc, actor_order asc) —— 同 time 同 t=0 时, actor_order 决定顺序。
 ##
 ## 期望: frame 1 (start() drain t<=0 keyframe + 第一次 record_current_frame_events) 里
-##   abilityGranted / executionActivated 事件按 c1, c2, c3 顺序出现。
+##   ability_granted / execution_activated 事件按 c1, c2, c3 顺序出现。
 extends Node
 
 
@@ -99,7 +99,7 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 		_fail("Empty timeline")
 		return
 
-	# 收集 executionActivated 的 actor 顺序
+	# 收集 execution_activated 的 actor 顺序
 	var exec_actor_order: Array[String] = []
 	for frame_data in timeline.get("timeline", []) as Array:
 		if not (frame_data is Dictionary):
@@ -107,14 +107,14 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 		for ev in (frame_data as Dictionary).get("events", []) as Array:
 			if not (ev is Dictionary):
 				continue
-			if str((ev as Dictionary).get("kind", "")) != "executionActivated":
+			if str((ev as Dictionary).get("kind", "")) != "execution_activated":
 				continue
-			var actor_id := str((ev as Dictionary).get("actorId", ""))
+			var actor_id := str((ev as Dictionary).get("actor_id", ""))
 			if actor_id in _caster_ids:
 				exec_actor_order.append(actor_id)
 
 	if exec_actor_order.size() != 3:
-		_fail("expected 3 executionActivated events, got %d (%s)" %
+		_fail("expected 3 execution_activated events, got %d (%s)" %
 				[exec_actor_order.size(), str(exec_actor_order)])
 		return
 

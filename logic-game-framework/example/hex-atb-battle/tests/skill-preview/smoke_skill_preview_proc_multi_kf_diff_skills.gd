@@ -6,7 +6,7 @@
 ##   t=200 SwiftStrike 不会被 Strike 的 cooldown:skill_strike tag 拦
 ##   t=2000 Strike 刚好踩在 cooldown 到期边界, 应该合法
 ##
-## 期望 caster 上 executionActivated = 3 (Strike x2 + SwiftStrike x1, 各一次 execution)。
+## 期望 caster 上 execution_activated = 3 (Strike x2 + SwiftStrike x1, 各一次 execution)。
 ##   不用 damage 计数: Strike on_critical 暴击会多 push 一条 damage, 数量随机不稳。
 ##   execution 数 = keyframe 数, 与暴击无关, 稳定可断言。
 extends Node
@@ -112,14 +112,14 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 			if not (ev is Dictionary):
 				continue
 			var kind := str((ev as Dictionary).get("kind", ""))
-			if kind == "executionActivated" and str((ev as Dictionary).get("actorId", "")) == _caster_id:
+			if kind == "execution_activated" and str((ev as Dictionary).get("actor_id", "")) == _caster_id:
 				exec_count += 1
-			elif kind == "abilityGranted" and str((ev as Dictionary).get("actorId", "")) == _caster_id:
+			elif kind == "ability_granted" and str((ev as Dictionary).get("actor_id", "")) == _caster_id:
 				var ability_dict: Dictionary = (ev as Dictionary).get("ability", {}) as Dictionary
-				grant_configs[str(ability_dict.get("configId", ""))] = true
+				grant_configs[str(ability_dict.get("config_id", ""))] = true
 
 	if exec_count != 3:
-		_fail("expected 3 executionActivated (Strike x2 + SwiftStrike x1), got %d" % exec_count)
+		_fail("expected 3 execution_activated (Strike x2 + SwiftStrike x1), got %d" % exec_count)
 		return
 	# 期望 grant 两个 config: skill_strike (复用 1 instance, 但只 grant 一次) + skill_swift_strike
 	if not grant_configs.has("skill_strike"):

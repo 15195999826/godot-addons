@@ -198,8 +198,8 @@ func _mark_in_combat(actor_id: String, active: bool) -> void:
 # ========== 内部工具 ==========
 
 ## drain 队首所有 time_ms <= now_ms 的 keyframe, 各自 grant + activate。
-## 事件 logicTime 写 keyframe.time_ms (deterministic intent), 不写 now_ms;
-## 例: keyframe time_ms=850, 实际在 now=900ms tick 触发, 事件 logicTime 仍记 850。
+## 事件 logic_time 写 keyframe.time_ms (deterministic intent), 不写 now_ms;
+## 例: keyframe time_ms=850, 实际在 now=900ms tick 触发, 事件 logic_time 仍记 850。
 ##
 ## 同 actor 同 ability_config 多 keyframe 复用同一 Ability instance: 第二次 fire 时
 ## find_ability_by_config_id 命中已 grant 的 instance 直接发 ABILITY_ACTIVATE_EVENT,

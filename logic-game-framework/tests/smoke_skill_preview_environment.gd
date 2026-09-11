@@ -81,7 +81,7 @@ func _run() -> void:
 		var init_data := actor_init as Dictionary
 		if str(init_data.get("type", "")) != "Environment":
 			continue
-		if str(init_data.get("configId", "")) != "stone_wall":
+		if str(init_data.get("config_id", "")) != "stone_wall":
 			continue
 		found_env = true
 		var attrs: Dictionary = init_data.get("attributes", {}) as Dictionary

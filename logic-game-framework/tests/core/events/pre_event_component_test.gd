@@ -72,14 +72,14 @@ func _test_registration() -> void:
 				Modification.multiply("damage", 0.7),
 			]),
 		func(event: Dictionary, ctx: AbilityLifecycleContext) -> bool:
-			return event.get("targetId") == ctx.owner_actor_id
+			return event.get("target_id") == ctx.owner_actor_id
 	)
 
 	var ability_config := AbilityConfig.new("buff_armor", "", "", "", [], [component_config])
 	var ability := Ability.new(ability_config, env.owner_id)
 	env.ability_set.grant_ability(ability)
 
-	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	var event := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
 	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	TestFramework.assert_true(not mutable.cancelled)
@@ -103,7 +103,7 @@ func _test_unregistration() -> void:
 	env.ability_set.grant_ability(ability)
 	env.ability_set.revoke_ability(ability.id)
 
-	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	var event := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
 	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	TestFramework.assert_near(100, float(mutable.get_current_value("damage")))
@@ -126,7 +126,7 @@ func _test_modify_event() -> void:
 	var ability := Ability.new(ability_config, env.owner_id)
 	env.ability_set.grant_ability(ability)
 
-	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	var event := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
 	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	# 计算顺序: SET → ADD → MULTIPLY
@@ -148,7 +148,7 @@ func _test_cancel_event() -> void:
 	var ability := Ability.new(ability_config, env.owner_id)
 	env.ability_set.grant_ability(ability)
 
-	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	var event := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
 	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	TestFramework.assert_true(mutable.cancelled)
@@ -173,7 +173,7 @@ func _test_dead_actor_stops_responding() -> void:
 	var ability_config := AbilityConfig.new("buff_thorns", "", "", "", [], [component_config])
 	env.ability_set.grant_ability(Ability.new(ability_config, env.owner_id))
 
-	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	var event := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
 	TestFramework.assert_near(
 		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
 		50.0, 0.0001, "活着时 handler 应生效")
@@ -213,7 +213,7 @@ func _test_expired_mid_dispatch_skipped() -> void:
 	env.ability_set.grant_ability(Ability.new(
 		AbilityConfig.new("buff_halve", "", "", "", [], [halve_config]), env.owner_id))
 
-	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	var event := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
 	TestFramework.assert_near(
 		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
 		100.0, 0.0001, "同一次派发里已过期的 ability 不应再改事件")

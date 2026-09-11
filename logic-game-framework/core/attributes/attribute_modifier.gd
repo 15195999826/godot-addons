@@ -51,8 +51,8 @@ static func create_mul_final(p_id: String, p_attribute_name: String, p_value: fl
 func serialize() -> Dictionary:
 	var result := {
 		"id": id,
-		"attributeName": attribute_name,
-		"modifierType": Type.keys()[modifier_type],
+		"attribute_name": attribute_name,
+		"modifier_type": Type.keys()[modifier_type],
 		"value": value,
 	}
 	if source != "":
@@ -62,11 +62,11 @@ func serialize() -> Dictionary:
 
 ## 从 Dictionary 反序列化
 static func deserialize(data: Dictionary) -> AttributeModifier:
-	var type_str := str(data.get("modifierType", ""))
+	var type_str := str(data.get("modifier_type", ""))
 	var parsed_type := _parse_type(type_str)
 	return AttributeModifier.new(
 		str(data.get("id", "")),
-		str(data.get("attributeName", "")),
+		str(data.get("attribute_name", "")),
 		parsed_type,
 		float(data.get("value", 0.0)),
 		str(data.get("source", "")),

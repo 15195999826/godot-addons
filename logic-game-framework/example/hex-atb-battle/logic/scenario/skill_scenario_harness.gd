@@ -618,8 +618,8 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 
 		# 录像
 		recorder = BattleRecorder.new({
-			"battleId": id,
-			"tickInterval": int(HexBattleSkillScenarioHarness.TICK_INTERVAL),
+			"battle_id": id,
+			"tick_interval": int(HexBattleSkillScenarioHarness.TICK_INTERVAL),
 		}, event_collector)
 		var all_actors: Array[Actor] = []
 		for c in left_team:
@@ -663,7 +663,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		var class_str: String = cfg.get("class", "WARRIOR")
 		var char_class := HexBattleClassConfig.string_to_class(class_str)
 		var actor := CharacterActor.new(char_class)
-		actor._display_name = cfg.get("displayName", id_hint)
+		actor._display_name = cfg.get("display_name", id_hint)
 		add_actor(actor)
 		actor.set_team_id(team_id)
 		# 属性
@@ -699,8 +699,8 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 
 
 	## Phase C0 (Summon Totem): mid-battle add_actor (例如 SpawnActorAction) 调用此入口,
-	## 需要自动 register 到 recorder, 否则中途 spawn 的 actor 的 abilityGranted /
-	## actorSpawned 等事件不会进 replay。父类签名 add_actor(Actor, Callable) -> Actor。
+	## 需要自动 register 到 recorder, 否则中途 spawn 的 actor 的 ability_granted /
+	## actor_spawned 等事件不会进 replay。父类签名 add_actor(Actor, Callable) -> Actor。
 	func add_actor(actor: Actor, after_id_assigned: Callable = Callable()) -> Actor:
 		var added: Actor = super.add_actor(actor, after_id_assigned)
 		if added != null and recorder != null and recorder.get_is_recording():

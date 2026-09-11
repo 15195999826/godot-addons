@@ -160,16 +160,16 @@ func _test_base_change_notification() -> void:
 	var changes: Array[Dictionary] = []
 
 	var listener := func(event: Dictionary) -> void:
-		if event.get("attributeName") == "hp":
+		if event.get("attribute_name") == "hp":
 			changes.append(event)
 
 	attribute_set.add_change_listener(listener)
 	attribute_set.set_base("hp", 150)
 
 	TestFramework.assert_equal(1, changes.size())
-	TestFramework.assert_equal("hp", changes[0].get("attributeName"))
-	TestFramework.assert_equal(100, changes[0].get("oldValue"))
-	TestFramework.assert_equal(150, changes[0].get("newValue"))
+	TestFramework.assert_equal("hp", changes[0].get("attribute_name"))
+	TestFramework.assert_equal(100, changes[0].get("old_value"))
+	TestFramework.assert_equal(150, changes[0].get("new_value"))
 
 func _test_remove_listener() -> void:
 	var attribute_set := RawAttributeSet.new([
@@ -180,7 +180,7 @@ func _test_remove_listener() -> void:
 	var changes: Array[Dictionary] = []
 
 	var listener := func(event: Dictionary) -> void:
-		if event.get("attributeName") == "hp":
+		if event.get("attribute_name") == "hp":
 			changes.append(event)
 
 	attribute_set.add_change_listener(listener)

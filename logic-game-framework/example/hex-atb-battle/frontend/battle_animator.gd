@@ -227,10 +227,10 @@ func _prebuild_replay_unit_views(record: PlaybackData.BattleRecord) -> void:
 func _actor_spawn_event_to_state(event: Dictionary) -> FrontendActorRenderState:
 	var actor: Dictionary = event.get("actor", {}) as Dictionary
 	var state := FrontendActorRenderState.new()
-	state.id = actor.get("id", event.get("actorId", "")) as String
+	state.id = actor.get("id", event.get("actor_id", "")) as String
 	state.type = actor.get("type", HexBattleActor.KIND_CHARACTER) as String
-	state.config_id = actor.get("configId", "") as String
-	state.display_name = actor.get("displayName", state.config_id) as String
+	state.config_id = actor.get("config_id", "") as String
+	state.display_name = actor.get("display_name", state.config_id) as String
 	state.team = int(actor.get("team", 0))
 	var attributes: Dictionary = actor.get("attributes", {}) as Dictionary
 	state.max_hp = float(attributes.get("max_hp", 100.0))

@@ -50,7 +50,7 @@ func get_ability_set() -> AbilitySet:
 
 # ========== 录像 / 快照 ==========
 
-## 连续坐标 (x, y) 提升为 Vector3 (x, y, 0)，渲染层按 positionFormats 解释。
+## 连续坐标 (x, y) 提升为 Vector3 (x, y, 0)，渲染层按 position_formats 解释。
 func _get_position() -> Vector3:
 	return Vector3(position_2d.x, position_2d.y, 0.0)
 

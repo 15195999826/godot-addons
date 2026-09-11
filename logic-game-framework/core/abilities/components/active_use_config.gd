@@ -8,7 +8,7 @@
 ##
 ## ActiveUseConfig 专为主动技能设计，triggers 为空时 ActiveUseComponent 默认监听
 ## [code]GameEvent.ABILITY_ACTIVATE_EVENT[/code]，并自动过滤匹配当前 Ability 实例的事件
-## （abilityInstanceId == ability.id）。因此大多数主动技能无需显式配置 trigger，除非需要自定义触发逻辑。
+## （ability_instance_id == ability.id）。因此大多数主动技能无需显式配置 trigger，除非需要自定义触发逻辑。
 ##
 ## [b]推荐链式调用顺序[/b]
 ##

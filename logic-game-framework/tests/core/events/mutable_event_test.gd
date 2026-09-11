@@ -29,4 +29,4 @@ func _test_steps() -> void:
 	mutable.add_modification(Modification.add("damage", 10.0, "bonus"))
 	var record := mutable.get_field_computation_steps("damage")
 	TestFramework.assert_true(record != null)
-	TestFramework.assert_near(70.0, float(record["finalValue"]))
+	TestFramework.assert_near(70.0, float(record["final_value"]))

@@ -4,15 +4,15 @@
 ##
 ## 实现模式 (per phase-01-chain-lightning.md):
 ##   1. ABILITY_ACTIVATE_EVENT → cast timeline 发射首段 lightning projectile
-##   2. projectileHit → hit timeline 跑 DamageAction
+##   2. projectile_hit → hit timeline 跑 DamageAction
 ##   3. DamageAction.on_hit hook: _ComputeNextChainAction 把「下一跳数据」**算一次**
 ##      写进 execution_state["chain_lightning.next"], 随后 FlowAction.if_(便签非空,
 ##      [LaunchProjectileAction]) 链发下一段 —— predicate / selector / 4 个 resolver
 ##      全部只读便签, 不再各自重算(收敛计划 P8: 消灭"6 次调用间世界不变"的隐式
-##      一致性假设; shadow_step 的 teleport_success 同款 pattern)。每次 projectileHit
+##      一致性假设; shadow_step 的 teleport_success 同款 pattern)。每次 projectile_hit
 ##      新建 hit-timeline execution 实例 = 新 execution_state, 跨跳天然隔离。
-##   4. 下一段 projectile customData 带 ability_instance_id / chain_id / hit_index+1 /
-##      damage*0.8 / visited_actor_ids; 触发新一轮 projectileHit
+##   4. 下一段 projectile custom_data 带 ability_instance_id / chain_id / hit_index+1 /
+##      damage*0.8 / visited_actor_ids; 触发新一轮 projectile_hit
 ##
 ## 数值:
 ##   BASE_DAMAGE 60 MAGICAL; FALLOFF 0.2 (×0.8/跳); MAX_HITS 3
@@ -25,7 +25,7 @@
 ##   - visited_actor_ids 防同一敌方重复命中。
 ##
 ## 投射物伤害四件套 (弹体 0 HP 伤害, 伤害只在 hit-timeline DamageAction; 为何不抽 factory)
-## 见 fireball.gd 头注释的"投射物模板"段。本技能 hit damage 读 projectileHit customData.damage
+## 见 fireball.gd 头注释的"投射物模板"段。本技能 hit damage 读 projectile_hit custom_data.damage
 ## (跳跃衰减), 非 CFG_DAMAGE; 且 _projectile_hit_filter 自带 instance/expired/dead guard。
 class_name HexBattleChainLightning
 
@@ -52,7 +52,7 @@ static func _projectile_hit_filter(event_dict: Dictionary, ctx: AbilityLifecycle
 		return false
 	if str(event_dict.get("source_actor_id", "")) != ctx.owner_actor_id:
 		return false
-	var custom: Dictionary = event_dict.get("customData", {}) as Dictionary
+	var custom: Dictionary = event_dict.get("custom_data", {}) as Dictionary
 	if str(custom.get("ability_instance_id", "")) != ability.id:
 		return false
 	# caster 死亡 / ability 过期 → 不响应 (避免反死后仍结算)
@@ -68,7 +68,7 @@ static func _projectile_hit_filter(event_dict: Dictionary, ctx: AbilityLifecycle
 # Resolvers
 # ============================================================
 
-## 初始 projectile customData (CAST 阶段 hit_index=0 / damage=60)
+## 初始 projectile custom_data (CAST 阶段 hit_index=0 / damage=60)
 static func _initial_chain_custom_data_resolver() -> DictResolver:
 	return Resolvers.dict_fn(func(ctx: ExecutionContext) -> Dictionary:
 		var chain_id: String = ""
@@ -86,11 +86,11 @@ static func _initial_chain_custom_data_resolver() -> DictResolver:
 	)
 
 
-## hit timeline 内的 damage resolver: 读取 projectileHit event 的 customData.damage
+## hit timeline 内的 damage resolver: 读取 projectile_hit event 的 custom_data.damage
 static func _chain_damage_resolver() -> FloatResolver:
 	return Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
 		var hit_event := ctx.get_original_event()
-		var custom: Dictionary = hit_event.get("customData", {}) as Dictionary
+		var custom: Dictionary = hit_event.get("custom_data", {}) as Dictionary
 		return float(custom.get("damage", BASE_DAMAGE))
 	)
 
@@ -123,7 +123,7 @@ static func _next_chain_state(ctx: ExecutionContext) -> Dictionary:
 ## **只被 _ComputeNextChainAction 调用一次** —— 其余消费方走 _next_chain_state 读便签。
 ##
 ## 输入: hit-timeline 内 on_hit callback ctx (event_dict_chain 末 = damage event,
-## 原始 = projectileHit event)。
+## 原始 = projectile_hit event)。
 ##
 ## 返回:
 ##   {} -> 链终止 (达到 MAX_HITS / 无更近未命中敌人 / caster dead / target dead)
@@ -135,7 +135,7 @@ static func _next_chain_data(ctx: ExecutionContext) -> Dictionary:
 	var hit_event := ctx.get_original_event()
 	if not ProjectileEvents.is_projectile_hit_event(hit_event):
 		return {}
-	var chain: Dictionary = hit_event.get("customData", {}) as Dictionary
+	var chain: Dictionary = hit_event.get("custom_data", {}) as Dictionary
 	if str(chain.get("ability_instance_id", "")) != ctx.ability_ref.id:
 		return {}
 	var damage_event_dict := ctx.get_current_event()

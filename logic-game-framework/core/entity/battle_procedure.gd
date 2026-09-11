@@ -49,14 +49,14 @@ func start() -> void:
 
 
 ## Recorder 启动钩子: 构造 recorder（注入 world 的 event_collector）, 问世界要快照与订阅列表
-## 启动录像, 并连接 actor_added 让中途 spawn 的 actor 自动补录（否则其 abilityGranted /
-## actorSpawned / damage 不进录像）。连接在 finish() / abort() 时释放 —— procedure 短命而
+## 启动录像, 并连接 actor_added 让中途 spawn 的 actor 自动补录（否则其 ability_granted /
+## actor_spawned / damage 不进录像）。连接在 finish() / abort() 时释放 —— procedure 短命而
 ## world 常驻, 不释会跨战斗累积旧 procedure 监听器并阻止其 GC。
 func _start_recorder() -> void:
 	var world := _get_world()
 	if world == null:
 		return
-	_recorder = BattleRecorder.new({"tickInterval": int(_tick_interval)}, world.event_collector)
+	_recorder = BattleRecorder.new({"tick_interval": int(_tick_interval)}, world.event_collector)
 	_recorder.start_recording(world.capture_world_snapshot(), world.get_recordable_actors())
 	if not world.actor_added.is_connected(_on_world_actor_added):
 		world.actor_added.connect(_on_world_actor_added)

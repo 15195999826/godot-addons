@@ -100,7 +100,7 @@ func get_active_use_configs() -> Array[ActiveUseConfig]:
 ## 返回人类可读的问题列表（空 = 干净），由各 manifest 的 lint smoke 调用。
 ##
 ## 这是「同 id 异实例」的唯一机器守卫：timeline id 只剩录像标签用途，两份不同节奏顶着
-## 同一个 id 会让回放里的 timelineId 静默串味。放 core 而非某个 example，是因为三个
+## 同一个 id 会让回放里的 timeline_id 静默串味。放 core 而非某个 example，是因为三个
 ## 消费者（hex / inkmon / dota2）各有自己的 manifest，守卫不能只长在一家。
 static func lint_timelines(configs: Array[AbilityConfig]) -> Array[String]:
 	var failures: Array[String] = []

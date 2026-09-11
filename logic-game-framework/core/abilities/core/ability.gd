@@ -447,18 +447,18 @@ func serialize() -> Dictionary:
 			serialized_instances.append(instance.serialize())
 	return {
 		"id": id,
-		"configId": config_id,
+		"config_id": config_id,
 		"source_actor_id": source_actor_id,
 		"owner_actor_id": owner_actor_id,
 		"state": _state,
-		"displayName": display_name,
-		"abilityTags": ability_tags,
+		"display_name": display_name,
+		"ability_tags": ability_tags,
 		"metadata": metadata,
 		"stacks": stacks,
-		"maxStacks": max_stacks,
-		"overflowPolicy": overflow_policy,
+		"max_stacks": max_stacks,
+		"overflow_policy": overflow_policy,
 		"components": serialized_components,
-		"executionInstances": serialized_instances,
+		"execution_instances": serialized_instances,
 	}
 
 func _resolve_components(component_configs: Array[AbilityComponentConfig]) -> Array[AbilityComponent]:

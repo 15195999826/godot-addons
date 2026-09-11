@@ -111,7 +111,7 @@ func serialize() -> Dictionary:
 	return {
 		"current": current,
 		"capacity": capacity,
-		"damageTypes": damage_types,
+		"damage_types": damage_types,
 		"priority": priority,
-		"stackingPolicy": stacking_policy,
+		"stacking_policy": stacking_policy,
 	}

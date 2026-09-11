@@ -226,8 +226,8 @@ func _analyze_replay(replay: Dictionary, report: Dictionary) -> void:
 	var result := str(meta.get("result", ""))
 	if result == "" or result == "timeout":
 		_report_failure(report, "replay result is invalid: %s" % result)
-	if int(meta.get("totalFrames", 0)) <= 0:
-		_report_failure(report, "replay totalFrames <= 0")
+	if int(meta.get("total_frames", 0)) <= 0:
+		_report_failure(report, "replay total_frames <= 0")
 
 	var snapshot_dict: Dictionary = replay.get("world_snapshot", {}) as Dictionary
 	var initial_actors: Array = snapshot_dict.get("actors", []) as Array
@@ -249,9 +249,9 @@ func _analyze_replay(replay: Dictionary, report: Dictionary) -> void:
 func _check_initial_actor_names(initial_actors: Array, report: Dictionary) -> void:
 	for actor_variant in initial_actors:
 		var actor := actor_variant as Dictionary
-		var display_name := str(actor.get("displayName", ""))
+		var display_name := str(actor.get("display_name", ""))
 		if not display_name.begins_with("左方 ") and not display_name.begins_with("右方 "):
-			_report_failure(report, "initial actor displayName is not neutral: %s" % display_name)
+			_report_failure(report, "initial actor display_name is not neutral: %s" % display_name)
 
 
 func _flatten_events(replay: Dictionary) -> Array[Dictionary]:
@@ -276,7 +276,7 @@ func _count_events(events: Array[Dictionary], report: Dictionary) -> void:
 		_increment(_aggregate_event_counts, kind)
 		if kind == GameEvent.ABILITY_ACTIVATE_FAILED_EVENT:
 			var reason := str(event.get("reason", ""))
-			var key := "%s|%s" % [str(event.get("abilityConfigId", "")), reason]
+			var key := "%s|%s" % [str(event.get("ability_config_id", "")), reason]
 			_increment(report["failure_reasons"], key)
 			_increment(_aggregate_failure_reasons, key)
 
@@ -331,13 +331,13 @@ func _check_damage_event(event: Dictionary, report: Dictionary) -> void:
 func _check_activate_failed(event: Dictionary, report: Dictionary) -> void:
 	var reason := str(event.get("reason", ""))
 	if reason.is_empty():
-		_report_failure(report, "abilityActivateFailed has empty reason at frame %d" % int(event.get("_frame", -1)))
+		_report_failure(report, "ability_activate_failed has empty reason at frame %d" % int(event.get("_frame", -1)))
 		return
 	for part in EXPECTED_FAILURE_REASON_PARTS:
 		if reason.contains(str(part)):
 			return
-	_report_warning(report, "unexpected abilityActivateFailed reason: %s / %s" % [
-		str(event.get("abilityConfigId", "")),
+	_report_warning(report, "unexpected ability_activate_failed reason: %s / %s" % [
+		str(event.get("ability_config_id", "")),
 		reason,
 	])
 
@@ -348,10 +348,10 @@ func _check_skill_effects(events: Array[Dictionary], report: Dictionary) -> void
 	for event in events:
 		if _kind(event) != GameEvent.EXECUTION_ACTIVATED_EVENT:
 			continue
-		var skill_id := str(event.get("abilityConfigId", ""))
+		var skill_id := str(event.get("ability_config_id", ""))
 		if not skill_id.begins_with("skill_"):
 			continue
-		var source_id := str(event.get("actorId", ""))
+		var source_id := str(event.get("actor_id", ""))
 		var frame := int(event.get("_frame", 0))
 		_increment(report["skill_counts"], skill_id)
 		_increment(_aggregate_skill_counts, skill_id)
@@ -422,10 +422,10 @@ func _build_ability_config_by_instance(events: Array[Dictionary]) -> Dictionary:
 		if _kind(event) != GameEvent.ABILITY_GRANTED_EVENT:
 			continue
 		var ability: Dictionary = event.get("ability", {}) as Dictionary
-		var instance_id := str(ability.get("instanceId", ability.get("id", "")))
+		var instance_id := str(ability.get("instance_id", ability.get("id", "")))
 		if instance_id.is_empty():
 			continue
-		result[instance_id] = str(ability.get("configId", ""))
+		result[instance_id] = str(ability.get("config_id", ""))
 	return result
 
 
@@ -459,7 +459,7 @@ func _has_ability_granted(events: Array[Dictionary], config_id: String) -> bool:
 		if _kind(event) != GameEvent.ABILITY_GRANTED_EVENT:
 			continue
 		var ability: Dictionary = event.get("ability", {}) as Dictionary
-		if str(ability.get("configId", "")) == config_id:
+		if str(ability.get("config_id", "")) == config_id:
 			return true
 	return false
 
@@ -469,9 +469,9 @@ func _has_spawned_actor_kind(events: Array[Dictionary], expected_kind: String) -
 		if _kind(event) != GameEvent.ACTOR_SPAWNED_EVENT:
 			continue
 		var actor: Dictionary = event.get("actor", {}) as Dictionary
-		if str(actor.get("configId", "")) == expected_kind:
+		if str(actor.get("config_id", "")) == expected_kind:
 			return true
-		if str(actor.get("displayName", "")) == expected_kind:
+		if str(actor.get("display_name", "")) == expected_kind:
 			return true
 	return false
 
@@ -497,7 +497,7 @@ func _has_negative_buff_removed(events: Array[Dictionary], ability_config_by_ins
 	for event in events:
 		if _kind(event) != GameEvent.ABILITY_REMOVED_EVENT:
 			continue
-		var ability_id := str(event.get("abilityInstanceId", ""))
+		var ability_id := str(event.get("ability_instance_id", ""))
 		var config_id := str(ability_config_by_instance.get(ability_id, ""))
 		if NEGATIVE_BUFFS.has(config_id):
 			return true
@@ -508,7 +508,7 @@ func _has_stance_tag_change(events: Array[Dictionary], source_id: String) -> boo
 	for event in events:
 		if _kind(event) != GameEvent.TAG_CHANGED_EVENT:
 			continue
-		if str(event.get("actorId", "")) != source_id:
+		if str(event.get("actor_id", "")) != source_id:
 			continue
 		if str(event.get("tag", "")).begins_with("stance:skill_stance:"):
 			return true

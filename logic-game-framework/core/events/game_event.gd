@@ -1,19 +1,19 @@
 class_name GameEvent
 extends RefCounted
 
-const ABILITY_ACTIVATE_EVENT := "abilityActivate"
-const ABILITY_ACTIVATE_FAILED_EVENT := "abilityActivateFailed"
-const ACTOR_SPAWNED_EVENT := "actorSpawned"
-const ACTOR_DESTROYED_EVENT := "actorDestroyed"
-const ATTRIBUTE_CHANGED_EVENT := "attributeChanged"
-const ABILITY_GRANTED_EVENT := "abilityGranted"
-const ABILITY_REMOVED_EVENT := "abilityRemoved"
-const ABILITY_TRIGGERED_EVENT := "abilityTriggered"
-const ABILITY_STACKS_CHANGED_EVENT := "abilityStacksChanged"
-const EXECUTION_ACTIVATED_EVENT := "executionActivated"
-const TAG_CHANGED_EVENT := "tagChanged"
-const STAGE_CUE_EVENT := "stageCue"
-const PROJECTILE_HIT_EVENT := "projectileHit"
+const ABILITY_ACTIVATE_EVENT := "ability_activate"
+const ABILITY_ACTIVATE_FAILED_EVENT := "ability_activate_failed"
+const ACTOR_SPAWNED_EVENT := "actor_spawned"
+const ACTOR_DESTROYED_EVENT := "actor_destroyed"
+const ATTRIBUTE_CHANGED_EVENT := "attribute_changed"
+const ABILITY_GRANTED_EVENT := "ability_granted"
+const ABILITY_REMOVED_EVENT := "ability_removed"
+const ABILITY_TRIGGERED_EVENT := "ability_triggered"
+const ABILITY_STACKS_CHANGED_EVENT := "ability_stacks_changed"
+const EXECUTION_ACTIVATED_EVENT := "execution_activated"
+const TAG_CHANGED_EVENT := "tag_changed"
+const STAGE_CUE_EVENT := "stage_cue"
+const PROJECTILE_HIT_EVENT := "projectile_hit"
 
 
 # ========== 事件基类 ==========
@@ -44,11 +44,11 @@ class ActorSpawned extends Base:
 		return e
 	
 	func to_dict() -> Dictionary:
-		return { "kind": kind, "actorId": actor_id, "actor": actor_data }
+		return { "kind": kind, "actor_id": actor_id, "actor": actor_data }
 	
 	static func from_dict(d: Dictionary) -> ActorSpawned:
 		var e := ActorSpawned.new()
-		e.actor_id = d.get("actorId", "")
+		e.actor_id = d.get("actor_id", "")
 		e.actor_data = d.get("actor", {})
 		return e
 	
@@ -70,14 +70,14 @@ class ActorDestroyed extends Base:
 		return e
 	
 	func to_dict() -> Dictionary:
-		var d := { "kind": kind, "actorId": actor_id }
+		var d := { "kind": kind, "actor_id": actor_id }
 		if reason != "":
 			d["reason"] = reason
 		return d
 	
 	static func from_dict(d: Dictionary) -> ActorDestroyed:
 		var e := ActorDestroyed.new()
-		e.actor_id = d.get("actorId", "")
+		e.actor_id = d.get("actor_id", "")
 		e.reason = d.get("reason", "")
 		return e
 	
@@ -105,17 +105,17 @@ class AttributeChanged extends Base:
 		return e
 	
 	func to_dict() -> Dictionary:
-		var d := { "kind": kind, "actorId": actor_id, "attribute": attribute, "oldValue": old_value, "newValue": new_value }
+		var d := { "kind": kind, "actor_id": actor_id, "attribute": attribute, "old_value": old_value, "new_value": new_value }
 		if not source.is_empty():
 			d["source"] = source
 		return d
 	
 	static func from_dict(d: Dictionary) -> AttributeChanged:
 		var e := AttributeChanged.new()
-		e.actor_id = d.get("actorId", "")
+		e.actor_id = d.get("actor_id", "")
 		e.attribute = d.get("attribute", "")
-		e.old_value = d.get("oldValue", 0.0)
-		e.new_value = d.get("newValue", 0.0)
+		e.old_value = d.get("old_value", 0.0)
+		e.new_value = d.get("new_value", 0.0)
 		e.source = d.get("source", {})
 		return e
 	
@@ -137,11 +137,11 @@ class AbilityGranted extends Base:
 		return e
 	
 	func to_dict() -> Dictionary:
-		return { "kind": kind, "actorId": actor_id, "ability": ability }
+		return { "kind": kind, "actor_id": actor_id, "ability": ability }
 	
 	static func from_dict(d: Dictionary) -> AbilityGranted:
 		var e := AbilityGranted.new()
-		e.actor_id = d.get("actorId", "")
+		e.actor_id = d.get("actor_id", "")
 		e.ability = d.get("ability", {})
 		return e
 	
@@ -163,12 +163,12 @@ class AbilityRemoved extends Base:
 		return e
 	
 	func to_dict() -> Dictionary:
-		return { "kind": kind, "actorId": actor_id, "abilityInstanceId": ability_instance_id }
+		return { "kind": kind, "actor_id": actor_id, "ability_instance_id": ability_instance_id }
 	
 	static func from_dict(d: Dictionary) -> AbilityRemoved:
 		var e := AbilityRemoved.new()
-		e.actor_id = d.get("actorId", "")
-		e.ability_instance_id = d.get("abilityInstanceId", "")
+		e.actor_id = d.get("actor_id", "")
+		e.ability_instance_id = d.get("ability_instance_id", "")
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
@@ -200,20 +200,20 @@ class AbilityStacksChanged extends Base:
 	func to_dict() -> Dictionary:
 		return {
 			"kind": kind,
-			"actorId": actor_id,
-			"abilityInstanceId": ability_instance_id,
-			"abilityConfigId": ability_config_id,
-			"oldStacks": old_stacks,
-			"newStacks": new_stacks,
+			"actor_id": actor_id,
+			"ability_instance_id": ability_instance_id,
+			"ability_config_id": ability_config_id,
+			"old_stacks": old_stacks,
+			"new_stacks": new_stacks,
 		}
 
 	static func from_dict(d: Dictionary) -> AbilityStacksChanged:
 		var e := AbilityStacksChanged.new()
-		e.actor_id = d.get("actorId", "")
-		e.ability_instance_id = d.get("abilityInstanceId", "")
-		e.ability_config_id = d.get("abilityConfigId", "")
-		e.old_stacks = d.get("oldStacks", 0)
-		e.new_stacks = d.get("newStacks", 0)
+		e.actor_id = d.get("actor_id", "")
+		e.ability_instance_id = d.get("ability_instance_id", "")
+		e.ability_config_id = d.get("ability_config_id", "")
+		e.old_stacks = d.get("old_stacks", 0)
+		e.new_stacks = d.get("new_stacks", 0)
 		return e
 
 	static func is_match(d: Dictionary) -> bool:
@@ -242,20 +242,20 @@ class AbilityTriggered extends Base:
 	func to_dict() -> Dictionary:
 		return {
 			"kind": kind,
-			"actorId": actor_id,
-			"abilityInstanceId": ability_instance_id,
-			"abilityConfigId": ability_config_id,
-			"triggerEventKind": trigger_event_kind,
-			"triggeredComponents": triggered_components.duplicate(),
+			"actor_id": actor_id,
+			"ability_instance_id": ability_instance_id,
+			"ability_config_id": ability_config_id,
+			"trigger_event_kind": trigger_event_kind,
+			"triggered_components": triggered_components.duplicate(),
 		}
 	
 	static func from_dict(d: Dictionary) -> AbilityTriggered:
 		var e := AbilityTriggered.new()
-		e.actor_id = d.get("actorId", "")
-		e.ability_instance_id = d.get("abilityInstanceId", "")
-		e.ability_config_id = d.get("abilityConfigId", "")
-		e.trigger_event_kind = d.get("triggerEventKind", "")
-		e.triggered_components = d.get("triggeredComponents", []).duplicate()
+		e.actor_id = d.get("actor_id", "")
+		e.ability_instance_id = d.get("ability_instance_id", "")
+		e.ability_config_id = d.get("ability_config_id", "")
+		e.trigger_event_kind = d.get("trigger_event_kind", "")
+		e.triggered_components = d.get("triggered_components", []).duplicate()
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
@@ -284,20 +284,20 @@ class ExecutionActivated extends Base:
 	func to_dict() -> Dictionary:
 		return {
 			"kind": kind,
-			"actorId": actor_id,
-			"abilityInstanceId": ability_instance_id,
-			"abilityConfigId": ability_config_id,
-			"executionId": execution_id,
-			"timelineId": timeline_id,
+			"actor_id": actor_id,
+			"ability_instance_id": ability_instance_id,
+			"ability_config_id": ability_config_id,
+			"execution_id": execution_id,
+			"timeline_id": timeline_id,
 		}
 	
 	static func from_dict(d: Dictionary) -> ExecutionActivated:
 		var e := ExecutionActivated.new()
-		e.actor_id = d.get("actorId", "")
-		e.ability_instance_id = d.get("abilityInstanceId", "")
-		e.ability_config_id = d.get("abilityConfigId", "")
-		e.execution_id = d.get("executionId", "")
-		e.timeline_id = d.get("timelineId", "")
+		e.actor_id = d.get("actor_id", "")
+		e.ability_instance_id = d.get("ability_instance_id", "")
+		e.ability_config_id = d.get("ability_config_id", "")
+		e.execution_id = d.get("execution_id", "")
+		e.timeline_id = d.get("timeline_id", "")
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
@@ -322,14 +322,14 @@ class TagChanged extends Base:
 		return e
 	
 	func to_dict() -> Dictionary:
-		return { "kind": kind, "actorId": actor_id, "tag": tag, "oldCount": old_count, "newCount": new_count }
+		return { "kind": kind, "actor_id": actor_id, "tag": tag, "old_count": old_count, "new_count": new_count }
 	
 	static func from_dict(d: Dictionary) -> TagChanged:
 		var e := TagChanged.new()
-		e.actor_id = d.get("actorId", "")
+		e.actor_id = d.get("actor_id", "")
 		e.tag = d.get("tag", "")
-		e.old_count = d.get("oldCount", 0)
-		e.new_count = d.get("newCount", 0)
+		e.old_count = d.get("old_count", 0)
+		e.new_count = d.get("new_count", 0)
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
@@ -354,16 +354,16 @@ class StageCue extends Base:
 		return e
 	
 	func to_dict() -> Dictionary:
-		var d := { "kind": kind, "sourceActorId": source_actor_id, "targetActorIds": target_actor_ids.duplicate(), "cueId": cue_id }
+		var d := { "kind": kind, "source_actor_id": source_actor_id, "target_actor_ids": target_actor_ids.duplicate(), "cue_id": cue_id }
 		if not params.is_empty():
 			d["params"] = params
 		return d
 	
 	static func from_dict(d: Dictionary) -> StageCue:
 		var e := StageCue.new()
-		e.source_actor_id = d.get("sourceActorId", "")
-		e.target_actor_ids = d.get("targetActorIds", []).duplicate()
-		e.cue_id = d.get("cueId", "")
+		e.source_actor_id = d.get("source_actor_id", "")
+		e.target_actor_ids = d.get("target_actor_ids", []).duplicate()
+		e.cue_id = d.get("cue_id", "")
 		e.params = d.get("params", {})
 		return e
 	
@@ -397,12 +397,12 @@ class ProjectileHit extends Base:
 	func to_dict() -> Dictionary:
 		var d := {
 			"kind": kind,
-			"projectileId": projectile_id,
+			"projectile_id": projectile_id,
 			"source_actor_id": source_actor_id,
 			"target_actor_id": target_actor_id,
-			"hitPosition": hit_position,
-			"flyTime": fly_time,
-			"flyDistance": fly_distance,
+			"hit_position": hit_position,
+			"fly_time": fly_time,
+			"fly_distance": fly_distance,
 		}
 		if ability_config_id != "":
 			d["ability_config_id"] = ability_config_id
@@ -410,13 +410,13 @@ class ProjectileHit extends Base:
 	
 	static func from_dict(d: Dictionary) -> ProjectileHit:
 		var e := ProjectileHit.new()
-		e.projectile_id = d.get("projectileId", "")
+		e.projectile_id = d.get("projectile_id", "")
 		e.source_actor_id = d.get("source_actor_id", "")
 		e.target_actor_id = d.get("target_actor_id", "")
 		e.ability_config_id = d.get("ability_config_id", "")
-		e.hit_position = d.get("hitPosition", Vector3.ZERO)
-		e.fly_time = d.get("flyTime", 0.0)
-		e.fly_distance = d.get("flyDistance", 0.0)
+		e.hit_position = d.get("hit_position", Vector3.ZERO)
+		e.fly_time = d.get("fly_time", 0.0)
+		e.fly_distance = d.get("fly_distance", 0.0)
 		return e
 	
 	static func is_match(d: Dictionary) -> bool:
@@ -457,9 +457,9 @@ class AbilityActivate extends Base:
 	func to_dict() -> Dictionary:
 		var d := {
 			"kind": kind,
-			"abilityInstanceId": ability_instance_id,
-			"sourceId": source_id,
-			"logicTime": logic_time,
+			"ability_instance_id": ability_instance_id,
+			"source_id": source_id,
+			"logic_time": logic_time,
 		}
 		if target_actor_id != "":
 			d["target_actor_id"] = target_actor_id
@@ -469,9 +469,9 @@ class AbilityActivate extends Base:
 
 	static func from_dict(d: Dictionary) -> AbilityActivate:
 		var e := AbilityActivate.new()
-		e.ability_instance_id = d.get("abilityInstanceId", "")
-		e.source_id = d.get("sourceId", "")
-		e.logic_time = d.get("logicTime", 0.0)
+		e.ability_instance_id = d.get("ability_instance_id", "")
+		e.source_id = d.get("source_id", "")
+		e.logic_time = d.get("logic_time", 0.0)
 		e.target_actor_id = d.get("target_actor_id", "")
 		e.target_coord = d.get("target_coord", {})
 		return e
@@ -520,22 +520,22 @@ class AbilityActivateFailed extends Base:
 	func to_dict() -> Dictionary:
 		return {
 			"kind": kind,
-			"abilityInstanceId": ability_instance_id,
-			"abilityConfigId": ability_config_id,
-			"sourceId": source_id,
-			"targetActorId": target_actor_id,
+			"ability_instance_id": ability_instance_id,
+			"ability_config_id": ability_config_id,
+			"source_id": source_id,
+			"target_actor_id": target_actor_id,
 			"reason": reason,
-			"failedComponentType": failed_component_type,
+			"failed_component_type": failed_component_type,
 		}
 
 	static func from_dict(d: Dictionary) -> AbilityActivateFailed:
 		var e := AbilityActivateFailed.new()
-		e.ability_instance_id = d.get("abilityInstanceId", "")
-		e.ability_config_id = d.get("abilityConfigId", "")
-		e.source_id = d.get("sourceId", "")
-		e.target_actor_id = d.get("targetActorId", "")
+		e.ability_instance_id = d.get("ability_instance_id", "")
+		e.ability_config_id = d.get("ability_config_id", "")
+		e.source_id = d.get("source_id", "")
+		e.target_actor_id = d.get("target_actor_id", "")
 		e.reason = d.get("reason", "")
-		e.failed_component_type = d.get("failedComponentType", "")
+		e.failed_component_type = d.get("failed_component_type", "")
 		return e
 
 	static func is_match(d: Dictionary) -> bool:

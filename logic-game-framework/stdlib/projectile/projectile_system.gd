@@ -71,7 +71,7 @@ func _process_hitscan(projectile: ProjectileActor, potential_targets: Array[Acto
 	if collision.get("hit", false) and collision.get("target_actor_id", "") != "":
 		var hit_target_actor_id := collision.get("target_actor_id", "") as String
 		projectile.hit(hit_target_actor_id)
-		var collision_hit_position := collision.get("hitPosition", Vector3.ZERO) as Vector3
+		var collision_hit_position := collision.get("hit_position", Vector3.ZERO) as Vector3
 		_emit_hit_event(projectile, hit_target_actor_id, collision_hit_position)
 	else:
 		projectile.miss("no_target")
@@ -81,7 +81,7 @@ func _process_hitscan(projectile: ProjectileActor, potential_targets: Array[Acto
 
 func _process_hit(projectile: ProjectileActor, collision: Dictionary) -> void:
 	var target_actor_id := collision.get("target_actor_id", "") as String
-	var hit_position_raw := collision.get("hitPosition", null)
+	var hit_position_raw := collision.get("hit_position", null)
 
 	if target_actor_id == "" or not (hit_position_raw is Vector3):
 		return
@@ -135,14 +135,14 @@ func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_p
 	var source_actor_id := _get_source_id(projectile)
 	var options: Dictionary = {
 		"damage": projectile.config.get(ProjectileActor.CFG_DAMAGE),
-		"damageType": projectile.config.get(ProjectileActor.CFG_DAMAGE_TYPE),
+		"damage_type": projectile.config.get(ProjectileActor.CFG_DAMAGE_TYPE),
 	}
-	# Phase 01 Chain Lightning: 把 customData 透传到 projectileHit event payload,
-	# 与 projectileLaunched 对齐, 让 hit timeline 内的 DamageAction 通过
-	# ctx.get_original_event().customData 取到 chain_id / hit_index / damage / visited。
+	# Phase 01 Chain Lightning: 把 custom_data 透传到 projectile_hit event payload,
+	# 与 projectile_launched 对齐, 让 hit timeline 内的 DamageAction 通过
+	# ctx.get_original_event().custom_data 取到 chain_id / hit_index / damage / visited。
 	var custom_data := _projectile_custom_data(projectile)
 	if not custom_data.is_empty():
-		options["customData"] = custom_data
+		options["custom_data"] = custom_data
 	var event := ProjectileEvents.create_projectile_hit_event(
 		projectile.id,
 		source_actor_id,
@@ -223,11 +223,11 @@ func _get_source_id(projectile: ProjectileActor) -> String:
 	return source_actor_id
 
 
-## Phase 01 Chain Lightning helper: 从 projectile.launch_params 提取 customData。
+## Phase 01 Chain Lightning helper: 从 projectile.launch_params 提取 custom_data。
 ## 不存在或非 Dictionary 返回空 dict; 拷贝避免外部修改原 launch_params。
 func _projectile_custom_data(projectile: ProjectileActor) -> Dictionary:
 	var params := projectile.get_launch_params()
-	var custom_data: Variant = params.get("customData", null)
+	var custom_data: Variant = params.get("custom_data", null)
 	if not (custom_data is Dictionary):
 		return {}
 	return (custom_data as Dictionary).duplicate(true)

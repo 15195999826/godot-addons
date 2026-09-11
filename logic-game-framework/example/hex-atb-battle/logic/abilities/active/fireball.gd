@@ -6,14 +6,14 @@
 ##   3. CAST tag: 施法动作（仅动画占位，无 Action 注册）
 ##   4. LAUNCH tag: 发射火球投射物（MOBA 追踪型）
 ##   5. 投射物飞行中...
-##   6. projectileHit 事件触发 → 共享 HIT_RESPONSE_100 timeline → 造成伤害
+##   6. projectile_hit 事件触发 → 共享 HIT_RESPONSE_100 timeline → 造成伤害
 ##
 ## 【投射物伤害技能 = 四件套手装, 投射物模板】(precise_shot / chain_lightning 同构):
 ##   ① active_use on_tag(LAUNCH, [LaunchProjectileAction]) 发射弹体
 ##   ② 独立 *_HIT timeline
 ##   ③ component_config(ActivateInstanceConfig).trigger(PROJECTILE_HIT_EVENT, filter)
 ##   ④ 该 component 的 on_timeline_start([HexBattleDamageAction]) —— 真正结算伤害
-##   关键: 弹体本身【0 HP 伤害】—— ProjectileSystem 只把 CFG_DAMAGE 拷进 projectileHit
+##   关键: 弹体本身【0 HP 伤害】—— ProjectileSystem 只把 CFG_DAMAGE 拷进 projectile_hit
 ##   事件 payload (表演/replay metadata), 不 apply_damage。漏掉第④步 = 飞出去不掉血,
 ##   无编译/结构报错。曾评估抽 make_projectile_damage_skill() factory 绑死四件套,
 ##   但仅 3 技能 / ~12 参数, 显式 builder 对 AI 模仿沙盒更友好, 故【不抽 factory】,
@@ -24,7 +24,7 @@ class_name HexBattleFireball
 const CONFIG_ID := "skill_fireball"
 const COOLDOWN_MS := 4000.0
 ## 火球伤害 (固定值, 不随 atk 缩放; 与法师 atk 80 相等纯属巧合)。
-## 单一来源: 同时喂 projectile CFG_DAMAGE (仅 projectileHit 事件 payload, 表演/replay
+## 单一来源: 同时喂 projectile CFG_DAMAGE (仅 projectile_hit 事件 payload, 表演/replay
 ## metadata, 不实际扣 HP) 与 hit-timeline DamageAction (真正结算伤害的那行)。
 const DAMAGE := 80.0
 

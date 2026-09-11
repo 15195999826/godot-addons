@@ -25,7 +25,7 @@ signal playback_ended()
 ## 角色状态变化（转发自 RenderWorld）
 signal actor_state_changed(actor_id: String, state: FrontendActorRenderState)
 
-## Replay 中途 actorSpawned（转发自 RenderWorld）
+## Replay 中途 actor_spawned（转发自 RenderWorld）
 signal actor_spawned(actor_id: String, state: FrontendActorRenderState)
 
 ## 飘字创建（转发自 RenderWorld）
@@ -342,7 +342,7 @@ func _tick(delta_ms: float) -> void:
 			if events.size() > 0:
 				Log.debug("BattleDirector", "帧 %d: %d 个事件" % [next_frame, events.size()])
 			
-			# actorSpawned / actorDestroyed 先改 render-state，再用最新 context 翻译表现动作。
+			# actor_spawned / actor_destroyed 先改 render-state，再用最新 context 翻译表现动作。
 			for event: Dictionary in events:
 				_log_event_frame_diag(next_frame, event)
 				_world.apply_event_side_effects(event)
@@ -384,13 +384,13 @@ func _tick(delta_ms: float) -> void:
 
 func _log_event_frame_diag(replay_frame: int, event: Dictionary) -> void:
 	var kind: String = event.get("kind", "")
-	if kind == "actorSpawned":
+	if kind == "actor_spawned":
 		var actor: Dictionary = event.get("actor", {}) as Dictionary
-		var config_id: String = actor.get("configId", "") as String
+		var config_id: String = actor.get("config_id", "") as String
 		if config_id == "fire_tile":
 			print("[Frontend:FrameDiag] fire_tile_actor_spawned replay_frame=%d actor_id=%s position=%s" % [
 				replay_frame,
-				event.get("actorId", ""),
+				event.get("actor_id", ""),
 				actor.get("position", []),
 			])
 

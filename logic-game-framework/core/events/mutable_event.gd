@@ -95,8 +95,8 @@ func get_field_computation_steps(field: String) -> Dictionary:
 
 	return {
 		"field": field,
-		"originalValue": original_value,
-		"finalValue": value,
+		"original_value": original_value,
+		"final_value": value,
 		"steps": steps,
 	}
 
@@ -113,12 +113,12 @@ func format_computation_log(field: String) -> String:
 	if record.is_empty():
 		return "%s: no modifications" % field
 
-	var lines: Array[String] = ["%s: %s \t \t%s" % [field, str(record["originalValue"]), str(record["finalValue"])]]
+	var lines: Array[String] = ["%s: %s \t \t%s" % [field, str(record["original_value"]), str(record["final_value"])]]
 
 	for step: Dictionary in record["steps"]:
-		var source: String = str(step.get("sourceName", "")) if step.get("sourceName") else str(step.get("sourceId", "unknown"))
+		var source: String = str(step.get("source_name", "")) if step.get("source_name") else str(step.get("source_id", "unknown"))
 		var op_sign := _get_operation_sign(step)
-		lines.append("  [%s] %s%s -> %s" % [source, op_sign, str(step.get("value", "")), str(step.get("resultValue", ""))])
+		lines.append("  [%s] %s%s -> %s" % [source, op_sign, str(step.get("value", "")), str(step.get("result_value", ""))])
 
 	return "\n".join(lines)
 
@@ -167,11 +167,11 @@ func _compute_value(base_value: float, grouped: Dictionary) -> float:
 
 func _create_step(mod: Modification, operation: String, result_value: float) -> Dictionary:
 	return {
-		"sourceId": mod.source_id if mod.source_id != "" else "unknown",
-		"sourceName": mod.source_name if mod.source_name != "" else null,
+		"source_id": mod.source_id if mod.source_id != "" else "unknown",
+		"source_name": mod.source_name if mod.source_name != "" else null,
 		"operation": operation,
 		"value": mod.value,
-		"resultValue": result_value,
+		"result_value": result_value,
 	}
 
 func _get_operation_sign(step: Dictionary) -> String:

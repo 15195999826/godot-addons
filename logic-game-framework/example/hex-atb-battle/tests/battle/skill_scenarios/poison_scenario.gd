@@ -53,11 +53,11 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var stacks_events := ctx.events_of_kind(GameEvent.ABILITY_STACKS_CHANGED_EVENT)
 	ctx.assert_eq(stacks_events.size(), 3, "AbilityStacksChanged event count")
 	if stacks_events.size() == 3:
-		ctx.assert_eq(stacks_events[0].get("oldStacks"), 3, "tick 1 oldStacks")
-		ctx.assert_eq(stacks_events[0].get("newStacks"), 2, "tick 1 newStacks")
-		ctx.assert_eq(stacks_events[2].get("newStacks"), 0, "tick 3 newStacks reaches 0")
-		ctx.assert_eq(stacks_events[0].get("abilityConfigId"), HexBattlePoisonBuff.CONFIG_ID,
-			"event abilityConfigId == buff_poison")
+		ctx.assert_eq(stacks_events[0].get("old_stacks"), 3, "tick 1 old_stacks")
+		ctx.assert_eq(stacks_events[0].get("new_stacks"), 2, "tick 1 new_stacks")
+		ctx.assert_eq(stacks_events[2].get("new_stacks"), 0, "tick 3 new_stacks reaches 0")
+		ctx.assert_eq(stacks_events[0].get("ability_config_id"), HexBattlePoisonBuff.CONFIG_ID,
+			"event ability_config_id == buff_poison")
 
 	# Buff UI 依赖先 ADD 再 UPDATE。若首次 tick 跟 grant 同帧且进入 replay 顺序早于
 	# AbilityGranted, frontend 会忽略 3→2,表现成 3→1→消失。
@@ -67,11 +67,11 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		var event := ctx.events[i]
 		if first_stacks_index < 0 \
 			and event.get("kind") == GameEvent.ABILITY_STACKS_CHANGED_EVENT \
-			and event.get("abilityConfigId") == HexBattlePoisonBuff.CONFIG_ID:
+			and event.get("ability_config_id") == HexBattlePoisonBuff.CONFIG_ID:
 			first_stacks_index = i
 		if poison_grant_index < 0 and event.get("kind") == GameEvent.ABILITY_GRANTED_EVENT:
 			var ability: Dictionary = event.get("ability", {})
-			if ability.get("configId") == HexBattlePoisonBuff.CONFIG_ID:
+			if ability.get("config_id") == HexBattlePoisonBuff.CONFIG_ID:
 				poison_grant_index = i
 	ctx.assert_true(poison_grant_index >= 0, "PoisonBuff AbilityGranted recorded")
 	ctx.assert_true(first_stacks_index > poison_grant_index,

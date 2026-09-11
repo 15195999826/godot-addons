@@ -18,7 +18,7 @@ func detect(projectile: ProjectileActor, potential_targets: Array[Actor]) -> Dic
 			return {
 				"hit": true,
 				"target_actor_id": target.id,
-				"hitPosition": Vector3(projectile_pos.x, projectile_pos.y, projectile_pos.z),
+				"hit_position": Vector3(projectile_pos.x, projectile_pos.y, projectile_pos.z),
 			}
 
 	return {"hit": false}

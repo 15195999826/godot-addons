@@ -47,7 +47,7 @@ func extend(amount_ms: float) -> void:
 
 func serialize() -> Dictionary:
 	return {
-		"initialDuration": initial_duration,
+		"initial_duration": initial_duration,
 		"remaining": remaining,
 	}
 

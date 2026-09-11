@@ -109,9 +109,9 @@ func _freeze_all_actions() -> void:
 
 func serialize() -> Dictionary:
 	return {
-		"triggersCount": _triggers.size(),
-		"triggerMode": _trigger_mode,
-		"actionsCount": _actions.size(),
-		"onApplyActionsCount": _on_apply_actions.size(),
-		"onRemoveActionsCount": _on_remove_actions.size(),
+		"triggers_count": _triggers.size(),
+		"trigger_mode": _trigger_mode,
+		"actions_count": _actions.size(),
+		"on_apply_actions_count": _on_apply_actions.size(),
+		"on_remove_actions_count": _on_remove_actions.size(),
 	}

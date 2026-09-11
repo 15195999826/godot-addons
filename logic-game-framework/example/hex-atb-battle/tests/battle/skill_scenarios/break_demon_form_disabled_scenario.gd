@@ -75,10 +75,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# 1. Break grant 出现
 	var break_grants: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) != HexBattleBreakBuff.CONFIG_ID:
+		if str(ability_data.get("config_id", "")) != HexBattleBreakBuff.CONFIG_ID:
 			continue
 		break_grants.append(e)
 	ctx.assert_eq(break_grants.size(), 1, "Expect 1 Break grant on caster")
@@ -89,15 +89,15 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"DemonForm passive remains on caster after break expire"
 	)
 
-	# 3. 收集 caster 的 abilityStacksChanged 事件 (DemonForm tick 触发)
+	# 3. 收集 caster 的 ability_stacks_changed 事件 (DemonForm tick 触发)
 	# Break 期内 (frame 4 ~ 24, 即 t=300~2300) 不应产生 stacks_changed; 之后才有。
 	var break_grant_frame := int(break_grants[0].get("replay_frame", -1))
 	var stacks_changes_during_break: Array = []
 	var stacks_changes_after_break: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_STACKS_CHANGED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
-		if str(e.get("abilityConfigId", "")) != HexBattleDemonForm.CONFIG_ID:
+		if str(e.get("ability_config_id", "")) != HexBattleDemonForm.CONFIG_ID:
 			continue
 		var frame := int(e.get("replay_frame", -1))
 		# Break window = [grant_frame, grant_frame + 20] = [4, 24]
@@ -114,7 +114,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# 4. 期末 stacks ≥ 1 (DemonForm 在 break 解除后继续 periodic tick)
 	if stacks_changes_after_break.size() >= 1:
 		var last: Dictionary = stacks_changes_after_break[-1]
-		var stacks_final := int(last.get("newStacks", 0))
+		var stacks_final := int(last.get("new_stacks", 0))
 		ctx.assert_true(stacks_final >= 1,
 			"DemonForm stacks ≥ 1 after break expire (got %d)" % stacks_final)
 

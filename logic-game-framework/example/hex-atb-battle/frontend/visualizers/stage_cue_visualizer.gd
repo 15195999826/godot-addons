@@ -1,6 +1,6 @@
 ## StageCueVisualizer - 舞台提示事件转换器
 ##
-## 将 stageCue 事件翻译为视觉特效动作
+## 将 stage_cue 事件翻译为视觉特效动作
 ## 根据 cue_id 决定播放什么特效：
 ## - melee_slash, melee_heavy, melee_combo → 播放攻击箭头特效
 ## - magic_fireball, ranged_arrow → 不播放（有投射物动画）
@@ -104,12 +104,12 @@ func _init() -> void:
 	visualizer_name = "StageCueVisualizer"
 
 
-## 检查是否为 stageCue 事件
+## 检查是否为 stage_cue 事件
 func can_handle(event: Dictionary) -> bool:
 	return get_event_kind(event) == GameEvent.STAGE_CUE_EVENT
 
 
-## 翻译 stageCue 事件为视觉动作
+## 翻译 stage_cue 事件为视觉动作
 func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:
 	var e := GameEvent.StageCue.from_dict(event)
 	var source_id := e.source_actor_id

@@ -53,13 +53,13 @@ func get_sorted_tags() -> Array[Dictionary]:
 		result.append({
 			"name": tag_name,
 			"time": float(tags[tag_name]),
-			"definitionIndex": definition_index,
+			"definition_index": definition_index,
 		})
 		definition_index += 1
 	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		if float(a["time"]) != float(b["time"]):
 			return float(a["time"]) < float(b["time"])
-		return int(a["definitionIndex"]) < int(b["definitionIndex"]))
+		return int(a["definition_index"]) < int(b["definition_index"]))
 	return result
 
 
@@ -71,14 +71,14 @@ func validate() -> Array[String]:
 		errors.append("Timeline id is required")
 	
 	if total_duration <= 0.0:
-		errors.append("Timeline totalDuration must be positive")
+		errors.append("Timeline total_duration must be positive")
 	
 	for tag_name in tags.keys():
 		var time_value := float(tags[tag_name])
 		if time_value < 0.0:
 			errors.append("Tag \"%s\" has negative time: %s" % [tag_name, time_value])
 		elif time_value > total_duration:
-			errors.append("Tag \"%s\" time (%s) exceeds totalDuration (%s)" % [tag_name, time_value, total_duration])
+			errors.append("Tag \"%s\" time (%s) exceeds total_duration (%s)" % [tag_name, time_value, total_duration])
 	
 	return errors
 
@@ -87,10 +87,10 @@ func validate() -> Array[String]:
 func to_dict() -> Dictionary:
 	return {
 		"id": id,
-		"totalDuration": total_duration,
+		"total_duration": total_duration,
 		"tags": tags,
 		"loop": loop,
-		"maxLoops": max_loops,
+		"max_loops": max_loops,
 	}
 
 
@@ -98,9 +98,9 @@ func to_dict() -> Dictionary:
 static func from_dict(data: Dictionary) -> TimelineData:
 	var t := TimelineData.new(
 		data.get("id", ""),
-		data.get("totalDuration", 0.0),
+		data.get("total_duration", 0.0),
 		data.get("tags", {})
 	)
 	t.loop = data.get("loop", false)
-	t.max_loops = data.get("maxLoops", -1)
+	t.max_loops = data.get("max_loops", -1)
 	return t

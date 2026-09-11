@@ -76,10 +76,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var stun_grant: Dictionary = {}
 	var poison_grant: Dictionary = {}
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		var cfg := str(ability_data.get("configId", ""))
+		var cfg := str(ability_data.get("config_id", ""))
 		if cfg == HexBattleStunBuff.CONFIG_ID:
 			stun_grant = e
 		elif cfg == HexBattlePoisonBuff.CONFIG_ID:
@@ -95,7 +95,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var stun_inst := str((stun_grant.get("ability", {}) as Dictionary).get("id", ""))
 	var stun_remove_frame := -1
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("abilityInstanceId", "")) == stun_inst:
+		if str(e.get("ability_instance_id", "")) == stun_inst:
 			stun_remove_frame = int(e.get("replay_frame", -1))
 			break
 	ctx.assert_true(stun_remove_frame > 0, "Stun should be removed (got frame %d)" % stun_remove_frame)
@@ -110,7 +110,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var poison_inst := str((poison_grant.get("ability", {}) as Dictionary).get("id", ""))
 	var poison_remove_frame := -1
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("abilityInstanceId", "")) == poison_inst:
+		if str(e.get("ability_instance_id", "")) == poison_inst:
 			poison_remove_frame = int(e.get("replay_frame", -1))
 			break
 	# Poison expire 应远晚于 cleanse hit, 或战斗结束时仍在 (no remove event)

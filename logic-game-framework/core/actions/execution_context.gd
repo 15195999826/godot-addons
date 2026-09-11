@@ -17,7 +17,7 @@ extends RefCounted
 ## [code]
 ## [
 ##     # event_dict_chain[0] - 原始触发事件（技能激活）
-##     { "kind": "abilityActivate", "abilityInstanceId": "skill_001", "sourceId": "actor_001" },
+##     { "kind": "ability_activate", "ability_instance_id": "skill_001", "source_id": "actor_001" },
 ##     # event_dict_chain[1] - 回调事件（伤害事件）
 ##     { "kind": "damage", "target_actor_id": "actor_002", "damage": 150.0 }
 ## ]

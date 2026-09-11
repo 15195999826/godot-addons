@@ -34,7 +34,7 @@ static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_
 ## Phase E · debug 检查区域几何 (selector 与 StageCue.params overlay 共用).
 ##
 ## 返回所有"selector 会枚举到"的格子 (包含 cone origin, 不论格内是否有敌人).
-## checked_coords = 完整 fixed footprint 区域; targetActorIds = 真正命中的 actor —— 二者
+## checked_coords = 完整 fixed footprint 区域; target_actor_ids = 真正命中的 actor —— 二者
 ## 区别让 frontend overlay 可显示"扫过区域"vs"命中目标"双层 cue.
 static func compute_checked_coords(
 	caster_pos: HexCoord,

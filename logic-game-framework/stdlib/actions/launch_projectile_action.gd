@@ -72,10 +72,10 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		"source_actor_id": source_actor_id,
 		"ability_config_id": ability_config_id,
 		"target_actor_id": target_actor_id,
-		"startPosition": start_position,
-		"targetPosition": target_position,
+		"start_position": start_position,
+		"target_position": target_position,
 		"direction": direction_value,
-		"customData": custom_data_value,
+		"custom_data": custom_data_value,
 	}
 
 	projectile.launch(launch_params)
@@ -93,19 +93,19 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	# 添加视觉类型（用于表演层区分箭矢/火球等）
 	var visual_type: String = projectile.config.get(ProjectileActor.CFG_VISUAL_TYPE, "")
 	if visual_type != "":
-		launched_event["visualType"] = visual_type
+		launched_event["visual_type"] = visual_type
 
-	# Phase 01 Chain Lightning: 把 customData 透传到 projectileLaunched event,
+	# Phase 01 Chain Lightning: 把 custom_data 透传到 projectile_launched event,
 	# 让 scenario / replay 可用 chain_id 关联发射与命中, 而不是从 hit 反推。
 	if custom_data_value is Dictionary and not (custom_data_value as Dictionary).is_empty():
-		launched_event["customData"] = (custom_data_value as Dictionary).duplicate(true)
+		launched_event["custom_data"] = (custom_data_value as Dictionary).duplicate(true)
 
 	ctx.event_collector.push(launched_event)
 
 	var result := ActionResult.create_success_result([launched_event])
 	result.data = {
 		"projectile": projectile,
-		"projectileId": projectile.id,
+		"projectile_id": projectile.id,
 	}
 
 	return result
@@ -135,8 +135,8 @@ static func create_fixed_position_resolver(position: Vector3) -> Vector3Resolver
 static func source_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:
 		var event := ctx.get_current_event()
-		if event.has("sourcePosition"):
-			return event.sourcePosition
+		if event.has("source_position"):
+			return event.source_position
 		return Vector3.ZERO
 	)
 
@@ -145,7 +145,7 @@ static func source_position_resolver() -> Vector3Resolver:
 static func target_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:
 		var event := ctx.get_current_event()
-		if event.has("targetPosition"):
-			return event.targetPosition
+		if event.has("target_position"):
+			return event.target_position
 		return Vector3.ZERO
 	)

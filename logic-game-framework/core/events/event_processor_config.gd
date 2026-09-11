@@ -40,6 +40,6 @@ func _init(p_max_depth: int = DEFAULT_MAX_DEPTH, p_trace_level: int = DEFAULT_TR
 ## 转换为 Dictionary
 func to_dict() -> Dictionary:
 	return {
-		"maxDepth": max_depth,
-		"traceLevel": trace_level,
+		"max_depth": max_depth,
+		"trace_level": trace_level,
 	}

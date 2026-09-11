@@ -186,6 +186,6 @@ func serialize_base() -> Dictionary:
 		"id": id,
 		"type": type,
 		"state": _state,
-		"logicTime": _logic_time,
+		"logic_time": _logic_time,
 		"actors": actors,
 	}

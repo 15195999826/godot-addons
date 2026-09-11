@@ -73,8 +73,8 @@ func _ready() -> void:
 		_stacks_event("hero_1", "surge_inst_1", HexBattleSurgeBuff.CONFIG_ID, 1, 0),
 		{
 			"kind": GameEvent.ABILITY_REMOVED_EVENT,
-			"actorId": "hero_1",
-			"abilityInstanceId": "surge_inst_1",
+			"actor_id": "hero_1",
+			"ability_instance_id": "surge_inst_1",
 		},
 	]
 	record.timeline = [f1, f21, f41]
@@ -156,12 +156,12 @@ func _assert_and_finish() -> void:
 func _grant_event(actor_id: String, instance_id: String, config_id: String, stacks: int) -> Dictionary:
 	return {
 		"kind": GameEvent.ABILITY_GRANTED_EVENT,
-		"actorId": actor_id,
+		"actor_id": actor_id,
 		"ability": {
 			"id": instance_id,
-			"instanceId": instance_id,
-			"configId": config_id,
-			"displayName": "Surge",
+			"instance_id": instance_id,
+			"config_id": config_id,
+			"display_name": "Surge",
 			"stacks": stacks,
 		},
 	}
@@ -170,11 +170,11 @@ func _grant_event(actor_id: String, instance_id: String, config_id: String, stac
 func _stacks_event(actor_id: String, instance_id: String, config_id: String, old_s: int, new_s: int) -> Dictionary:
 	return {
 		"kind": GameEvent.ABILITY_STACKS_CHANGED_EVENT,
-		"actorId": actor_id,
-		"abilityInstanceId": instance_id,
-		"abilityConfigId": config_id,
-		"oldStacks": old_s,
-		"newStacks": new_s,
+		"actor_id": actor_id,
+		"ability_instance_id": instance_id,
+		"ability_config_id": config_id,
+		"old_stacks": old_s,
+		"new_stacks": new_s,
 	}
 
 

@@ -2,8 +2,8 @@
 ##
 ## 验证 pattern:
 ##   - LaunchProjectileAction 发射 projectile
-##   - ProjectileSystem tick 驱动 → 命中 → 发 projectileHit 事件
-##   - ActivateInstanceConfig 响应 projectileHit → 第二条 timeline → DamageAction
+##   - ProjectileSystem tick 驱动 → 命中 → 发 projectile_hit 事件
+##   - ActivateInstanceConfig 响应 projectile_hit → 第二条 timeline → DamageAction
 class_name PreciseShotScenario
 extends SkillScenario
 

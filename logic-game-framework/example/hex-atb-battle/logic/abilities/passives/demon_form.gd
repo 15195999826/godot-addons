@@ -8,7 +8,7 @@
 ##   - _DemonFormTickAction (SkillLocalAction, 私有, 不进 public actions):
 ##       每 tick: ability.add_stacks(1) + 自动同步 StatModifierComponent 更新 atk modifier
 ##       (§0.X on_stacks_changed hook 走 update_modifier 原子更新);
-##       push AbilityStacksChanged + stageCue(demon_form_pulse)
+##       push AbilityStacksChanged + stage_cue(demon_form_pulse)
 class_name HexBattleDemonForm
 
 

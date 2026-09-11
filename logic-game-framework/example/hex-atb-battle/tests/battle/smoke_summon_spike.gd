@@ -154,7 +154,7 @@ func _run_phase_3_replay() -> void:
 	UGridMap.model.place_occupant(HexCoord.new(0, 0), totem)
 	totem.hex_position = HexCoord.new(0, 0)
 
-	var recorder := BattleRecorder.new({"battleId": "spike_p3", "tickInterval": int(TICK_INTERVAL)}, instance.event_collector)
+	var recorder := BattleRecorder.new({"battle_id": "spike_p3", "tick_interval": int(TICK_INTERVAL)}, instance.event_collector)
 	var all_actors: Array[Actor] = [totem]
 	var snap := PlaybackData.WorldSnapshot.new()
 	for a in all_actors:
@@ -165,7 +165,7 @@ func _run_phase_3_replay() -> void:
 	# grant DemonForm 让它有 ability_granted 事件;tick 数次让 stacks_changed 产生
 	var demon_ability := Ability.new(HexBattleDemonForm.ABILITY, totem.get_id())
 	totem.ability_set.grant_ability(demon_ability)
-	# grant 后立即 flush, 让 abilityGranted 进入 frame 0
+	# grant 后立即 flush, 让 ability_granted 进入 frame 0
 	recorder.record_frame(-1, instance.event_collector.flush())
 
 	for _i in range(40):
@@ -185,14 +185,14 @@ func _run_phase_3_replay() -> void:
 		for ev in events:
 			if ev is Dictionary:
 				var k := str((ev as Dictionary).get("kind", ""))
-				if k == "abilityGranted":
+				if k == "ability_granted":
 					has_granted = true
-				elif k == "abilityStacksChanged":
+				elif k == "ability_stacks_changed":
 					has_stacks_changed = true
 	if has_granted and has_stacks_changed:
-		_record(phase, true, "中途 add_actor 的 abilityGranted + abilityStacksChanged 都进 replay")
+		_record(phase, true, "中途 add_actor 的 ability_granted + ability_stacks_changed 都进 replay")
 	else:
-		_record(phase, false, "abilityGranted=%s abilityStacksChanged=%s" % [has_granted, has_stacks_changed])
+		_record(phase, false, "ability_granted=%s ability_stacks_changed=%s" % [has_granted, has_stacks_changed])
 
 	GameWorld.shutdown()
 

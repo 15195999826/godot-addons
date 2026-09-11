@@ -72,10 +72,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# Capture BreakBuff grant instance id, then find its ABILITY_REMOVED frame.
 	var break_inst_id := ""
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) != HexBattleBreakBuff.CONFIG_ID:
+		if str(ability_data.get("config_id", "")) != HexBattleBreakBuff.CONFIG_ID:
 			continue
 		break_inst_id = str(ability_data.get("id", ""))
 		break
@@ -83,9 +83,9 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 
 	var break_remove_frame := -1
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
-		if str(e.get("abilityInstanceId", "")) != break_inst_id:
+		if str(e.get("ability_instance_id", "")) != break_inst_id:
 			continue
 		break_remove_frame = int(e.get("replay_frame", -1))
 		break

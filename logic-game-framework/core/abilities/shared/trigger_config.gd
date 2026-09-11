@@ -6,7 +6,7 @@ class_name TriggerConfig
 extends RefCounted
 
 
-## 默认的主动技能激活触发器：匹配 ABILITY_ACTIVATE_EVENT，验证 abilityInstanceId 和 sourceId
+## 默认的主动技能激活触发器：匹配 ABILITY_ACTIVATE_EVENT，验证 ability_instance_id 和 source_id
 static var ABILITY_ACTIVATE := TriggerConfig.new(
 	GameEvent.ABILITY_ACTIVATE_EVENT,
 	func(event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:

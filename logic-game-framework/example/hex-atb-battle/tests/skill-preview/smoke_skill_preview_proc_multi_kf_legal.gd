@@ -9,9 +9,9 @@
 ## fire 时检查并 push AbilityActivateFailed 事件供前端 console 渲染。
 ##
 ## 期望:
-##   1. 1 条 executionActivated (第一发) + 2 条 abilityActivateFailed (后两发)
-##   2. abilityActivateFailed.reason 含 "冷却" (来自 CooldownCondition.get_fail_reason)
-##   3. abilityActivateFailed.failedComponentType == "condition"
+##   1. 1 条 execution_activated (第一发) + 2 条 ability_activate_failed (后两发)
+##   2. ability_activate_failed.reason 含 "冷却" (来自 CooldownCondition.get_fail_reason)
+##   3. ability_activate_failed.failed_component_type == "condition"
 ##   4. caster 上只 grant 一个 Strike Ability (procedure 去重)
 ##   5. HexBattleGeneralPassive intrinsic periodic execution 不阻塞 preview battle_finished
 extends Node
@@ -120,33 +120,33 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 			if not (ev is Dictionary):
 				continue
 			var kind := str((ev as Dictionary).get("kind", ""))
-			if kind == "abilityGranted" and str((ev as Dictionary).get("actorId", "")) == _caster_id:
+			if kind == "ability_granted" and str((ev as Dictionary).get("actor_id", "")) == _caster_id:
 				var ability_dict: Dictionary = (ev as Dictionary).get("ability", {}) as Dictionary
-				if str(ability_dict.get("configId", "")) == HexBattleStrike.CONFIG_ID:
+				if str(ability_dict.get("config_id", "")) == HexBattleStrike.CONFIG_ID:
 					grant_count += 1
-			elif kind == "executionActivated" and str((ev as Dictionary).get("actorId", "")) == _caster_id:
+			elif kind == "execution_activated" and str((ev as Dictionary).get("actor_id", "")) == _caster_id:
 				exec_count += 1
-			elif kind == "abilityActivateFailed" and str((ev as Dictionary).get("sourceId", "")) == _caster_id:
+			elif kind == "ability_activate_failed" and str((ev as Dictionary).get("source_id", "")) == _caster_id:
 				failed_events.append(ev as Dictionary)
 
 	if exec_count != 1:
-		_fail("expected 1 executionActivated (only first fire passes cooldown), got %d" % exec_count)
+		_fail("expected 1 execution_activated (only first fire passes cooldown), got %d" % exec_count)
 		return
 	if failed_events.size() != 2:
-		_fail("expected 2 abilityActivateFailed events (后两发被 cooldown 拦), got %d" % failed_events.size())
+		_fail("expected 2 ability_activate_failed events (后两发被 cooldown 拦), got %d" % failed_events.size())
 		return
 	if grant_count != 1:
-		_fail("expected exactly 1 abilityGranted (instance reuse), got %d" % grant_count)
+		_fail("expected exactly 1 ability_granted (instance reuse), got %d" % grant_count)
 		return
-	# 验证 reason 含"冷却" / failedComponentType=="condition"
+	# 验证 reason 含"冷却" / failed_component_type=="condition"
 	for fev in failed_events:
 		var reason := str(fev.get("reason", ""))
-		var ft := str(fev.get("failedComponentType", ""))
+		var ft := str(fev.get("failed_component_type", ""))
 		if not ("冷却" in reason):
 			_fail("expected reason to contain '冷却', got: %s" % reason)
 			return
 		if ft != "condition":
-			_fail("expected failedComponentType=condition, got: %s" % ft)
+			_fail("expected failed_component_type=condition, got: %s" % ft)
 			return
 
 	_pass("exec=1 + 2 cooldown failures (reason='%s'); grant=1 (reused)" %

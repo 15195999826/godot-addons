@@ -144,8 +144,8 @@ _replay_scene.load_replay(record)                 <-- FrontendBattleReplayScene
   +--[1] _director.load_replay(record)            <-- FrontendBattleDirector
   |    +-- 构建 _frame_data_map: { frame_number -> FrameData }
   |    +-- _world.initialize_from_replay(record)  <-- FrontendRenderWorld
-  |    |     +-- 解析 positionFormats 配置
-  |    |     +-- 从 mapConfig 创建 GridLayout
+  |    |     +-- 解析 position_formats 配置
+  |    |     +-- 从 map_config 创建 GridLayout
   |    |     +-- 遍历 initialActors -> 初始化每个 actor 状态 Dictionary
   |    |     |     { id, position, visual_hp, max_hp, is_alive,
   |    |     |       flash_progress, tint_color }
@@ -538,25 +538,25 @@ var easing: EasingType
 ```json
 {
   "meta": {
-    "battleId": "battle_001",
-    "recordedAt": 1706000000,
-    "tickInterval": 100,
-    "totalFrames": 50,
+    "battle_id": "battle_001",
+    "recorded_at": 1706000000,
+    "tick_interval": 100,
+    "total_frames": 50,
     "result": "victory"
   },
   "world_snapshot": {
     "actors": [
       {
         "id": "actor_1",
-        "configId": "warrior",
-        "displayName": "Warrior",
+        "config_id": "warrior",
+        "display_name": "Warrior",
         "team": 0,
         "position": { "hex": { "q": -2, "r": 0 } },
-        "attributes": { "hp": 100.0, "maxHp": 100.0 }
+        "attributes": { "hp": 100.0, "max_hp": 100.0 }
       }
     ],
-    "mapConfig": {},
-    "positionFormats": { "Character": "hex" }
+    "map_config": {},
+    "position_formats": { "Character": "hex" }
   },
   "timeline": [
     {

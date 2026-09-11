@@ -84,10 +84,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# 1. caster 上 2 个独立 BreakBuff grant
 	var break_grants: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) != HexBattleBreakBuff.CONFIG_ID:
+		if str(ability_data.get("config_id", "")) != HexBattleBreakBuff.CONFIG_ID:
 			continue
 		break_grants.append(e)
 	ctx.assert_eq(break_grants.size(), 2,
@@ -105,9 +105,9 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var break_removes: Array = []
 	var remove_b_frame := -1  # 长 Break B remove frame
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("actorId", "")) != ctx.caster_id:
+		if str(e.get("actor_id", "")) != ctx.caster_id:
 			continue
-		var inst := str(e.get("abilityInstanceId", ""))
+		var inst := str(e.get("ability_instance_id", ""))
 		if inst == inst_a or inst == inst_b:
 			break_removes.append(e)
 		if inst == inst_b:

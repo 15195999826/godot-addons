@@ -31,24 +31,24 @@ func _phase_summon_totem() -> bool:
 		return _fail("SummonTotem: HexBattleProcedure kept its world alive after finish")
 	var spawned := _find_spawned_actor_by_config(replay, "Totem")
 	if spawned.is_empty():
-		return _fail("SummonTotem: missing actorSpawned for Totem")
-	var totem_id := str(spawned.get("actorId", ""))
+		return _fail("SummonTotem: missing actor_spawned for Totem")
+	var totem_id := str(spawned.get("actor_id", ""))
 	var actor_data: Dictionary = spawned.get("actor", {}) as Dictionary
 	if int(actor_data.get("team", -1)) != 0:
 		return _fail("SummonTotem: spawned Totem team snapshot expected 0")
 	if _actor_data_position_is(actor_data, 0.0, 0.0):
 		return _fail("SummonTotem: spawned Totem position snapshot stayed at default origin")
-	# totem 技能进录像走 abilityGranted 补录事件（buff visualizer 消费的管道）。
+	# totem 技能进录像走 ability_granted 补录事件（buff visualizer 消费的管道）。
 	if not _has_ability_granted(replay, totem_id, HexBattleTotemAttack.CONFIG_ID):
-		return _fail("SummonTotem: missing synthesized TotemAttack abilityGranted")
+		return _fail("SummonTotem: missing synthesized TotemAttack ability_granted")
 	if not _has_ability_granted(replay, totem_id, HexBattleTotemLifetime.CONFIG_ID):
-		return _fail("SummonTotem: missing synthesized TotemLifetime abilityGranted")
+		return _fail("SummonTotem: missing synthesized TotemLifetime ability_granted")
 	if not _has_execution_activated(replay, totem_id, HexBattleTotemAttack.CONFIG_ID):
-		return _fail("SummonTotem: missing TotemAttack executionActivated")
+		return _fail("SummonTotem: missing TotemAttack execution_activated")
 	if not _has_stage_cue(replay, totem_id, HexBattleTotemAttack.STAGE_CUE_ID):
-		return _fail("SummonTotem: missing TotemAttack stageCue for attack VFX")
+		return _fail("SummonTotem: missing TotemAttack stage_cue for attack VFX")
 	if not _has_actor_destroyed(replay, totem_id):
-		return _fail("SummonTotem: missing actorDestroyed after TotemLifetime")
+		return _fail("SummonTotem: missing actor_destroyed after TotemLifetime")
 	print("  [PASS] SummonTotem production replay")
 	return true
 
@@ -63,19 +63,19 @@ func _phase_fire_tile() -> bool:
 		return _fail("FireTile: HexBattleProcedure kept its world alive after finish")
 	var spawned := _find_spawned_actor_by_config(replay, HexBattleFireTile.KIND)
 	if spawned.is_empty():
-		return _fail("FireTile: missing actorSpawned for fire_tile")
-	var fire_tile_id := str(spawned.get("actorId", ""))
+		return _fail("FireTile: missing actor_spawned for fire_tile")
+	var fire_tile_id := str(spawned.get("actor_id", ""))
 	var actor_data: Dictionary = spawned.get("actor", {}) as Dictionary
 	if not _actor_data_position_is(actor_data, 2.0, 0.0):
-		return _fail("FireTile: actorSpawned position snapshot expected target coord [2,0]")
+		return _fail("FireTile: actor_spawned position snapshot expected target coord [2,0]")
 	if not _has_ability_granted(replay, fire_tile_id, HexBattleFireTilePulse.CONFIG_ID):
-		return _fail("FireTile: missing synthesized FireTilePulse abilityGranted")
+		return _fail("FireTile: missing synthesized FireTilePulse ability_granted")
 	if not _has_ability_granted(replay, fire_tile_id, HexBattleFireTileLifetime.CONFIG_ID):
-		return _fail("FireTile: missing synthesized FireTileLifetime abilityGranted")
+		return _fail("FireTile: missing synthesized FireTileLifetime ability_granted")
 	if not _has_execution_activated(replay, fire_tile_id, HexBattleFireTilePulse.CONFIG_ID):
-		return _fail("FireTile: missing FireTilePulse executionActivated")
+		return _fail("FireTile: missing FireTilePulse execution_activated")
 	if not _has_actor_destroyed(replay, fire_tile_id):
-		return _fail("FireTile: missing actorDestroyed after FireTileLifetime")
+		return _fail("FireTile: missing actor_destroyed after FireTileLifetime")
 	if not _has_damage_from(replay, fire_tile_id):
 		return _fail("FireTile: missing pulse damage from spawned fire tile")
 	print("  [PASS] FireTile production replay")
@@ -163,7 +163,7 @@ func _find_spawned_actor_by_config(replay: Dictionary, config_id: String) -> Dic
 		if str(event.get("kind", "")) != GameEvent.ACTOR_SPAWNED_EVENT:
 			continue
 		var actor_data: Dictionary = event.get("actor", {}) as Dictionary
-		if str(actor_data.get("configId", "")) == config_id:
+		if str(actor_data.get("config_id", "")) == config_id:
 			return event
 	return {}
 
@@ -179,10 +179,10 @@ func _has_ability_granted(replay: Dictionary, actor_id: String, config_id: Strin
 	for event in _flatten_events(replay):
 		if str(event.get("kind", "")) != GameEvent.ABILITY_GRANTED_EVENT:
 			continue
-		if str(event.get("actorId", "")) != actor_id:
+		if str(event.get("actor_id", "")) != actor_id:
 			continue
 		var ability_data: Dictionary = event.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) == config_id:
+		if str(ability_data.get("config_id", "")) == config_id:
 			return true
 	return false
 
@@ -191,9 +191,9 @@ func _has_execution_activated(replay: Dictionary, actor_id: String, config_id: S
 	for event in _flatten_events(replay):
 		if str(event.get("kind", "")) != GameEvent.EXECUTION_ACTIVATED_EVENT:
 			continue
-		if str(event.get("actorId", "")) != actor_id:
+		if str(event.get("actor_id", "")) != actor_id:
 			continue
-		if str(event.get("abilityConfigId", "")) == config_id:
+		if str(event.get("ability_config_id", "")) == config_id:
 			return true
 	return false
 
@@ -202,7 +202,7 @@ func _has_stage_cue(replay: Dictionary, actor_id: String, cue_id: String) -> boo
 	for event_dict in _flatten_events(replay):
 		if str(event_dict.get("kind", "")) != GameEvent.STAGE_CUE_EVENT:
 			continue
-		if str(event_dict.get("sourceActorId", "")) == actor_id and str(event_dict.get("cueId", "")) == cue_id:
+		if str(event_dict.get("source_actor_id", "")) == actor_id and str(event_dict.get("cue_id", "")) == cue_id:
 			return true
 	return false
 
@@ -210,7 +210,7 @@ func _has_stage_cue(replay: Dictionary, actor_id: String, cue_id: String) -> boo
 func _has_actor_destroyed(replay: Dictionary, actor_id: String) -> bool:
 	for event in _flatten_events(replay):
 		if str(event.get("kind", "")) == GameEvent.ACTOR_DESTROYED_EVENT \
-				and str(event.get("actorId", "")) == actor_id:
+				and str(event.get("actor_id", "")) == actor_id:
 			return true
 	return false
 

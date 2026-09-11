@@ -42,8 +42,8 @@ func _init(world: Dota2WorldGameplayInstance, opts: Dictionary = {}) -> void:
 	_tick_interval = float(opts.get("tick_interval_ms", DOTA2_TICK_INTERVAL_MS))
 	movement_adapter = Dota2MovementAdapter.new()
 	# 本 example 的产出物是 Dota2LogicFrame，不是可播的战斗录像：开战快照在 spawn 之前
-	# 拍（恒空）、无 grid map_config、无 positionFormats，finish() 的返回值所有调用点都丢弃。
-	# 开着 recorder 只会让 BattleActor 的默认订阅把 attributeChanged / tagChanged 灌进
+	# 拍（恒空）、无 grid map_config、无 position_formats，finish() 的返回值所有调用点都丢弃。
+	# 开着 recorder 只会让 BattleActor 的默认订阅把 attribute_changed / tag_changed 灌进
 	# 同一个 event_collector，挤爆 lane 场景那 14 行 debug 面板，并把死兵的订阅一路留到战斗结束
 	# （死兵走 remove_actor，没有对应的 recorder unregister）。
 	_recording_enabled = false

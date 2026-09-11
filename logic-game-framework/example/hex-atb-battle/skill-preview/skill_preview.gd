@@ -195,7 +195,7 @@ var _role_id_to_actor_id: Dictionary[String, String] = {}
 var _actor_ids: Array[String] = []
 var _environment_ids: Array[String] = []
 
-## 最近一次战斗的总帧数, 从 timeline.meta.totalFrames 缓存。
+## 最近一次战斗的总帧数, 从 timeline.meta.total_frames 缓存。
 ## 不能从 _world.get_active_battle() 读 —— battle_finished emit 之前
 ## procedure 的 finish() 已交还 _active_battle (见 BattleProcedure._detach_from_world)。
 var _last_battle_frames: int = 0
@@ -3486,7 +3486,7 @@ func _on_replay_pressed() -> void:
 
 func _read_total_frames(timeline: Dictionary) -> int:
 	if timeline.has("meta") and timeline["meta"] is Dictionary:
-		return int((timeline["meta"] as Dictionary).get("totalFrames", 0))
+		return int((timeline["meta"] as Dictionary).get("total_frames", 0))
 	return 0
 
 
@@ -3617,18 +3617,18 @@ func _log_event(frame: int, ev: Dictionary) -> void:
 		"ability_activate":
 			line = "%s  [color=#5FB3D9]◈[/color] [b]%s[/b]  [color=#A89580]by[/color] %s" % [
 				ts,
-				ev.get("abilityInstanceId", ev.get("ability_id", "?")),
-				ev.get("sourceId", "?"),
+				ev.get("ability_instance_id", ev.get("ability_id", "?")),
+				ev.get("source_id", "?"),
 			]
-		"abilityActivateFailed":
+		"ability_activate_failed":
 			# LGF ActiveUseComponent push: condition / cost 检查失败时上报。
 			# 典型场景: SkillPreview 用户排了 timeline 间隔合法 (≥ timeline.total_duration)
 			# 但 < cooldown 的 keyframe — UI 不拦, 跑到这里被 cooldown 拒。
-			var role := _role_label_for_actor_id(str(ev.get("sourceId", "")))
-			var skill_name := _skill_display_name_by_config_id(str(ev.get("abilityConfigId", "")))
+			var role := _role_label_for_actor_id(str(ev.get("source_id", "")))
+			var skill_name := _skill_display_name_by_config_id(str(ev.get("ability_config_id", "")))
 			line = "%s  [color=#FF6B6B]⛔[/color] [b]%s[/b]  [color=#FF6B6B]%s 释放失败[/color]  [color=#A89580]%s: %s[/color]" % [
 				ts, role, skill_name,
-				str(ev.get("failedComponentType", "?")),
+				str(ev.get("failed_component_type", "?")),
 				str(ev.get("reason", "?")),
 			]
 		"death":
@@ -4719,7 +4719,7 @@ func dev_agent_world_state() -> Array:
 func dev_agent_timeline_summary(max_events: int = 60) -> Dictionary:
 	if _last_timeline.is_empty():
 		return {"loaded": false, "events": [], "total_frames": 0}
-	# Timeline 结构: {meta:{totalFrames}, timeline:[{frame, events:[...]}]}
+	# Timeline 结构: {meta:{total_frames}, timeline:[{frame, events:[...]}]}
 	# 这里 flatten 成 (frame, event) 元组方便 AI 读, 截顶到 max_events。
 	var entries: Array = (_last_timeline.get("timeline", []) as Array)
 	var flat: Array[Dictionary] = []

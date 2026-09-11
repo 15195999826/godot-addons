@@ -45,12 +45,12 @@ func _ready() -> void:
 	# Event 1: AbilityGranted (poison, stacks=3)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_GRANTED_EVENT,
-		"actorId": "hero_1",
+		"actor_id": "hero_1",
 		"ability": {
 			"id": "poison_inst_1",
-			"instanceId": "poison_inst_1",
-			"configId": "buff_poison",
-			"displayName": "中毒",
+			"instance_id": "poison_inst_1",
+			"config_id": "buff_poison",
+			"display_name": "中毒",
 			"stacks": 3,
 		},
 	})
@@ -70,11 +70,11 @@ func _ready() -> void:
 	# Event 2: AbilityStacksChanged (3 → 2)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_STACKS_CHANGED_EVENT,
-		"actorId": "hero_1",
-		"abilityInstanceId": "poison_inst_1",
-		"abilityConfigId": "buff_poison",
-		"oldStacks": 3,
-		"newStacks": 2,
+		"actor_id": "hero_1",
+		"ability_instance_id": "poison_inst_1",
+		"ability_config_id": "buff_poison",
+		"old_stacks": 3,
+		"new_stacks": 2,
 	})
 	actor = render_world.get_actors_snapshot()["hero_1"]
 	if not is_equal_approx(actor.buffs[0].primary, 2.0):
@@ -85,12 +85,12 @@ func _ready() -> void:
 	# Event 3: AbilityGranted (ward, capacity=30)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_GRANTED_EVENT,
-		"actorId": "hero_1",
+		"actor_id": "hero_1",
 		"ability": {
 			"id": "ward_inst_1",
-			"instanceId": "ward_inst_1",
-			"configId": "buff_ward",
-			"displayName": "护盾术",
+			"instance_id": "ward_inst_1",
+			"config_id": "buff_ward",
+			"display_name": "护盾术",
 			"stacks": 1,
 			"components": [{
 				"type": "ShieldComponent",
@@ -141,8 +141,8 @@ func _ready() -> void:
 	# Event 5: AbilityRemoved (poison)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_REMOVED_EVENT,
-		"actorId": "hero_1",
-		"abilityInstanceId": "poison_inst_1",
+		"actor_id": "hero_1",
+		"ability_instance_id": "poison_inst_1",
 	})
 	actor = render_world.get_actors_snapshot()["hero_1"]
 	if actor.buffs.size() != 1:

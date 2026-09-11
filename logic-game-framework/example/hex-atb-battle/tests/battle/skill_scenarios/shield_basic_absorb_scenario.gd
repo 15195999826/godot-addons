@@ -6,7 +6,7 @@
 ##   3. consumption_records 标记被打破的护盾 broken=true
 ##   4. 推送 shield_broken 事件
 ##   5. Thorn 在 actual_life_damage > 0 时仍正常反弹（部分吸收不破坏现有反伤语义）
-##   6. 破裂的护盾当场移除：abilityRemoved 与 shield_broken 同帧、在其后，且先于 Thorn 的反伤
+##   6. 破裂的护盾当场移除：ability_removed 与 shield_broken 同帧、在其后，且先于 Thorn 的反伤
 ##
 ## 设定：caster 装备 [Thorn + WardBuff]，enemy 用 Strike 攻击 caster。
 ## enemy.atk = 100；ward capacity 30，必然破裂。
@@ -83,8 +83,8 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		return
 	var broken: Dictionary = broken_events[0]
 	var removed := ctx.filter_events({
-		"kind": "abilityRemoved",
-		"abilityInstanceId": broken.get("shield_ability_id", ""),
+		"kind": "ability_removed",
+		"ability_instance_id": broken.get("shield_ability_id", ""),
 	})
 	ctx.assert_eq(removed.size(), 1, "broken ward removed exactly once")
 	if removed.size() != 1:

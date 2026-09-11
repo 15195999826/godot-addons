@@ -43,13 +43,13 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var stacks_events := ctx.events_of_kind(GameEvent.ABILITY_STACKS_CHANGED_EVENT)
 	var surge_stacks_events: Array[Dictionary] = []
 	for e in stacks_events:
-		if e.get("abilityConfigId") == HexBattleSurgeBuff.CONFIG_ID:
+		if e.get("ability_config_id") == HexBattleSurgeBuff.CONFIG_ID:
 			surge_stacks_events.append(e)
 	ctx.assert_eq(surge_stacks_events.size(), 3, "3 SurgeStacksChanged events")
 	if surge_stacks_events.size() == 3:
-		ctx.assert_eq(surge_stacks_events[0].get("oldStacks"), 3, "tick 1 oldStacks")
-		ctx.assert_eq(surge_stacks_events[0].get("newStacks"), 2, "tick 1 newStacks")
-		ctx.assert_eq(surge_stacks_events[2].get("newStacks"), 0, "tick 3 newStacks reaches 0")
+		ctx.assert_eq(surge_stacks_events[0].get("old_stacks"), 3, "tick 1 old_stacks")
+		ctx.assert_eq(surge_stacks_events[0].get("new_stacks"), 2, "tick 1 new_stacks")
+		ctx.assert_eq(surge_stacks_events[2].get("new_stacks"), 0, "tick 3 new_stacks reaches 0")
 
 	# 2. 验证 BattleRecorder 顺序契约:首 stacks_changed 必须晚于 SurgeBuff grant
 	#    (这是 record_frame 把 pending 放前的关键回归保护)。
@@ -59,11 +59,11 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		var event := ctx.events[i]
 		var kind := event.get("kind", "") as String
 		if first_stacks_index < 0 and kind == GameEvent.ABILITY_STACKS_CHANGED_EVENT \
-			and event.get("abilityConfigId") == HexBattleSurgeBuff.CONFIG_ID:
+			and event.get("ability_config_id") == HexBattleSurgeBuff.CONFIG_ID:
 			first_stacks_index = i
 		if grant_index < 0 and kind == GameEvent.ABILITY_GRANTED_EVENT:
 			var ability: Dictionary = event.get("ability", {})
-			if ability.get("configId") == HexBattleSurgeBuff.CONFIG_ID:
+			if ability.get("config_id") == HexBattleSurgeBuff.CONFIG_ID:
 				grant_index = i
 	ctx.assert_true(grant_index >= 0, "SurgeBuff AbilityGranted recorded")
 	ctx.assert_true(first_stacks_index > grant_index,

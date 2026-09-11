@@ -137,14 +137,14 @@ func _test_stack_update_emits_attribute_event() -> void:
 		"stack-scaled modifier update should emit exactly one attribute event, got %d" % events.size())
 	if events.size() == 1:
 		var event := events[0]
-		TestFramework.assert_true(str(event.get("attributeName", "")) == "atk",
+		TestFramework.assert_true(str(event.get("attribute_name", "")) == "atk",
 			"attribute event should be for atk")
-		TestFramework.assert_near(event.get("oldValue", 0.0) as float, initial_atk + 2.0, 0.01,
-			"attribute event oldValue should reflect pre-update atk")
-		TestFramework.assert_near(event.get("newValue", 0.0) as float, initial_atk + 6.0, 0.01,
-			"attribute event newValue should reflect post-update atk")
-		TestFramework.assert_true(str(event.get("changeType", "")) == "modifier",
-			"attribute event changeType should be modifier")
+		TestFramework.assert_near(event.get("old_value", 0.0) as float, initial_atk + 2.0, 0.01,
+			"attribute event old_value should reflect pre-update atk")
+		TestFramework.assert_near(event.get("new_value", 0.0) as float, initial_atk + 6.0, 0.01,
+			"attribute event new_value should reflect post-update atk")
+		TestFramework.assert_true(str(event.get("change_type", "")) == "modifier",
+			"attribute event change_type should be modifier")
 	_teardown()
 
 

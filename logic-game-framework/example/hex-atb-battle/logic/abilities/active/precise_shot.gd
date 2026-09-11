@@ -5,7 +5,7 @@
 ##   2. START tag: 发送动画提示
 ##   3. LAUNCH tag: 发射箭矢投射物（MOBA 追踪型）
 ##   4. 投射物飞行中...
-##   5. projectileHit 事件触发 → 共享 HIT_RESPONSE_100 timeline → 造成伤害
+##   5. projectile_hit 事件触发 → 共享 HIT_RESPONSE_100 timeline → 造成伤害
 ##
 ## 投射物伤害四件套 (弹体 0 HP 伤害, 伤害只在 hit-timeline DamageAction; 为何不抽 factory)
 ## 见 fireball.gd 头注释的"投射物模板"段。

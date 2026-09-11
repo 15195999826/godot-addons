@@ -109,16 +109,16 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 				continue
 			var event_dict := ev as Dictionary
 			var kind := str(event_dict.get("kind", ""))
-			if kind == GameEvent.ABILITY_GRANTED_EVENT and str(event_dict.get("actorId", "")) == _dummy_id:
+			if kind == GameEvent.ABILITY_GRANTED_EVENT and str(event_dict.get("actor_id", "")) == _dummy_id:
 				var ability_dict: Dictionary = event_dict.get("ability", {}) as Dictionary
-				if str(ability_dict.get("configId", "")) == HexBattlePoisonBuff.CONFIG_ID:
+				if str(ability_dict.get("config_id", "")) == HexBattlePoisonBuff.CONFIG_ID:
 					poison_granted = true
 			elif kind == "death" and str(event_dict.get("actor_id", "")) == _dummy_id:
 				death_seen = true
 			elif death_seen and kind == "damage" and str(event_dict.get("target_actor_id", "")) == _dummy_id:
 				post_death_damage_count += 1
-			elif death_seen and kind == GameEvent.ABILITY_STACKS_CHANGED_EVENT and str(event_dict.get("actorId", "")) == _dummy_id:
-				if str(event_dict.get("abilityConfigId", "")) == HexBattlePoisonBuff.CONFIG_ID:
+			elif death_seen and kind == GameEvent.ABILITY_STACKS_CHANGED_EVENT and str(event_dict.get("actor_id", "")) == _dummy_id:
+				if str(event_dict.get("ability_config_id", "")) == HexBattlePoisonBuff.CONFIG_ID:
 					post_death_stack_count += 1
 
 	if not poison_granted:

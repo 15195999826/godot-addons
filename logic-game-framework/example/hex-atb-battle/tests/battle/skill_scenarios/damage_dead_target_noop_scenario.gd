@@ -10,7 +10,7 @@
 ## - on_hit / on_critical / on_kill 回调不触发 (本 case strike 无 on_kill)
 ##
 ## 注意: Strike COOLDOWN_MS=2000, timeline 500ms. t=2500 第二击对 caster 满足 cooldown。
-## scenario harness 通过 abilityActivate event 直接传 target_actor_id, 即使 enemy_0
+## scenario harness 通过 ability_activate event 直接传 target_actor_id, 即使 enemy_0
 ## 已死, ability timeline 仍能 spawn 并 reach HIT tag, 然后 DamageAction.execute
 ## 在 §0.5 guard 跳过。
 class_name DamageDeadTargetNoOpScenario

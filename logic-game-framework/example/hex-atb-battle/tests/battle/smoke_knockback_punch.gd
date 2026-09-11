@@ -477,12 +477,12 @@ func _phase_action_lock_metadata_and_status() -> bool:
 	if abs(float(metadata.get("duration_ms", -1.0)) - expected_duration) > 0.01:
 		_fail("action_lock_metadata: status duration metadata mismatch")
 		return false
-	var ability_tags: Array = ability.get("abilityTags", [])
+	var ability_tags: Array = ability.get("ability_tags", [])
 	if not ability_tags.has(HexBattleActionLockStatus.TAG_ACTION_LOCKED):
-		_fail("action_lock_metadata: abilityTags missing action_locked")
+		_fail("action_lock_metadata: ability_tags missing action_locked")
 		return false
 	if not ability_tags.has(HexBattleActionLockStatus.REASON_DISPLACEMENT_STAGGER):
-		_fail("action_lock_metadata: abilityTags missing displacement_stagger")
+		_fail("action_lock_metadata: ability_tags missing displacement_stagger")
 		return false
 
 	print("  [PASS] action lock metadata/status: event duration + status grant")
@@ -624,10 +624,10 @@ func _filter_damage(replay: Dictionary, target_id: String) -> Array:
 func _find_ability_granted(replay: Dictionary, actor_id: String, config_id: String) -> Dictionary:
 	for ev in _find_events(replay, GameEvent.ABILITY_GRANTED_EVENT):
 		var ev_dict := ev as Dictionary
-		if str(ev_dict.get("actorId", "")) != actor_id:
+		if str(ev_dict.get("actor_id", "")) != actor_id:
 			continue
 		var ability: Dictionary = ev_dict.get("ability", {}) as Dictionary
-		if str(ability.get("configId", "")) == config_id:
+		if str(ability.get("config_id", "")) == config_id:
 			return ev_dict
 	return {}
 
@@ -656,7 +656,7 @@ func _wall_hp_unchanged(replay: Dictionary, wall_id: String) -> bool:
 				continue
 			if str(ev_dict.get("kind", "")) != GameEvent.ATTRIBUTE_CHANGED_EVENT:
 				continue
-			if str(ev_dict.get("actorId", "")) != wall_id:
+			if str(ev_dict.get("actor_id", "")) != wall_id:
 				continue
 			if str(ev_dict.get("attribute", "")) != "hp":
 				continue

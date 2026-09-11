@@ -104,7 +104,7 @@ func add_auto_duration_tag(tag: String, duration: float) -> void:
 	var expires_at := _current_logic_time + duration
 	_auto_duration_tags.append({
 		"tag": tag,
-		"expiresAt": expires_at,
+		"expires_at": expires_at,
 	})
 	var new_count := get_tag_stacks(tag)
 
@@ -117,7 +117,7 @@ func add_auto_duration_tag(tag: String, duration: float) -> void:
 func get_auto_duration_tag_stacks(tag: String) -> int:
 	var count := 0
 	for entry in _auto_duration_tags:
-		if entry["tag"] == tag and float(entry["expiresAt"]) > _current_logic_time:
+		if entry["tag"] == tag and float(entry["expires_at"]) > _current_logic_time:
 			count += 1
 	return count
 
@@ -126,7 +126,7 @@ func cleanup_expired_tags() -> void:
 	var tag_old_counts := {}
 	var removed_counts := {}
 	for entry in _auto_duration_tags:
-		if float(entry["expiresAt"]) <= _current_logic_time:
+		if float(entry["expires_at"]) <= _current_logic_time:
 			var tag := str(entry["tag"])
 			if not tag_old_counts.has(tag):
 				tag_old_counts[tag] = get_tag_stacks(tag)
@@ -134,7 +134,7 @@ func cleanup_expired_tags() -> void:
 
 	var filtered: Array[Dictionary] = []
 	for entry in _auto_duration_tags:
-		if float(entry["expiresAt"]) > _current_logic_time:
+		if float(entry["expires_at"]) > _current_logic_time:
 			filtered.append(entry)
 	_auto_duration_tags = filtered
 
@@ -207,7 +207,7 @@ func has_tag(tag: String) -> bool:
 		return true
 
 	for entry in _auto_duration_tags:
-		if entry["tag"] == tag and float(entry["expiresAt"]) > _current_logic_time:
+		if entry["tag"] == tag and float(entry["expires_at"]) > _current_logic_time:
 			return true
 
 	for comp_tags in _component_tags.values():
@@ -221,7 +221,7 @@ func get_tag_stacks(tag: String) -> int:
 	var stacks := 0
 	stacks += int(_loose_tags.get(tag, 0))
 	for entry in _auto_duration_tags:
-		if entry["tag"] == tag and float(entry["expiresAt"]) > _current_logic_time:
+		if entry["tag"] == tag and float(entry["expires_at"]) > _current_logic_time:
 			stacks += 1
 	for comp_tags in _component_tags.values():
 		stacks += int(comp_tags.get(tag, 0))
@@ -233,7 +233,7 @@ func get_all_tags() -> Dictionary:
 	for tag in _loose_tags.keys():
 		result[tag] = int(result.get(tag, 0)) + int(_loose_tags[tag])
 	for entry in _auto_duration_tags:
-		if float(entry["expiresAt"]) > _current_logic_time:
+		if float(entry["expires_at"]) > _current_logic_time:
 			var tag := str(entry["tag"])
 			result[tag] = int(result.get(tag, 0)) + 1
 	for comp_tags in _component_tags.values():

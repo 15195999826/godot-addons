@@ -44,12 +44,12 @@ func _ready() -> void:
 	# Event 1: AbilityGranted (ward inst 1, capacity=30, current=30)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_GRANTED_EVENT,
-		"actorId": "hero_1",
+		"actor_id": "hero_1",
 		"ability": {
 			"id": "ward_inst_1",
-			"instanceId": "ward_inst_1",
-			"configId": "buff_ward",
-			"displayName": "护盾术",
+			"instance_id": "ward_inst_1",
+			"config_id": "buff_ward",
+			"display_name": "护盾术",
 			"stacks": 1,
 			"components": [{
 				"type": "ShieldComponent",
@@ -75,12 +75,12 @@ func _ready() -> void:
 	# Event 2: AbilityGranted (ward inst 2 独立实例, current=20)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_GRANTED_EVENT,
-		"actorId": "hero_1",
+		"actor_id": "hero_1",
 		"ability": {
 			"id": "ward_inst_2",
-			"instanceId": "ward_inst_2",
-			"configId": "buff_ward",
-			"displayName": "护盾术",
+			"instance_id": "ward_inst_2",
+			"config_id": "buff_ward",
+			"display_name": "护盾术",
 			"stacks": 1,
 			"components": [{
 				"type": "ShieldComponent",
@@ -135,8 +135,8 @@ func _ready() -> void:
 	# Event 4: AbilityRemoved (ward_inst_1)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_REMOVED_EVENT,
-		"actorId": "hero_1",
-		"abilityInstanceId": "ward_inst_1",
+		"actor_id": "hero_1",
+		"ability_instance_id": "ward_inst_1",
 	})
 	actor = render_world.get_actors_snapshot()["hero_1"]
 	if actor.shields.size() != 1:
@@ -150,8 +150,8 @@ func _ready() -> void:
 	# Event 5: AbilityRemoved (ward_inst_2)
 	_apply_event(registry, ctx, render_world, {
 		"kind": GameEvent.ABILITY_REMOVED_EVENT,
-		"actorId": "hero_1",
-		"abilityInstanceId": "ward_inst_2",
+		"actor_id": "hero_1",
+		"ability_instance_id": "ward_inst_2",
 	})
 	actor = render_world.get_actors_snapshot()["hero_1"]
 	if actor.shields.size() != 0:

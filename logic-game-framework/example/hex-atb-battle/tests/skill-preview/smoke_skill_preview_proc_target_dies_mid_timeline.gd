@@ -11,7 +11,7 @@
 ##      可能让第一发就 60 = overkill 直接致死, 第二发命中 dead actor 行为由 LGF 决定;
 ##      关注点是 procedure 不崩, damage 多少由下层契约管)
 ##   3. 至少有 1 条 death 事件
-##   4. caster 三次 keyframe 都 fire 到 (3 个 executionActivated, 不会因为
+##   4. caster 三次 keyframe 都 fire 到 (3 个 execution_activated, 不会因为
 ##      target 死亡而 silently 跳过整个 keyframe)
 ##
 ## 不断言: 暴击数量 / 第三发是否打到死者 —— 那是 LGF action 层 (DamageAction
@@ -125,7 +125,7 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 				dmg_count += 1
 			elif kind == "death":
 				death_count += 1
-			elif kind == "executionActivated" and str((ev as Dictionary).get("actorId", "")) == _caster_id:
+			elif kind == "execution_activated" and str((ev as Dictionary).get("actor_id", "")) == _caster_id:
 				exec_count += 1
 
 	if dmg_count < 1:
@@ -135,7 +135,7 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 		_fail("expected dummy death event, got %d death events" % death_count)
 		return
 	if exec_count != 3:
-		_fail("expected 3 executionActivated (procedure must fire all keyframes regardless of target state), got %d" % exec_count)
+		_fail("expected 3 execution_activated (procedure must fire all keyframes regardless of target state), got %d" % exec_count)
 		return
 
 	_pass("dmg=%d death=%d exec=%d (procedure didn't crash on dead target)" %

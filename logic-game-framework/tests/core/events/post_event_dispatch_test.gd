@@ -231,7 +231,7 @@ func _test_nested_dispatch_depth() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
-## triggered 监听者（录像 abilityTriggered 的来源）：一次派发只回调一次，带全部被触发 component 的名字。
+## triggered 监听者（录像 ability_triggered 的来源）：一次派发只回调一次，带全部被触发 component 的名字。
 func _test_triggered_listener_once() -> void:
 	var instance := _create_instance("post_dispatch_triggered")
 	var actor := _spawn(instance)

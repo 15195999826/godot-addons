@@ -548,7 +548,7 @@ func _runtime_marker_color_for_actor(actor_id: String, ev: Dictionary) -> Color:
 		"death":
 			if str(ev.get("actor_id", "")) == actor_id:
 				return Color("EF4444")
-		"abilityTriggered", "executionActivated":
+		"ability_triggered", "execution_activated":
 			if str(ev.get("actor_id", "")) == actor_id or str(ev.get("source_actor_id", "")) == actor_id:
 				return Color("60A5FA")
 	return Color(0.0, 0.0, 0.0, 0.0)

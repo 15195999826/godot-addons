@@ -11,7 +11,7 @@ extends BattleActor
 
 # ========== actor kind 常量 ==========
 #
-# actor.type 的取值域(也是 ALLOWED_TARGET_KINDS metadata / 录像 positionFormats key
+# actor.type 的取值域(也是 ALLOWED_TARGET_KINDS metadata / 录像 position_formats key
 # 的取值域)。消费端类型比较 / 默认值一律用这里, 不手写字面量。
 # 注: tests 侧保留字面量是有意的 —— 测试以协议黑盒视角验证录像 dict / metadata。
 
@@ -65,7 +65,7 @@ func is_event_responsive(event_dict: Dictionary, phase: String) -> bool:
 
 # ========== 录像支持 ==========
 
-## 位置覆盖: 用 hex 坐标作为 Vector3 (q, r, 0); 渲染层按 configs.positionFormats 解释。
+## 位置覆盖: 用 hex 坐标作为 Vector3 (q, r, 0); 渲染层按 configs.position_formats 解释。
 func _get_position() -> Vector3:
 	if not hex_position.is_valid():
 		return Vector3.ZERO

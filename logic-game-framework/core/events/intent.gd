@@ -109,7 +109,7 @@ func to_dict() -> Dictionary:
 		"type": _type_to_string(type),
 	}
 	if handler_id != "":
-		d["handlerId"] = handler_id
+		d["handler_id"] = handler_id
 	if type == Type.CANCEL and reason != "":
 		d["reason"] = reason
 	if type == Type.MODIFY and not modifications.is_empty():

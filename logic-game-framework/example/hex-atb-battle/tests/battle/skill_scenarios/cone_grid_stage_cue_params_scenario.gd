@@ -1,7 +1,7 @@
 ## Phase E · Grid Cone StageCueAction.params 携带 target-origin fixed footprint 检查区域
 ##
 ## 契约:
-## - on_timeline_start 的 StageCue (cueId='grid_cone_cast') params 字段含:
+## - on_timeline_start 的 StageCue (cue_id='grid_cone_cast') params 字段含:
 ##     shape="grid_cone"
 ##     origin_coord={q,r} = event.target_coord
 ##     caster_coord={q,r} = caster.hex_position
@@ -10,7 +10,7 @@
 ##     range=CONE_RANGE
 ##     cast_direction (0..5)
 ##     direction_edges=[2 boundary dirs]
-## - checked_coords ⊋ targetActorIds 所在格 (cone 内不一定都有 enemy)
+## - checked_coords ⊋ target_actor_ids 所在格 (cone 内不一定都有 enemy)
 class_name ConeGridStageCueParamsScenario
 extends SkillScenario
 
@@ -45,13 +45,13 @@ func get_max_ticks() -> int:
 func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var cue: Dictionary = {}
 	for e in ctx.events:
-		if str(e.get("kind", "")) != "stageCue":
+		if str(e.get("kind", "")) != "stage_cue":
 			continue
-		if str(e.get("cueId", "")) != "grid_cone_cast":
+		if str(e.get("cue_id", "")) != "grid_cone_cast":
 			continue
 		cue = e
 		break
-	ctx.assert_true(not cue.is_empty(), "grid_cone_cast stageCue event present")
+	ctx.assert_true(not cue.is_empty(), "grid_cone_cast stage_cue event present")
 	if cue.is_empty():
 		return
 	var params: Dictionary = cue.get("params", {}) as Dictionary
@@ -98,11 +98,11 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_true(not _contains_coord(checked, 1, 0),
 		"checked_coords excludes caster-side cell (1,0)")
 
-	var target_actor_ids: Array = cue.get("targetActorIds", []) as Array
+	var target_actor_ids: Array = cue.get("target_actor_ids", []) as Array
 	ctx.assert_eq(target_actor_ids.size(), 1,
-		"stageCue carries only caster as 1 owner target (no enemy actor)")
+		"stage_cue carries only caster as 1 owner target (no enemy actor)")
 	ctx.assert_true(checked.size() > target_actor_ids.size(),
-		"checked_coords (%d) strictly > targetActorIds (%d) — distinct semantics" % [checked.size(), target_actor_ids.size()])
+		"checked_coords (%d) strictly > target_actor_ids (%d) — distinct semantics" % [checked.size(), target_actor_ids.size()])
 
 
 func _contains_coord(coords: Array, q: int, r: int) -> bool:

@@ -177,12 +177,12 @@ func _replay_has_wall_hp_drop(replay: Dictionary, wall_id: String) -> bool:
 				continue
 			if str(ev_dict.get("kind", "")) != GameEvent.ATTRIBUTE_CHANGED_EVENT:
 				continue
-			if str(ev_dict.get("actorId", "")) != wall_id:
+			if str(ev_dict.get("actor_id", "")) != wall_id:
 				continue
 			if str(ev_dict.get("attribute", "")) != "hp":
 				continue
-			var old_value := float(ev_dict.get("oldValue", 0.0))
-			var new_value := float(ev_dict.get("newValue", 0.0))
+			var old_value := float(ev_dict.get("old_value", 0.0))
+			var new_value := float(ev_dict.get("new_value", 0.0))
 			if new_value < old_value:
 				return true
 	return false

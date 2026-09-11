@@ -276,7 +276,7 @@ func _test_serialize_with_sets() -> void:
 	actor.set_display_name("probe")
 	actor.mark_dead()
 	var data := actor.serialize()
-	TestFramework.assert_equal("probe", data["displayName"])
+	TestFramework.assert_equal("probe", data["display_name"])
 	TestFramework.assert_true(data["is_dead"], "死亡闩要进序列化")
 	var attrs: Dictionary = data["attribute_set"]
 	TestFramework.assert_true(attrs.has("hp"), "属性 raw 应完整落盘: %s" % [attrs.keys()])

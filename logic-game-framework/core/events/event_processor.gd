@@ -196,7 +196,7 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 	var trace := _create_trace(event_dict, EventPhase.PHASE_PRE)
 	var parent_trace_id := _current_trace_id
 	_current_depth += 1
-	_current_trace_id = trace.get("traceId", "")
+	_current_trace_id = trace.get("trace_id", "")
 
 	# ── 查找处理器：按 event_kind 匹配已注册的 handler ──
 	var event_kind: String = event_dict.get("kind", "")
@@ -223,10 +223,10 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 
 		if _config.trace_level >= 2:
 			trace["intents"].append({
-				"handlerId": registration.id,
-				"handlerName": registration.get_display_name(),
+				"handler_id": registration.id,
+				"handler_name": registration.get_display_name(),
 				"intent": intent.to_dict(),
-				"executionTime": execution_time,
+				"execution_time": execution_time,
 			})
 
 		# ── 处理意图 ──
@@ -234,8 +234,8 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 			# cancel：标记事件取消，停止后续处理器
 			mutable.cancel(intent.handler_id, intent.reason)
 			trace["cancelled"] = true
-			trace["cancelReason"] = intent.reason
-			trace["cancelledBy"] = intent.handler_id
+			trace["cancel_reason"] = intent.reason
+			trace["cancelled_by"] = intent.handler_id
 			break
 		elif intent.is_modify():
 			# modify：将修改追加到 MutableEvent，继续下一个处理器
@@ -256,8 +256,8 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 
 	# ── 记录修改前后的值（用于 trace 日志）──
 	if _config.trace_level >= 1:
-		trace["originalValues"] = mutable.get_original_values()
-		trace["finalValues"] = mutable.get_final_values()
+		trace["original_values"] = mutable.get_original_values()
+		trace["final_values"] = mutable.get_final_values()
 
 	# ── 恢复追踪上下文 ──
 	_current_depth -= 1
@@ -284,7 +284,7 @@ func process_post_event(event_dict: Dictionary) -> void:
 	var trace := _create_trace(event_dict, EventPhase.PHASE_POST)
 	var parent_trace_id := _current_trace_id
 	_current_depth += 1
-	_current_trace_id = trace.get("traceId", "")
+	_current_trace_id = trace.get("trace_id", "")
 
 	if _post_handlers.has(event_kind):
 		var handlers: Array[PostHandlerRegistration] = []
@@ -297,10 +297,10 @@ func process_post_event(event_dict: Dictionary) -> void:
 			var start_time := Time.get_ticks_msec()
 			var triggered := registration.call_handler(event_dict)
 			records.append({
-				"handlerId": registration.id,
-				"handlerName": registration.get_display_name(),
+				"handler_id": registration.id,
+				"handler_name": registration.get_display_name(),
 				"triggered": triggered,
-				"executionTime": Time.get_ticks_msec() - start_time,
+				"execution_time": Time.get_ticks_msec() - start_time,
 			})
 		if not records.is_empty():
 			trace["handlers"] = records
@@ -329,16 +329,16 @@ func export_trace_log() -> String:
 	for trace in _traces:
 		lines.append("")
 		lines.append("[Trace %s] %s (%s, depth: %s)" % [
-			trace.get("traceId", ""),
-			trace.get("eventKind", ""),
+			trace.get("trace_id", ""),
+			trace.get("event_kind", ""),
 			trace.get("phase", ""),
 			trace.get("depth", ""),
 		])
-		if trace.has("parentTraceId") and str(trace["parentTraceId"]) != "":
-			lines.append("  Parent: %s" % trace["parentTraceId"])
+		if trace.has("parent_trace_id") and str(trace["parent_trace_id"]) != "":
+			lines.append("  Parent: %s" % trace["parent_trace_id"])
 
 		if trace.get("phase", "") == EventPhase.PHASE_PRE:
-			var original_values: Dictionary = trace.get("originalValues", {})
+			var original_values: Dictionary = trace.get("original_values", {})
 			if not original_values.is_empty():
 				lines.append("  Original: %s" % JSON.stringify(original_values))
 			var intent_records: Array[Dictionary] = []
@@ -348,7 +348,7 @@ func export_trace_log() -> String:
 				var intent_type: String = intent.get("type", "")
 				var has_error: bool = intent_record.get("error", null) != null
 				var error_suffix := " ERROR" if has_error else ""
-				lines.append("  [%s] -> %s%s" % [intent_record.get("handlerName", intent_record.get("handlerId", "")), intent_type, error_suffix])
+				lines.append("  [%s] -> %s%s" % [intent_record.get("handler_name", intent_record.get("handler_id", "")), intent_type, error_suffix])
 				if has_error:
 					lines.append("    Error: %s" % intent_record["error"].get("message", ""))
 				elif intent_type == EventPhase.INTENT_CANCEL:
@@ -358,9 +358,9 @@ func export_trace_log() -> String:
 						lines.append("    %s: %s %s" % [mod.get("field", ""), mod.get("operation", ""), mod.get("value", "")])
 
 			if trace.get("cancelled", false):
-				lines.append("  CANCELLED by %s: %s" % [trace.get("cancelledBy", ""), trace.get("cancelReason", "")])
+				lines.append("  CANCELLED by %s: %s" % [trace.get("cancelled_by", ""), trace.get("cancel_reason", "")])
 			else:
-				var final_values: Dictionary = trace.get("finalValues", {})
+				var final_values: Dictionary = trace.get("final_values", {})
 				if not final_values.is_empty():
 					lines.append("  Final: %s" % JSON.stringify(final_values))
 		else:
@@ -368,36 +368,36 @@ func export_trace_log() -> String:
 			handler_records.assign(trace.get("handlers", []))
 			for handler_record in handler_records:
 				lines.append("  [%s] -> %s" % [
-					handler_record.get("handlerName", handler_record.get("handlerId", "")),
+					handler_record.get("handler_name", handler_record.get("handler_id", "")),
 					"triggered" if handler_record.get("triggered", false) else "not triggered",
 				])
 
 		var duration := 0
-		if trace.has("endTime") and trace.get("endTime", null) != null:
-			duration = (trace.get("endTime", 0) as int) - (trace.get("startTime", 0) as int)
+		if trace.has("end_time") and trace.get("end_time", null) != null:
+			duration = (trace.get("end_time", 0) as int) - (trace.get("start_time", 0) as int)
 		lines.append("  Duration: %sms" % duration)
 
 	return "\n".join(lines)
 
 func _create_trace(event_dict: Dictionary, phase: String) -> Dictionary:
 	var trace := {
-		"traceId": EventPhase.create_trace_id(),
-		"eventKind": event_dict.get("kind", ""),
+		"trace_id": EventPhase.create_trace_id(),
+		"event_kind": event_dict.get("kind", ""),
 		"phase": phase,
 		"depth": _current_depth,
-		"parentTraceId": _current_trace_id,
+		"parent_trace_id": _current_trace_id,
 		"intents": [],
-		"originalValues": {},
-		"finalValues": {},
+		"original_values": {},
+		"final_values": {},
 		"cancelled": false,
-		"startTime": Time.get_ticks_msec(),
+		"start_time": Time.get_ticks_msec(),
 	}
 	if _config.trace_level > 0:
 		_traces.append(trace)
 	return trace
 
 func _finalize_trace(trace: Dictionary) -> void:
-	trace["endTime"] = Time.get_ticks_msec()
+	trace["end_time"] = Time.get_ticks_msec()
 
 ## 递归深度已到上限：报错并返回 true，调用方随即放弃本次处理。
 func _depth_exceeded(event_dict: Dictionary) -> bool:
@@ -424,9 +424,9 @@ func _get_event_chain_summary() -> String:
 	for i in range(start_idx, _traces.size()):
 		var trace: Dictionary = _traces[i]
 		var indent := "  " + "  ".repeat(trace.get("depth", 0) as int)
-		var event_kind: String = trace.get("eventKind", "unknown")
+		var event_kind: String = trace.get("event_kind", "unknown")
 		var phase: String = trace.get("phase", "")
-		var trace_id: String = trace.get("traceId", "")
+		var trace_id: String = trace.get("trace_id", "")
 		lines.append("%s[%d] %s (%s) - trace_id: %s" % [indent, i, event_kind, phase, trace_id])
 
 	return "\n".join(lines)

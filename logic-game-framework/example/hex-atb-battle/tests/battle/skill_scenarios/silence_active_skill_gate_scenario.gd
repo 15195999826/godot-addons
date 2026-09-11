@@ -160,10 +160,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 func _filter_grants_on(ctx: ScenarioAssertContext, actor_id: String, config_id: String) -> Array:
 	var out: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != actor_id:
+		if str(e.get("actor_id", "")) != actor_id:
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) != config_id:
+		if str(ability_data.get("config_id", "")) != config_id:
 			continue
 		out.append(e)
 	return out
@@ -172,9 +172,9 @@ func _filter_grants_on(ctx: ScenarioAssertContext, actor_id: String, config_id: 
 func _filter_removes_of(ctx: ScenarioAssertContext, actor_id: String, instance_id: String) -> Array:
 	var out: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("actorId", "")) != actor_id:
+		if str(e.get("actor_id", "")) != actor_id:
 			continue
-		if str(e.get("abilityInstanceId", "")) == instance_id:
+		if str(e.get("ability_instance_id", "")) == instance_id:
 			out.append(e)
 	return out
 
@@ -182,9 +182,9 @@ func _filter_removes_of(ctx: ScenarioAssertContext, actor_id: String, instance_i
 func _filter_activate_failed_for(ctx: ScenarioAssertContext, actor_id: String, config_id: String) -> Array:
 	var out: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_ACTIVATE_FAILED_EVENT):
-		if str(e.get("sourceId", "")) != actor_id:
+		if str(e.get("source_id", "")) != actor_id:
 			continue
-		if str(e.get("abilityConfigId", "")) != config_id:
+		if str(e.get("ability_config_id", "")) != config_id:
 			continue
 		out.append(e)
 	return out

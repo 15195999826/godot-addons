@@ -54,7 +54,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	)
 	var destroyed := false
 	for e in ctx.events_of_kind(GameEvent.ACTOR_DESTROYED_EVENT):
-		if str(e.get("actorId", "")) == totem_id:
+		if str(e.get("actor_id", "")) == totem_id:
 			destroyed = true
 			break
 	ctx.assert_true(destroyed, "Totem actor removed by lifetime despite active Break")

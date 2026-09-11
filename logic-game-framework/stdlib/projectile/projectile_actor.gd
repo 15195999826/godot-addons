@@ -12,20 +12,20 @@ const STATE_MISSED := "missed"
 const STATE_DESPAWNED := "despawned"
 
 ## Config key 常量
-const CFG_PROJECTILE_TYPE := "projectileType"
-const CFG_VISUAL_TYPE := "visualType"  ## 表演层视觉类型（arrow, fireball, energy 等）
+const CFG_PROJECTILE_TYPE := "projectile_type"
+const CFG_VISUAL_TYPE := "visual_type"  ## 表演层视觉类型（arrow, fireball, energy 等）
 const CFG_SPEED := "speed"  ## 单位/秒
-const CFG_MAX_LIFETIME := "maxLifetime"  ## 毫秒
+const CFG_MAX_LIFETIME := "max_lifetime"  ## 毫秒
 const CFG_PIERCING := "piercing"
-const CFG_MAX_PIERCE_COUNT := "maxPierceCount"
-const CFG_HIT_DISTANCE := "hitDistance"
+const CFG_MAX_PIERCE_COUNT := "max_pierce_count"
+const CFG_HIT_DISTANCE := "hit_distance"
 const CFG_DAMAGE := "damage"
-const CFG_DAMAGE_TYPE := "damageType"
+const CFG_DAMAGE_TYPE := "damage_type"
 
 const DEFAULT_CONFIG := {
-	"projectileType": PROJECTILE_TYPE_BULLET,
+	"projectile_type": PROJECTILE_TYPE_BULLET,
 	"speed": 500.0,
-	"maxLifetime": 5000.0,
+	"max_lifetime": 5000.0,
 }
 
 var config: Dictionary = {}
@@ -88,8 +88,8 @@ func launch(params: Dictionary) -> void:
 		return
 
 	_launch_params = params.duplicate(true)
-	if params.has("startPosition") and params["startPosition"] is Vector3:
-		_position = params["startPosition"]
+	if params.has("start_position") and params["start_position"] is Vector3:
+		_position = params["start_position"]
 
 	_projectile_state = STATE_FLYING
 	_fly_time = 0.0
@@ -98,8 +98,8 @@ func launch(params: Dictionary) -> void:
 	_hit_targets.clear()
 
 	if get_projectile_type() == PROJECTILE_TYPE_HITSCAN:
-		if params.has("targetPosition") and params["targetPosition"] is Vector3:
-			_position = params["targetPosition"]
+		if params.has("target_position") and params["target_position"] is Vector3:
+			_position = params["target_position"]
 
 ## 每帧更新投射物状态
 ##
@@ -152,7 +152,7 @@ func update_position(dt: float) -> void:
 		movement = dir_vec.normalized() * move_distance
 	else:
 		var target_pos := _resolve_target_position()
-		if target_pos != Vector3.ZERO or _launch_params.has("targetPosition"):
+		if target_pos != Vector3.ZERO or _launch_params.has("target_position"):
 			var direction_vec: Vector3 = target_pos - _position
 			var distance_to_target := direction_vec.length()
 			if distance_to_target > 0.0:
@@ -164,7 +164,7 @@ func update_position(dt: float) -> void:
 
 ## 获取目标的实时位置
 ## MOBA 追踪型投射物会查询目标 Actor 的实时 position，
-## 其他类型退回到 launch_params 中的静态 targetPosition
+## 其他类型退回到 launch_params 中的静态 target_position
 func _resolve_target_position() -> Vector3:
 	if get_projectile_type() == PROJECTILE_TYPE_MOBA:
 		var target_actor_id := get_target_actor_id()
@@ -174,7 +174,7 @@ func _resolve_target_position() -> Vector3:
 				var target := instance.get_actor(target_actor_id)
 				if target != null:
 					return target.position
-	var static_pos: Variant = _launch_params.get("targetPosition")
+	var static_pos: Variant = _launch_params.get("target_position")
 	if static_pos is Vector3:
 		return static_pos
 	return Vector3.ZERO
@@ -182,7 +182,7 @@ func _resolve_target_position() -> Vector3:
 
 func get_distance_to_target() -> float:
 	var target_pos := _resolve_target_position()
-	if target_pos == Vector3.ZERO and not _launch_params.has("targetPosition"):
+	if target_pos == Vector3.ZERO and not _launch_params.has("target_position"):
 		return INF
 	return _position.distance_to(target_pos)
 
@@ -224,10 +224,10 @@ func serialize() -> Dictionary:
 	var data := serialize_base()
 	data["config"] = config
 	data["position"] = _position
-	data["projectileState"] = _projectile_state
-	data["launchParams"] = _launch_params
-	data["flyTime"] = _fly_time
-	data["flyDistance"] = _fly_distance
-	data["pierceCount"] = _pierce_count
-	data["hitTargets"] = _hit_targets.keys()
+	data["projectile_state"] = _projectile_state
+	data["launch_params"] = _launch_params
+	data["fly_time"] = _fly_time
+	data["fly_distance"] = _fly_distance
+	data["pierce_count"] = _pierce_count
+	data["hit_targets"] = _hit_targets.keys()
 	return data

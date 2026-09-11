@@ -59,10 +59,10 @@ func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContex
 
 func serialize() -> Dictionary:
 	return {
-		"triggersCount": _triggers.size(),
-		"triggerMode": _trigger_mode,
-		"timelineId": _timeline.id,
-		"tagActionsCount": _tag_actions.size(),
+		"triggers_count": _triggers.size(),
+		"trigger_mode": _trigger_mode,
+		"timeline_id": _timeline.id,
+		"tag_actions_count": _tag_actions.size(),
 	}
 
 ## Debug: 冻结所有 Action，用于检测无状态约束

@@ -45,9 +45,9 @@ static func create(
 func to_dict() -> Dictionary:
 	return {
 		"id": id,
-		"timelineId": timeline_id,
+		"timeline_id": timeline_id,
 		"elapsed": elapsed,
-		"currentTag": current_tag,
+		"current_tag": current_tag,
 	}
 
 
@@ -55,7 +55,7 @@ func to_dict() -> Dictionary:
 static func from_dict(d: Dictionary) -> AbilityExecutionInfo:
 	return AbilityExecutionInfo.new(
 		d.get("id", ""),
-		d.get("timelineId", ""),
+		d.get("timeline_id", ""),
 		d.get("elapsed", 0.0),
-		d.get("currentTag", "")
+		d.get("current_tag", "")
 	)

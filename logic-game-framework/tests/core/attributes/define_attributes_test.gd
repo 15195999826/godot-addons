@@ -37,8 +37,8 @@ func _test_listeners() -> void:
 	var state := { "hit": false }
 	var unsubscribe: Callable = attrs.on_attribute_changed("hp", func(event: Dictionary) -> void:
 		state["hit"] = true
-		TestFramework.assert_near(100.0, float(event["oldValue"]))
-		TestFramework.assert_near(90.0, float(event["newValue"]))
+		TestFramework.assert_near(100.0, float(event["old_value"]))
+		TestFramework.assert_near(90.0, float(event["new_value"]))
 	)
 	attrs.set_base("hp", 90.0)
 	TestFramework.assert_true(state["hit"])

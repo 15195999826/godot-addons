@@ -97,9 +97,9 @@ func is_valid() -> bool:
 func to_dict() -> Dictionary:
 	return {
 		"id": id,
-		"configId": config_id,
-		"ownerActorId": owner_actor_id,
-		"sourceActorId": source_actor_id,
+		"config_id": config_id,
+		"owner_actor_id": owner_actor_id,
+		"source_actor_id": source_actor_id,
 	}
 
 
@@ -107,7 +107,7 @@ func to_dict() -> Dictionary:
 static func from_dict(d: Dictionary) -> AbilityRef:
 	return AbilityRef.new(
 		d.get("id", ""),
-		d.get("configId", ""),
-		d.get("ownerActorId", ""),
-		d.get("sourceActorId", "")
+		d.get("config_id", ""),
+		d.get("owner_actor_id", ""),
+		d.get("source_actor_id", "")
 	)

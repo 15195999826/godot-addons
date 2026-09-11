@@ -102,9 +102,9 @@ func call_handler(mutable: MutableEvent) -> Intent:
 func to_dict() -> Dictionary:
 	return {
 		"id": id,
-		"eventKind": event_kind,
-		"ownerId": owner_id,
-		"abilityId": ability_id,
-		"configId": config_id,
-		"handlerName": handler_name,
+		"event_kind": event_kind,
+		"owner_id": owner_id,
+		"ability_id": ability_id,
+		"config_id": config_id,
+		"handler_name": handler_name,
 	}

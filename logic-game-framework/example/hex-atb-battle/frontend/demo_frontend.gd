@@ -267,7 +267,7 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 		return
 
 	var meta: Dictionary = timeline.get("meta", {})
-	var total_frames: int = meta.get("totalFrames", 0)
+	var total_frames: int = meta.get("total_frames", 0)
 	_update_status("Loaded - %d frames (press Play)" % total_frames)
 
 	_animator.load(timeline, _world_view.get_unit_views())

@@ -30,11 +30,11 @@ func _ready() -> void:
 	var f1_events: Array[Dictionary] = [
 		{
 			"kind": GameEvent.ABILITY_GRANTED_EVENT,
-			"actorId": "hero_1",
+			"actor_id": "hero_1",
 			"ability": {
 				"id": "poison_inst_1",
-				"instanceId": "poison_inst_1",
-				"configId": "buff_poison",
+				"instance_id": "poison_inst_1",
+				"config_id": "buff_poison",
 				"stacks": 3,
 			},
 		},
@@ -49,11 +49,11 @@ func _ready() -> void:
 		},
 		{
 			"kind": GameEvent.ABILITY_STACKS_CHANGED_EVENT,
-			"actorId": "hero_1",
-			"abilityInstanceId": "poison_inst_1",
-			"abilityConfigId": "buff_poison",
-			"oldStacks": 3,
-			"newStacks": 2,
+			"actor_id": "hero_1",
+			"ability_instance_id": "poison_inst_1",
+			"ability_config_id": "buff_poison",
+			"old_stacks": 3,
+			"new_stacks": 2,
 		},
 	]
 	_run_frame(scheduler, registry, rw, f1_events, "F1 grant+tick1")
@@ -80,11 +80,11 @@ func _ready() -> void:
 		},
 		{
 			"kind": GameEvent.ABILITY_STACKS_CHANGED_EVENT,
-			"actorId": "hero_1",
-			"abilityInstanceId": "poison_inst_1",
-			"abilityConfigId": "buff_poison",
-			"oldStacks": 2,
-			"newStacks": 1,
+			"actor_id": "hero_1",
+			"ability_instance_id": "poison_inst_1",
+			"ability_config_id": "buff_poison",
+			"old_stacks": 2,
+			"new_stacks": 1,
 		},
 	]
 	_run_frame(scheduler, registry, rw, f2_events, "F2 tick2")
@@ -107,16 +107,16 @@ func _ready() -> void:
 		},
 		{
 			"kind": GameEvent.ABILITY_STACKS_CHANGED_EVENT,
-			"actorId": "hero_1",
-			"abilityInstanceId": "poison_inst_1",
-			"abilityConfigId": "buff_poison",
-			"oldStacks": 1,
-			"newStacks": 0,
+			"actor_id": "hero_1",
+			"ability_instance_id": "poison_inst_1",
+			"ability_config_id": "buff_poison",
+			"old_stacks": 1,
+			"new_stacks": 0,
 		},
 		{
 			"kind": GameEvent.ABILITY_REMOVED_EVENT,
-			"actorId": "hero_1",
-			"abilityInstanceId": "poison_inst_1",
+			"actor_id": "hero_1",
+			"ability_instance_id": "poison_inst_1",
 		},
 	]
 	_run_frame(scheduler, registry, rw, f3_events, "F3 tick3+remove")

@@ -54,10 +54,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var fire_tile_id := ""
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		var cfg := str(ability_data.get("configId", ""))
+		var cfg := str(ability_data.get("config_id", ""))
 		if cfg == HexBattleFireTilePulse.CONFIG_ID:
 			pulse_grants.append(e)
-			fire_tile_id = str(e.get("actorId", ""))
+			fire_tile_id = str(e.get("actor_id", ""))
 		elif cfg == HexBattleFireTileLifetime.CONFIG_ID:
 			lifetime_grants.append(e)
 	ctx.assert_eq(pulse_grants.size(), 1, "Expect 1 FireTilePulse grant")
@@ -82,7 +82,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var lifetime_inst := str((lifetime_grants[0].get("ability", {}) as Dictionary).get("id", ""))
 	var lifetime_removes: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_REMOVED_EVENT):
-		if str(e.get("abilityInstanceId", "")) == lifetime_inst:
+		if str(e.get("ability_instance_id", "")) == lifetime_inst:
 			lifetime_removes.append(e)
 	ctx.assert_true(lifetime_removes.size() >= 1,
 		"FireTileLifetime expired (got %d remove events)" % lifetime_removes.size())

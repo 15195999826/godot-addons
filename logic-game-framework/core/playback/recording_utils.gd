@@ -26,11 +26,11 @@ static func record_attribute_changes(
 ## 同时自动订阅 Tag 变化（通过 AbilitySet.tag_container）。
 ##
 ## 订阅内容：
-## - abilityGranted: Ability 被授予时
-## - abilityRemoved: Ability 被移除时
-## - abilityTriggered: Ability 收到事件且有 Component 被触发时
-## - executionActivated: Ability 创建新的 ExecutionInstance 时（用于表演层获取 timelineId）
-## - tagChanged: Tag 层数变化时
+## - ability_granted: Ability 被授予时
+## - ability_removed: Ability 被移除时
+## - ability_triggered: Ability 收到事件且有 Component 被触发时
+## - execution_activated: Ability 创建新的 ExecutionInstance 时（用于表演层获取 timeline_id）
+## - tag_changed: Tag 层数变化时
 static func record_ability_set_changes(ability_set: AbilitySet, ctx: RecordingContext) -> Array[Callable]:
 	var unsubscribes: Array[Callable] = []
 
@@ -84,11 +84,11 @@ static func record_ability_set_changes(ability_set: AbilitySet, ctx: RecordingCo
 	var granted_unsub := ability_set.on_ability_granted(
 		func(ability: Ability, _ability_set: AbilitySet) -> void:
 			# 记录 Ability 获得事件:payload 用 ability.serialize() 把 stacks /
-			# displayName / abilityTags / components 等完整状态带给消费方(frontend
-			# BuffVisualizer 据此构造 BuffSummary)。同时塞 instanceId 兼容 alias,
-			# 避免老消费方读 instanceId 字段踩空(serialize 里键名是 id)。
+			# display_name / ability_tags / components 等完整状态带给消费方(frontend
+			# BuffVisualizer 据此构造 BuffSummary)。serialize 里键名是 id, 消费方按
+			# instance_id 读, 所以另塞一份 instance_id。
 			var granted_payload := ability.serialize()
-			granted_payload["instanceId"] = ability.id
+			granted_payload["instance_id"] = ability.id
 			ctx.push_event(
 				GameEvent.AbilityGranted.create(ctx.actor_id, granted_payload).to_dict()
 			)

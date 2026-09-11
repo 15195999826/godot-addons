@@ -60,9 +60,9 @@ func translate(event: Dictionary, _context: FrontendVisualizerContext) -> Array[
 
 
 func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
-	var actor_id := get_string_field(event, "actorId")
+	var actor_id := get_string_field(event, "actor_id")
 	var payload: Dictionary = event.get("ability", {})
-	var config_id := payload.get("configId", "") as String
+	var config_id := payload.get("config_id", "") as String
 	var rule = SHIELD_REGISTRY.get(config_id)
 	if rule == null:
 		return
@@ -70,7 +70,7 @@ func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) ->
 	var data := FrontendShieldSummary.find_shield_component_data(payload)
 	if data.is_empty():
 		return
-	var ability_id := payload.get("instanceId", payload.get("id", "")) as String
+	var ability_id := payload.get("instance_id", payload.get("id", "")) as String
 	if ability_id.is_empty() or actor_id.is_empty():
 		return
 
@@ -89,8 +89,8 @@ func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) ->
 
 func _handle_removed(event: Dictionary, actions: Array[FrontendVisualAction]) -> void:
 	# REMOVE 不查白名单,确保即便登记被去掉也保证清理一致。
-	var actor_id := get_string_field(event, "actorId")
-	var ability_id := get_string_field(event, "abilityInstanceId")
+	var actor_id := get_string_field(event, "actor_id")
+	var ability_id := get_string_field(event, "ability_instance_id")
 	if actor_id.is_empty() or ability_id.is_empty():
 		return
 	actions.append(FrontendApplyShieldStateAction.new(

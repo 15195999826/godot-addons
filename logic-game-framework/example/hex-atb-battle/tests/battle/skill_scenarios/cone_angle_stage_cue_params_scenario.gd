@@ -1,7 +1,7 @@
 ## Phase E · Angle Cone StageCueAction.params 携带 selector 检查区域
 ##
 ## V1 契约:
-## - on_timeline_start StageCue (cueId='angle_cone_cast') params 字段含:
+## - on_timeline_start StageCue (cue_id='angle_cone_cast') params 字段含:
 ##     shape="angle_cone"
 ##     origin_coord, target_coord
 ##     checked_coords (Array of {q,r}) = compute_checked_coords output
@@ -43,13 +43,13 @@ func get_max_ticks() -> int:
 func assert_replay(ctx: ScenarioAssertContext) -> void:
 	var cue: Dictionary = {}
 	for e in ctx.events:
-		if str(e.get("kind", "")) != "stageCue":
+		if str(e.get("kind", "")) != "stage_cue":
 			continue
-		if str(e.get("cueId", "")) != "angle_cone_cast":
+		if str(e.get("cue_id", "")) != "angle_cone_cast":
 			continue
 		cue = e
 		break
-	ctx.assert_true(not cue.is_empty(), "angle_cone_cast stageCue event present")
+	ctx.assert_true(not cue.is_empty(), "angle_cone_cast stage_cue event present")
 	if cue.is_empty():
 		return
 	var params: Dictionary = cue.get("params", {}) as Dictionary

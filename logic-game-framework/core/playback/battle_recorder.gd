@@ -9,7 +9,7 @@ extends RefCounted
 ## world_snapshot（开战初态, 回放的起点）由世界侧 WorldGameplayInstance.capture_world_snapshot
 ## 产出后注入; recorder 专职事件流, 不伸手进世界抄状态。
 ## actor 订阅（setup_recording 回调）负责把属性/tag/ability 变化转成事件推进 collector,
-## 供回放消费（如 inkmon render2d 靠 attributeChanged 更新属性状态）。
+## 供回放消费（如 inkmon render2d 靠 attribute_changed 更新属性状态）。
 ##
 ## 事件流：
 ##   Action.execute() ──┐
@@ -48,13 +48,13 @@ var actor_subscriptions: Dictionary = {}
 func _init(recorder_config: Dictionary, event_collector: EventCollector) -> void:
 	Log.assert_crash(event_collector != null, "BattleRecorder", "event_collector is required")
 	_event_collector = event_collector
-	var battle_id := recorder_config.get("battleId", "") as String
+	var battle_id := recorder_config.get("battle_id", "") as String
 	if battle_id.is_empty():
 		battle_id = IdGenerator.generate("battle")
 
 	_meta = PlaybackData.BattleMeta.new()
 	_meta.battle_id = battle_id
-	_meta.tick_interval = recorder_config.get("tickInterval", 100) as int
+	_meta.tick_interval = recorder_config.get("tick_interval", 100) as int
 
 ## 开始录像。world_snapshot = 开战初态（回放从这里起播）; 不录像的战斗不建 recorder。
 ## actors = 需订阅变化回调的 actor（与快照同集合）; 中途 spawn 的走 register_actor 补订阅。
@@ -175,7 +175,7 @@ func _subscribe_actor(actor: Actor) -> void:
 
 	if not unsubscribes.is_empty():
 		actor_subscriptions[actor_id] = {
-			"actorId": actor_id,
+			"actor_id": actor_id,
 			"unsubscribes": unsubscribes,
 		}
 
@@ -188,7 +188,7 @@ func _record_existing_actor_abilities(actor: Actor) -> void:
 		if ability.is_expired():
 			continue
 		var granted_payload := ability.serialize()
-		granted_payload["instanceId"] = ability.id
+		granted_payload["instance_id"] = ability.id
 		_event_collector.push(
 			GameEvent.AbilityGranted.create(actor.id, granted_payload).to_dict()
 		)

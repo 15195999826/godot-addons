@@ -81,6 +81,6 @@ func on_remove(_context: AbilityLifecycleContext) -> void:
 
 func serialize() -> Dictionary:
 	return {
-		"eventKind": _event_kind,
-		"handlerName": _handler_name,
+		"event_kind": _event_kind,
+		"handler_name": _handler_name,
 	}

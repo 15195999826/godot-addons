@@ -8,7 +8,7 @@
 ## - caster 终态 atk = initial_atk + tick_count * 2
 ##   (通过 §0.X scenario attribute snapshot final_actor_attribute 直接读)
 ## - AbilityStacksChanged 事件数 == tick_count
-## - stageCue(demon_form_pulse) 事件数 == tick_count
+## - stage_cue(demon_form_pulse) 事件数 == tick_count
 class_name DemonFormScenario
 extends SkillScenario
 
@@ -18,7 +18,7 @@ const TICK_INTERVAL_MS := HexBattleDemonForm.TICK_INTERVAL_MS
 
 
 func get_name() -> String:
-	return "DemonForm: 每 3s +2 atk; 3 tick → atk +6 + AbilityStacksChanged ×3 + stageCue ×3"
+	return "DemonForm: 每 3s +2 atk; 3 tick → atk +6 + AbilityStacksChanged ×3 + stage_cue ×3"
 
 
 func get_scene_config() -> Dictionary:
@@ -52,18 +52,18 @@ func get_max_ticks() -> int:
 
 
 func assert_replay(ctx: ScenarioAssertContext) -> void:
-	# 收集 AbilityStacksChanged (event kind 是 "abilityStacksChanged" camelCase)
+	# 收集 AbilityStacksChanged (event kind "ability_stacks_changed")
 	var stacks_changed: Array[Dictionary] = []
 	for e in ctx.events:
-		if str(e.get("kind", "")) == "abilityStacksChanged" \
-				and str(e.get("abilityConfigId", "")) == HexBattleDemonForm.CONFIG_ID:
+		if str(e.get("kind", "")) == "ability_stacks_changed" \
+				and str(e.get("ability_config_id", "")) == HexBattleDemonForm.CONFIG_ID:
 			stacks_changed.append(e)
 
-	# 收集 stageCue(demon_form_pulse)
+	# 收集 stage_cue(demon_form_pulse)
 	var pulses: Array[Dictionary] = []
 	for e in ctx.events:
-		if str(e.get("kind", "")) == "stageCue" \
-				and str(e.get("cueId", "")) == HexBattleDemonForm.CUE_DEMON_FORM_PULSE:
+		if str(e.get("kind", "")) == "stage_cue" \
+				and str(e.get("cue_id", "")) == HexBattleDemonForm.CUE_DEMON_FORM_PULSE:
 			pulses.append(e)
 
 	# tick 数 — 期望 3 (t=3s/6s/9s in 11s window)
@@ -71,7 +71,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	ctx.assert_true(tick_count >= 3,
 		"DemonForm 应至少 tick 3 次 (实际 %d)" % tick_count)
 	ctx.assert_eq(pulses.size(), tick_count,
-		"stageCue 数应等于 tick 数")
+		"stage_cue 数应等于 tick 数")
 
 	# atk = initial + tick_count * 2 (用 §0.X attribute snapshot)
 	# WARRIOR 默认 atk = 50 (scenario 也设 atk=50, 没 vigor/vitality 干扰)
@@ -84,7 +84,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# stacks_changed event 序列 — old/new 应递增 0→1, 1→2, 2→3, ...
 	for i in range(stacks_changed.size()):
 		var e := stacks_changed[i]
-		ctx.assert_eq(int(e.get("oldStacks", -1)), i,
-			"stacks_changed[%d] oldStacks = %d" % [i, i])
-		ctx.assert_eq(int(e.get("newStacks", -1)), i + 1,
-			"stacks_changed[%d] newStacks = %d" % [i, i + 1])
+		ctx.assert_eq(int(e.get("old_stacks", -1)), i,
+			"stacks_changed[%d] old_stacks = %d" % [i, i])
+		ctx.assert_eq(int(e.get("new_stacks", -1)), i + 1,
+			"stacks_changed[%d] new_stacks = %d" % [i, i + 1])

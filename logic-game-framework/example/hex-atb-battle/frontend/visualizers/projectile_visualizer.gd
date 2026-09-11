@@ -1,9 +1,9 @@
 ## ProjectileVisualizer - 投射物事件转换器
 ##
 ## 将投射物相关事件翻译为视觉动作：
-## - projectileLaunched: 创建投射物飞行动画
-## - projectileHit: 命中特效
-## - projectileMiss: 消散特效
+## - projectile_launched: 创建投射物飞行动画
+## - projectile_hit: 命中特效
+## - projectile_miss: 消散特效
 class_name FrontendProjectileVisualizer
 extends FrontendBaseVisualizer
 
@@ -37,28 +37,28 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 func _translate_launched(event: Dictionary, context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:
 	var config := context.get_animation_config()
 	
-	var projectile_id := get_string_field(event, "projectileId")
+	var projectile_id := get_string_field(event, "projectile_id")
 	var source_actor_id := get_string_field(event, "source_actor_id")
 	var target_actor_id := get_string_field(event, "target_actor_id")
 	var speed := get_float_field(event, "speed", 20.0)
-	# 优先使用 visualType（表演层视觉类型），否则使用 projectileType（逻辑层行为类型）
-	var visual_type_str := get_string_field(event, "visualType", "")
+	# 优先使用 visual_type（表演层视觉类型），否则使用 projectile_type（逻辑层行为类型）
+	var visual_type_str := get_string_field(event, "visual_type", "")
 	if visual_type_str.is_empty():
-		visual_type_str = get_string_field(event, "projectileType", "energy")
+		visual_type_str = get_string_field(event, "projectile_type", "energy")
 	
 	# 获取起始位置（优先使用 actor 位置，因为事件中的位置可能是 hex 坐标）
 	var start_position := Vector3.ZERO
 	if source_actor_id != "":
 		start_position = context.get_actor_position(source_actor_id)
 	if start_position == Vector3.ZERO:
-		start_position = _get_position_from_event(event, "startPosition", context)
+		start_position = _get_position_from_event(event, "start_position", context)
 	
 	# 获取目标位置（优先使用 actor 位置）
 	var target_position := Vector3.ZERO
 	if target_actor_id != "":
 		target_position = context.get_actor_position(target_actor_id)
 	if target_position == Vector3.ZERO:
-		target_position = _get_position_from_event(event, "targetPosition", context)
+		target_position = _get_position_from_event(event, "target_position", context)
 	
 	# 计算飞行时间（最小 300ms，确保投射物可见）
 	var raw_duration := FrontendProjectileAction.calculate_duration(start_position, target_position, speed)
@@ -93,7 +93,7 @@ func _translate_hit(event: Dictionary, context: FrontendVisualizerContext) -> Ar
 	var config := context.get_animation_config()
 	
 	var target_actor_id := get_string_field(event, "target_actor_id")
-	var hit_position := _get_position_from_event(event, "hitPosition", context)
+	var hit_position := _get_position_from_event(event, "hit_position", context)
 	if hit_position == Vector3.ZERO and target_actor_id != "":
 		hit_position = context.get_actor_position(target_actor_id)
 	

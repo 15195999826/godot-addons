@@ -52,7 +52,7 @@ static func _print_event(event: Dictionary, _frame: int) -> void:
 	match kind:
 		GameEvent.ACTOR_SPAWNED_EVENT:
 			var e := GameEvent.ActorSpawned.from_dict(event)
-			print("%s  Actor: %s (%s)" % [indent, e.actor_data.get("displayName", ""), e.actor_id])
+			print("%s  Actor: %s (%s)" % [indent, e.actor_data.get("display_name", ""), e.actor_id])
 		GameEvent.ACTOR_DESTROYED_EVENT:
 			var e := GameEvent.ActorDestroyed.from_dict(event)
 			print("%s  Actor: %s, Reason: %s" % [indent, e.actor_id, e.reason])

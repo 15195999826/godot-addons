@@ -62,10 +62,10 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 	# 1. SilenceBuff 在 enemy_0 上 grant
 	var silence_grants: Array = []
 	for e in ctx.events_of_kind(GameEvent.ABILITY_GRANTED_EVENT):
-		if str(e.get("actorId", "")) != ctx.enemy_id(0):
+		if str(e.get("actor_id", "")) != ctx.enemy_id(0):
 			continue
 		var ability_data: Dictionary = e.get("ability", {}) as Dictionary
-		if str(ability_data.get("configId", "")) != HexBattleSilenceBuff.CONFIG_ID:
+		if str(ability_data.get("config_id", "")) != HexBattleSilenceBuff.CONFIG_ID:
 			continue
 		silence_grants.append(e)
 	ctx.assert_eq(silence_grants.size(), 1,

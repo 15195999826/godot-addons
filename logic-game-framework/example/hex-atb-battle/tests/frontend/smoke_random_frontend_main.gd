@@ -224,7 +224,7 @@ func _collect_mid_spawned_actor_ids(replay: Dictionary) -> Array[String]:
 			var event := event_variant as Dictionary
 			if str(event.get("kind", "")) != GameEvent.ACTOR_SPAWNED_EVENT:
 				continue
-			var actor_id := str(event.get("actorId", ""))
+			var actor_id := str(event.get("actor_id", ""))
 			if not actor_id.is_empty():
 				result.append(actor_id)
 	return result
@@ -242,7 +242,7 @@ func _has_mid_spawned_actor_config(replay: Dictionary, config_id: String) -> boo
 			if str(event.get("kind", "")) != GameEvent.ACTOR_SPAWNED_EVENT:
 				continue
 			var actor_data: Dictionary = event.get("actor", {}) as Dictionary
-			if str(actor_data.get("configId", "")) == config_id:
+			if str(actor_data.get("config_id", "")) == config_id:
 				return true
 	return false
 

@@ -174,18 +174,18 @@ func _fire_tags_in_window(window_start: float, out_triggered_tags: Array[String]
 			continue
 		_triggered_tags[tag_name] = true
 		pending.append({
-			"tagName": tag_name,
-			"tagTime": tag_time,
-			"definitionIndex": tag_definition_index,
+			"tag_name": tag_name,
+			"tag_time": tag_time,
+			"definition_index": tag_definition_index,
 		})
 
 	pending.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if float(a["tagTime"]) != float(b["tagTime"]):
-			return float(a["tagTime"]) < float(b["tagTime"])
-		return int(a["definitionIndex"]) < int(b["definitionIndex"]))
+		if float(a["tag_time"]) != float(b["tag_time"]):
+			return float(a["tag_time"]) < float(b["tag_time"])
+		return int(a["definition_index"]) < int(b["definition_index"]))
 
 	for entry in pending:
-		var pending_tag: String = entry["tagName"]
+		var pending_tag: String = entry["tag_name"]
 		var actions := _resolve_actions_for_tag(pending_tag)
 		Log.debug("AbilityExecutionInstance", "触发 %s" % pending_tag)
 		_execute_actions_for_tag(pending_tag, actions)
@@ -236,9 +236,9 @@ func _build_execution_context(current_tag: String) -> ExecutionContext:
 func serialize() -> Dictionary:
 	return {
 		"id": id,
-		"timelineId": _timeline.id,
+		"timeline_id": _timeline.id,
 		"elapsed": _elapsed,
-		"loopsCompleted": _loops_completed,
+		"loops_completed": _loops_completed,
 		"state": _state,
-		"triggeredTags": _triggered_tags.keys(),
+		"triggered_tags": _triggered_tags.keys(),
 	}
