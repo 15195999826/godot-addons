@@ -197,7 +197,7 @@ var _environment_ids: Array[String] = []
 
 ## 最近一次战斗的总帧数, 从 timeline.meta.totalFrames 缓存。
 ## 不能从 _world.get_active_battle() 读 —— battle_finished emit 之前
-## _active_battle 已经被 null 掉了 (见 world_gameplay_instance.gd:103-113)。
+## procedure 的 finish() 已交还 _active_battle (见 BattleProcedure._detach_from_world)。
 var _last_battle_frames: int = 0
 
 ## 最近一次战斗的录像 timeline。Replay 按钮按下时调 _animator.reset()+play()

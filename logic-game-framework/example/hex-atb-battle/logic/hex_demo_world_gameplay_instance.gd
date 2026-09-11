@@ -26,7 +26,7 @@ var _final_replay_data: Dictionary = {}
 var _logging_enabled: bool = true
 var _recording_enabled: bool = true
 
-## 延命到 _on_battle_finished handler 结束: WorldGI.tick 末尾清 _active_battle,
+## 延命到 _on_battle_finished handler 结束: emit 之前 procedure 的 finish() 已交还 _active_battle,
 ## 但 handler 还要读 procedure 最终状态。
 var _hex_procedure: HexBattleProcedure = null
 

@@ -8,9 +8,10 @@
 ##
 ## 输出:
 ##   每个 scenario 单独一行 PASS/FAIL；
-##   末尾一行 `SMOKE_TEST_RESULT: PASS|FAIL - <N>/<M> scenarios passed`。
+##   末尾一行 `SMOKE_TEST_RESULT: PASS|FAIL - <N>/<M> scenarios passed`，跑完后仍有 context 存活时
+##   追加 `; <K> contexts outlived their call stack` 并判 FAIL。
 ##
-## 退出码:全部绿 → 0,否则 1。
+## 退出码:全部 scenario 绿且 context 存活数归零 → 0,否则 1。
 extends Node
 
 

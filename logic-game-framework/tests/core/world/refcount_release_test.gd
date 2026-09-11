@@ -17,8 +17,9 @@ extends Node
 ##     订阅闭包，battle_finished 后同样全部释放。
 ##  3. procedure 子类（协变 _get_world、持有只经调用参数拿 world 的 helper）被调用方直接 finish()——
 ##     不经 world.tick 收尾，finish 自己交还战斗槽位：销毁 world 后全部释放。
-##  4. 开着录像的战斗进行中 GameWorld.shutdown()：被录范围含不参战的常驻 actor 与战斗中途 spawn 的补录
-##     actor；world 结束时中止战斗（不发 battle_finished），recorder 与全部被录 actor 一并释放。
+##  4. 开着录像的战斗 tick 里 GameWorld.shutdown()（经 world.tick() 驱动；world 是覆盖 on_end 且不调 super 的子类）：
+##     被录范围含不参战的常驻 actor 与战斗中途 spawn 的补录 actor；world 结束时中止战斗（tick 期间零错误、
+##     不收尾、不发 battle_finished），recorder 与全部被录 actor 一并释放。
 ## 用例 2-4 在 world 结束后、仍持有 procedure 时先放掉 world 的局部引用：world 必须当场释放。
 ## 战斗结束 / world 结束已拆掉 world → procedure 这条强边，这一步单独验反向那条
 ## （procedure 及其持有的对象只许弱回指 world）。
@@ -28,6 +29,8 @@ extends Node
 ## 事件 action 与 timeline tag action 里把收到的 context 以 weakref 捕出，grant / tick / 派发一返回就断言
 ## 已释放（不等 destroy_instance）。本测试走到的其余构造点（grant 时交给 apply_effects 的 lifecycle context、
 ## PreEvent 重建的 context）没有 weakref 探针，由两类 context 的存活计数兜底：每个用例结束后计数必须回到用例开始前。
+
+const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
 const PRE_KIND := "release_probe_pre"
 const POST_KIND := "release_probe_post"
@@ -94,19 +97,26 @@ class ContextProbeAction:
 		return ActionResult.create_success_result([])
 
 
-## procedure 子类形状的世界：工厂钩子返回 ProbeProcedure。
+## procedure 子类形状的世界：工厂钩子返回 ProbeProcedure。覆盖 on_end 且不调 super——world 结束时
+## 中止战斗不能依赖子类会不会调 super 的钩子（用例 4 在它身上验）。
 class ProbeWorld:
 	extends WorldGameplayInstance
 
 	func _create_battle_procedure(participants: Array[Actor]) -> BattleProcedure:
 		return ProbeProcedure.new(self, participants)
 
+	func on_end() -> void:
+		pass
+
 
 ## procedure 子类：协变 _get_world()、持有一个只经调用参数拿 world 的 helper（同 hex logger / dota2 controller）。
+## end_world_on_tick 置位后，本 tick 判定结束的同时拆掉整个 GameWorld（用例 4）：world 结束优先，tick() 不得
+## 再收尾、发 battle_finished；若 world 结束没有中止战斗，tick() 会走 finish() 发出信号——断言抓得到，而不是空转。
 class ProbeProcedure:
 	extends BattleProcedure
 
 	var helper := ProbeProcedureHelper.new()
+	var end_world_on_tick := false
 
 	func _get_world() -> ProbeWorld:
 		return super._get_world() as ProbeWorld
@@ -115,6 +125,9 @@ class ProbeProcedure:
 		_current_tick += 1
 		helper.observe(_get_world())
 		record_current_frame_events()
+		if end_world_on_tick:
+			mark_finished()
+			GameWorld.shutdown()
 
 
 class ProbeProcedureHelper:
@@ -133,8 +146,8 @@ func _init() -> void:
 		_run_release_case.bind(_build_and_finish_recorded_battle))
 	TestFramework.register_test("Release: procedure subclass finished directly releases world graph",
 		_run_release_case.bind(_build_and_finish_subclass_procedure_directly))
-	TestFramework.register_test("Release: shutdown mid recorded battle releases recorder and every recorded actor",
-		_run_release_case.bind(_build_and_shutdown_mid_recorded_battle))
+	TestFramework.register_test("Release: world ended inside a recorded battle tick releases recorder and every recorded actor",
+		_run_release_case.bind(_build_and_end_world_inside_recorded_battle_tick))
 
 
 # ========== 用例外壳 ==========
@@ -283,10 +296,10 @@ func _build_and_finish_subclass_procedure_directly(refs: Dictionary) -> void:
 	_assert_world_released(refs)
 
 
-## 用例 4：录像开着的战斗进行中 GameWorld.shutdown()。被录范围 = registry 全体（含不参战的常驻 actor）
-## + 战斗中途 spawn 经 actor_added 补录的 actor；weakref 挂在全部被录 actor 上。
-func _build_and_shutdown_mid_recorded_battle(refs: Dictionary) -> void:
-	var world := GameWorld.create_instance(WorldGameplayInstance.new()) as WorldGameplayInstance
+## 用例 4：录像开着的战斗 tick 里 GameWorld.shutdown()（经 world.tick() 驱动）。被录范围 = registry 全体
+## （含不参战的常驻 actor）+ 战斗中途 spawn 经 actor_added 补录的 actor；weakref 挂在全部被录 actor 上。
+func _build_and_end_world_inside_recorded_battle_tick(refs: Dictionary) -> void:
+	var world := GameWorld.create_instance(ProbeWorld.new()) as ProbeWorld
 	var caster := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
 	var target := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
 	var bystander := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
@@ -300,7 +313,7 @@ func _build_and_shutdown_mid_recorded_battle(refs: Dictionary) -> void:
 		finish_sink["result"] = result)
 	world.start()
 	var participants: Array[Actor] = [caster, target]
-	var procedure := world.start_battle(participants)
+	var procedure := world.start_battle(participants) as ProbeProcedure
 	var recorder := procedure.get_recorder()
 	# probe_sink 要在 add_actor 之前挂上：add_actor 内经 actor_added 补录时 setup_recording 就写探针。
 	var spawned := ReleaseProbeActor.new()
@@ -317,9 +330,17 @@ func _build_and_shutdown_mid_recorded_battle(refs: Dictionary) -> void:
 	_collect_actor_refs(refs, bystander, "bystander.")
 	_collect_actor_refs(refs, spawned, "spawned.")
 	_collect_world_refs(refs, world, procedure)
+	refs["procedure.helper"] = weakref(procedure.helper)
 	var processor := world.event_processor
-	GameWorld.shutdown()
-	TestFramework.assert_false(finish_sink.has("result"), "中止战斗不应发 battle_finished")
+	# tick 里的报错只中止出错那一帧、不发信号，下面的状态断言看不出来——挂计数器断言零错误。
+	procedure.end_world_on_tick = true
+	var log_counter := LogCounter.new()
+	OS.add_logger(log_counter)
+	world.tick(100.0)
+	OS.remove_logger(log_counter)
+	TestFramework.assert_true(log_counter.errors == 0, "战斗 tick 里拆世界报了 %d 条错误" % log_counter.errors)
+	TestFramework.assert_equal(0, GameWorld.get_instance_count())
+	TestFramework.assert_false(finish_sink.has("result"), "world 结束优先：不应收尾、发 battle_finished")
 	TestFramework.assert_false(world.has_active_battle(), "world 结束应清掉进行中的战斗")
 	TestFramework.assert_false(recorder.get_is_recording(), "world 结束应中止录像")
 	TestFramework.assert_true(recorder.actor_subscriptions.is_empty(), "中止录像应退订全部被录 actor")

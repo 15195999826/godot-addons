@@ -144,8 +144,11 @@ func _release_battle(procedure: BattleProcedure) -> void:
 ## （on_end → despawn actor → 注销 system → 清 pre handler）：开着录像时 recorder 的订阅闭包与被录 actor
 ## 互相强持，不中止就连同全部被录 actor 一起泄漏。写在 end() 而非 on_end()：on_end 是留给子类的空钩子。
 func end() -> void:
-	if _active_battle != null:
-		_active_battle.abort()
+	var battle := _active_battle
+	if battle != null:
+		battle.abort()
+		# 槽位由 abort() 交还；没交还（_get_world() 收窄失败等）就响亮报错再兜底清空。
+		Log.assert_crash(_active_battle != battle, "WorldGameplayInstance", "abort() 没有交还战斗槽位")
 		_active_battle = null
 	super.end()
 
@@ -154,7 +157,7 @@ func end() -> void:
 
 ## 世界 tick。有未完成战斗时本帧独占给战斗(不跑世界 system);
 ## 无战斗时走 base_tick 跑 systems。分帧吞吐由 BATTLE_TICKS_PER_WORLD_FRAME 控制。
-## emit 之前先 null 掉 _active_battle, 让 handler 里再 start_battle() 的重入安全通过 assert。
+## 槽位由 procedure 的 finish() / abort() 交还: emit 时槽位已空, handler 里再 start_battle() 可重入。
 func tick(dt: float) -> void:
 	if _active_battle == null:
 		base_tick(dt)
@@ -163,11 +166,14 @@ func tick(dt: float) -> void:
 	var remaining := BATTLE_TICKS_PER_WORLD_FRAME
 	while remaining > 0:
 		battle.tick_once()
-		# 战斗 tick 里 world 被结束（end() 已中止战斗并清空槽位）：本帧到此为止。
+		# 槽位在这次 tick_once 里被交还——world 被结束而中止了战斗（tick_once 余下的函数体照样跑完），
+		# 或 procedure 自己调了 finish()：不再推进、不收尾、不发信号。procedure 判定结束应 mark_finished()，由下面收尾。
 		if _active_battle != battle:
 			return
 		if battle.should_end():
 			var timeline := battle.finish()
+			# finish() 应已交还槽位；没交还（子类覆盖漏调 super.finish()、_get_world() 收窄失败）就响亮报错再兜底清空。
+			Log.assert_crash(_active_battle != battle, "WorldGameplayInstance", "finish() 没有交还战斗槽位")
 			_active_battle = null
 			battle_finished.emit(timeline)
 			return

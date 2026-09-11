@@ -60,24 +60,26 @@ func _test_world_instances() -> void:
 	TestFramework.assert_equal(0, GameWorld.get_instance_count())
 	GameWorld.shutdown()
 
-## shutdown 结束全部 instance（不论是否 running）并清空注册表；已手动 end() 但仍在注册表里的
+## shutdown 结束全部 instance（running 与未启动的都结束）并清空注册表；已手动 end() 但仍在注册表里的
 ## instance 不会被再结束一次（场景常见的「world.end() 后 GameWorld.shutdown()」）；空表上再调同样安全。
 func _test_shutdown_idempotent() -> void:
 	GameWorld.shutdown()
+	var running := DummyInstance.new("inst-shutdown-running")
 	var ended := DummyInstance.new("inst-shutdown-ended")
 	var created := DummyInstance.new("inst-shutdown-created")
+	GameWorld.create_instance(running)
 	GameWorld.create_instance(ended)
 	GameWorld.create_instance(created)
+	running.start()
 	ended.start()
 	ended.end()
 	GameWorld.shutdown()
 	TestFramework.assert_equal(0, GameWorld.get_instance_count())
-	TestFramework.assert_equal(1, ended.end_calls)
-	TestFramework.assert_equal(1, created.end_calls)
-	TestFramework.assert_equal("ended", created.get_state())
+	for instance: DummyInstance in [running, ended, created]:
+		TestFramework.assert_equal("ended", instance.get_state())
+		TestFramework.assert_equal(1, instance.end_calls)
 	GameWorld.shutdown()
 	TestFramework.assert_equal(0, GameWorld.get_instance_count())
-	TestFramework.assert_equal(1, created.end_calls)
 
 ## 事件设施归 instance：各自一套 processor / collector，配置随构造传入，互不共享。
 func _test_instance_owns_event_infrastructure() -> void:

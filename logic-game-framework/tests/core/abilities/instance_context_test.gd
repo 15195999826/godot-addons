@@ -11,6 +11,8 @@ extends Node
 ## GRANTED_SELF 照样自激活，拿不到事件设施的几条路径降级而不报错。叠层 / Break 钩子与 on_remove 共用 Ability._build_remove_context，
 ## PreEvent filter 与 handler 共用 _rebuild_context，不另钉。
 
+const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+
 const PROBE_KIND := "instance_context_probe"
 const PRE_KIND := "instance_context_pre"
 const NO_INSTANCE := "<null>"
@@ -216,9 +218,9 @@ func _test_unregistered_owner() -> void:
 	TestFramework.assert_equal(NO_INSTANCE, probe.get("action_instance", ""))
 
 
-## owner 反查不到 → context 没有事件设施，三条降级路径各钉一个可观测结果：PreEvent 不注册 handler（只打警告）；
-## 激活被 Condition 拦下时失败事件无处可推、跳过——去掉 tag 后同一请求能激活，证明前一次确实走到了失败分支；
-## 只发表演 cue 的 action 跳过推送、照常返回成功（执行出错时引擎只中止出错那一帧，返回值会是 null）。
+## owner 反查不到 → context 没有事件设施，三条降级路径：PreEvent 不注册 handler、只打一条警告；激活被 Condition
+## 拦下时失败事件无处可推、跳过——去掉 tag 后同一请求能激活，证明前一次确实走到了失败分支；只发表演 cue 的 action
+## 跳过推送、照常返回成功。守卫退化成报错时引擎只中止出错那一帧，留下的状态与正常降级相同，所以全程挂日志计数器断言零错误。
 func _test_unregistered_owner_without_event_infrastructure() -> void:
 	var owner_id := "no_such_instance:ghost_events"
 	var ability_set := AbilitySet.create(owner_id)
@@ -231,24 +233,29 @@ func _test_unregistered_owner_without_event_infrastructure() -> void:
 			.build())
 		.build())
 	var ability := Ability.new(config, owner_id)
-	ability_set.grant_ability(ability)
+	var log_counter := LogCounter.new("EventProcessor not available")
+	OS.add_logger(log_counter)
 
+	ability_set.grant_ability(ability)
+	ability_set.add_loose_tag("sealed")
+	ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
+	var executions_while_sealed := ability.get_executing_instances().size()
+	ability_set.remove_loose_tag("sealed")
+	ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
+	var cue := StageCueAction.new(TargetSelector.new(), Resolvers.str_val("instance_ctx_cue"))
+	var chain: Array[Dictionary] = [{"kind": PROBE_KIND}]
+	var result := cue.execute(ExecutionContext.create(chain, null, AbilityRef.from_ability(ability)))
+	OS.remove_logger(log_counter)
+
+	TestFramework.assert_true(log_counter.errors == 0, "降级路径报了 %d 条错误" % log_counter.errors)
+	TestFramework.assert_equal(1, log_counter.matched_warnings)
 	var pre_components := ability.get_all_components().filter(func(c: AbilityComponent) -> bool:
 		return c is PreEventComponent)
 	TestFramework.assert_equal(1, pre_components.size())
 	TestFramework.assert_false((pre_components[0] as PreEventComponent)._unregister.is_valid(),
 		"没有 processor 时不应注册 pre handler")
-
-	ability_set.add_loose_tag("sealed")
-	ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
-	TestFramework.assert_equal(0, ability.get_executing_instances().size())
-	ability_set.remove_loose_tag("sealed")
-	ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
+	TestFramework.assert_equal(0, executions_while_sealed)
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
-
-	var cue := StageCueAction.new(TargetSelector.new(), Resolvers.str_val("instance_ctx_cue"))
-	var chain: Array[Dictionary] = [{"kind": PROBE_KIND}]
-	var result := cue.execute(ExecutionContext.create(chain, null, AbilityRef.from_ability(ability)))
 	TestFramework.assert_true(result != null and result.success, "没有 collector 时 cue action 应跳过推送并返回成功")
 
 
