@@ -60,7 +60,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		var target_attrs := target.get_attribute_set()
 		var hp_before: float = target_attrs.hp
 		var hp_after: float = maxf(0.0, hp_before - final_damage)
-		target_attrs.set_hp_base(hp_after)
+		target_attrs.set_hp(hp_after)
 
 		var dmg_evt := Dota2BattleEvents.make_damage_applied(source_id, target_id, final_damage, hp_after)
 		event_collector.push(dmg_evt)

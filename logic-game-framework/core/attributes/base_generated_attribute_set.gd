@@ -37,15 +37,3 @@ func add_change_listener(listener: Callable) -> Callable:
 ## 获取底层 RawAttributeSet（供高级用法）
 func get_raw() -> RawAttributeSet:
 	return _raw
-
-
-## 注册跨属性 clamp（用于动态边界约束，如 hp ≤ max_hp）
-## 详见 RawAttributeSet.register_cross_attr_clamp
-##
-## 示例：
-##   attribute_set.register_cross_attr_clamp("hp", "max", "max_hp")
-##
-## 通常由 AttributeSetGeneratorScript 根据 config 的 maxRef/minRef 字段自动生成调用；
-## 手动注册仅用于框架外的自定义 AttributeSet 子类。
-func register_cross_attr_clamp(target: String, bound: String, source: String) -> void:
-	_raw.register_cross_attr_clamp(target, bound, source)

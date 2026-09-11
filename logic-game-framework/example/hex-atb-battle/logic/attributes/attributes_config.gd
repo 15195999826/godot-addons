@@ -3,10 +3,10 @@
 ## 约定自动发现，产物生成到同目录 generated/。
 
 const SETS := {
-	# Hex 战斗 actor 公共属性集（hp / max_hp + cross-clamp）
+	# Hex 战斗 actor 公共属性集（hp 资源 ≤ max_hp）
 	# 任何 HexBattleActor 子类（CharacterActor / EnvironmentActor）都通过 _extends 继承此 set
 	"HexBattleActor": {
-		"hp": { "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" },
+		"hp": { "kind": "resource", "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" },
 		"max_hp": { "baseValue": 100.0, "minValue": 1.0 },
 	},
 	# Hex 角色专属属性集（demo / preview / scenario 共用）

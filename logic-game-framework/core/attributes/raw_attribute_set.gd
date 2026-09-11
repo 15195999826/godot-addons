@@ -1,17 +1,25 @@
 class_name RawAttributeSet
 extends RefCounted
-## 属性集合：管理属性的基础值、修改器、缓存和变化通知。
+## 属性集合：stat 属性的基础值 / 修改器 / 缓存，资源属性的当前值，以及变化通知。
+##
+## 【两种属性】
+##
+## - stat（默认）：base + modifier 四层公式算出 current value，带缓存与动态依赖求解。
+## - resource（config `"kind": "resource"`，如 hp）：直接存当前值，clamp 到 [minValue, maxRef 当前值]，
+##   不进 modifier 管线——add_modifier / set_base / 动态依赖的源指向资源一律 assert_crash。
+##   写入走 set_resource / add_resource：只 clamp、只在值变时通知，不跑全属性快照与动态求解。
+##   任何 stat 入口方法收尾都把所有资源按 maxRef 当前值重 clamp（max_hp 下降拉低 hp），
+##   由此产生的变化与同批 stat 变化一起、按属性定义顺序通知。
+##   maxRef 只存属性名（String），不存 Callable——外部注入的 lambda 会捕获 owner，
+##   在 RefCounted 下形成 actor ↔ attr_set ↔ Callable 的循环强引用。
 ##
 ## 【属性变化规范】
 ##
-## 所有属性修改必须通过以下 5 个入口方法之一：
-##   - set_base(attr_name, value)
-##   - add_modifier(modifier)
-##   - remove_modifier(modifier_id)
-##   - remove_modifiers_by_source(source)
-##   - update_modifier(modifier_id, new_value)
+## 所有属性修改必须通过以下入口方法之一：
+##   stat：set_base / add_modifier / remove_modifier / remove_modifiers_by_source / update_modifier
+##   resource：set_resource / add_resource
 ##
-## 每个入口方法内部统一处理所有 modifier（含动态依赖的自动求解），
+## 每个 stat 入口方法内部统一处理所有 modifier（含动态依赖的自动求解），
 ## 外部无感知，仅会收到最终结果通知：哪些属性发生了变化以及变化后的值。
 ## 在入口方法返回后，任何时刻调用 get_breakdown() 对相同状态都返回相同数据。
 ## 绝对不允许通过其它方式修改属性值。
@@ -21,7 +29,7 @@ extends RefCounted
 ## 当属性之间存在动态依赖时（如被动技能让 atk 随 max_hp 变化），
 ## 通过 register_dynamic_dep() 声明式注册依赖关系，而非 Listener 回调。
 ##
-## 动态依赖的求解在每个入口方法内部自动完成（两轮快照迭代），
+## 动态依赖的求解在每个 stat 入口方法内部自动完成（两轮快照迭代），
 ## 保证以下语义：
 ##   - 精确可逆：add_modifier 再 remove_modifier 同一个 modifier，属性值严格回到原状态
 ##   - 路径无关：不管操作顺序如何，同一组 base + modifier 产出同一组最终值
@@ -63,11 +71,21 @@ extends RefCounted
 ##   获得 atk +10 buff 后：max_hp = 136.08, atk = 54.05
 ##   移除同一 buff 后：max_hp = 133.08, atk = 43.96（严格等于 buff 前 ✅）
 
+## attribute config 里声明资源属性的 kind 值：`"hp": { "kind": "resource", "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" }`
+const RESOURCE_KIND := "resource"
+
 const _CHANGE_TYPE_BASE := "base"
 const _CHANGE_TYPE_MODIFIER := "modifier"
 const _CHANGE_TYPE_CURRENT := "current"
 
+## 全部属性名，按定义顺序（stat 与 resource 混排）：快照 / 通知 / 序列化都按这个序遍历
+var _attribute_names: Array[String] = []
+## { String -> float } stat 属性的 base 值
 var _base_values: Dictionary = {}
+## { String -> float } 资源属性的当前值（不进 modifier 管线）
+var _resource_values: Dictionary = {}
+## { String -> String } 资源上限来源属性名；"" = 无上限
+var _resource_max_refs: Dictionary = {}
 ## { String -> Array[AttributeModifier] } 按属性名索引
 var _modifiers: Dictionary = {}
 ## { String -> Array[AttributeModifier] } 按 source 索引，用于快速移除
@@ -75,19 +93,9 @@ var _source_index: Dictionary = {}
 ## { String -> AttributeBreakdown }
 var _cache: Dictionary = {}
 var _dirty_set: Dictionary = {}
-var _computing_set: Dictionary = {}
+## { String -> { "min": float, "max": float } } 静态约束；资源只用 min，max 恒为 INF
 var _constraints: Dictionary = {}
 var _listeners: Array[Callable] = []
-## 跨属性 clamp 注册表
-##
-## 每项: { "target": String, "bound": "max"|"min", "source": String }
-## 语义: target 的 current value 上/下界 = source 的 current value。
-##
-## 典型用例: hp ≤ max_hp → register_cross_attr_clamp("hp", "max", "max_hp")
-##
-## 循环依赖保护复用 _computing_set 现有机制：读取 source 时若递归回 target，
-## 命中 _computing_set 自动 fallback 到缓存/基础值。
-var _cross_attr_clamps: Array[Dictionary] = []
 ## 动态依赖注册表
 ## 每项: { modifier_id: String, source_attribute: String, target_attribute: String,
 ##         modifier_type: AttributeModifier.Type, coefficient: float }
@@ -95,13 +103,17 @@ var _dynamic_deps: Array[Dictionary] = []
 
 func _init(attributes: Array[Dictionary] = []) -> void:
 	for attr in attributes:
-		var min_val := -INF if attr.get("minValue") == null else float(attr.get("minValue"))
-		var max_val := INF if attr.get("maxValue") == null else float(attr.get("maxValue"))
-		define_attribute(str(attr.get("name", "")), float(attr.get("baseValue", 0.0)), min_val, max_val)
+		_define_from_config(str(attr.get("name", "")), attr)
+	_reclamp_resources()
 
 func define_attribute(attr_name: String, base_value: float, min_value: float = -INF, max_value: float = INF) -> void:
 	if attr_name == "":
 		return
+	if _resource_values.has(attr_name):
+		Log.assert_crash(false, "AttributeSet",
+			"define_attribute: '%s' is already defined as a resource" % attr_name)
+		return
+	_register_name(attr_name)
 	_base_values[attr_name] = base_value
 	var empty_mods: Array[AttributeModifier] = []
 	_modifiers[attr_name] = empty_mods
@@ -109,11 +121,43 @@ func define_attribute(attr_name: String, base_value: float, min_value: float = -
 	if min_value != -INF or max_value != INF:
 		_constraints[attr_name] = {"min": min_value, "max": max_value}
 
+
+## 定义资源属性：直接存值，clamp 到 [min_value, max_ref 当前值]，不进 modifier 管线。
+## max_ref 允许晚于本资源定义（apply_config 按 key 顺序定义，hp 排在 max_hp 之前）：
+## 上限在写入 / 重 clamp 时才解析，届时仍未定义即 assert。初值这里只按 min_value 截，
+## 上限由 apply_config 收尾或下一次入口方法补 clamp。
+func define_resource(attr_name: String, initial_value: float, min_value: float = -INF, max_ref: String = "") -> void:
+	if attr_name == "":
+		return
+	if _base_values.has(attr_name):
+		Log.assert_crash(false, "AttributeSet",
+			"define_resource: '%s' is already defined as a stat attribute" % attr_name)
+		return
+	if max_ref == attr_name:
+		Log.assert_crash(false, "AttributeSet", "define_resource: '%s' cannot cap itself" % attr_name)
+		return
+	_register_name(attr_name)
+	if min_value != -INF:
+		_constraints[attr_name] = {"min": min_value, "max": INF}
+	else:
+		_constraints.erase(attr_name)
+	_resource_max_refs[attr_name] = max_ref
+	_resource_values[attr_name] = _clamp_value(attr_name, initial_value)
+
+
 func has_attribute(attr_name: String) -> bool:
-	return _base_values.has(attr_name)
+	return _base_values.has(attr_name) or _resource_values.has(attr_name)
+
+
+func is_resource(attr_name: String) -> bool:
+	return _resource_values.has(attr_name)
 
 
 func get_base(attr_name: String) -> float:
+	if _resource_values.has(attr_name):
+		Log.assert_crash(false, "AttributeSet",
+			"get_base on resource '%s': resources have no base, read get_current_value" % attr_name)
+		return float(_resource_values[attr_name])
 	if not _base_values.has(attr_name):
 		Log.warning("AttributeSet", "Attribute not found: %s" % attr_name)
 		return 0.0
@@ -121,6 +165,10 @@ func get_base(attr_name: String) -> float:
 
 
 func set_base(attr_name: String, value: float) -> void:
+	if _resource_values.has(attr_name):
+		Log.assert_crash(false, "AttributeSet",
+			"set_base on resource '%s': write it with set_resource / add_resource" % attr_name)
+		return
 	if not _base_values.has(attr_name):
 		Log.warning("AttributeSet", "Attribute not found: %s" % attr_name)
 		return
@@ -136,9 +184,35 @@ func set_base(attr_name: String, value: float) -> void:
 	_base_values[attr_name] = clamped_value
 	_mark_dirty(attr_name)
 
-	# 求解动态依赖 + 批量通知
+	# 求解动态依赖 + 资源重 clamp + 批量通知
 	_solve_dynamic_deps()
+	_reclamp_resources()
 	_notify_changes(before, _CHANGE_TYPE_BASE)
+
+
+## 写资源当前值：clamp 到 [minValue, max_ref 当前值]，变化才通知；不跑快照 / 动态求解。
+func set_resource(attr_name: String, value: float) -> void:
+	if not _resource_values.has(attr_name):
+		Log.assert_crash(false, "AttributeSet", "set_resource: '%s' is not a resource attribute" % attr_name)
+		return
+	var old_value := float(_resource_values[attr_name])
+	var new_value := _clamp_resource(attr_name, value)
+	if old_value == new_value:
+		return
+	_resource_values[attr_name] = new_value
+	_dispatch_event({
+		"attribute_name": attr_name,
+		"old_value": old_value,
+		"new_value": new_value,
+		"change_type": _CHANGE_TYPE_CURRENT,
+	})
+
+
+func add_resource(attr_name: String, delta: float) -> void:
+	if not _resource_values.has(attr_name):
+		Log.assert_crash(false, "AttributeSet", "add_resource: '%s' is not a resource attribute" % attr_name)
+		return
+	set_resource(attr_name, float(_resource_values[attr_name]) + delta)
 
 
 func get_body_value(attr_name: String) -> float:
@@ -146,60 +220,31 @@ func get_body_value(attr_name: String) -> float:
 
 
 func get_current_value(attr_name: String) -> float:
+	if _resource_values.has(attr_name):
+		return float(_resource_values[attr_name])
 	return get_breakdown(attr_name).current_value
 
 
-## §0.X scenario snapshot helper: 返回已 define 的所有 attribute name。
-## 用于 scenario harness 在 GameWorld.shutdown() 前批量 snapshot final attribute values。
+## 已定义的全部属性名（stat + resource），按定义顺序。
 func get_attribute_names() -> Array[String]:
-	var names: Array[String] = []
-	for k in _base_values.keys():
-		names.append(k as String)
-	return names
+	return _attribute_names.duplicate()
 
 
-## 获取属性的完整计算结果（含循环依赖检测）
-##
-## _computing_set 记录当前正在计算的属性。如果在计算 A 的过程中又要计算 A，说明形成了循环。
-##
-## 动态属性依赖通过 register_dynamic_dep + 两轮快照求解器处理，不会触发循环。
-## 此处的循环检测用于防御 cross_attr_clamp 读取 source 属性时递归回自己的意外循环。
-##
-## 示例：hp ≤ max_hp 跨属性 clamp，计算 hp 时读取 max_hp，
-## 若 max_hp 的计算又回到 hp → 触发循环检测。
-##
-## 循环触发后：有缓存返回缓存值，无缓存返回 base 值（并输出警告日志）。
+## 获取属性的完整计算结果。资源没有分层：返回只有 base = current 的平 breakdown。
 func get_breakdown(attr_name: String) -> AttributeBreakdown:
-	if _computing_set.has(attr_name):
-		var computing_chain := ", ".join(_computing_set.keys())
-		if _cache.has(attr_name):
-			Log.warning("AttributeSet",
-				"[循环依赖] 属性 '%s' 在计算过程中被再次访问，形成循环。当前计算链: [%s]。已返回缓存值以中断循环。" % [attr_name, computing_chain])
-			return _cache[attr_name] as AttributeBreakdown
-		var fallback_base := float(_base_values.get(attr_name, 0.0))
-		Log.warning("AttributeSet",
-			"[循环依赖] 属性 '%s' 在计算过程中被再次访问，形成循环。当前计算链: [%s]。无缓存可用，已返回基础值 %.2f 以中断循环。" % [attr_name, computing_chain, fallback_base])
-		return AttributeBreakdown.from_base(fallback_base)
+	if _resource_values.has(attr_name):
+		return AttributeBreakdown.from_base(float(_resource_values[attr_name]))
 
 	if not _dirty_set.has(attr_name) and _cache.has(attr_name):
 		return _cache[attr_name] as AttributeBreakdown
 
-	_computing_set[attr_name] = true
 	var base_value := float(_base_values.get(attr_name, 0.0))
 	var mods := _get_modifiers_typed(attr_name)
 	var breakdown := AttributeCalculator.calculate(base_value, mods)
 
-	# 1. 先应用 minValue/maxValue 约束（静态）
 	var clamped_current := _clamp_value(attr_name, breakdown.current_value)
 	if clamped_current != breakdown.current_value:
 		breakdown = breakdown.with_clamped_value(clamped_current)
-
-	# 2. 再应用跨属性 clamp（动态，如 hp ≤ max_hp）
-	var cross_clamped := _apply_cross_attr_clamps(attr_name, breakdown.current_value)
-	if cross_clamped != breakdown.current_value:
-		breakdown = breakdown.with_clamped_value(cross_clamped)
-
-	_computing_set.erase(attr_name)
 
 	_cache[attr_name] = breakdown
 	_dirty_set.erase(attr_name)
@@ -223,6 +268,10 @@ func get_mul_final_product(attr_name: String) -> float:
 
 
 func add_modifier(modifier: AttributeModifier) -> void:
+	if _resource_values.has(modifier.attribute_name):
+		Log.assert_crash(false, "AttributeSet",
+			"add_modifier: '%s' is a resource and takes no modifiers (write it with set_resource / add_resource)" % modifier.attribute_name)
+		return
 	if not _modifiers.has(modifier.attribute_name):
 		Log.warning("AttributeSet", "Attribute not found for modifier: %s" % modifier.attribute_name)
 		return
@@ -239,6 +288,7 @@ func add_modifier(modifier: AttributeModifier) -> void:
 	_mark_dirty(modifier.attribute_name)
 
 	_solve_dynamic_deps()
+	_reclamp_resources()
 	_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 
 
@@ -258,6 +308,7 @@ func remove_modifier(modifier_id: String) -> bool:
 			_mark_dirty(attr_name)
 
 			_solve_dynamic_deps()
+			_reclamp_resources()
 			_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 			return true
 	return false
@@ -294,8 +345,9 @@ func remove_modifiers_by_source(source: String) -> int:
 	# 清空 source 索引
 	_source_index.erase(source)
 
-	# 求解动态依赖 + 批量通知
+	# 求解动态依赖 + 资源重 clamp + 批量通知
 	_solve_dynamic_deps()
+	_reclamp_resources()
 	_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 
 	return count
@@ -313,6 +365,7 @@ func update_modifier(modifier_id: String, new_value: float) -> bool:
 				mod.value = new_value
 				_mark_dirty(attr_name)
 				_solve_dynamic_deps()
+				_reclamp_resources()
 				_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 				return true
 	return false
@@ -343,78 +396,13 @@ func remove_all_change_listeners() -> void:
 	_listeners.clear()
 
 
-## 注册跨属性 clamp：target 属性的 bound 边界动态等于 source 属性的 current value
-##
-## 语义：计算 target 的 current value 时，在静态 min/max 约束之后，
-##       额外用 source 当前值做 bound 方向的 clamp。
-##
-## 参数：
-##   target — 被 clamp 的属性名（如 "hp"）
-##   bound  — "max" 或 "min"
-##   source — 参考的属性名（如 "max_hp"）
-##
-## 典型用例（hp ≤ max_hp，治疗溢出或 max_hp debuff 后 hp 卡上限）：
-##   attr_set.register_cross_attr_clamp("hp", "max", "max_hp")
-##
-## 与静态 minValue/maxValue 的组合：两者并存时顺序生效（先静态再跨属性），
-## 取更严的边界；同向多条注册按注册顺序依次应用。
-##
-## 循环依赖保护：读取 source 时走 get_breakdown()，命中 _computing_set 自动 fallback。
-##
-## API 只存 String，不存 Callable —— 避免外部注入的 lambda 捕获 self 形成
-## actor ↔ attr_set ↔ Callable 循环强引用在 RefCounted 下泄漏。
-func register_cross_attr_clamp(target: String, bound: String, source: String) -> void:
-	Log.assert_crash(
-		bound == "max" or bound == "min",
-		"AttributeSet",
-		"register_cross_attr_clamp: bound must be 'max' or 'min', got '%s'" % bound
-	)
-	Log.assert_crash(
-		has_attribute(target),
-		"AttributeSet",
-		"register_cross_attr_clamp: target attribute '%s' not defined" % target
-	)
-	Log.assert_crash(
-		has_attribute(source),
-		"AttributeSet",
-		"register_cross_attr_clamp: source attribute '%s' not defined" % source
-	)
-	_cross_attr_clamps.append({"target": target, "bound": bound, "source": source})
-	# 新注册的 clamp 可能改变 target 的 current 值，标记 dirty
-	_dirty_set[target] = true
-	_cache.erase(target)
-
-
-func clear_cross_attr_clamps() -> void:
-	_cross_attr_clamps.clear()
-	for attr_name in _base_values.keys():
-		_dirty_set[attr_name] = true
-	_cache.clear()
-
-
-## 应用所有匹配 attr_name 的跨属性 clamp，返回 clamp 后的值。
-## 被 get_breakdown 调用。读取 source 时走 get_breakdown → 复用 _computing_set 循环检测。
-func _apply_cross_attr_clamps(attr_name: String, value: float) -> float:
-	var result := value
-	for clamp_cfg in _cross_attr_clamps:
-		if clamp_cfg["target"] != attr_name:
-			continue
-		var source_attr: String = clamp_cfg["source"]
-		var bound: String = clamp_cfg["bound"]
-		var ref_value := get_breakdown(source_attr).current_value
-		if bound == "max" and result > ref_value:
-			result = ref_value
-		elif bound == "min" and result < ref_value:
-			result = ref_value
-	return result
-
-
+## 按 config 定义属性（生成 set 的 _init 走这里）。key 顺序即属性定义顺序。
+## 每项：{ "baseValue", "minValue"?, "maxValue"? }，或资源 { "kind": "resource", "baseValue", "minValue"?, "maxRef"? }。
+## 收尾按 maxRef 把资源 clamp 一次（config 里资源初值高于上限时）。定义不发通知。
 func apply_config(config: Dictionary) -> void:
 	for attr_name in config.keys():
-		var cfg: Dictionary = config[attr_name]
-		var min_val := -INF if cfg.get("minValue") == null else float(cfg.get("minValue"))
-		var max_val := INF if cfg.get("maxValue") == null else float(cfg.get("maxValue"))
-		define_attribute(str(attr_name), float(cfg.get("baseValue", 0.0)), min_val, max_val)
+		_define_from_config(str(attr_name), config[attr_name] as Dictionary)
+	_reclamp_resources()
 
 func on_attribute_changed(attr_name: String, callback: Callable) -> Callable:
 	var filtered_listener := func(event: Dictionary) -> void:
@@ -427,7 +415,8 @@ func on_attribute_changed(attr_name: String, callback: Callable) -> Callable:
 
 ## 注册动态依赖：source_attribute 变化时，自动重算 modifier_id 的值
 ## modifier_value = get_current_value(source_attribute) * coefficient
-## 注册前必须已通过 add_modifier 添加对应的 modifier
+## 注册前必须已通过 add_modifier 添加对应的 modifier。
+## 源不能是资源：资源写入不跑求解，以资源为源的动态值会静默过期。
 func register_dynamic_dep(
 	modifier_id: String,
 	source_attribute: String,
@@ -435,6 +424,10 @@ func register_dynamic_dep(
 	modifier_type: AttributeModifier.Type,
 	coefficient: float,
 ) -> void:
+	if _resource_values.has(source_attribute):
+		Log.assert_crash(false, "AttributeSet",
+			"register_dynamic_dep: source '%s' is a resource; dynamic deps only read stat attributes" % source_attribute)
+		return
 	# 防止重复注册
 	for dep in _dynamic_deps:
 		if dep["modifier_id"] == modifier_id:
@@ -449,6 +442,7 @@ func register_dynamic_dep(
 	# 立即求解：否则新增的 dep 要等到下一次 add/remove/update modifier 才会生效，
 	# 典型场景（先 add_modifier 再 register_dynamic_dep 再 get_current_value）会读到未求解的 0 值。
 	_solve_dynamic_deps()
+	_reclamp_resources()
 
 
 ## 取消注册动态依赖
@@ -469,9 +463,16 @@ static func restore_attributes(data: Dictionary) -> RawAttributeSet:
 	return RawAttributeSet.deserialize(data)
 
 
+## stat → { "base", "modifiers" }；resource → { "kind": "resource", "value" }。按定义顺序。
 func serialize() -> Dictionary:
 	var result := {}
-	for attr_name in _base_values.keys():
+	for attr_name in _attribute_names:
+		if _resource_values.has(attr_name):
+			result[attr_name] = {
+				"kind": RESOURCE_KIND,
+				"value": float(_resource_values[attr_name]),
+			}
+			continue
 		var mods := _get_modifiers_typed(attr_name)
 		var serialized_mods: Array[Dictionary] = []
 		for mod in mods:
@@ -487,11 +488,37 @@ static func deserialize(data: Dictionary) -> RawAttributeSet:
 	var attr_set := RawAttributeSet.new()
 	for attr_name in data.keys():
 		var attr_data: Dictionary = data[attr_name]
+		if str(attr_data.get("kind", "")) == RESOURCE_KIND:
+			attr_set.define_resource(str(attr_name), float(attr_data.get("value", 0.0)))
+			continue
 		attr_set.define_attribute(str(attr_name), float(attr_data.get("base", 0.0)))
 		for mod_data in attr_data.get("modifiers", []):
 			var mod := AttributeModifier.deserialize(mod_data)
 			attr_set.add_modifier(mod)
 	return attr_set
+
+
+func _register_name(attr_name: String) -> void:
+	if not _attribute_names.has(attr_name):
+		_attribute_names.append(attr_name)
+
+
+## config 项 → define_attribute / define_resource。
+## 资源不接受 maxValue（上限只能是 maxRef）；stat 不接受 maxRef；minRef 不在契约里。
+func _define_from_config(attr_name: String, cfg: Dictionary) -> void:
+	var min_val := -INF if cfg.get("minValue") == null else float(cfg.get("minValue"))
+	Log.assert_crash(cfg.get("minRef") == null, "AttributeSet",
+		"attribute '%s': minRef is not supported (resources clamp to a static minValue)" % attr_name)
+	if str(cfg.get("kind", "")) == RESOURCE_KIND:
+		Log.assert_crash(cfg.get("maxValue") == null, "AttributeSet",
+			"resource '%s': maxValue is not allowed, its cap is maxRef" % attr_name)
+		var max_ref := "" if cfg.get("maxRef") == null else str(cfg.get("maxRef"))
+		define_resource(attr_name, float(cfg.get("baseValue", 0.0)), min_val, max_ref)
+		return
+	Log.assert_crash(cfg.get("maxRef") == null, "AttributeSet",
+		"stat attribute '%s': maxRef only applies to resources (\"kind\": \"resource\")" % attr_name)
+	var max_val := INF if cfg.get("maxValue") == null else float(cfg.get("maxValue"))
+	define_attribute(attr_name, float(cfg.get("baseValue", 0.0)), min_val, max_val)
 
 
 func _mark_dirty(attr_name: String) -> void:
@@ -503,6 +530,30 @@ func _clamp_value(attr_name: String, value: float) -> float:
 		return value
 	var constraint: Dictionary = _constraints[attr_name]
 	return clampf(value, constraint.get("min", -INF) as float, constraint.get("max", INF) as float)
+
+
+## 资源的完整 clamp：静态 minValue 之后再按 max_ref 当前值封顶。
+## max_ref 指向未定义属性 → assert 并视为无上限（不能让缺失的上限把资源截成 0）。
+func _clamp_resource(attr_name: String, value: float) -> float:
+	var clamped := _clamp_value(attr_name, value)
+	var max_ref: String = _resource_max_refs.get(attr_name, "")
+	if max_ref == "":
+		return clamped
+	if not has_attribute(max_ref):
+		Log.assert_crash(false, "AttributeSet",
+			"resource '%s' caps by undefined attribute '%s'" % [attr_name, max_ref])
+		return clamped
+	return minf(clamped, get_current_value(max_ref))
+
+
+## stat 入口方法收尾：所有资源按 max_ref 当前值重 clamp（max_hp 下降拉低 hp）。
+## 不发通知——调用方随后的 _notify_changes 按 before 快照统一发，顺序与 stat 一致。
+func _reclamp_resources() -> void:
+	for attr_name in _resource_values.keys():
+		var value := float(_resource_values[attr_name])
+		var clamped := _clamp_resource(attr_name, value)
+		if clamped != value:
+			_resource_values[attr_name] = clamped
 
 
 func _dispatch_event(event: Dictionary) -> void:
@@ -621,10 +672,8 @@ func _solve_dynamic_deps() -> void:
 	_mark_all_dynamic_dirty(dep_modifiers)
 
 
-## 内部辅助：计算属性的 currentValue（只做静态 clamp，不走跨属性 clamp，不触发通知）
-##
-## 用于动态依赖求解器的两轮快照：需要快速算出纯静态视角的值，不能因为跨属性
-## clamp 再递归调 get_breakdown 形成求解器内的二次递归。
+## 内部辅助：计算 stat 属性的 currentValue（只做静态 clamp，不走缓存，不触发通知）
+## 用于动态依赖求解器的两轮快照。
 func _compute_current_value(attr_name: String) -> float:
 	var base_value := float(_base_values.get(attr_name, 0.0))
 	var mods := _get_modifiers_typed(attr_name)
@@ -651,11 +700,11 @@ func _find_modifier_by_id(modifier_id: String) -> AttributeModifier:
 	return null
 
 
-## 全属性当前值快照 {name: current}。内部用于 before/after 对比，
+## 全属性当前值快照 {name: current}，按定义顺序。内部用于 before/after 对比，
 ## 也是录像层「actor 属性快照」的唯一来源——两处必须是同一份定义。
 func snapshot_current_values() -> Dictionary:
 	var snapshot: Dictionary = {}
-	for attr_name in _base_values.keys():
+	for attr_name in _attribute_names:
 		snapshot[attr_name] = get_current_value(attr_name)
 	return snapshot
 

@@ -43,7 +43,7 @@ func _ready() -> void:
 	_world.add_actor(caster)
 	caster.set_team_id(0)
 	caster.attribute_set.set_max_hp_base(1000.0)
-	caster.attribute_set.set_hp_base(1000.0)
+	caster.attribute_set.set_hp(1000.0)
 	_world.grid.place_occupant(HexCoord.new(0, 0), caster)
 	caster.hex_position = HexCoord.new(0, 0)
 
@@ -52,7 +52,7 @@ func _ready() -> void:
 	_world.add_actor(dummy)
 	dummy.set_team_id(1)
 	dummy.attribute_set.set_max_hp_base(100.0)
-	dummy.attribute_set.set_hp_base(15.0)
+	dummy.attribute_set.set_hp(15.0)
 	_world.grid.place_occupant(HexCoord.new(1, 0), dummy)
 	dummy.hex_position = HexCoord.new(1, 0)
 

@@ -520,7 +520,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	enemy.set_team_id(1)
 	enemy.equip_abilities()
 	enemy.attribute_set.set_max_hp_base(1000.0)
-	enemy.attribute_set.set_hp_base(1000.0)
+	enemy.attribute_set.set_hp(1000.0)
 	if not battle.grid.place_occupant(HexCoord.new(1, 0), enemy):
 		_fail("action_lock_gate: failed to place enemy")
 		GameWorld.shutdown()

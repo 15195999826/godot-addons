@@ -17,7 +17,7 @@ ARAM 式**单中路实时自动战斗** example：一条水平中路，左右两
 - Systems / Abilities / Actions 是唯一的状态变更权威；M1/M2 不引入 command/order 层。
 
 ### `logic/attributes/`
-- 单位属性走 LGF AttributeSet，不在 actor 上加 per-stat forwarding getter。`Dota2BattleActorAttributeSet`（基类，含 `hp` / `max_hp` 及 `hp <= max_hp` 跨属性 clamp，clamp 归 AttributeSet 而非 actor setter）；`Dota2UnitAttributeSet` 继承之，加 `move_speed` / `attack_damage` / `attack_range` / `attack_interval_ms` / `aggro_range`。
+- 单位属性走 LGF AttributeSet，不在 actor 上加 per-stat forwarding getter。`Dota2BattleActorAttributeSet`（基类，含资源 `hp`（写走 `set_hp` / `add_hp`）与 `max_hp`，`hp <= max_hp` 的封顶归 AttributeSet 而非 actor setter）；`Dota2UnitAttributeSet` 继承之，加 `move_speed` / `attack_damage` / `attack_range` / `attack_interval_ms` / `aggro_range`。
 - `armor` 暂不生成（待伤害模型需要再加）；spawn 时**先设 `max_hp` 再设 `hp`** 避免被默认 max clip。
 - **example-local config/output**：`attributes_config.gd` 定义本 example 全部 set，`AttributeSetGeneratorScript` 按 `example/<name>/logic/attributes/attributes_config.gd` 约定自动发现，产物生成到同目录 `generated/`。
 

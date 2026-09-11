@@ -50,10 +50,10 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 
 	attribute_set = HexBattleCharacterAttributeSet.new(get_id())
 	var stats := class_config.stats
-	# max_hp 必须在 hp 之前设置: 跨属性 clamp (hp ≤ max_hp) 会在 set_hp_base 时
-	# 用当前 max_hp 做 clamp, 若 max_hp 还是默认 100, hp > 100 的角色会被截到 100。
+	# max_hp 必须在 hp 之前设置: hp 是资源, set_hp 按当前 max_hp 封顶,
+	# 若 max_hp 还是默认 100, hp > 100 的角色会被截到 100。
 	attribute_set.set_max_hp_base(stats["max_hp"])
-	attribute_set.set_hp_base(stats["hp"])
+	attribute_set.set_hp(stats["hp"])
 	attribute_set.set_atk_base(stats["atk"])
 	attribute_set.set_def_base(stats["def"])
 	attribute_set.set_speed_base(stats["speed"])

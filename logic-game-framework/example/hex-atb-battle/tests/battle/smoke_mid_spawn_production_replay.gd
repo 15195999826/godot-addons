@@ -136,7 +136,7 @@ func _add_character(
 	actor.set_team_id(team_id)
 	actor.hex_position = coord.duplicate()
 	actor.attribute_set.set_max_hp_base(hp)
-	actor.attribute_set.set_hp_base(hp)
+	actor.attribute_set.set_hp(hp)
 	actor.attribute_set.set_atk_base(atk)
 	actor.attribute_set.set_speed_base(0.0)
 	world.add_actor(

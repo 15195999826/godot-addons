@@ -135,8 +135,10 @@ static func _generate_from_config(config_path: String, sets: Dictionary, output_
 	if ordered_set_names.is_empty():
 		return false
 
-	# 3) 验证父子重复属性 + clamp 方向
+	# 3) 验证父子重复属性 + 属性 kind 字段契约 + clamp 方向
 	if not _validate_no_duplicate_attrs(sets, ordered_set_names):
+		return false
+	if not _validate_attr_kinds(sets, ordered_set_names):
 		return false
 	if not _validate_clamp_direction(sets, ordered_set_names):
 		return false
@@ -150,7 +152,7 @@ static func _generate_from_config(config_path: String, sets: Dictionary, output_
 			push_error("Attribute set %s must be Dictionary" % set_name)
 			sets_ok = false
 			continue
-		if _generate_set(set_name, attr_defs as Dictionary, sets, output_dir):
+		if _generate_set(set_name, attr_defs as Dictionary, output_dir):
 			generated_count += 1
 		else:
 			sets_ok = false
@@ -313,7 +315,39 @@ static func _validate_no_duplicate_attrs(sets: Dictionary, ordered: Array[String
 	return ok
 
 
-## 父 set 的 maxRef/minRef 不允许引用子层属性。
+## 属性 kind 契约：kind 只能缺省（stat）或 "resource"；
+## 资源的上限只能是 maxRef（不许 maxValue），stat 不许 maxRef（它走 modifier 管线，没有跨属性上限）；
+## minRef 不在契约里；派生属性不带 kind。
+static func _validate_attr_kinds(sets: Dictionary, ordered: Array[String]) -> bool:
+	var ok := true
+	for set_name in ordered:
+		var own := _get_own_attrs(sets[set_name] as Dictionary)
+		for attr_name: String in own.keys():
+			var cfg: Variant = own[attr_name]
+			if typeof(cfg) != TYPE_DICTIONARY:
+				continue
+			var cfg_dict: Dictionary = cfg
+			var kind := str(cfg_dict.get("kind", ""))
+			if kind != "" and kind != RawAttributeSet.RESOURCE_KIND:
+				push_error("Set '%s' attr '%s' has unknown kind '%s' (only \"resource\" or none)" % [set_name, attr_name, kind])
+				ok = false
+			if _has_field(cfg_dict, "minRef"):
+				push_error("Set '%s' attr '%s' has minRef: not supported, resources clamp to a static minValue" % [set_name, attr_name])
+				ok = false
+			if kind == RawAttributeSet.RESOURCE_KIND:
+				if cfg_dict.has("derived"):
+					push_error("Set '%s' attr '%s' is both a resource and derived" % [set_name, attr_name])
+					ok = false
+				if _has_field(cfg_dict, "maxValue"):
+					push_error("Set '%s' resource '%s' has maxValue: a resource caps by maxRef only" % [set_name, attr_name])
+					ok = false
+			elif _has_field(cfg_dict, "maxRef"):
+				push_error("Set '%s' attr '%s' has maxRef but is not a resource (add \"kind\": \"resource\")" % [set_name, attr_name])
+				ok = false
+	return ok
+
+
+## 父 set 的 maxRef 不允许引用子层属性。
 ## 子 set 可引父 + 子。
 static func _validate_clamp_direction(sets: Dictionary, ordered: Array[String]) -> bool:
 	var ok := true
@@ -327,23 +361,26 @@ static func _validate_clamp_direction(sets: Dictionary, ordered: Array[String]) 
 			if typeof(cfg) != TYPE_DICTIONARY:
 				continue
 			var cfg_dict: Dictionary = cfg
-			for field_name in ["maxRef", "minRef"]:
-				if not cfg_dict.has(field_name) or cfg_dict[field_name] == null:
-					continue
-				var source_attr: String = str(cfg_dict[field_name])
-				if not visible.has(source_attr):
-					push_error(
-						"Set '%s' attr '%s' has %s='%s' but source not visible from this set (would require child→parent reverse reference)" %
-						[set_name, attr_name, field_name, source_attr]
-					)
-					ok = false
+			if not _has_field(cfg_dict, "maxRef"):
+				continue
+			var source_attr: String = str(cfg_dict["maxRef"])
+			if not visible.has(source_attr):
+				push_error(
+					"Set '%s' attr '%s' has maxRef='%s' but source not visible from this set (would require child→parent reverse reference)" %
+					[set_name, attr_name, source_attr]
+				)
+				ok = false
 	return ok
+
+
+static func _has_field(cfg: Dictionary, field_name: String) -> bool:
+	return cfg.has(field_name) and cfg[field_name] != null
 
 
 # ========== Generation ==========
 
 ## 生成单个 set 的产物文件。任一属性生成失败或文件写不出返回 false（能写出的内容仍写出）。
-static func _generate_set(set_name: String, attr_defs: Dictionary, sets: Dictionary, output_dir: String) -> bool:
+static func _generate_set(set_name: String, attr_defs: Dictionary, output_dir: String) -> bool:
 	var set_ok := true
 	var set_class_name := "%sAttributeSet" % set_name
 	var file_name := _to_snake_case(set_class_name)
@@ -387,62 +424,57 @@ static func _generate_set(set_name: String, attr_defs: Dictionary, sets: Diction
 		base_attr_names.append(key)
 	base_attr_names.sort()
 
+	# 资源属性（kind == "resource"）在 apply_config 里带 kind + maxRef 一起定义：
+	# RawAttributeSet 按 key 顺序定义，上限属性晚于资源也可以（上限在写入时才解析），
+	# 所以资源不需要独立的定义语句，属性顺序与 stat 一样按字典序。
+	# maxRef 的 source 可在本 set 或祖先链；_validate_clamp_direction 已过滤。
 	if not base_attr_names.is_empty():
 		lines.append("\t_raw.apply_config({")
 		for attr_name in base_attr_names:
 			var attr_key := attr_name
 			var cfg: Dictionary = base_attrs[attr_name]
-			var line := "\t\t\"%s\": { \"baseValue\": %s" % [attr_key, _value_to_string(cfg.get("baseValue", 0.0))]
-			if cfg.has("minValue") and cfg["minValue"] != null:
+			var line := "\t\t\"%s\": { " % attr_key
+			if _is_resource(cfg):
+				line += "\"kind\": \"%s\", " % RawAttributeSet.RESOURCE_KIND
+			line += "\"baseValue\": %s" % _value_to_string(cfg.get("baseValue", 0.0))
+			if _has_field(cfg, "minValue"):
 				line += ", \"minValue\": %s" % _value_to_string(cfg["minValue"])
-			if cfg.has("maxValue") and cfg["maxValue"] != null:
+			if _has_field(cfg, "maxValue"):
 				line += ", \"maxValue\": %s" % _value_to_string(cfg["maxValue"])
+			if _has_field(cfg, "maxRef"):
+				line += ", \"maxRef\": %s" % _value_to_string(str(cfg["maxRef"]))
 			line += " },"
 			lines.append(line)
 		lines.append("\t})")
 
-	# Cross-attr clamps：仅本 set 新增属性的 maxRef/minRef
-	# source 可在本 set 或祖先链；validate 阶段已过滤。
-	var visible_attrs := _collect_visible_attrs(sets, set_name)
-	var clamp_lines: Array[String] = []
-	for attr_name in base_attr_names:
-		var cfg: Dictionary = base_attrs[attr_name]
-		for field_name in ["maxRef", "minRef"]:
-			if not cfg.has(field_name) or cfg[field_name] == null:
-				continue
-			var source_attr: String = str(cfg[field_name])
-			if not visible_attrs.has(source_attr):
-				push_error("Attribute '%s' in set '%s' references %s='%s' but source attribute not defined" % [
-					attr_name, set_name, field_name, source_attr
-				])
-				set_ok = false
-				continue
-			var bound := "max" if field_name == "maxRef" else "min"
-			clamp_lines.append("\t_raw.register_cross_attr_clamp(\"%s\", \"%s\", \"%s\")" % [attr_name, bound, source_attr])
-
-	for clamp_line in clamp_lines:
-		lines.append(clamp_line)
-
 	lines.append("")
 
 	# 基础属性访问器（仅本 set 新增；父属性继承自父类，不再生成）
+	# stat：getter / breakdown / set_x_base；resource：getter / set_x / add_x（没有 base 与 breakdown）。
 	for attr_name in base_attr_names:
 		var attr_key := attr_name
 		var safe_key: String = _escape_identifier(attr_key)
 		var snake_case_key: String = _to_snake_case(attr_key)
+		var cfg: Dictionary = base_attrs[attr_name]
 		lines.append("")
 		lines.append("var %s: float:" % safe_key)
 		lines.append("\tget:")
 		lines.append("\t\treturn _raw.get_current_value(\"%s\")" % attr_key)
-		lines.append("var %s_breakdown: AttributeBreakdown:" % safe_key)
-		lines.append("\tget:")
-		lines.append("\t\treturn _raw.get_breakdown(\"%s\")" % attr_key)
-		lines.append("func get_%s_breakdown() -> AttributeBreakdown:" % snake_case_key)
-		lines.append("\treturn _raw.get_breakdown(\"%s\")" % attr_key)
-		lines.append("const %s_attribute := \"%s\"" % [safe_key, attr_key])
-
-		lines.append("func set_%s_base(value: float) -> void:" % snake_case_key)
-		lines.append("\t_raw.set_base(\"%s\", value)" % attr_key)
+		if _is_resource(cfg):
+			lines.append("const %s_attribute := \"%s\"" % [safe_key, attr_key])
+			lines.append("func set_%s(value: float) -> void:" % snake_case_key)
+			lines.append("\t_raw.set_resource(\"%s\", value)" % attr_key)
+			lines.append("func add_%s(delta: float) -> void:" % snake_case_key)
+			lines.append("\t_raw.add_resource(\"%s\", delta)" % attr_key)
+		else:
+			lines.append("var %s_breakdown: AttributeBreakdown:" % safe_key)
+			lines.append("\tget:")
+			lines.append("\t\treturn _raw.get_breakdown(\"%s\")" % attr_key)
+			lines.append("func get_%s_breakdown() -> AttributeBreakdown:" % snake_case_key)
+			lines.append("\treturn _raw.get_breakdown(\"%s\")" % attr_key)
+			lines.append("const %s_attribute := \"%s\"" % [safe_key, attr_key])
+			lines.append("func set_%s_base(value: float) -> void:" % snake_case_key)
+			lines.append("\t_raw.set_base(\"%s\", value)" % attr_key)
 		lines.append("func on_%s_changed(callback: Callable) -> Callable:" % snake_case_key)
 		lines.append("\tvar wrapper := func(raw_event: Dictionary) -> void:")
 		lines.append("\t\tif raw_event.get(\"attribute_name\", \"\") == \"%s\":" % attr_key)
@@ -552,6 +584,10 @@ static func _derived_config_to_comment(cfg: Dictionary) -> String:
 		"mul": op_symbol = "*"
 
 	return "%s %s %s" % [str(left), op_symbol, str(right)]
+
+
+static func _is_resource(cfg: Dictionary) -> bool:
+	return str(cfg.get("kind", "")) == RawAttributeSet.RESOURCE_KIND
 
 
 static func _escape_identifier(name: String) -> String:

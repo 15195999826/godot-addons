@@ -1,5 +1,11 @@
 extends Node
 
+## RawAttributeSet 单测：stat 属性（base + modifier 四层公式、动态依赖）与资源属性（hp 这类直接存值、
+## clamp 到 [minValue, maxRef 当前值]、不进 modifier 管线）。
+## 拒绝路径（add_modifier / set_base 指向资源、动态依赖以资源为源）走 Log.assert_crash，
+## 断言失败打 SCRIPT ERROR 而 launcher 判其为 FAIL，所以不测（同 flow_action_test 的约定）。
+
+
 func _init() -> void:
 	TestFramework.register_test("RawAttributeSet - should get base value", _test_get_base)
 	TestFramework.register_test("RawAttributeSet - should set base value", _test_set_base)
@@ -15,186 +21,163 @@ func _init() -> void:
 	TestFramework.register_test("RawAttributeSet - should remove change listener", _test_remove_listener)
 	TestFramework.register_test("RawAttributeSet - should clamp value to min constraint", _test_min_constraint)
 	TestFramework.register_test("RawAttributeSet - should clamp value to max constraint", _test_max_constraint)
-	TestFramework.register_test("RawAttributeSet - cross_attr_clamp clamps hp to max_hp", _test_cross_attr_clamp_clamps_hp_to_max_hp)
-	TestFramework.register_test("RawAttributeSet - without cross_attr_clamp hp can exceed max_hp", _test_without_cross_attr_clamp_hp_unclamped)
 	TestFramework.register_test("RawAttributeSet - dynamic circular dependency converges", _test_dynamic_circular_dependency_converges)
 	TestFramework.register_test("RawAttributeSet - dynamic dependency is reversible", _test_dynamic_dependency_reversible)
+	TestFramework.register_test("RawAttributeSet - resource follows max_ref down, not up", _test_resource_follows_max_ref_down_not_up)
+	TestFramework.register_test("RawAttributeSet - resource serializes its value", _test_resource_serializes_its_value)
+	TestFramework.register_test("RawAttributeSet - apply_config keeps key order across kinds", _test_apply_config_keeps_key_order_with_resource)
+	TestFramework.register_test("RawAttributeSet - set_resource / add_resource clamp to [min, max_ref]", _test_set_resource_clamps_to_min_and_cap)
+	TestFramework.register_test("RawAttributeSet - set_resource notifies only itself and only on change", _test_set_resource_notifies_only_on_change)
+	TestFramework.register_test("RawAttributeSet - resource without max_ref is uncapped", _test_uncapped_resource_and_kind_queries)
+	TestFramework.register_test("RawAttributeSet - apply_config clamps resource initial value to its cap", _test_apply_config_clamps_initial_value_to_cap)
+
+
+## stat 夹具：atk / def 两个纯 stat 属性。
+func _make_stats() -> RawAttributeSet:
+	return RawAttributeSet.new([
+		{"name": "atk", "baseValue": 50},
+		{"name": "def", "baseValue": 30},
+	])
+
+
+## 资源夹具：与生成 set 同形——按 key 顺序定义，hp（资源）排在它的上限 max_hp 之前。
+func _make_with_hp() -> RawAttributeSet:
+	var attr_set := RawAttributeSet.new()
+	attr_set.apply_config({
+		"atk": { "baseValue": 50.0 },
+		"hp": { "kind": "resource", "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" },
+		"max_hp": { "baseValue": 100.0, "minValue": 1.0 },
+	})
+	return attr_set
+
 
 func _test_get_base() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	TestFramework.assert_equal(100, attribute_set.get_base("hp"))
+	var attribute_set := _make_stats()
 	TestFramework.assert_equal(50, attribute_set.get_base("atk"))
+	TestFramework.assert_equal(30, attribute_set.get_base("def"))
 
 func _test_set_base() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	attribute_set.set_base("hp", 120)
-	TestFramework.assert_equal(120, attribute_set.get_base("hp"))
+	var attribute_set := _make_stats()
+	attribute_set.set_base("atk", 120)
+	TestFramework.assert_equal(120, attribute_set.get_base("atk"))
 
 func _test_add_base_modifier() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	# Base = 100, AddBase = +10
-	# CurrentValue = ((100 + 10) × 1 + 0) × 1 = 110
-	var mod := AttributeModifier.create_add_base("mod1", "hp", 10)
+	var attribute_set := _make_stats()
+	# Base = 50, AddBase = +10
+	# CurrentValue = ((50 + 10) × 1 + 0) × 1 = 60
+	var mod := AttributeModifier.create_add_base("mod1", "atk", 10)
 	attribute_set.add_modifier(mod)
-	TestFramework.assert_near(110, attribute_set.get_current_value("hp"))
-	TestFramework.assert_near(10, attribute_set.get_add_base_sum("hp"))
+	TestFramework.assert_near(60, attribute_set.get_current_value("atk"))
+	TestFramework.assert_near(10, attribute_set.get_add_base_sum("atk"))
 
 func _test_mul_base_modifier() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	# Base = 100, MulBase = +20% (0.2)
-	# CurrentValue = ((100 + 0) × 1.2 + 0) × 1 = 120
-	var mod := AttributeModifier.create_mul_base("mod1", "hp", 0.2)
+	var attribute_set := _make_stats()
+	# Base = 50, MulBase = +20% (0.2)
+	# CurrentValue = ((50 + 0) × 1.2 + 0) × 1 = 60
+	var mod := AttributeModifier.create_mul_base("mod1", "atk", 0.2)
 	attribute_set.add_modifier(mod)
-	TestFramework.assert_near(120, attribute_set.get_current_value("hp"))
-	TestFramework.assert_near(1.2, attribute_set.get_mul_base_product("hp"))
+	TestFramework.assert_near(60, attribute_set.get_current_value("atk"))
+	TestFramework.assert_near(1.2, attribute_set.get_mul_base_product("atk"))
 
 func _test_add_final_modifier() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	# Base = 100, AddFinal = +50
-	# CurrentValue = ((100 + 0) × 1 + 50) × 1 = 150
-	var mod := AttributeModifier.create_add_final("mod1", "hp", 50)
+	var attribute_set := _make_stats()
+	# Base = 50, AddFinal = +50
+	# CurrentValue = ((50 + 0) × 1 + 50) × 1 = 100
+	var mod := AttributeModifier.create_add_final("mod1", "atk", 50)
 	attribute_set.add_modifier(mod)
-	TestFramework.assert_near(150, attribute_set.get_current_value("hp"))
-	TestFramework.assert_near(50, attribute_set.get_add_final_sum("hp"))
+	TestFramework.assert_near(100, attribute_set.get_current_value("atk"))
+	TestFramework.assert_near(50, attribute_set.get_add_final_sum("atk"))
 
 func _test_mul_final_modifier() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	# Base = 100, MulFinal = -30% (-0.3)
-	# CurrentValue = ((100 + 0) × 1 + 0) × 0.7 = 70
-	var mod := AttributeModifier.create_mul_final("mod1", "hp", -0.3)
+	var attribute_set := _make_stats()
+	# Base = 50, MulFinal = -30% (-0.3)
+	# CurrentValue = ((50 + 0) × 1 + 0) × 0.7 = 35
+	var mod := AttributeModifier.create_mul_final("mod1", "atk", -0.3)
 	attribute_set.add_modifier(mod)
-	TestFramework.assert_near(70, attribute_set.get_current_value("hp"))
-	TestFramework.assert_near(0.7, attribute_set.get_mul_final_product("hp"))
+	TestFramework.assert_near(35, attribute_set.get_current_value("atk"))
+	TestFramework.assert_near(0.7, attribute_set.get_mul_final_product("atk"))
 
 func _test_four_layer_formula() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	# Base = 100
+	var attribute_set := _make_stats()
+	# Base = 50
 	# AddBase = +10
 	# MulBase = +20% (0.2)
 	# AddFinal = +50
 	# MulFinal = +10% (0.1)
 	#
-	# BodyValue = (100 + 10) × 1.2 = 132
-	# CurrentValue = (132 + 50) × 1.1 = 200.2
-	attribute_set.add_modifier(AttributeModifier.create_add_base("mod1", "hp", 10))
-	attribute_set.add_modifier(AttributeModifier.create_mul_base("mod2", "hp", 0.2))
-	attribute_set.add_modifier(AttributeModifier.create_add_final("mod3", "hp", 50))
-	attribute_set.add_modifier(AttributeModifier.create_mul_final("mod4", "hp", 0.1))
+	# BodyValue = (50 + 10) × 1.2 = 72
+	# CurrentValue = (72 + 50) × 1.1 = 134.2
+	attribute_set.add_modifier(AttributeModifier.create_add_base("mod1", "atk", 10))
+	attribute_set.add_modifier(AttributeModifier.create_mul_base("mod2", "atk", 0.2))
+	attribute_set.add_modifier(AttributeModifier.create_add_final("mod3", "atk", 50))
+	attribute_set.add_modifier(AttributeModifier.create_mul_final("mod4", "atk", 0.1))
 
-	var breakdown := attribute_set.get_breakdown("hp")
-	TestFramework.assert_equal(100, breakdown.base)
+	var breakdown := attribute_set.get_breakdown("atk")
+	TestFramework.assert_equal(50, breakdown.base)
 	TestFramework.assert_near(10, breakdown.add_base_sum)
 	TestFramework.assert_near(1.2, breakdown.mul_base_product)
-	TestFramework.assert_near(132, breakdown.body_value)
+	TestFramework.assert_near(72, breakdown.body_value)
 	TestFramework.assert_near(50, breakdown.add_final_sum)
 	TestFramework.assert_near(1.1, breakdown.mul_final_product)
-	TestFramework.assert_near(200.2, breakdown.current_value)
+	TestFramework.assert_near(134.2, breakdown.current_value)
 
 func _test_add_modifier() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
+	var attribute_set := _make_stats()
 	var mod := AttributeModifier.create_add_base("mod1", "atk", 5)
 	attribute_set.add_modifier(mod)
 	TestFramework.assert_near(55, attribute_set.get_current_value("atk"))
 
 func _test_remove_modifier() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
+	var attribute_set := _make_stats()
 	var mod := AttributeModifier.create_add_base("mod1", "atk", 5)
 	attribute_set.add_modifier(mod)
 	attribute_set.remove_modifier("mod1")
 	TestFramework.assert_near(50, attribute_set.get_current_value("atk"))
 
 func _test_remove_by_source() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
-	attribute_set.add_modifier(AttributeModifier.create_add_base("mod1", "hp", 10, "buff1"))
-	attribute_set.add_modifier(AttributeModifier.create_add_base("mod2", "hp", 20, "buff1"))
-	attribute_set.add_modifier(AttributeModifier.create_add_base("mod3", "hp", 15, "buff2"))
+	var attribute_set := _make_stats()
+	attribute_set.add_modifier(AttributeModifier.create_add_base("mod1", "atk", 10, "buff1"))
+	attribute_set.add_modifier(AttributeModifier.create_add_base("mod2", "atk", 20, "buff1"))
+	attribute_set.add_modifier(AttributeModifier.create_add_base("mod3", "atk", 15, "buff2"))
 	attribute_set.remove_modifiers_by_source("buff1")
-	TestFramework.assert_near(115, attribute_set.get_current_value("hp"))
+	TestFramework.assert_near(65, attribute_set.get_current_value("atk"))
 
 func _test_base_change_notification() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
+	var attribute_set := _make_stats()
 	var changes: Array[Dictionary] = []
 
 	var listener := func(event: Dictionary) -> void:
-		if event.get("attribute_name") == "hp":
+		if event.get("attribute_name") == "atk":
 			changes.append(event)
 
 	attribute_set.add_change_listener(listener)
-	attribute_set.set_base("hp", 150)
+	attribute_set.set_base("atk", 150)
 
 	TestFramework.assert_equal(1, changes.size())
-	TestFramework.assert_equal("hp", changes[0].get("attribute_name"))
-	TestFramework.assert_equal(100, changes[0].get("old_value"))
+	TestFramework.assert_equal("atk", changes[0].get("attribute_name"))
+	TestFramework.assert_equal(50, changes[0].get("old_value"))
 	TestFramework.assert_equal(150, changes[0].get("new_value"))
 
 func _test_remove_listener() -> void:
-	var attribute_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100},
-		{"name": "atk", "baseValue": 50},
-		{"name": "def", "baseValue": 30},
-	])
+	var attribute_set := _make_stats()
 	var changes: Array[Dictionary] = []
 
 	var listener := func(event: Dictionary) -> void:
-		if event.get("attribute_name") == "hp":
+		if event.get("attribute_name") == "atk":
 			changes.append(event)
 
 	attribute_set.add_change_listener(listener)
 	attribute_set.remove_change_listener(listener)
-	attribute_set.set_base("hp", 150)
+	attribute_set.set_base("atk", 150)
 
 	TestFramework.assert_equal(0, changes.size())
 
 func _test_min_constraint() -> void:
 	var constrained_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 100, "minValue": 10},
+		{"name": "atk", "baseValue": 100, "minValue": 10},
 	])
-	constrained_set.set_base("hp", 5)
-	TestFramework.assert_equal(10, constrained_set.get_base("hp"))
+	constrained_set.set_base("atk", 5)
+	TestFramework.assert_equal(10, constrained_set.get_base("atk"))
 
 func _test_max_constraint() -> void:
 	var constrained_set := RawAttributeSet.new([
@@ -202,43 +185,6 @@ func _test_max_constraint() -> void:
 	])
 	constrained_set.set_base("mp", 150)
 	TestFramework.assert_equal(100, constrained_set.get_base("mp"))
-
-
-func _test_cross_attr_clamp_clamps_hp_to_max_hp() -> void:
-	# 场景：hp 的 current 值不能超过 max_hp（声明式跨属性 clamp）
-	var attr_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 80},
-		{"name": "max_hp", "baseValue": 100},
-	])
-
-	attr_set.register_cross_attr_clamp("hp", "max", "max_hp")
-
-	# 测试 1：添加修改器使 hp 超过 max_hp，应被 clamp
-	# hp = 80 + 50 = 130，但 max_hp = 100，所以 hp 应该是 100
-	attr_set.add_modifier(AttributeModifier.create_add_base("heal", "hp", 50, "buff"))
-	TestFramework.assert_near(100, attr_set.get_current_value("hp"))
-
-	# 测试 2：移除修改器后，hp 恢复正常
-	attr_set.remove_modifiers_by_source("buff")
-	TestFramework.assert_near(80, attr_set.get_current_value("hp"))
-
-	# 测试 3：增加 max_hp 后，hp 可以更高
-	attr_set.add_modifier(AttributeModifier.create_add_base("max_hp_buff", "max_hp", 50, "buff2"))
-	# max_hp = 100 + 50 = 150
-	attr_set.add_modifier(AttributeModifier.create_add_base("heal2", "hp", 50, "buff3"))
-	# hp = 80 + 50 = 130，max_hp = 150，所以 hp = 130（不被 clamp）
-	TestFramework.assert_near(130, attr_set.get_current_value("hp"))
-
-
-func _test_without_cross_attr_clamp_hp_unclamped() -> void:
-	# 未注册 cross_attr_clamp 时，hp 可以自由超过 max_hp
-	var attr_set := RawAttributeSet.new([
-		{"name": "hp", "baseValue": 80},
-		{"name": "max_hp", "baseValue": 100},
-	])
-
-	attr_set.add_modifier(AttributeModifier.create_add_base("heal", "hp", 50, "buff"))
-	TestFramework.assert_near(130, attr_set.get_current_value("hp"))
 
 
 func _test_dynamic_circular_dependency_converges() -> void:
@@ -347,3 +293,135 @@ func _test_dynamic_dependency_reversible() -> void:
 	var after_atk := attr_set.get_current_value("atk")
 	TestFramework.assert_near(after_max_hp, before_max_hp, 0.0001, "max_hp should be exactly restored after removing buff")
 	TestFramework.assert_near(after_atk, before_atk, 0.0001, "atk should be exactly restored after removing buff")
+
+
+# ========== 资源属性 ==========
+
+
+## 资源存的是当前值：上限下降把它拉低，上限回升它不跟着回去；
+## 拉低产生的通知与同批 stat 通知一起、按定义顺序发出（hp 定义在 max_hp 之前 → hp 事件在前）。
+func _test_resource_follows_max_ref_down_not_up() -> void:
+	var attr_set := _make_with_hp()
+	var events: Array[Dictionary] = []
+	attr_set.add_change_listener(func(event: Dictionary) -> void:
+		events.append(event))
+
+	attr_set.set_base("max_hp", 60.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 60.0, 0.0001, "max_hp drop pulls hp down")
+	var names_after_drop: Array[String] = []
+	for event in events:
+		names_after_drop.append(event.get("attribute_name", "") as String)
+	var expected_after_drop: Array[String] = ["hp", "max_hp"]
+	TestFramework.assert_equal(expected_after_drop, names_after_drop)
+	TestFramework.assert_near(float(events[0].get("old_value")), 100.0)
+	TestFramework.assert_near(float(events[0].get("new_value")), 60.0)
+
+	attr_set.set_base("max_hp", 100.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 60.0, 0.0001, "resource keeps its value when the cap rises")
+	TestFramework.assert_equal(3, events.size())
+	TestFramework.assert_equal("max_hp", events.back().get("attribute_name"))
+
+
+## serialize 带资源值（无 base / modifiers），deserialize 还原成资源。
+func _test_resource_serializes_its_value() -> void:
+	var attr_set := _make_with_hp()
+	attr_set.add_modifier(AttributeModifier.create_add_base("buff", "atk", 5.0, "source"))
+
+	var data := attr_set.serialize()
+	var hp_data: Dictionary = data["hp"]
+	TestFramework.assert_equal("resource", hp_data.get("kind", ""))
+	TestFramework.assert_near(float(hp_data.get("value", -1.0)), 100.0)
+	TestFramework.assert_false(hp_data.has("modifiers"), "resource has no modifier list")
+
+	var restored := RawAttributeSet.deserialize(data)
+	TestFramework.assert_near(restored.get_current_value("hp"), 100.0)
+	TestFramework.assert_near(restored.get_current_value("atk"), 55.0)
+
+
+## 属性名顺序 = apply_config 的 key 顺序，资源与 stat 混排不改变它（通知 / 快照 / 序列化都按这个序）。
+func _test_apply_config_keeps_key_order_with_resource() -> void:
+	var attr_set := RawAttributeSet.new()
+	attr_set.apply_config({
+		"speed": { "baseValue": 7.0 },
+		"hp": { "kind": "resource", "baseValue": 10.0, "minValue": 0.0, "maxRef": "max_hp" },
+		"max_hp": { "baseValue": 10.0 },
+		"atk": { "baseValue": 3.0 },
+	})
+	var expected: Array[String] = ["speed", "hp", "max_hp", "atk"]
+	TestFramework.assert_equal(expected, attr_set.get_attribute_names())
+	var snapshot_names: Array[String] = []
+	for attr_name in attr_set.snapshot_current_values().keys():
+		snapshot_names.append(attr_name as String)
+	TestFramework.assert_equal(expected, snapshot_names)
+
+
+## 写资源：只 clamp 到 [minValue, max_ref 当前值]，不跑 stat 管线。
+func _test_set_resource_clamps_to_min_and_cap() -> void:
+	var attr_set := _make_with_hp()
+	attr_set.set_resource("hp", 130.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 100.0, 0.0001, "set above cap clamps to max_hp")
+	attr_set.set_resource("hp", -5.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 0.0, 0.0001, "set below minValue clamps to 0")
+	attr_set.add_resource("hp", 30.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 30.0)
+	attr_set.add_resource("hp", 500.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 100.0, 0.0001, "add past cap clamps to max_hp")
+	attr_set.add_resource("hp", -40.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 60.0)
+	# stat 不受资源写入影响
+	TestFramework.assert_near(attr_set.get_current_value("atk"), 50.0)
+	TestFramework.assert_near(attr_set.get_current_value("max_hp"), 100.0)
+
+
+## 资源写入只通知自己、只在值变时通知（clamp 后与旧值相同 = 无事件），change_type = "current"。
+func _test_set_resource_notifies_only_on_change() -> void:
+	var attr_set := _make_with_hp()
+	var events: Array[Dictionary] = []
+	attr_set.add_change_listener(func(event: Dictionary) -> void:
+		events.append(event))
+
+	attr_set.set_resource("hp", 40.0)
+	TestFramework.assert_equal(1, events.size())
+	TestFramework.assert_equal("hp", events[0].get("attribute_name"))
+	TestFramework.assert_near(float(events[0].get("old_value")), 100.0)
+	TestFramework.assert_near(float(events[0].get("new_value")), 40.0)
+	TestFramework.assert_equal("current", events[0].get("change_type"))
+
+	attr_set.set_resource("hp", 40.0)
+	TestFramework.assert_equal(1, events.size())
+	attr_set.set_resource("hp", 999.0)
+	TestFramework.assert_equal(2, events.size())
+	TestFramework.assert_near(float(events[1].get("new_value")), 100.0)
+	attr_set.set_resource("hp", 999.0)
+	TestFramework.assert_equal(2, events.size())
+	attr_set.add_resource("hp", 0.0)
+	TestFramework.assert_equal(2, events.size())
+
+
+## 没有 max_ref 的资源只受 minValue 约束；kind 查询区分两种属性。
+func _test_uncapped_resource_and_kind_queries() -> void:
+	var attr_set := _make_stats()
+	attr_set.define_resource("mp", 50.0, 0.0)
+	TestFramework.assert_true(attr_set.has_attribute("mp"))
+	TestFramework.assert_true(attr_set.is_resource("mp"))
+	TestFramework.assert_false(attr_set.is_resource("atk"))
+	TestFramework.assert_false(attr_set.is_resource("no_such_attr"))
+	attr_set.set_resource("mp", 1000000.0)
+	TestFramework.assert_near(attr_set.get_current_value("mp"), 1000000.0, 0.0001, "no max_ref = no cap")
+	attr_set.set_resource("mp", -1.0)
+	TestFramework.assert_near(attr_set.get_current_value("mp"), 0.0)
+	var expected: Array[String] = ["atk", "def", "mp"]
+	TestFramework.assert_equal(expected, attr_set.get_attribute_names())
+
+
+
+
+## config 里资源初值高于上限：apply_config 收尾按 max_ref 一次 clamp（与 stat 入口方法同一条规则）。
+func _test_apply_config_clamps_initial_value_to_cap() -> void:
+	var attr_set := RawAttributeSet.new()
+	attr_set.apply_config({
+		"hp": { "kind": "resource", "baseValue": 150.0, "minValue": 0.0, "maxRef": "max_hp" },
+		"max_hp": { "baseValue": 100.0 },
+	})
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 100.0)
+	TestFramework.assert_near(attr_set.get_breakdown("hp").current_value, 100.0)

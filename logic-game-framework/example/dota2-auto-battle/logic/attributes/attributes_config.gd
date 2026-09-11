@@ -3,7 +3,7 @@
 ## 约定自动发现，产物生成到同目录 generated/。
 ##
 ## AttributeSet 家族（README「AttributeSet family」）：
-##   Dota2BattleActor (hp/max_hp, hp<=max_hp cross-clamp)
+##   Dota2BattleActor (hp 资源 / max_hp, hp<=max_hp)
 ##     └─ Dota2Unit (move_speed / attack_damage / attack_range /
 ##                    attack_interval_ms / aggro_range)
 ## armor 按设计文档「无伤害公式前保持 planned-but-unused」暂不入 set，
@@ -11,7 +11,7 @@
 
 const SETS := {
 	"Dota2BattleActor": {
-		"hp": { "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" },
+		"hp": { "kind": "resource", "baseValue": 100.0, "minValue": 0.0, "maxRef": "max_hp" },
 		"max_hp": { "baseValue": 100.0, "minValue": 1.0 },
 	},
 	"Dota2Unit": {

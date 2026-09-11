@@ -2,7 +2,7 @@
 ##
 ## Dota2BattleActor 子类：持兵种 enum + 强类型 Dota2UnitAttributeSet + ability_set。
 ## README.md（Actor 与属性 节）：专属代码直接 unit.attribute_set.attack_damage；公共代码走
-## get_attribute_set() 拿 hp/max_hp 视图。spawn 顺序 max_hp 先于 hp（cross-clamp 不误截）。
+## get_attribute_set() 拿 hp/max_hp 视图。spawn 顺序 max_hp 先于 hp（hp 资源按当前 max_hp 封顶，不误截）。
 ## 基础攻击 Ability 在 add_actor 后由 equip_basic_attack() 装备（owner id 已就位）。
 class_name Dota2UnitActor
 extends Dota2BattleActor
@@ -20,9 +20,9 @@ func _init(p_unit_type: Dota2UnitTypeConfig.UnitType) -> void:
 	_display_name = stats.display_name
 
 	attribute_set = Dota2UnitAttributeSet.new()
-	# max_hp 必须先于 hp：cross-attr clamp (hp <= max_hp) 在 set_hp_base 时按当前 max_hp 截。
+	# max_hp 必须先于 hp：hp 是资源，set_hp 按当前 max_hp 封顶。
 	attribute_set.set_max_hp_base(stats.max_hp)
-	attribute_set.set_hp_base(stats.hp)
+	attribute_set.set_hp(stats.hp)
 	attribute_set.set_attack_damage_base(stats.attack_damage)
 	attribute_set.set_attack_range_base(stats.attack_range)
 	attribute_set.set_attack_interval_ms_base(stats.attack_interval_ms)

@@ -71,7 +71,7 @@ func _apply_attribute_overrides(spawned: CharacterActor) -> void:
 	if _attribute_overrides.has("max_hp"):
 		spawned.attribute_set.set_max_hp_base(_attribute_overrides["max_hp"] as float)
 	if _attribute_overrides.has("hp"):
-		spawned.attribute_set.set_hp_base(_attribute_overrides["hp"] as float)
+		spawned.attribute_set.set_hp(_attribute_overrides["hp"] as float)
 	if _attribute_overrides.has("atk"):
 		spawned.attribute_set.set_atk_base(_attribute_overrides["atk"] as float)
 

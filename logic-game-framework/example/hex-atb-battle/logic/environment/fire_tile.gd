@@ -32,6 +32,6 @@ static func create() -> EnvironmentActor:
 
 	var tile := EnvironmentActor.new(KIND, profile)
 	tile.attribute_set.set_max_hp_base(DEFAULT_HP)
-	tile.attribute_set.set_hp_base(DEFAULT_HP)
+	tile.attribute_set.set_hp(DEFAULT_HP)
 	tile.set_display_name("火焰地形")
 	return tile

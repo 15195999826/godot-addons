@@ -14,6 +14,7 @@ func _init() -> void:
 	TestFramework.register_test("Generator accepts unique set names across configs", _test_unique_set_names_pass)
 	TestFramework.register_test("Generator writes attribute set file from SETS", _test_generate_to_temp_dir)
 	TestFramework.register_test("Generator reports failure on invalid derived config", _test_invalid_derived_fails)
+	TestFramework.register_test("Generator rejects clamp fields outside the resource contract", _test_clamp_fields_only_on_resources)
 	TestFramework.register_test("Generator reports failure on unwritable output dir", _test_unwritable_output_dir_fails)
 
 
@@ -56,7 +57,7 @@ func _test_unique_set_names_pass() -> void:
 func _test_generate_to_temp_dir() -> void:
 	var sets := {
 		"GenSmokeActor": {
-			"hp": { "baseValue": 10.0, "minValue": 0.0, "maxRef": "max_hp" },
+			"hp": { "kind": "resource", "baseValue": 10.0, "minValue": 0.0, "maxRef": "max_hp" },
 			"max_hp": { "baseValue": 10.0, "minValue": 1.0 },
 		},
 		"GenSmokeUnit": {
@@ -79,15 +80,75 @@ func _test_generate_to_temp_dir() -> void:
 		actor_content.contains("class_name GenSmokeActorAttributeSet"),
 		"root set declares generated class_name"
 	)
+	# 资源属性：config 行带 kind + maxRef（apply_config 按 key 顺序定义，上限晚于资源也行），
+	# 写入器是 set_hp / add_hp，不生成 base setter / breakdown 访问器，也不再注册跨属性 clamp。
 	TestFramework.assert_true(
-		actor_content.contains("_raw.register_cross_attr_clamp(\"hp\", \"max\", \"max_hp\")"),
-		"cross-attr clamp generated from maxRef"
+		actor_content.contains("\"hp\": { \"kind\": \"resource\", \"baseValue\": 10.0, \"minValue\": 0.0, \"maxRef\": \"max_hp\" },"),
+		"resource config line carries kind + maxRef"
 	)
+	TestFramework.assert_true(
+		actor_content.contains("func set_hp(value: float) -> void:\n\t_raw.set_resource(\"hp\", value)"),
+		"resource writer set_hp generated"
+	)
+	TestFramework.assert_true(
+		actor_content.contains("func add_hp(delta: float) -> void:\n\t_raw.add_resource(\"hp\", delta)"),
+		"resource writer add_hp generated"
+	)
+	TestFramework.assert_true(actor_content.contains("const hp_attribute := \"hp\""), "resource keeps attribute name const")
+	TestFramework.assert_true(actor_content.contains("func on_hp_changed(callback: Callable) -> Callable:"), "resource keeps change subscription")
+	TestFramework.assert_false(actor_content.contains("_raw.set_base(\"hp\""), "resource has no base setter")
+	TestFramework.assert_false(actor_content.contains("var hp_breakdown"), "resource has no breakdown property")
+	TestFramework.assert_false(actor_content.contains("get_hp_breakdown"), "resource has no breakdown getter")
+	# stat 属性照旧
+	TestFramework.assert_true(actor_content.contains("func set_max_hp_base(value: float) -> void:"), "stat keeps base setter")
+	TestFramework.assert_true(actor_content.contains("var max_hp_breakdown: AttributeBreakdown:"), "stat keeps breakdown property")
 
 	var unit_content := FileAccess.get_file_as_string(unit_path)
 	TestFramework.assert_true(
 		unit_content.contains("extends GenSmokeActorAttributeSet"),
 		"_extends generates class inheritance"
+	)
+
+
+## maxRef 只属于资源（stat 走 modifier 管线，没有跨属性上限）；资源的上限只能是 maxRef（静态 maxValue
+## 与 minRef 都不在契约里）。预期路径：违规字段会 push_error（headless 输出可见），返回 false 即为正确行为。
+func _test_clamp_fields_only_on_resources() -> void:
+	var stat_with_max_ref := {
+		"GenSmokeBadStat": {
+			"mana": { "baseValue": 10.0, "maxRef": "max_mana" },
+			"max_mana": { "baseValue": 10.0 },
+		},
+	}
+	TestFramework.assert_false(
+		AttributeSetGeneratorScript._generate_from_config(
+			"res://in_memory_test_config.gd", stat_with_max_ref, TEMP_OUTPUT_DIR
+		),
+		"maxRef on a stat attribute must fail the config generation"
+	)
+
+	var resource_with_max_value := {
+		"GenSmokeBadResource": {
+			"mana": { "kind": "resource", "baseValue": 10.0, "maxValue": 10.0 },
+		},
+	}
+	TestFramework.assert_false(
+		AttributeSetGeneratorScript._generate_from_config(
+			"res://in_memory_test_config.gd", resource_with_max_value, TEMP_OUTPUT_DIR
+		),
+		"maxValue on a resource must fail the config generation (its cap is maxRef)"
+	)
+
+	var min_ref := {
+		"GenSmokeBadMinRef": {
+			"mana": { "kind": "resource", "baseValue": 10.0, "minRef": "floor" },
+			"floor": { "baseValue": 0.0 },
+		},
+	}
+	TestFramework.assert_false(
+		AttributeSetGeneratorScript._generate_from_config(
+			"res://in_memory_test_config.gd", min_ref, TEMP_OUTPUT_DIR
+		),
+		"minRef is outside the contract and must fail the config generation"
 	)
 
 

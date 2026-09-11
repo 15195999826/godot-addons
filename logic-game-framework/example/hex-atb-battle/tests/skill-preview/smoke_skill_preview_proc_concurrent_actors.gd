@@ -49,7 +49,7 @@ func _ready() -> void:
 		_world.add_actor(caster)
 		caster.set_team_id(0)
 		caster.attribute_set.set_max_hp_base(1000.0)
-		caster.attribute_set.set_hp_base(1000.0)
+		caster.attribute_set.set_hp(1000.0)
 		_world.grid.place_occupant(caster_positions[i], caster)
 		caster.hex_position = caster_positions[i]
 		_caster_ids.append(caster.get_id())
@@ -59,7 +59,7 @@ func _ready() -> void:
 		_world.add_actor(dummy)
 		dummy.set_team_id(1)
 		dummy.attribute_set.set_max_hp_base(1000.0)
-		dummy.attribute_set.set_hp_base(1000.0)
+		dummy.attribute_set.set_hp(1000.0)
 		_world.grid.place_occupant(dummy_positions[i], dummy)
 		dummy.hex_position = dummy_positions[i]
 		_dummy_ids.append(dummy.get_id())

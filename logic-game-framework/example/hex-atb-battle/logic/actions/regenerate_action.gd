@@ -48,7 +48,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var battle: HexWorldGameplayInstance = ctx.instance
 	if battle == null:
 		return ActionResult.create_success_result([], { "regen_skipped": "no_instance" })
-	# Phase C V1 只支持 hp; 未来扩展到 mp 时需把下面 attribute_set.hp/max_hp/set_hp_base 也按
+	# Phase C V1 只支持 hp; 未来扩展到 mp 时需把下面 attribute_set.hp/max_hp/set_hp 也按
 	# _resource 分支, 不只是删 assert. 放 execute 顶部做单次检查, 不在 target 循环内重复.
 	Log.assert_crash(_resource == "hp",
 		"HexBattleRegenerateAction",
@@ -78,7 +78,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		var max_hp: float = actor.attribute_set.max_hp
 		var new_hp := minf(old_hp + amount, max_hp)
 		var actual_amount := new_hp - old_hp
-		actor.attribute_set.set_hp_base(new_hp)
+		actor.attribute_set.set_hp(new_hp)
 		var event := BattleEvents.RegenerationEvent.create(
 			target_id, _resource, amount, actual_amount, _source,
 		)

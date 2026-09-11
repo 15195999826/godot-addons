@@ -23,7 +23,7 @@
 ##
 ## 3. 产生事件 + 应用状态（原子操作）：
 ##    - ctx.event_collector.push(damage_event)  ← 事件入队（录像用）
-##    - target.attribute_set.set_hp_base(target.attribute_set.hp - damage) ← 立即扣血
+##    - target.attribute_set.add_hp(-damage) ← 立即扣血
 ##
 ## 4. 死亡检测：
 ##    - if check_death():

@@ -9,7 +9,7 @@
 ##
 ## 1. 产生治疗事件 + 立即应用治疗（原子操作）：
 ##    - ctx.event_collector.push(heal_event)  ← 事件入队（录像用）
-##    - target.attribute_set.set_hp_base(new_hp) ← 立即加血
+##    - target.attribute_set.set_hp(new_hp) ← 立即加血
 ##
 ## 2. 处理回调：on_heal / on_overheal
 ##
@@ -104,7 +104,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			var old_hp: float = target_actor.attribute_set.hp
 			var max_hp: float = target_actor.attribute_set.max_hp
 			var new_hp := minf(old_hp + heal_amount, max_hp)
-			target_actor.attribute_set.set_hp_base(new_hp)
+			target_actor.attribute_set.set_hp(new_hp)
 			
 			var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
 			print("  [治疗] %s 恢复 %.0f HP, HP: %.0f -> %.0f" % [

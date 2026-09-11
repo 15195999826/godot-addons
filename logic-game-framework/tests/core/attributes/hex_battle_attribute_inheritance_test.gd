@@ -2,7 +2,7 @@ extends Node
 
 ## 验证 generator `_extends` 产生的 Hex 战斗属性集继承链工作正常:
 ##   1. 父属性 (hp/max_hp) 在 Character / Environment 子集都可见
-##   2. 父级 cross-attr clamp (hp ≤ max_hp) 在子集实例上仍生效
+##   2. 父级资源上限 (hp ≤ max_hp) 在子集实例上仍生效
 ##   3. 子集独有属性 (atk/def/speed) 只出现在 Character, Environment 没有
 ##   4. 给 Environment 加未注册属性 modifier 不 crash (warning + ignore)
 
@@ -10,8 +10,8 @@ extends Node
 func _init() -> void:
 	TestFramework.register_test("HexBattleActor parent attrs visible on Character", _test_parent_attrs_on_character)
 	TestFramework.register_test("HexBattleActor parent attrs visible on Environment", _test_parent_attrs_on_environment)
-	TestFramework.register_test("Parent cross-clamp (hp ≤ max_hp) effective on Character", _test_clamp_on_character)
-	TestFramework.register_test("Parent cross-clamp (hp ≤ max_hp) effective on Environment", _test_clamp_on_environment)
+	TestFramework.register_test("Parent resource cap (hp ≤ max_hp) effective on Character", _test_clamp_on_character)
+	TestFramework.register_test("Parent resource cap (hp ≤ max_hp) effective on Environment", _test_clamp_on_environment)
 	TestFramework.register_test("Environment lacks character-only attrs (atk/def/speed)", _test_env_lacks_character_attrs)
 	TestFramework.register_test("Modifier on undefined attr is silently ignored", _test_undefined_modifier_warning)
 
@@ -31,14 +31,14 @@ func _test_parent_attrs_on_environment() -> void:
 func _test_clamp_on_character() -> void:
 	var attrs := HexBattleCharacterAttributeSet.new("test")
 	attrs.set_max_hp_base(50.0)
-	attrs.set_hp_base(999.0)
+	attrs.set_hp(999.0)
 	TestFramework.assert_near(attrs.hp, 50.0, 0.0001, "hp clamped by max_hp on Character (parent clamp inherited)")
 
 
 func _test_clamp_on_environment() -> void:
 	var attrs := HexBattleEnvironmentAttributeSet.new("test")
 	attrs.set_max_hp_base(50.0)
-	attrs.set_hp_base(999.0)
+	attrs.set_hp(999.0)
 	TestFramework.assert_near(attrs.hp, 50.0, 0.0001, "hp clamped by max_hp on Environment (parent clamp inherited)")
 
 

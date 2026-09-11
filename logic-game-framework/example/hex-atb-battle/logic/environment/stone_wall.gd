@@ -31,6 +31,6 @@ static func create() -> EnvironmentActor:
 	var wall := EnvironmentActor.new(KIND, profile)
 	# 使用有限 sentinel，避免 replay / JS bridge JSON 边界出现非有限数。
 	wall.attribute_set.set_max_hp_base(INDESTRUCTIBLE_HP)
-	wall.attribute_set.set_hp_base(INDESTRUCTIBLE_HP)
+	wall.attribute_set.set_hp(INDESTRUCTIBLE_HP)
 	wall.set_display_name("石墙")
 	return wall

@@ -28,7 +28,7 @@ class DamageResult:
 ## 1. 护盾结算：HexBattleShieldResolver.resolve() 算 actual_life_damage + 消耗记录，提交容量变更
 ## 2. 把吸收信息写回 damage_event（shield_absorbed / actual_life_damage / consumption_records）
 ## 3. Push 伤害事件到 event_collector
-## 4. 扣血：target.attribute_set.set_hp_base(hp - actual_life_damage)
+## 4. 扣血：target.attribute_set.add_hp(-actual_life_damage)
 ## 5. 日志：battle.logger.damage_dealt(...)
 ## 6. 触发破裂回调：对每个 broken=true 的护盾 push shield_broken event → call on_break → revoke ability
 ## 7. 死亡检测：check_death() → push death_event → process_post_event(death) → 清 grid 占用（不 remove_actor）
@@ -82,7 +82,7 @@ static func apply_damage(
 		# ========== 扣血（按实际生命伤害） ==========
 		# 走 HexBattleActor.get_attribute_set() 拿基类视图: 平权处理 character + environment。
 		var target_attrs := target_actor.get_attribute_set()
-		target_attrs.set_hp_base(target_attrs.hp - actual_life_damage)
+		target_attrs.add_hp(-actual_life_damage)
 
 		var suffix := " (反伤)" if damage_event.is_reflected else ""
 		var absorb_text := ""

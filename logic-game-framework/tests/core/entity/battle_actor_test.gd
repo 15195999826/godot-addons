@@ -18,11 +18,11 @@ class ProbeAttributeSet:
 	func _init(p_actor_id: String = "") -> void:
 		super(p_actor_id)
 		_raw.apply_config({
-			"hp": { "baseValue": 10.0, "minValue": 0.0 },
+			"hp": { "kind": "resource", "baseValue": 10.0, "minValue": 0.0 },
 		})
 
-	func set_hp_base(value: float) -> void:
-		_raw.set_base("hp", value)
+	func set_hp(value: float) -> void:
+		_raw.set_resource("hp", value)
 
 
 ## 无 hp 属性的 attribute set：验证「有 attribute_set 但没血条」不被判成尸体。
@@ -119,7 +119,7 @@ func _test_check_death_latches_once() -> void:
 	TestFramework.assert_false(actor.is_dead())
 	TestFramework.assert_false(actor.check_death(), "满血不应判死")
 
-	(actor.attribute_set as ProbeAttributeSet).set_hp_base(0.0)
+	(actor.attribute_set as ProbeAttributeSet).set_hp(0.0)
 	TestFramework.assert_true(actor.check_death(), "首次归零应返回 true")
 	TestFramework.assert_true(actor.is_dead())
 	TestFramework.assert_false(actor.check_death(), "锁存后再问不应重复报首次")
@@ -272,7 +272,7 @@ func _test_team_id() -> void:
 
 func _test_serialize_with_sets() -> void:
 	var actor := ProbeBattleActor.new()
-	(actor.attribute_set as ProbeAttributeSet).set_hp_base(4.0)
+	(actor.attribute_set as ProbeAttributeSet).set_hp(4.0)
 	actor.set_display_name("probe")
 	actor.mark_dead()
 	var data := actor.serialize()
@@ -280,7 +280,7 @@ func _test_serialize_with_sets() -> void:
 	TestFramework.assert_true(data["is_dead"], "死亡闩要进序列化")
 	var attrs: Dictionary = data["attribute_set"]
 	TestFramework.assert_true(attrs.has("hp"), "属性 raw 应完整落盘: %s" % [attrs.keys()])
-	TestFramework.assert_near(float((attrs["hp"] as Dictionary)["base"]), 4.0)
+	TestFramework.assert_near(float((attrs["hp"] as Dictionary)["value"]), 4.0)
 
 
 func _test_setup_recording_full() -> void:

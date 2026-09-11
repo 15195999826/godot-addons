@@ -2760,7 +2760,7 @@ func _spawn_one_actor(idx: int) -> void:
 	cchar._display_name = role_id
 	cchar.set_team_id(team_int)
 	cchar.attribute_set.set_max_hp_base(max_hp)
-	cchar.attribute_set.set_hp_base(max_hp)
+	cchar.attribute_set.set_hp(max_hp)
 	cchar.attribute_set.set_atk_base(float(a.get("atk", PREVIEW_DEFAULT_ATK)))
 	cchar.attribute_set.set_def_base(PREVIEW_DEFAULT_DEF)
 	cchar.attribute_set.set_speed_base(PREVIEW_DEFAULT_SPEED)
@@ -2863,7 +2863,7 @@ func _apply_actor_hp_change(idx: int, hp: float) -> void:
 	if actor == null or actor.attribute_set == null:
 		return
 	actor.attribute_set.set_max_hp_base(hp)
-	actor.attribute_set.set_hp_base(hp)
+	actor.attribute_set.set_hp(hp)
 	var view := _world_view.get_unit_view(actor_id)
 	if view != null:
 		view.initialize(
