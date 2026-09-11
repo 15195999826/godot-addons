@@ -42,6 +42,8 @@ func shutdown() -> void:
 	_initialized = false
 	Log.info("GameWorld", "GameWorld shutdown")
 
+## factory 只负责构造：注册发生在 factory 返回之后。start() / add_actor / grant 放到本调用之后——
+## context 的 instance 按 owner id 从注册表反查，注册前一律为 null。
 func create_instance(factory: Callable) -> GameplayInstance:
 	var instance: GameplayInstance = factory.call()
 	if instance == null or instance.id == "":

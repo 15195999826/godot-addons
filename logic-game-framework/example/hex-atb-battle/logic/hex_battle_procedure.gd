@@ -18,7 +18,10 @@ var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
 var logger: HexBattleLogger = null
 
-var _world_instance: HexWorldGameplayInstance = null
+## 回指 world 只经基类的 _world（WeakRef）：world._active_battle 强持本 procedure，这里再存强引用就成环。
+var _world_instance: HexWorldGameplayInstance:
+	get:
+		return _get_world() as HexWorldGameplayInstance
 var _logging_enabled: bool = true
 var _result: String = ""
 
@@ -42,7 +45,6 @@ func _init(
 	for a in right:
 		all_actors.append(a)
 	super._init(world, all_actors)
-	_world_instance = world
 	left_team = left
 	right_team = right
 	_logging_enabled = opts.get("logging", true)

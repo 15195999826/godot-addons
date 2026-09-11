@@ -31,7 +31,6 @@ func _ready() -> void:
 	battle = GameWorld.create_instance(func() -> GameplayInstance:
 		return HexDemoWorldGameplayInstance.new()
 	)
-	# 先注册再 start：start 里 grant 的 ability 按 owner id 反查所属 instance，注册前反查为 null
 	battle.start({
 		"logging": enable_logging,
 		"recording": enable_recording,

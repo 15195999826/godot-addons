@@ -13,10 +13,9 @@ const MAX_ITERS := 2000
 func _ready() -> void:
 	GameWorld.init()
 	var world := GameWorld.create_instance(func() -> GameplayInstance:
-		var w := Dota2WorldGameplayInstance.new()
-		w.start()
-		return w
+		return Dota2WorldGameplayInstance.new()
 	) as Dota2WorldGameplayInstance
+	world.start()
 
 	var procedure := world.start_dota2_battle({ "tick_interval_ms": LOGIC_DT_MS })
 

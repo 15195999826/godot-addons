@@ -116,7 +116,7 @@ TargetSelector.fixed([actor_ref1, actor_ref2])
 
 #### 找 instance 只有一种方式
 
-instance 一律按 owner 的 actor id 反查（`GameWorld.get_instance_of_actor(actor_id)`，与 `Actor.get_owner_gameplay_instance()` 同一「id 自描述归属」机制），**不经调用链递、不缓存**：AbilitySet 的派发 / grant、`Ability` 的 on_remove / 叠层 / Break 钩子、`PreEventComponent` 的重建 context、`AbilityExecutionInstance` 每次建的 ExecutionContext（含 revoke / expire 触发的取消）、`NoInstanceComponent` 的事件与 lifecycle action 都走这一条。owner 未注册进 GameWorld（孤立单测）时为 `null`。
+instance 一律按 owner 的 actor id 反查（`GameWorld.get_instance_of_actor(actor_id)`，与 `Actor.get_owner_gameplay_instance()` 同一「id 自描述归属」机制），**不经调用链递、不缓存**：AbilitySet 的派发 / grant / `can_activate` 查询、`Ability` 的 on_remove / 叠层 / Break 钩子、`PreEventComponent` 的重建 context、`AbilityExecutionInstance` 每次建的 ExecutionContext（含 revoke / expire 触发的取消）、`NoInstanceComponent` 的事件与 lifecycle action 都走这一条。owner 未注册进 GameWorld（孤立单测）时为 `null`。
 
 #### 推荐做法：必须有世界的读点经项目的 `world(ctx)` helper
 
@@ -139,14 +139,15 @@ class_name MyProjectDamageAction
 extends Action.BaseAction
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-    # 必须有世界：经 helper 收窄 — 收敛到框架基类, 不绑死具体场景子类
+    # 必须有世界：经项目 helper 收窄（hex 的 world(ctx) 返回 HexWorldGameplayInstance）
     var battle := HexBattleGameStateUtils.world(ctx)
     var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
+    var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()  # 业务逻辑之前快照：本次被击杀的目标仍是 Post 观众
 
     # ... 业务逻辑
 
     # Post 阶段：EventProcessor 通过 GameWorld.get_actor() + BattleActor.ability_set_of() 获取 AbilitySet
-    event_processor.process_post_event(damage_event, battle.get_alive_actor_ids())
+    event_processor.process_post_event(damage_event, alive_actor_ids)
 
 # 允许在没有世界时静默降级的读点，基类隐式下转后判空：
 #   var battle: HexWorldGameplayInstance = ctx.instance
@@ -707,7 +708,7 @@ var battle := ctx.instance as HexWorldGameplayInstance
 **项目层**：可以直接使用具体实例
 
 ```gdscript
-# 项目层经 world(ctx) 收窄 — 默认收敛到框架基类, 仅在需要场景独有字段时收窄到子类
+# 必须有世界的读点经项目 helper 收窄（hex）；允许缺席的读点写 `var battle: HexWorldGameplayInstance = ctx.instance` 再判空
 var battle := HexBattleGameStateUtils.world(ctx)
 var actor := battle.get_actor(actor_id)
 ```

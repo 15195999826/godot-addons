@@ -105,10 +105,6 @@ static func run_with_actions(
 		return _PreviewInstance.new()
 	) as _PreviewInstance
 
-	if battle == null:
-		GameWorld.destroy()
-		return _empty_result(["Failed to create preview battle instance"])
-	# 先注册再 start：start 里 grant 的 ability 按 owner id 反查所属 instance，注册前反查为 null
 	battle.start(preview_config)
 
 	var caster: CharacterActor = battle.left_team[0]

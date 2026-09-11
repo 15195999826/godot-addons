@@ -45,10 +45,9 @@ func _ready() -> void:
 func _create_world_and_procedure() -> void:
 	GameWorld.init()
 	_world = GameWorld.create_instance(func() -> GameplayInstance:
-		var w := Dota2WorldGameplayInstance.new()
-		w.start()
-		return w
+		return Dota2WorldGameplayInstance.new()
 	) as Dota2WorldGameplayInstance
+	_world.start()
 	_procedure = _world.start_dota2_battle({ "tick_interval_ms": LOGIC_DT_MS })
 	# 立即出一帧让首屏非空（tick 0 快照）。
 	_latest_frame = _procedure.advance_tick(LOGIC_DT_MS)

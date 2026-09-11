@@ -3,15 +3,18 @@ extends Node
 ## GameplayInstance 上下文合同
 ##
 ## context 里的 instance 一律按 owner 的 actor id 反查（GameWorld.get_instance_of_actor），
-## 不经调用链递、不缓存。逐个钉住填充点都拿到 owner 所属的那个 instance：
-## AbilitySet 派发（trigger filter / NoInstance action）、NoInstance lifecycle（on_apply 用
-## AbilitySet 建的 context、on_remove 用 Ability 自建的 context）、execution 的 start / tag /
-## cancel action（cancel 由 revoke 触发，调用方什么也不递）、PreEvent handler 的重建 context；
-## owner 没注册时老实给 null——而 grant 照样恒投递 AbilityGranted，GRANTED_SELF 照样自激活。
+## 不经调用链递、不缓存。本文件钉住的填充点都拿到 owner 所属的那个 instance：
+## AbilitySet 派发（trigger filter / NoInstance action）、AbilitySet.can_activate 查询（Condition 收到的
+## context）、NoInstance lifecycle（on_apply 用 AbilitySet 建的 context、on_remove 用 Ability 自建的
+## context）、execution 的 start / tag / cancel action（cancel 由 revoke 触发，调用方什么也不递）、
+## PreEvent handler 的重建 context；owner 没注册时老实给 null——而 grant 照样恒投递 AbilityGranted，
+## GRANTED_SELF 照样自激活。叠层 / Break 钩子与 on_remove 共用 Ability._build_remove_context，
+## PreEvent filter 与 handler 共用 _rebuild_context，不另钉。
 
 const PROBE_KIND := "instance_context_probe"
 const PRE_KIND := "instance_context_pre"
 const NO_INSTANCE := "<null>"
+const QUERY_KEY := "condition_instance"
 
 
 class ProbeActor:
@@ -62,8 +65,19 @@ class RecordToOwnerAction:
 		return ActionResult.create_success_result([])
 
 
+## 把查询收到的 context 里的 instance id 记进 event_dict（can_activate 把它原样透传给 check），放行。
+## 只写传入的 dict、不写自身字段：Condition 是共享对象，冻结校验会抓字段写入。
+class RecordInstanceCondition:
+	extends Condition
+
+	func check(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> bool:
+		event_dict[QUERY_KEY] = ctx.instance.id if ctx.instance != null else NO_INSTANCE
+		return true
+
+
 func _init() -> void:
 	TestFramework.register_test("Instance: dispatch context and NoInstance action see owner instance", _test_dispatch_sees_owner_instance)
+	TestFramework.register_test("Instance: can_activate query context sees owner instance", _test_can_activate_sees_owner_instance)
 	TestFramework.register_test("Instance: lifecycle actions see owner instance on apply and remove", _test_lifecycle_sees_owner_instance)
 	TestFramework.register_test("Instance: execution start/tag/cancel actions resolve owner instance", _test_execution_sees_owner_instance)
 	TestFramework.register_test("Instance: pre handler context sees owner instance", _test_pre_handler_sees_owner_instance)
@@ -86,6 +100,25 @@ func _test_dispatch_sees_owner_instance() -> void:
 	var expected := actor.get_gameplay_instance_id()
 	TestFramework.assert_equal(expected, probe.get("filter_instance", ""))
 	TestFramework.assert_equal(expected, probe.get("action_instance", ""))
+	GameWorld.destroy_instance(expected)
+
+
+func _test_can_activate_sees_owner_instance() -> void:
+	var actor := _spawn("instance_ctx_query")
+	var conditions: Array[Condition] = [RecordInstanceCondition.new()]
+	var costs: Array[Cost] = []
+	var active_use_list: Array[ActiveUseConfig] = [
+		ActiveUseConfig.new(TimelineData.new("t-instance-context-query", 100.0, {}), [], conditions, costs),
+	]
+	var config := AbilityConfig.new("instance_ctx_query", "", "", "", [], active_use_list, [])
+	var ability := Ability.new(config, actor.get_id())
+	actor.ability_set.grant_ability(ability)
+
+	var probe := {}
+	var result := actor.ability_set.can_activate(ability, probe)
+	TestFramework.assert_true(AbilityActivationQuery.is_allowed(result), "查询应放行")
+	var expected := actor.get_gameplay_instance_id()
+	TestFramework.assert_equal(expected, probe.get(QUERY_KEY, ""))
 	GameWorld.destroy_instance(expected)
 
 

@@ -25,7 +25,7 @@ var ability_set: AbilitySet
 var event_processor: EventProcessor
 
 ## 拥有者所属的 GameplayInstance（按 owner_actor_id 反查）。
-## owner 未注册进 GameWorld（孤立单测）时为 null；依赖它的逻辑应 Log.assert_crash。
+## owner 未注册进 GameWorld（孤立单测、注册前的 grant）时为 null：必须有世界的逻辑判空后响亮报错，允许缺席的判空降级。
 var instance: GameplayInstance
 
 

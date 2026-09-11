@@ -22,16 +22,9 @@ static func format(instance_id: String, local_id: String) -> String:
 ## 返回 { "instance_id": String, "local_id": String }
 ## 如果格式无效，返回 { "instance_id": "", "local_id": actor_id }
 static func parse(actor_id: String) -> Dictionary:
-	var sep_index := actor_id.find(SEPARATOR)
-	if sep_index == -1:
-		# 兼容旧格式：没有分隔符时，整个 ID 作为 local_id
-		return {
-			"instance_id": "",
-			"local_id": actor_id,
-		}
 	return {
-		"instance_id": actor_id.substr(0, sep_index),
-		"local_id": actor_id.substr(sep_index + 1),
+		"instance_id": extract_instance_id(actor_id),
+		"local_id": extract_local_id(actor_id),
 	}
 
 

@@ -29,7 +29,10 @@ var movement_adapter: Dota2MovementAdapter = null
 var left_team: Array[Dota2BattleActor] = []
 var right_team: Array[Dota2BattleActor] = []
 
-var _world_instance: Dota2WorldGameplayInstance = null
+## 回指 world 只经基类的 _world（WeakRef）：world._active_battle 强持本 procedure，这里再存强引用就成环。
+var _world_instance: Dota2WorldGameplayInstance:
+	get:
+		return _get_world() as Dota2WorldGameplayInstance
 var _controllers: Dictionary = {}
 var _result: String = ""
 var _global_spawn_counter: int = 0
@@ -40,7 +43,6 @@ var _pending_step_results: Dictionary = {}
 
 func _init(world: Dota2WorldGameplayInstance, opts: Dictionary = {}) -> void:
 	super._init(world, [] as Array[Actor])
-	_world_instance = world
 	_tick_interval = float(opts.get("tick_interval_ms", DOTA2_TICK_INTERVAL_MS))
 	movement_adapter = Dota2MovementAdapter.new()
 	# 本 example 的产出物是 Dota2LogicFrame，不是可播的战斗录像：开战快照在 spawn 之前

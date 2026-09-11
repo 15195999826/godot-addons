@@ -128,7 +128,7 @@ func on_item_moved_out(item_id: int, target_container_id: int, target_slot_index
 ## 给 item 关联的 granted_abilities 在 owner 身上 grant 出来 (Phase G):
 ##   - 通过 HexEquipmentAbilityResolver 拿 AbilityConfig (预校验已通过, 此处 null 视为 lifecycle bug)
 ##   - `Ability.new(cfg, owner_actor_id)` → metadata.duplicate(true) 后写 source/item_id/item_config_id
-##   - `actor.ability_set.grant_ability(ability)` (恒投递 AbilityGranted; 是否自激活由 config 的 trigger 声明)
+##   - `actor.ability_set.grant_ability(ability)`
 ##   - 记录 instance id 到 `_granted_abilities[item_id]` 供后续精确 revoke
 func _grant_item_abilities(item_id: int) -> void:
 	var actor := GameWorld.get_actor(owner_actor_id)
