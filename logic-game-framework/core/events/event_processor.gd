@@ -46,7 +46,7 @@
 ##
 ##     # 应用效果（原子操作）
 ##     ctx.event_collector.push(damage_event)
-##     target.modify_hp(-final_damage)
+##     target.attribute_set.add_hp(-final_damage)
 ##
 ##     # Post 阶段：触发反伤/吸血等被动（被击杀的目标是否仍响应由它的 is_event_responsive 决定）
 ##     event_processor.process_post_event(damage_event)

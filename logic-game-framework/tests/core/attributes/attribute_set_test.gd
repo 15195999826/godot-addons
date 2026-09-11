@@ -23,7 +23,8 @@ func _init() -> void:
 	TestFramework.register_test("RawAttributeSet - should clamp value to max constraint", _test_max_constraint)
 	TestFramework.register_test("RawAttributeSet - dynamic circular dependency converges", _test_dynamic_circular_dependency_converges)
 	TestFramework.register_test("RawAttributeSet - dynamic dependency is reversible", _test_dynamic_dependency_reversible)
-	TestFramework.register_test("RawAttributeSet - resource follows max_ref down, not up", _test_resource_follows_max_ref_down_not_up)
+	TestFramework.register_test("RawAttributeSet - resource follows max_ref down and back up", _test_resource_follows_max_ref_down_and_back_up)
+	TestFramework.register_test("RawAttributeSet - resource survives a transient cap drop via modifiers", _test_resource_survives_transient_cap_drop_via_modifiers)
 	TestFramework.register_test("RawAttributeSet - resource serializes its value", _test_resource_serializes_its_value)
 	TestFramework.register_test("RawAttributeSet - apply_config keeps key order across kinds", _test_apply_config_keeps_key_order_with_resource)
 	TestFramework.register_test("RawAttributeSet - set_resource / add_resource clamp to [min, max_ref]", _test_set_resource_clamps_to_min_and_cap)
@@ -298,9 +299,10 @@ func _test_dynamic_dependency_reversible() -> void:
 # ========== 资源属性 ==========
 
 
-## 资源存的是当前值：上限下降把它拉低，上限回升它不跟着回去；
-## 拉低产生的通知与同批 stat 通知一起、按定义顺序发出（hp 定义在 max_hp 之前 → hp 事件在前）。
-func _test_resource_follows_max_ref_down_not_up() -> void:
+## 资源存的是写入时 clamp 过的值，读取按 max_ref 当前值封顶：上限下降把读值拉低、
+## 回升后读值恢复（存值不被上限暂降改写）；拉低 / 恢复的通知与同批 stat 通知一起、
+## 按定义顺序发出（hp 定义在 max_hp 之前 → hp 事件在前）。
+func _test_resource_follows_max_ref_down_and_back_up() -> void:
 	var attr_set := _make_with_hp()
 	var events: Array[Dictionary] = []
 	attr_set.add_change_listener(func(event: Dictionary) -> void:
@@ -317,9 +319,33 @@ func _test_resource_follows_max_ref_down_not_up() -> void:
 	TestFramework.assert_near(float(events[0].get("new_value")), 60.0)
 
 	attr_set.set_base("max_hp", 100.0)
-	TestFramework.assert_near(attr_set.get_current_value("hp"), 60.0, 0.0001, "resource keeps its value when the cap rises")
-	TestFramework.assert_equal(3, events.size())
-	TestFramework.assert_equal("max_hp", events.back().get("attribute_name"))
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 100.0, 0.0001, "the stored value survives a transient cap drop")
+	TestFramework.assert_equal(4, events.size())
+	TestFramework.assert_equal("hp", events[2].get("attribute_name"))
+	TestFramework.assert_near(float(events[2].get("old_value")), 60.0)
+	TestFramework.assert_near(float(events[2].get("new_value")), 100.0)
+	TestFramework.assert_equal("max_hp", events[3].get("attribute_name"))
+
+
+## modifier 入口的上限暂降（重穿装备 / Break 撤销加成）同样不吞存值；暂降期间 serialize 出的是封顶后的读值，
+## 暂降期间的写入从封顶读值起算、按暂降上限 clamp 并留下。
+func _test_resource_survives_transient_cap_drop_via_modifiers() -> void:
+	var attr_set := _make_with_hp()
+	attr_set.add_modifier(AttributeModifier.create_add_base("gear_max_hp", "max_hp", 50.0, "gear"))
+	attr_set.set_resource("hp", 150.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 150.0)
+
+	attr_set.remove_modifiers_by_source("gear")
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 100.0, 0.0001, "cap drop via modifier removal pulls hp down")
+	TestFramework.assert_near(float((attr_set.serialize()["hp"] as Dictionary).get("value", -1.0)), 100.0, 0.0001, "serialize writes the capped value")
+	attr_set.add_modifier(AttributeModifier.create_add_base("gear_max_hp", "max_hp", 50.0, "gear"))
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 150.0, 0.0001, "re-granting the cap restores the stored value")
+
+	attr_set.remove_modifiers_by_source("gear")
+	attr_set.add_resource("hp", -10.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 90.0, 0.0001, "a write during the drop starts from the capped value")
+	attr_set.add_modifier(AttributeModifier.create_add_base("gear_max_hp", "max_hp", 50.0, "gear"))
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 90.0, 0.0001, "a write during the drop sticks after the cap comes back")
 
 
 ## serialize 带资源值（无 base / modifiers），deserialize 还原成资源。

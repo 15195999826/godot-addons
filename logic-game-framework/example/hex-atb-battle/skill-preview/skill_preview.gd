@@ -144,7 +144,7 @@ var _timeline_panel: SkillPreviewTimelinePanel = null
 ## debug-only: 当前战斗的 logic 终态 snapshot, 由 battle_final_state_ready 填充。
 ## 每次 START 前清空, _on_playback_ended 跑 reconciler 时读取。
 ## release build base GI 不 emit, 此字段保持空 → reconciler SKIPPED 静默。
-## 详见 docs/reference/view-logic-reconciliation.md。
+## 详见 tests/frontend/view_logic_reconciler.gd 头注释。
 var _final_state: Dictionary = {}
 
 ## true: 战斗 procedure 运行中 / animator 播放中, 禁止编辑 UI 修改 world
@@ -2768,7 +2768,7 @@ func _spawn_one_actor(idx: int) -> void:
 	var pos: Array = a["pos"]
 	var coord := HexCoord.new(int(pos[0]), int(pos[1]))
 	# WorldView._hydrate_from_actor 在 actor_added 信号里一次性读 team / hp / hex_position,
-	# core 层尚未 emit actor_position_changed (见 CHANGELOG 待处理 / D5)。
+	# 逻辑层没有 actor_position_changed 的 emit 调用点 (stdlib 只声明信号, 项目层自己 emit)。
 	# 因此所有可视字段必须在 add_actor 之前写入,否则 view 会停在默认 (team=0, pos=0,0)。
 	cchar.hex_position = coord.duplicate()
 
@@ -2829,9 +2829,9 @@ func _rebuild_role_id_mapping() -> void:
 ## 增量改 actor 坐标: 写 actor.hex_position + grid.move_occupant + 手动 emit
 ## actor_position_changed 触发 WorldView._on_actor_position_changed → view.set_world_position。
 ##
-## 手动 emit 是兜底 —— core 层 actor_position_changed 还没有 emit 调用点
-## (CHANGELOG 待处理 / D5 阶段 4 配移动动画一起补)。SkillPreview 编辑态绕过去,
-## 等 core emit 就位后这里删掉手动 emit 即可。
+## 手动 emit 是兜底 —— 逻辑层没有 actor_position_changed 的 emit 调用点
+## (stdlib GridWorldGameplayInstance 只声明信号, 由项目层在移动 actor 时 emit)。SkillPreview 编辑态
+## 自己发; 逻辑层若接管 emit, 这里的手动 emit 即可删掉。
 func _apply_actor_position_change(idx: int, q: int, r: int) -> void:
 	if idx >= _actor_ids.size():
 		return

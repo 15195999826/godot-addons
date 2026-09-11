@@ -5,11 +5,11 @@ extends RefCounted
 ## 【两种属性】
 ##
 ## - stat（默认）：base + modifier 四层公式算出 current value，带缓存与动态依赖求解。
-## - resource（config `"kind": "resource"`，如 hp）：直接存当前值，clamp 到 [minValue, maxRef 当前值]，
+## - resource（config `"kind": "resource"`，如 hp）：直接存当前值，写入时 clamp 到 [minValue, maxRef 当前值]，
 ##   不进 modifier 管线——add_modifier / set_base / 动态依赖的源指向资源一律 assert_crash。
-##   写入走 set_resource / add_resource：只 clamp、只在值变时通知，不跑全属性快照与动态求解。
-##   任何 stat 入口方法收尾都把所有资源按 maxRef 当前值重 clamp（max_hp 下降拉低 hp），
-##   由此产生的变化与同批 stat 变化一起、按属性定义顺序通知。
+##   写入走 set_resource / add_resource：只 clamp、只在读值变时通知，不跑全属性快照与动态求解。
+##   读取按 maxRef 当前值封顶而不改存值（max_hp 下降拉低 hp；重穿装备 / Break 这类上限暂降回升后读值恢复），
+##   由此产生的 hp 变化与同批 stat 变化一起、按属性定义顺序通知。
 ##   maxRef 只存属性名（String），不存 Callable——外部注入的 lambda 会捕获 owner，
 ##   在 RefCounted 下形成 actor ↔ attr_set ↔ Callable 的循环强引用。
 ##
@@ -82,7 +82,8 @@ const _CHANGE_TYPE_CURRENT := "current"
 var _attribute_names: Array[String] = []
 ## { String -> float } stat 属性的 base 值
 var _base_values: Dictionary = {}
-## { String -> float } 资源属性的当前值（不进 modifier 管线）
+## { String -> float } 资源属性的存值（写入时 clamp 到 [minValue, max_ref 当前值]，不进 modifier 管线）。
+## 读取按 max_ref 当前值封顶而不改存值：上限暂降（重穿装备 / Break 撤销加成）只压低读值，回升后读值恢复。
 var _resource_values: Dictionary = {}
 ## { String -> String } 资源上限来源属性名；"" = 无上限
 var _resource_max_refs: Dictionary = {}
@@ -104,7 +105,6 @@ var _dynamic_deps: Array[Dictionary] = []
 func _init(attributes: Array[Dictionary] = []) -> void:
 	for attr in attributes:
 		_define_from_config(str(attr.get("name", "")), attr)
-	_reclamp_resources()
 
 func define_attribute(attr_name: String, base_value: float, min_value: float = -INF, max_value: float = INF) -> void:
 	if attr_name == "":
@@ -122,10 +122,9 @@ func define_attribute(attr_name: String, base_value: float, min_value: float = -
 		_constraints[attr_name] = {"min": min_value, "max": max_value}
 
 
-## 定义资源属性：直接存值，clamp 到 [min_value, max_ref 当前值]，不进 modifier 管线。
+## 定义资源属性：直接存值（写入时 clamp 到 [min_value, max_ref 当前值]，读取按 max_ref 当前值封顶），不进 modifier 管线。
 ## max_ref 允许晚于本资源定义（apply_config 按 key 顺序定义，hp 排在 max_hp 之前）：
-## 上限在写入 / 重 clamp 时才解析，届时仍未定义即 assert。初值这里只按 min_value 截，
-## 上限由 apply_config 收尾或下一次入口方法补 clamp。
+## 上限在写入时才解析，届时仍未定义即 assert。初值这里只按 min_value 截，高于上限的部分由读取封顶。
 func define_resource(attr_name: String, initial_value: float, min_value: float = -INF, max_ref: String = "") -> void:
 	if attr_name == "":
 		return
@@ -157,7 +156,7 @@ func get_base(attr_name: String) -> float:
 	if _resource_values.has(attr_name):
 		Log.assert_crash(false, "AttributeSet",
 			"get_base on resource '%s': resources have no base, read get_current_value" % attr_name)
-		return float(_resource_values[attr_name])
+		return _resource_current(attr_name)
 	if not _base_values.has(attr_name):
 		Log.warning("AttributeSet", "Attribute not found: %s" % attr_name)
 		return 0.0
@@ -184,22 +183,23 @@ func set_base(attr_name: String, value: float) -> void:
 	_base_values[attr_name] = clamped_value
 	_mark_dirty(attr_name)
 
-	# 求解动态依赖 + 资源重 clamp + 批量通知
+	# 求解动态依赖 + 批量通知（资源读值随上限变化，由快照对比发出通知）
 	_solve_dynamic_deps()
-	_reclamp_resources()
 	_notify_changes(before, _CHANGE_TYPE_BASE)
 
 
-## 写资源当前值：clamp 到 [minValue, max_ref 当前值]，变化才通知；不跑快照 / 动态求解。
+## 写资源当前值：clamp 到 [minValue, max_ref 当前值] 后存下，读值变化才通知；不跑快照 / 动态求解。
+## 上限暂降中（存值高于当前上限）的写入同样落到新值：从封顶读值起算、按暂降上限截断并留下。
 func set_resource(attr_name: String, value: float) -> void:
 	if not _resource_values.has(attr_name):
 		Log.assert_crash(false, "AttributeSet", "set_resource: '%s' is not a resource attribute" % attr_name)
 		return
-	var old_value := float(_resource_values[attr_name])
+	var old_value := _resource_current(attr_name)
 	var new_value := _clamp_resource(attr_name, value)
+	if new_value != float(_resource_values[attr_name]):
+		_resource_values[attr_name] = new_value
 	if old_value == new_value:
 		return
-	_resource_values[attr_name] = new_value
 	_dispatch_event({
 		"attribute_name": attr_name,
 		"old_value": old_value,
@@ -212,7 +212,7 @@ func add_resource(attr_name: String, delta: float) -> void:
 	if not _resource_values.has(attr_name):
 		Log.assert_crash(false, "AttributeSet", "add_resource: '%s' is not a resource attribute" % attr_name)
 		return
-	set_resource(attr_name, float(_resource_values[attr_name]) + delta)
+	set_resource(attr_name, _resource_current(attr_name) + delta)
 
 
 func get_body_value(attr_name: String) -> float:
@@ -221,7 +221,7 @@ func get_body_value(attr_name: String) -> float:
 
 func get_current_value(attr_name: String) -> float:
 	if _resource_values.has(attr_name):
-		return float(_resource_values[attr_name])
+		return _resource_current(attr_name)
 	return get_breakdown(attr_name).current_value
 
 
@@ -233,7 +233,7 @@ func get_attribute_names() -> Array[String]:
 ## 获取属性的完整计算结果。资源没有分层：返回只有 base = current 的平 breakdown。
 func get_breakdown(attr_name: String) -> AttributeBreakdown:
 	if _resource_values.has(attr_name):
-		return AttributeBreakdown.from_base(float(_resource_values[attr_name]))
+		return AttributeBreakdown.from_base(_resource_current(attr_name))
 
 	if not _dirty_set.has(attr_name) and _cache.has(attr_name):
 		return _cache[attr_name] as AttributeBreakdown
@@ -288,7 +288,6 @@ func add_modifier(modifier: AttributeModifier) -> void:
 	_mark_dirty(modifier.attribute_name)
 
 	_solve_dynamic_deps()
-	_reclamp_resources()
 	_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 
 
@@ -308,7 +307,6 @@ func remove_modifier(modifier_id: String) -> bool:
 			_mark_dirty(attr_name)
 
 			_solve_dynamic_deps()
-			_reclamp_resources()
 			_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 			return true
 	return false
@@ -345,9 +343,8 @@ func remove_modifiers_by_source(source: String) -> int:
 	# 清空 source 索引
 	_source_index.erase(source)
 
-	# 求解动态依赖 + 资源重 clamp + 批量通知
+	# 求解动态依赖 + 批量通知（资源读值随上限变化，由快照对比发出通知）
 	_solve_dynamic_deps()
-	_reclamp_resources()
 	_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 
 	return count
@@ -365,7 +362,6 @@ func update_modifier(modifier_id: String, new_value: float) -> bool:
 				mod.value = new_value
 				_mark_dirty(attr_name)
 				_solve_dynamic_deps()
-				_reclamp_resources()
 				_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 				return true
 	return false
@@ -398,11 +394,10 @@ func remove_all_change_listeners() -> void:
 
 ## 按 config 定义属性（生成 set 的 _init 走这里）。key 顺序即属性定义顺序。
 ## 每项：{ "baseValue", "minValue"?, "maxValue"? }，或资源 { "kind": "resource", "baseValue", "minValue"?, "maxRef"? }。
-## 收尾按 maxRef 把资源 clamp 一次（config 里资源初值高于上限时）。定义不发通知。
+## config 里资源初值高于上限时由读取封顶（存值保留）。定义不发通知。
 func apply_config(config: Dictionary) -> void:
 	for attr_name in config.keys():
 		_define_from_config(str(attr_name), config[attr_name] as Dictionary)
-	_reclamp_resources()
 
 func on_attribute_changed(attr_name: String, callback: Callable) -> Callable:
 	var filtered_listener := func(event: Dictionary) -> void:
@@ -442,7 +437,6 @@ func register_dynamic_dep(
 	# 立即求解：否则新增的 dep 要等到下一次 add/remove/update modifier 才会生效，
 	# 典型场景（先 add_modifier 再 register_dynamic_dep 再 get_current_value）会读到未求解的 0 值。
 	_solve_dynamic_deps()
-	_reclamp_resources()
 
 
 ## 取消注册动态依赖
@@ -463,14 +457,14 @@ static func restore_attributes(data: Dictionary) -> RawAttributeSet:
 	return RawAttributeSet.deserialize(data)
 
 
-## stat → { "base", "modifiers" }；resource → { "kind": "resource", "value" }。按定义顺序。
+## stat → { "base", "modifiers" }；resource → { "kind": "resource", "value" }（value 是封顶后的读值）。按定义顺序。
 func serialize() -> Dictionary:
 	var result := {}
 	for attr_name in _attribute_names:
 		if _resource_values.has(attr_name):
 			result[attr_name] = {
 				"kind": RESOURCE_KIND,
-				"value": float(_resource_values[attr_name]),
+				"value": _resource_current(attr_name),
 			}
 			continue
 		var mods := _get_modifiers_typed(attr_name)
@@ -546,14 +540,14 @@ func _clamp_resource(attr_name: String, value: float) -> float:
 	return minf(clamped, get_current_value(max_ref))
 
 
-## stat 入口方法收尾：所有资源按 max_ref 当前值重 clamp（max_hp 下降拉低 hp）。
-## 不发通知——调用方随后的 _notify_changes 按 before 快照统一发，顺序与 stat 一致。
-func _reclamp_resources() -> void:
-	for attr_name in _resource_values.keys():
-		var value := float(_resource_values[attr_name])
-		var clamped := _clamp_resource(attr_name, value)
-		if clamped != value:
-			_resource_values[attr_name] = clamped
+## 资源读值：存值按 max_ref 当前值封顶，不改存值（max_hp 下降拉低 hp，回升后读值恢复）。
+## stat 入口方法不碰资源存值：上限变化引起的 hp 通知由它们的 before / after 快照对比发出，顺序与 stat 一致。
+func _resource_current(attr_name: String) -> float:
+	var value := float(_resource_values[attr_name])
+	var max_ref: String = _resource_max_refs.get(attr_name, "")
+	if max_ref == "" or not has_attribute(max_ref):
+		return value
+	return minf(value, get_current_value(max_ref))
 
 
 func _dispatch_event(event: Dictionary) -> void:

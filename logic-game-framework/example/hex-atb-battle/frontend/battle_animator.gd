@@ -5,7 +5,7 @@
 ## 死亡动画。不拥有 unit view 生命周期 —— 战斗结束时 WorldGI 里 actor 已是
 ## 终态，animator 只负责让视觉追上该终态。
 ##
-## 详见 docs/README.md（World owns Battle + 响应式前端 节）
+## 详见 addon 根 CLAUDE.md「World owns Battle」。
 class_name FrontendBattleAnimator
 extends Node3D
 

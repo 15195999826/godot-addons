@@ -10,7 +10,7 @@
 ## 与 SkillPreviewWorldGI 范式一致: 每个独立场景拥有自己的 GI 子类,
 ## 框架类 HexWorldGameplayInstance 保持通用不含 demo hardcode。
 ##
-## 详见 docs/README.md（World owns Battle + 响应式前端 节）。
+## 详见 addon 根 CLAUDE.md「World owns Battle」。
 class_name HexDemoWorldGameplayInstance
 extends HexWorldGameplayInstance
 

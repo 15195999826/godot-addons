@@ -9,7 +9,7 @@
 ##
 ## Action 内的状态变更是原子操作：
 ## - push(event) 只是记录事件，不触发任何状态变更
-## - 状态变更（如 modify_hp）由 Action 自己完成
+## - 状态变更（如 attribute_set.add_hp）由 Action 自己完成
 ## - flush() 在帧结束时调用，将事件交给录像/表演层
 ##
 ## ========== 获取事件的两种方式 ==========
@@ -27,7 +27,7 @@
 ## var damage_event: Dictionary = ctx.event_collector.push(event.to_dict())
 ## 
 ## # 立即应用状态（原子操作）
-## target_actor.modify_hp(-damage)
+## target_actor.attribute_set.add_hp(-damage)
 ## ```
 ##
 ## @example 在 tick 结束时收集事件
