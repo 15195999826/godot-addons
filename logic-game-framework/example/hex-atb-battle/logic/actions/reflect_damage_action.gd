@@ -52,8 +52,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var attacker_id := targets[0]
 	var owner_actor_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 	var battle := HexBattleGameStateUtils.world(ctx)
-	var alive_actor_ids := battle.get_alive_actor_ids()
-	
+
 	var owner_name := HexBattleGameStateUtils.get_actor_display_name(owner_actor_id, battle)
 	var attacker_name := HexBattleGameStateUtils.get_actor_display_name(attacker_id, battle)
 	var damage_type_str := BattleEvents._damage_type_to_string(_damage_type)
@@ -64,12 +63,12 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		attacker_id, _damage, _damage_type, owner_actor_id, false, true
 	)
 	var damage_result := HexBattleDamageUtils.apply_damage(
-		event, alive_actor_ids, ctx, battle,
+		event, ctx, battle,
 	)
 	
 	# ========== Post damage 广播 ==========
 	HexBattleDamageUtils.broadcast_post_damage(
-		damage_result.damage_event_dict, alive_actor_ids, battle,
+		damage_result.damage_event_dict, battle,
 	)
 	
 	return ActionResult.create_success_result(

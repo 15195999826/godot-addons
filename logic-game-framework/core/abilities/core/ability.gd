@@ -43,6 +43,9 @@ var _effects_active: bool = false
 var _execution_instances: Array[AbilityExecutionInstance] = []
 var _on_triggered_callbacks: Array[Callable] = []
 var _on_execution_callbacks: Array[Callable] = []
+## 注册在 owner 所属 EventProcessor 上的 post handler 的注销闭包：apply_effects 注册、remove_effects 注销。
+## 闭包持有 processor（ability → processor，与 instance → processor 同向）；processor 那头的 handler 只带 id，不回指本 ability。
+var _post_unregisters: Array[Callable] = []
 
 ## Phase B2 (Break) — passive disabled-source 引用计数。
 ##
@@ -160,14 +163,16 @@ func cancel_all_executions() -> void:
 			instance.cancel()
 	_execution_instances = []
 
-func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> void:
+## 把事件交给全部 active component（trigger 在各 component 的 on_event 里匹配）；返回是否有 component 被触发。
+## 两条入口：post 派发经本 ability 注册的 handler 进来，定向投递经 AbilitySet.receive_event 进来。
+func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if _state == STATE_EXPIRED:
-		return
+		return false
 	# Phase B2 (Break) 顶层短路: disabled passive ability 不派发事件给 NoInstanceComponent
 	# triggered passive (Thorn / Deathrattle 等), 也不进 ActiveUseComponent 的 cond/cost 链路。
 	# 这样 Break 不需要 NoInstanceComponent / ActivateInstanceComponent 自行实现 break hook。
 	if is_disabled():
-		return
+		return false
 	var triggered_components: Array[String] = []
 	for comp in _components:
 		if not comp.is_active():
@@ -178,6 +183,7 @@ func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> 
 		for callback in _on_triggered_callbacks:
 			if callback.is_valid():
 				callback.call(event_dict, triggered_components)
+	return not triggered_components.is_empty()
 
 
 ## 激活门的纯查询干跑（零副作用、可重入）：本 Ability 现在能否通过 ActiveUse 激活门。
@@ -249,7 +255,7 @@ func get_disabled_source_count() -> int:
 func _notify_components_disabled() -> void:
 	if not _effects_active:
 		return
-	var ctx := _build_remove_context()
+	var ctx := AbilityLifecycleContext.for_ability(self)
 	for component in _components:
 		if component.is_active():
 			component.on_passive_disabled(ctx)
@@ -258,7 +264,7 @@ func _notify_components_disabled() -> void:
 func _notify_components_enabled() -> void:
 	if not _effects_active:
 		return
-	var ctx := _build_remove_context()
+	var ctx := AbilityLifecycleContext.for_ability(self)
 	for component in _components:
 		if component.is_active():
 			component.on_passive_enabled(ctx)
@@ -277,38 +283,55 @@ func apply_effects(context: AbilityLifecycleContext) -> void:
 	_effects_active = true
 	for component in _components:
 		component.on_apply(context)
+	_register_post_handlers(context.event_processor)
 
+## on_remove / 叠层 / Break 钩子的 context 由 AbilityLifecycleContext.for_ability 按 owner id 反查建出。
+## 先注销 post handler：移除中的 ability 不再响应 on_remove 期间派发的事件。
 func remove_effects() -> void:
 	if not _effects_active:
 		return
 	_effects_active = false
-	var context := _build_remove_context()
+	for unregister in _post_unregisters:
+		unregister.call()
+	_post_unregisters.clear()
+	var context := AbilityLifecycleContext.for_ability(self)
 	for component in _components:
 		component.on_remove(context)
 	_on_triggered_callbacks.clear()
 	_on_execution_callbacks.clear()
 
 
-## 构造 on_remove / 叠层 / Break 钩子用的 lifecycle context（这几条路径手上没有 AbilitySet 递来的 context）。
-##
-## 与 grant / 事件派发同一种找法：instance 按 owner_actor_id 反查，actor 从该 instance 取，
-## attribute_set / ability_set 取自 actor；event_processor 随 instance 派生。
-##
-## 若 owner 未注册到 GameWorld（如隔离单元测试）或不是 BattleActor，instance / attribute_set /
-## ability_set 为 null —— 对 no-op 的 on_remove（如 PreEventComponent / TestComponent）
-## 完全不影响；对会读取这些字段的 component（StatModifier / Tag / DynamicStatModifier），
-## 测试须注册 mock actor。
-func _build_remove_context() -> AbilityLifecycleContext:
-	var owner_instance := GameWorld.get_instance_of_actor(owner_actor_id)
-	var actor: BattleActor = null
-	if owner_instance != null:
-		actor = owner_instance.get_actor(owner_actor_id) as BattleActor
-	var attr_set: BaseGeneratedAttributeSet = null
-	var ab_set: AbilitySet = null
-	if actor != null:
-		attr_set = actor.get_attribute_set()
-		ab_set = actor.get_ability_set()
-	return AbilityLifecycleContext.new(owner_actor_id, attr_set, self, ab_set, owner_instance)
+## 按 component 声明的 kind（去掉定向投递 kind）各注册一条 post handler，派发时经 receive_event 交给全部 component。
+## owner 未注册进 GameWorld（孤立单测）时 context 没有 processor：不注册，这样的 ability 只收得到 AbilitySet 的定向投递。
+func _register_post_handlers(processor: EventProcessor) -> void:
+	if processor == null:
+		return
+	var kinds: Array[String] = []
+	for component in _components:
+		for kind in component.get_post_event_kinds():
+			if not kinds.has(kind) and not EventProcessor.DIRECT_DELIVERY_KINDS.has(kind):
+				kinds.append(kind)
+	for kind in kinds:
+		var registration := PostHandlerRegistration.new(
+			"%s_post_%s" % [id, kind],
+			kind,
+			owner_actor_id,
+			id,
+			config_id,
+			_make_post_handler(owner_actor_id, id),
+			display_name
+		)
+		_post_unregisters.append(processor.register_post_handler(registration))
+
+
+## post handler 在 static 上下文里建：没有 self 可捕获，lambda 只带 owner / ability 两个 id，派发时按 id 取回 ability。
+## 捕获本 ability（或它的 component / context）就接上 ability → _post_unregisters → processor → registration → handler → ability 的环。
+static func _make_post_handler(owner_id: String, ability_id: String) -> Callable:
+	return func(event_dict: Dictionary, _handler_context: HandlerContext) -> bool:
+		var context := AbilityLifecycleContext.rebuild_for_handler(owner_id, ability_id, event_dict, EventPhase.PHASE_POST)
+		if context == null:
+			return false
+		return context.ability.receive_event(event_dict, context)
 
 func expire(reason: String) -> void:
 	if _state == STATE_EXPIRED:
@@ -384,13 +407,13 @@ func set_stacks(count: int) -> void:
 ## §0.X: 触发所有 component.on_stacks_changed 钩子。
 ##
 ## reentrance guard: hook 内不允许再调 add/remove/set_stacks 否则 assert。
-## 构造与 on_apply / on_remove 同款 lifecycle context (走 GameWorld 取 actor)。
+## context 与 on_remove 同款（AbilityLifecycleContext.for_ability，按 owner id 反查）。
 func _notify_stacks_changed(old_stacks: int, new_stacks: int) -> void:
 	Log.assert_crash(not _notifying_stacks_changed,
 		"Ability",
 		"on_stacks_changed re-entry detected; hook must not call add/remove/set_stacks")
 	_notifying_stacks_changed = true
-	var context := _build_remove_context()  # 复用同款 context build (走 GameWorld 取 actor)
+	var context := AbilityLifecycleContext.for_ability(self)
 	for component in _components:
 		component.on_stacks_changed(context, old_stacks, new_stacks)
 	_notifying_stacks_changed = false

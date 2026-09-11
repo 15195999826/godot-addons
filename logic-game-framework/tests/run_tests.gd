@@ -23,6 +23,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/events/event_processor_test.gd",
 	"res://addons/logic-game-framework/tests/core/events/mutable_event_test.gd",
 	"res://addons/logic-game-framework/tests/core/events/pre_event_component_test.gd",
+	"res://addons/logic-game-framework/tests/core/events/post_event_dispatch_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_execution_instance_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/activate_instance_component_test.gd",

@@ -60,3 +60,46 @@ func _notification(what: int) -> void:
 ## 当前存活的实例数。
 static func get_live_count() -> int:
 	return _live_count
+
+
+## 为 on_remove / 叠层 / Break 钩子建 context：手上有 ability、没有 AbilitySet 递来的 context。
+##
+## 与 handler 重建同一种找法：instance 按 owner id 反查，actor 从该 instance 取，两个 set 取自 actor。
+## owner 未注册进 GameWorld（隔离单测）或不是 BattleActor 时 instance / attribute_set / ability_set 为 null，
+## context 照建——清理类钩子不能因为 owner 缺席就不跑；会读这些字段的 component（StatModifier / Tag /
+## DynamicStatModifier）要求测试注册 owner。
+static func for_ability(ability: Ability) -> AbilityLifecycleContext:
+	var owner_id := ability.owner_actor_id
+	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
+	var actor: BattleActor = null
+	if owner_instance != null:
+		actor = owner_instance.get_actor(owner_id) as BattleActor
+	return _from_actor(owner_id, ability, actor, owner_instance)
+
+
+## 为 pre / post handler 按 id 重建 context（handler 闭包只带 id，不带 ability / context）。
+##
+## 返回 null = 本 handler 这一次不执行：owner 未注册或已移出 instance、owner 此刻不响应这条事件
+## （is_event_responsive 返回 false）、不是 BattleActor 或没有 AbilitySet、ability 已不在 owner 的 AbilitySet 里
+## （revoke 之后残留的注册）。
+static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict: Dictionary, phase: String) -> AbilityLifecycleContext:
+	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
+	if owner_instance == null:
+		return null
+	var actor := owner_instance.get_actor(owner_id)
+	if actor == null or not actor.is_event_responsive(event_dict, phase):
+		return null
+	var owner_ability_set := BattleActor.ability_set_of(actor)
+	if owner_ability_set == null:
+		return null
+	var ability := owner_ability_set.find_ability_by_id(ability_id)
+	if ability == null:
+		return null
+	return _from_actor(owner_id, ability, actor as BattleActor, owner_instance)
+
+
+## 按 owner 反查的两个工厂共用的装配：两个 set 一律取自 actor。
+static func _from_actor(owner_id: String, ability: Ability, actor: BattleActor, owner_instance: GameplayInstance) -> AbilityLifecycleContext:
+	if actor == null:
+		return AbilityLifecycleContext.new(owner_id, null, ability, null, owner_instance)
+	return AbilityLifecycleContext.new(owner_id, actor.get_attribute_set(), ability, actor.get_ability_set(), owner_instance)

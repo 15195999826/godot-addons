@@ -116,7 +116,7 @@ TargetSelector.fixed([actor_ref1, actor_ref2])
 
 #### 找 instance 只有一种方式
 
-instance 一律按 owner 的 actor id 反查（`GameWorld.get_instance_of_actor(actor_id)`，与 `Actor.get_owner_gameplay_instance()` 同一「id 自描述归属」机制），**不经调用链递、不缓存**：AbilitySet 的派发 / grant / `can_activate` 查询、`Ability` 的 on_remove / 叠层 / Break 钩子、`PreEventComponent` 的重建 context、`AbilityExecutionInstance` 每次建的 ExecutionContext（含 revoke / expire 触发的取消）、`NoInstanceComponent` 的事件与 lifecycle action 都走这一条。owner 未注册进 GameWorld（孤立单测、`create_instance` 注册之前的 grant）时为 `null`。
+instance 一律按 owner 的 actor id 反查（`GameWorld.get_instance_of_actor(actor_id)`，与 `Actor.get_owner_gameplay_instance()` 同一「id 自描述归属」机制），**不经调用链递、不缓存**：AbilitySet 的定向投递 / grant / `can_activate` 查询、on_remove / 叠层 / Break 钩子（`AbilityLifecycleContext.for_ability`）、pre / post handler 的重建 context（`AbilityLifecycleContext.rebuild_for_handler`）、`AbilityExecutionInstance` 每次建的 ExecutionContext（含 revoke / expire 触发的取消）、`NoInstanceComponent` 的事件与 lifecycle action 都走这一条。owner 未注册进 GameWorld（孤立单测、`create_instance` 注册之前的 grant）时为 `null`。
 
 #### 推荐做法：必须有世界的读点经项目的 `world(ctx)` helper
 
@@ -142,12 +142,11 @@ func execute(ctx: ExecutionContext) -> ActionResult:
     # 必须有世界：经项目 helper 收窄（hex 的 world(ctx) 返回 HexWorldGameplayInstance）
     var battle := HexBattleGameStateUtils.world(ctx)
     var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
-    var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()  # 业务逻辑之前快照：本次被击杀的目标仍是 Post 观众
 
     # ... 业务逻辑
 
-    # Post 阶段：事件设施归 instance；EventProcessor 通过 GameWorld.get_actor() + BattleActor.ability_set_of() 获取 AbilitySet
-    battle.event_processor.process_post_event(damage_event, alive_actor_ids)
+    # Post 阶段：事件设施归 instance；观众是按 trigger kind 订阅了这类事件的 ability，被击杀的目标还响应不响应由它的 is_event_responsive 决定
+    battle.event_processor.process_post_event(damage_event)
 
 # 允许在没有世界时静默降级的读点，基类隐式下转后判空：
 #   var battle: HexWorldGameplayInstance = ctx.instance
@@ -220,7 +219,6 @@ DamageAction.execute()
 func execute(ctx: ExecutionContext) -> ActionResult:
     var battle := HexBattleGameStateUtils.world(ctx)
     var event_processor := battle.event_processor  # 事件设施归所属 instance，不在 GameWorld 上
-    var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()
 
     for target in targets:
         # ========== Pre 阶段 ==========
@@ -244,11 +242,11 @@ func execute(ctx: ExecutionContext) -> ActionResult:
             if target_actor.check_death():
                 var death_event := BattleEvents.DeathEvent.create(target.id, source_id)
                 ctx.event_collector.push(death_event.to_dict())
-                event_processor.process_post_event(death_event, alive_actor_ids)
+                event_processor.process_post_event(death_event)
                 battle.remove_actor(target.id)
 
         # ========== Post 阶段 ==========
-        event_processor.process_post_event(damage_event, alive_actor_ids)
+        event_processor.process_post_event(damage_event)
 
     return ActionResult.create_success_result(all_events, { "damage": _damage })
 ```
@@ -643,10 +641,10 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 
 框架演进中固化下来的不可违反约束（蒸馏自历史架构决策，违反会重新引入已根治的 bug）：
 
-- **Ability lifecycle hook**：`is_pre_event_responsive()` 是中性钩子，`Actor` 恒 `true`、不含任何领域语义。`BattleActor` 作为 **opt-in** 的战斗基类只提供一个默认答案（`not is_dead()`），项目层照旧 override 说了算 —— 想让亡语在死后再吃一次 PreEvent，覆盖回 `true` 即可。核心约束不变：框架不代管亡语的 `alive_actor_ids` 时序契约，`check_death` 只按 hp 锁存一次，"留尸体还是 tick 末移除"是项目层决定。
-- **Ability 状态不随死亡清除**：死亡时绝不 `revoke_ability`（那会清掉冷却 / execution / modifier，破坏复活语义）。三层分离 —— Ability 本体跟 actor 永存、PreEvent handler 跟战斗走（`end()` 时 `remove_handlers_by_owner_id`）、运行时响应跟 `is_dead` 状态走。
+- **事件响应钩子：观众由注册决定，死活由 actor 决定**：post 事件只送达订阅了它的 ability——`Ability.apply_effects` 按 component 的 trigger kind 注册、`remove_effects` 注销，`process_post_event(event_dict)` 没有观众参数；pre / post handler 按 owner 重建 context 之前都先问 `is_event_responsive(event_dict, phase)`。这个钩子是中性的，`Actor` 恒 `true`、不含任何领域语义；`BattleActor` 作为 **opt-in** 的战斗基类只提供一个默认答案（`not is_dead()`），项目层 override 说了算 —— hex 让死者仍响应自己的 death（亡语）与自己作为 target 的 damage（致死一击的荆棘）。激活请求与 grant 自投递是定向投递（`EventProcessor.DIRECT_DELIVERY_KINDS`，只经 `AbilitySet.receive_event`），不注册、不走 post 派发、也不问这个钩子。`check_death` 只按 hp 锁存一次，"留尸体还是 tick 末移除"是项目层决定。
+- **Ability 状态不随死亡清除**：死亡时绝不 `revoke_ability`（那会清掉冷却 / execution / modifier，破坏复活语义）。三层分离 —— Ability 本体跟 actor 永存、pre / post handler 注册跟 ability 效果与 registry 走（`remove_effects` / `remove_actor` 注销，`end()` 时 `remove_all_handlers` 清空）、运行时响应跟 `is_event_responsive` 走。
 - **Config 驱动跨属性 clamp**：跨属性约束（如 hp ≤ max_hp）必须声明在 attribute config 的 `maxRef` / `minRef`、由生成器产出 `register_cross_attr_clamp` 调用；**禁止**在 Actor 里用 `set_pre_change` 注入 Callable —— lambda 捕获 owner 会形成无法 GC 的闭包循环。
-- **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 String id 或 `WeakRef`（`AbilityComponent._ability_ref` / `System._instance_ref` / `BattleProcedure._world`）；`BattleProcedure` 子类要具体世界类型就协变覆盖 `_get_world()`，不另存 world 字段（`world._active_battle` 强持 procedure，强回指即成环），procedure 持有的对象也只经调用参数拿 world；需要所属 instance 时按 owner id 反查（`GameWorld.get_instance_of_actor`），**不**在 AbilitySet / Ability / execution 上绑引用。context 对象（`ExecutionContext` / `AbilityLifecycleContext`）携带 `instance` 强引用，只许活在调用栈上、永不存进字段；`execution_state` 被 execution 强持有，同样不许放 instance / actor 这类 owning Object；既有的 `RecordingContext._recorder` 强引用靠 `BattleRecorder.stop_recording` / `abort_recording`（world 结束时由 `BattleProcedure.abort` 调）退订全部订阅闭包来打断；instance 自持的 `EventProcessor` / `EventCollector` 不回指 instance —— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
+- **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 String id 或 `WeakRef`（`AbilityComponent._ability_ref` / `System._instance_ref` / `BattleProcedure._world`）；`BattleProcedure` 子类要具体世界类型就协变覆盖 `_get_world()`，不另存 world 字段（`world._active_battle` 强持 procedure，强回指即成环），procedure 持有的对象也只经调用参数拿 world；需要所属 instance 时按 owner id 反查（`GameWorld.get_instance_of_actor`），**不**在 AbilitySet / Ability / execution 上绑引用。context 对象（`ExecutionContext` / `AbilityLifecycleContext`）携带 `instance` 强引用，只许活在调用栈上、永不存进字段；`execution_state` 被 execution 强持有，同样不许放 instance / actor 这类 owning Object；既有的 `RecordingContext._recorder` 强引用靠 `BattleRecorder.stop_recording` / `abort_recording`（world 结束时由 `BattleProcedure.abort` 调）退订全部订阅闭包来打断；instance 自持的 `EventProcessor` / `EventCollector` 不回指 instance，processor 上的 pre / post handler 闭包只捕获 id（post handler 在 static 上下文里建，拿不到 Ability / Component / context）—— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
 - **测试引擎按场景独立**：两种场景生命周期语义冲突（headless 的 shutdown 清场 vs UI 常驻 world）时各写一条 procedure（`SkillPreviewProcedure` vs `HexBattleProcedure`），而非硬塞兼容签名进一条引擎 —— 兼容参数会把 API 撑胖成坑。
 - **View 是 state 的 reactive projection**：前端只能 `bind_world` + 订阅 mutation signal（`actor_added` / `actor_removed` / `grid_configured`）自动同步，**禁止任何 destructive 的 view 重建 API**（历史反例：已删除的 `FrontendBattleReplayScene.load_replay`）；且只订阅生命周期 / 结构变化，属性变化（HP / tag）交给 timeline 驱动的 Animator。
 - **Playback 不重建逻辑层**：A 层"录像播放"（`Playback`）只从录像 dict spawn 视觉 view、绝不 hydrate 真 Actor / AbilitySet / AttributeSet；B 层"回放"（`Replay`，deterministic 重算）未来不一定做，相关类名仅作命名占位。

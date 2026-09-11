@@ -31,12 +31,7 @@ static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_
 ## Phase A · 普攻命中后 emit BasicAttackLandedEvent.
 ## 挂在主 damage action 的 on_hit chain。
 ## callback ctx 已携带主 damage event dict; cancelled / dead-target 由 DamageAction 上游 skip,
-## 这里不会被复触发。事件 push 到 event_collector + broadcast 给存活 actor 以触发被动.
-##
-## alive_actor_ids 用 fresh fetch (不复用父 DamageAction 的 stale snapshot): 若 target 在
-## 本次 hit 被打死, fresh list 会自动排除 target —— basic_attack_landed broadcast 不去打扰已死的
-## actor 是更符合"基础攻击命中"语义的选择. (broadcast_post_damage 沿用 stale 是 LGF 框架既定
-## 约定, 二者不强求一致.) 当前 attacker 侧 lifesteal 监听, attacker 必在 fresh list.
+## 这里不会被复触发。事件 push 到 event_collector + post 派发以触发被动 (当前是 attacker 侧 lifesteal).
 class _EmitBasicAttackLandedAction:
 	extends Action.SkillLocalAction
 
@@ -77,9 +72,7 @@ class _EmitBasicAttackLandedAction:
 		)
 		var event_dict: Dictionary = ctx.event_collector.push(event.to_dict())
 
-		var alive_actor_ids := battle.get_alive_actor_ids()
-		if alive_actor_ids.size() > 0:
-			battle.event_processor.process_post_event(event_dict, alive_actor_ids)
+		battle.event_processor.process_post_event(event_dict)
 
 		return ActionResult.create_success_result(
 			[event_dict],

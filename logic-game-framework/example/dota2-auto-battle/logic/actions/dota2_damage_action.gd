@@ -4,7 +4,7 @@
 ## AttackTargetIntent **不**直接掉血。本 Action 由 Dota2BasicAttackAbility 的 Timeline
 ## 在 attack point tag 处触发：
 ##   pre_damage（buff/passive hook，M1 handler 空）→ 应用伤害（原子：扣 hp + push 事件）
-##   → attack_landed / damage_applied →（若致死）unit_died → post_damage 广播
+##   → attack_landed / damage_applied →（若致死）unit_died → post_damage 派发
 ##
 ## M1 简化：伤害 = attacker.attribute_set.attack_damage（无 armor 公式，见
 ## README.md（Actor 与属性 节） armor 待定）。与 hex damage_action 同构。
@@ -37,7 +37,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var event_processor: EventProcessor = world.event_processor
 	var event_collector: EventCollector = ctx.event_collector
 	var all_events: Array[Dictionary] = []
-	var alive_actor_ids := world.get_alive_actor_ids()
 	var base_damage: float = attacker.attribute_set.attack_damage
 
 	for target_id in targets:
@@ -74,8 +73,8 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			event_collector.push(died)
 			all_events.append(died)
 
-		# ===== Post 阶段（thorns/lifesteal 等未来被动 hook；M1 广播即可）=====
+		# ===== Post 阶段（thorns/lifesteal 等未来被动 hook；M1 暂无订阅者）=====
 		var post_event := Dota2BattleEvents.make_post_damage(source_id, target_id, final_damage, hp_after)
-		event_processor.process_post_event(post_event, alive_actor_ids)
+		event_processor.process_post_event(post_event)
 
 	return ActionResult.create_success_result(all_events)

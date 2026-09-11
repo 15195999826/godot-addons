@@ -45,6 +45,14 @@ func on_tick(_dt: float) -> void:
 func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext) -> bool:
 	return false
 
+## 本 component 要从 post 派发（EventProcessor.process_post_event）接收的事件 kind（可选覆盖）。
+##
+## Ability.apply_effects 汇总全部 component 声明的 kind（定向投递 kind 除外），每种 kind 注册一条 post handler；
+## 事件到达后仍经 Ability.receive_event → on_event 按 trigger 过滤。覆盖了 on_event 却不声明 kind 的 component
+## 只收得到 AbilitySet.receive_event 的定向投递（激活请求 / grant 自投递）。
+func get_post_event_kinds() -> Array[String]:
+	return []
+
 ## 能力生效时调用（可选覆盖）
 func on_apply(_context: AbilityLifecycleContext) -> void:
 	pass
@@ -132,3 +140,12 @@ static func convert_triggers(configs: Array[TriggerConfig]) -> Array[Dictionary]
 			trigger_dict["filter"] = trigger.filter
 		result.append(trigger_dict)
 	return result
+
+## 触发器列表里去重后的 eventKind（按首次出现的顺序），供 get_post_event_kinds 覆盖使用
+static func trigger_event_kinds(triggers: Array[Dictionary]) -> Array[String]:
+	var kinds: Array[String] = []
+	for trigger in triggers:
+		var kind := str(trigger.get("eventKind", ""))
+		if kind != "" and not kinds.has(kind):
+			kinds.append(kind)
+	return kinds

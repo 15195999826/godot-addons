@@ -44,14 +44,15 @@
 ⑦ 对每个 broken=true 的消耗记录：
        push shield_broken event
        call ShieldComponent.on_break(record, ctx, battle)   ← 爆炸 / 治疗 / ...
-       ability.expire(EXPIRE_REASON_BROKEN)
+       ability_set.revoke_ability(shield_ability_id, REVOKE_REASON_EXPIRED, EXPIRE_REASON_BROKEN)   ← 当场移除，不等 owner 下一次 tick
   ↓
 ⑧ 死亡检测
        check_death() → push death_event
-                     → process_post_event(death_event)
+                     → process_post_event(death_event)   ← 死者仍响应自己的 death（亡语）
                      → remove_actor
   ↓
 ⑨ EventProcessor.process_post_event(damage_event)
+       派发给订阅了 damage 的 ability；被击杀的目标仍响应自己挨的这一击（HexBattleActor.is_event_responsive）
        反伤 / 吸血 / 受击 buff 在这里触发，过滤条件读 actual_life_damage
 ```
 

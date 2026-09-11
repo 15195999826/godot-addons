@@ -136,7 +136,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var battle := HexBattleGameStateUtils.world(ctx)
 	var event_processor := battle.event_processor
 	var all_events: Array[Dictionary] = []
-	var alive_actor_ids := battle.get_alive_actor_ids()
 	# 每次 execute 解析一次 base damage（同一次施法对所有目标使用同一数值）
 	var base_damage := _damage_resolver.resolve(ctx)
 
@@ -199,7 +198,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			target_id, final_damage, _damage_type, source_actor_id, is_critical, false
 		)
 		var damage_result := HexBattleDamageUtils.apply_damage(
-			event, alive_actor_ids, ctx, battle,
+			event, ctx, battle,
 		)
 		all_events.append_array(damage_result.all_events)
 
@@ -209,7 +208,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 		# ========== Post damage 广播 ==========
 		HexBattleDamageUtils.broadcast_post_damage(
-			damage_result.damage_event_dict, alive_actor_ids, battle,
+			damage_result.damage_event_dict, battle,
 		)
 
 	return ActionResult.create_success_result(all_events, { "damage": base_damage })

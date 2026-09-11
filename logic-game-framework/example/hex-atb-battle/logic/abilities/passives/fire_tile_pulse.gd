@@ -60,7 +60,6 @@ class _FireTilePulseAction:
 		if victims.is_empty():
 			return ActionResult.create_success_result([], { "pulse_skipped": "no_victim" })
 
-		var alive_ids := battle.get_alive_actor_ids()
 		var collected: Array[Dictionary] = []
 		for victim in victims:
 			var event := BattleEvents.DamageEvent.create(
@@ -71,13 +70,9 @@ class _FireTilePulseAction:
 				false,  # is_critical
 				false,  # is_reflected
 			)
-			var damage_result := HexBattleDamageUtils.apply_damage(
-				event, alive_ids, ctx, battle,
-			)
+			var damage_result := HexBattleDamageUtils.apply_damage(event, ctx, battle)
 			collected.append_array(damage_result.all_events)
-			HexBattleDamageUtils.broadcast_post_damage(
-				damage_result.damage_event_dict, alive_ids, battle,
-			)
+			HexBattleDamageUtils.broadcast_post_damage(damage_result.damage_event_dict, battle)
 		return ActionResult.create_success_result(collected, {
 			"fire_tile_pulse_victim_count": victims.size(),
 		})

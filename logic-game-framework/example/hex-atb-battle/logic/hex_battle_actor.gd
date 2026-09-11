@@ -46,6 +46,23 @@ func get_ability_set() -> BattleAbilitySet:
 	return ability_set
 
 
+# ========== 事件响应 ==========
+
+## 死者只对两类 post 事件保持响应：自己的 death（亡语在死后触发）与自己作为 target 的 damage
+## （致死一击的荆棘照样反伤）。其余 post 事件与全部 pre 事件照 BattleActor 默认，死后不响应。
+func is_event_responsive(event_dict: Dictionary, phase: String) -> bool:
+	if not is_dead():
+		return true
+	if phase != EventPhase.PHASE_POST:
+		return false
+	var kind := str(event_dict.get("kind", ""))
+	if kind == BattleEvents.DEATH_EVENT:
+		return str(event_dict.get("actor_id", "")) == get_id()
+	if kind == BattleEvents.DAMAGE_EVENT:
+		return str(event_dict.get("target_actor_id", "")) == get_id()
+	return false
+
+
 # ========== 录像支持 ==========
 
 ## 位置覆盖: 用 hex 坐标作为 Vector3 (q, r, 0); 渲染层按 configs.positionFormats 解释。

@@ -122,7 +122,7 @@ func _test_mark_dead() -> void:
 	TestFramework.assert_true(actor.mark_dead())
 	TestFramework.assert_true(actor.is_dead())
 	TestFramework.assert_false(actor.mark_dead(), "已死再标记不应报首次")
-	TestFramework.assert_false(actor.is_pre_event_responsive(), "死者不再响应 PreEvent")
+	TestFramework.assert_false(actor.is_event_responsive({}, EventPhase.PHASE_PRE), "死者不再响应 PreEvent")
 
 
 ## 复活是项目层规则, core 只提供解闩入口 (否则项目层只能直写基类私有字段)。
@@ -132,7 +132,7 @@ func _test_set_death_latch() -> void:
 	TestFramework.assert_true(actor.is_dead())
 	actor.set_death_latch(false)
 	TestFramework.assert_false(actor.is_dead())
-	TestFramework.assert_true(actor.is_pre_event_responsive())
+	TestFramework.assert_true(actor.is_event_responsive({}, EventPhase.PHASE_PRE))
 	TestFramework.assert_true(actor.mark_dead(), "解闩后再死应重新算首次")
 
 
@@ -145,7 +145,7 @@ func _test_data_actor_null_safe() -> void:
 	TestFramework.assert_false(actor.has_hp())
 	TestFramework.assert_near(actor.get_current_hp(), 0.0)
 	TestFramework.assert_false(actor.check_death())
-	TestFramework.assert_true(actor.is_pre_event_responsive())
+	TestFramework.assert_true(actor.is_event_responsive({}, EventPhase.PHASE_PRE))
 	TestFramework.assert_true(actor.get_attribute_snapshot().is_empty())
 	TestFramework.assert_true(actor.get_ability_snapshot().is_empty())
 	TestFramework.assert_true(actor.get_tag_snapshot().is_empty())

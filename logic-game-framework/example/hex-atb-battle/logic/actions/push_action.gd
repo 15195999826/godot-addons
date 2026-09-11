@@ -230,9 +230,6 @@ func _grant_displacement_action_lock(
 ## Contract: deterministic, no crit, no PreDamage modifier.
 ## 仍走 HexBattleDamageUtils.apply_damage / broadcast_post_damage,
 ## 因此 ShieldComponent / death / post-damage thorns 都正常生效。
-##
-## alive_actor_ids 在每次调用时重新拉取: 第一次 broadcast 可能击杀 target,
-## 第二次 (blocker damage) 不能用 stale list, 否则 thorns / post-death 监听器漏触发。
 func _push_collision_damage(
 	target_id: String,
 	amount: float,
@@ -240,7 +237,6 @@ func _push_collision_damage(
 	ctx: ExecutionContext,
 	battle: HexWorldGameplayInstance,
 ) -> Array[Dictionary]:
-	var alive_actor_ids := battle.get_alive_actor_ids()
 	var damage_event := BattleEvents.DamageEvent.create(
 		target_id,
 		amount,
@@ -249,10 +245,6 @@ func _push_collision_damage(
 		false,  # is_critical
 		false   # is_reflected
 	)
-	var damage_result := HexBattleDamageUtils.apply_damage(
-		damage_event, alive_actor_ids, ctx, battle
-	)
-	HexBattleDamageUtils.broadcast_post_damage(
-		damage_result.damage_event_dict, alive_actor_ids, battle
-	)
+	var damage_result := HexBattleDamageUtils.apply_damage(damage_event, ctx, battle)
+	HexBattleDamageUtils.broadcast_post_damage(damage_result.damage_event_dict, battle)
 	return damage_result.all_events

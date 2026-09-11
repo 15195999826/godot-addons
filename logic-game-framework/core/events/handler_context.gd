@@ -1,9 +1,9 @@
 ## HandlerContext - 处理器上下文
 ##
-## 传递给 Pre 阶段处理器的上下文信息：处理器所属的 owner / ability / config 的 id。
-## 只携带 id、不携带 instance：PreEventConfig 的用户 handler 拿到的是按 owner 重建的
-## AbilityLifecycleContext（含 instance）；直接注册 PreHandlerRegistration 的底层 handler
-## 需要世界状态时按 owner_id 反查。
+## 传递给 Pre / Post 阶段处理器的上下文信息：处理器所属的 owner / ability / config 的 id。
+## 由注册（PreHandlerRegistration / PostHandlerRegistration）构造时建好、每次派发复用，handler 不要改它。
+## 只携带 id、不携带 instance：PreEventConfig 的用户 handler 与 Ability 注册的 post handler 都按 owner
+## 重建 AbilityLifecycleContext（含 instance）；直接注册底层 handler 需要世界状态时按 owner_id 反查。
 ##
 ## ========== 使用示例 ==========
 ##

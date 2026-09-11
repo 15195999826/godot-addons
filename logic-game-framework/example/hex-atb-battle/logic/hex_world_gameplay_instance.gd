@@ -104,16 +104,6 @@ func get_ability_set_for_actor(actor_id: String) -> BattleAbilitySet:
 	return null
 
 
-## 获取所有存活角色的 ID 列表 (用于 EventProcessor.process_post_event)。
-## 隔离边界: 仅返回 character; environment 不响应 PostEvent 广播。
-func get_alive_actor_ids() -> Array[String]:
-	var result: Array[String] = []
-	for actor in get_actors():
-		if actor is CharacterActor and not (actor as CharacterActor).is_dead():
-			result.append(actor.get_id())
-	return result
-
-
 ## 获取所有存活角色对象 (供 AI strategy / scenario / scripting 使用)。
 ## 隔离边界: 仅返回 CharacterActor, 不含 environment。
 func get_alive_actors() -> Array[CharacterActor]:
@@ -175,8 +165,8 @@ func _build_actor_snapshot(actor: HexBattleActor) -> Dictionary:
 	}
 
 
-## 把 ProjectileSystem.tick 产生的投射物事件 (HIT/MISS) 广播给所有存活 actor
-## 触发被动 handler。从 event_collector.collect() 只读快照,不 flush ——
+## 把 ProjectileSystem.tick 产生的投射物事件 (HIT/MISS) 逐条 post 派发,
+## 触发订阅了它们的被动 handler。从 event_collector.collect() 只读快照,不 flush ——
 ## 剩余事件由 procedure 的 record_current_frame_events 统一写录像。
 ##
 ## 服务 BattleProcedure 子类(HexBattleProcedure / SkillPreviewProcedure)的 tick_once,
@@ -185,11 +175,10 @@ func broadcast_projectile_events() -> void:
 	var events := event_collector.collect()
 	if events.is_empty():
 		return
-	var alive_ids := get_alive_actor_ids()
 	for event in events:
 		var kind: String = event.get("kind", "")
 		if kind == ProjectileEvents.PROJECTILE_HIT_EVENT or kind == ProjectileEvents.PROJECTILE_MISS_EVENT:
-			event_processor.process_post_event(event, alive_ids)
+			event_processor.process_post_event(event)
 
 
 ## 判断 actor 能否对 target 使用 skill。

@@ -8,11 +8,11 @@ extends Node
 ## 临时值同样释放），然后断言 weakref 全部归 null——RefCounted 计数归零即时释放，
 ## 不需要等 GC。任一断言失败 = 存在引用环。
 ##
-## 四个用例：
+## 五个用例：
 ##  1. 裸 instance：actor(ability_set + attribute_set) + 四组件 ability
 ##     (PreEvent / NoInstance / StatModifier / ActivateInstance(GRANTED_SELF + loop timeline))，
 ##     tick 到 execution 真 fire 过 action，pre / post 各派发一次；destroy_instance 后连同 instance
-##     自持的 EventProcessor / EventCollector 全部释放。
+##     自持的 EventProcessor / EventCollector 与 ability 的 pre / post 注册全部释放。
 ##  2. start_battle + 录像：BattleProcedure / 注入 world collector 的 BattleRecorder / RecordingContext /
 ##     订阅闭包，battle_finished 后同样全部释放。
 ##  3. procedure 子类（协变 _get_world、持有只经调用参数拿 world 的 helper）被调用方直接 finish()——
@@ -20,12 +20,18 @@ extends Node
 ##  4. 开着录像的战斗 tick 里 GameWorld.shutdown()（经 world.tick() 驱动；world 是覆盖 on_end 且不调 super 的子类）：
 ##     被录范围含不参战的常驻 actor 与战斗中途 spawn 的补录 actor；world 结束时中止战斗（tick 期间零错误、
 ##     不收尾、不发 battle_finished），recorder 与全部被录 actor 一并释放。
+##  5. 事件注册跟 ability / owner 走，调用方仍握着 actor 也得释放：revoke 注销该 ability 的注册；remove_actor
+##     注销该 owner 的注册；AbilitySet 被整个换掉（inkmon 每场换集的形状）时旧 ability 不经 revoke、注册留在表里，
+##     旧 ability 必须照样释放（handler 闭包只带 id），按 owner 清表后注册释放。
 ## 用例 2-4 在 world 结束后、仍持有 procedure 时先放掉 world 的局部引用：world 必须当场释放。
 ## 战斗结束 / world 结束已拆掉 world → procedure 这条强边，这一步单独验反向那条
 ## （procedure 及其持有的对象只许弱回指 world）。
 ##
+## Ability 的 post 注销闭包（_post_unregisters）不是 Object、取不到 weakref：它只捕获 processor 与 kind / id，
+## 由 processor 的 weakref 与「revoke 之后 _post_unregisters 已清空」两条断言兜住。
+##
 ## context 对象（AbilityLifecycleContext / ExecutionContext）携带 instance 强引用，只许活在
-## 调用栈上：探针在 NoInstance 的 on_apply action、trigger filter（AbilitySet 派发建的 lifecycle context）、
+## 调用栈上：探针在 NoInstance 的 on_apply action、trigger filter（post 派发按 id 重建的 lifecycle context）、
 ## 事件 action 与 timeline tag action 里把收到的 context 以 weakref 捕出，grant / tick / 派发一返回就断言
 ## 已释放（不等 destroy_instance）。本测试走到的其余构造点（grant 时交给 apply_effects 的 lifecycle context、
 ## PreEvent 重建的 context）没有 weakref 探针，由两类 context 的存活计数兜底：每个用例结束后计数必须回到用例开始前。
@@ -154,6 +160,8 @@ func _init() -> void:
 		_run_release_case.bind(_build_and_finish_subclass_procedure_directly))
 	TestFramework.register_test("Release: world ended inside a recorded battle tick releases recorder and every recorded actor",
 		_run_release_case.bind(_build_and_end_world_inside_recorded_battle_tick))
+	TestFramework.register_test("Release: event registrations released on revoke, remove_actor and ability-set replacement",
+		_run_release_case.bind(_build_and_drop_event_registrations))
 
 
 # ========== 用例外壳 ==========
@@ -192,8 +200,7 @@ func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 
 	var mutable := instance.event_processor.process_pre_event({"kind": PRE_KIND, "value": 10.0})
 	TestFramework.assert_near(float(mutable.get_current_value("value")), 15.0)
-	var audience: Array[String] = [actor_id]
-	instance.event_processor.process_post_event({"kind": POST_KIND}, audience)
+	instance.event_processor.process_post_event({"kind": POST_KIND})
 	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_POST))
 	_assert_contexts_released(refs, [
 		_probe_key(PROBE_LIFECYCLE, actor_id),
@@ -205,7 +212,7 @@ func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 	refs["event_processor"] = weakref(instance.event_processor)
 	refs["event_collector"] = weakref(instance.event_collector)
 	GameWorld.destroy_instance(instance.id)
-	_assert_no_pre_handlers_left(instance.event_processor)
+	_assert_no_handlers_left(instance.event_processor)
 
 
 ## 用例 2：world + 两个 actor → start_battle（录像开启）→ 战斗中产生真实事件 → world.tick 收尾 finish。
@@ -238,8 +245,7 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	# 战斗中的真实事件：execution tick 打 tag（TagChanged 进录像）、post 派发触发被动
 	caster.ability_set.tick_executions(100.0)
 	_assert_contexts_released(refs, [_probe_key(PROBE_TIMELINE, caster.get_id())])
-	var audience: Array[String] = [caster.get_id(), target.get_id()]
-	world.event_processor.process_post_event({"kind": POST_KIND}, audience)
+	world.event_processor.process_post_event({"kind": POST_KIND})
 	var dispatched: Array[String] = []
 	for actor: ReleaseProbeActor in [caster, target]:
 		dispatched.append(_probe_key(PROBE_LIFECYCLE, actor.get_id()))
@@ -262,7 +268,7 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	_collect_world_refs(refs, world, procedure)
 	var processor := world.event_processor
 	GameWorld.destroy_instance(world.id)
-	_assert_no_pre_handlers_left(processor)
+	_assert_no_handlers_left(processor)
 	world = null
 	_assert_world_released(refs)
 
@@ -298,7 +304,7 @@ func _build_and_finish_subclass_procedure_directly(refs: Dictionary) -> void:
 	refs["procedure.helper"] = weakref(procedure.helper)
 	var processor := world.event_processor
 	GameWorld.destroy_instance(world.id)
-	_assert_no_pre_handlers_left(processor)
+	_assert_no_handlers_left(processor)
 	world = null
 	_assert_world_released(refs)
 
@@ -352,9 +358,57 @@ func _build_and_end_world_inside_recorded_battle_tick(refs: Dictionary) -> void:
 	TestFramework.assert_false(world.has_active_battle(), "world 结束应清掉进行中的战斗")
 	TestFramework.assert_false(recorder.get_is_recording(), "world 结束应中止录像")
 	TestFramework.assert_true(recorder.actor_subscriptions.is_empty(), "中止录像应退订全部被录 actor")
-	_assert_no_pre_handlers_left(processor)
+	_assert_no_handlers_left(processor)
 	world = null
 	_assert_world_released(refs)
+
+
+## 用例 5：三个 actor 各 grant 一个探针 ability（各一条 pre + 一条 post 注册），分别走 revoke / remove_actor /
+## 整个换掉 AbilitySet 三种退场，每一步都在调用方仍握着 actor 时断言对应的注册（与 ability）已释放。
+func _build_and_drop_event_registrations(refs: Dictionary) -> void:
+	var instance := GameWorld.create_instance(GameplayInstance.new())
+	var processor := instance.event_processor
+	var revoked := instance.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var removed := instance.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var replaced := instance.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var probe_config := _build_probe_config(_make_loop_timeline())
+	for actor: ReleaseProbeActor in [revoked, removed, replaced]:
+		actor.probe_sink = refs
+		actor.ability_set.grant_ability(Ability.new(probe_config, actor.get_id()))
+
+	# revoke：ability 与它的两条注册一起释放
+	var revoked_refs := _revoke_only_ability(processor, revoked)
+	for key: String in revoked_refs.keys():
+		TestFramework.assert_true((revoked_refs[key] as WeakRef).get_ref() == null, "revoke 之后仍存活: %s" % key)
+	TestFramework.assert_equal(0, _registrations_where(processor, &"owner_id", revoked.get_id()).size())
+
+	# remove_actor：调用方仍握着 actor，该 owner 的注册照样释放
+	var removed_registration_refs := _weakrefs_of(_registrations_where(processor, &"owner_id", removed.get_id()))
+	TestFramework.assert_equal(2, removed_registration_refs.size())
+	instance.remove_actor(removed.get_id())
+	for ref in removed_registration_refs:
+		TestFramework.assert_true(ref.get_ref() == null, "引用环: remove_actor 之后注册仍存活")
+
+	# 整个换掉 AbilitySet：旧 ability 没经 revoke、注册还在表里，但注册不能钉住旧 ability
+	var old_ability_ref := weakref(replaced.ability_set.get_abilities()[0])
+	var replaced_registration_refs := _weakrefs_of(_registrations_where(processor, &"owner_id", replaced.get_id()))
+	TestFramework.assert_equal(2, replaced_registration_refs.size())
+	replaced.ability_set = AbilitySet.create(replaced.get_id(), replaced.attribute_set)
+	TestFramework.assert_true(old_ability_ref.get_ref() == null, "引用环: 注册表里的 handler 钉住了被换掉的 ability")
+	for ref in replaced_registration_refs:
+		TestFramework.assert_true(ref.get_ref() != null, "换集不经 revoke，注册应仍在表里")
+	processor.remove_handlers_by_owner_id(replaced.get_id())
+	for ref in replaced_registration_refs:
+		TestFramework.assert_true(ref.get_ref() == null, "引用环: 按 owner 清表之后注册仍存活")
+
+	refs["instance"] = weakref(instance)
+	refs["event_processor"] = weakref(processor)
+	refs["event_collector"] = weakref(instance.event_collector)
+	for actor: ReleaseProbeActor in [revoked, removed, replaced]:
+		refs["actor:%s" % actor.get_id()] = weakref(actor)
+		refs["ability_set:%s" % actor.get_id()] = weakref(actor.ability_set)
+	GameWorld.destroy_instance(instance.id)
+	_assert_no_handlers_left(processor)
 
 
 # ========== 夹具 ==========
@@ -407,12 +461,14 @@ static func _probe_key(kind: String, actor_id: String) -> String:
 	return "%s:%s" % [kind, actor_id]
 
 
-## actor 子图：ability_set / tag_container / attribute_set / 每个 ability / 每个 component / 每个 execution。
+## actor 子图：ability_set / tag_container / attribute_set / 每个 ability / 每个 component / 每个 execution /
+## ability 在 owner 所属 processor 上的每条 pre / post 注册。
 static func _collect_actor_refs(refs: Dictionary, actor: ReleaseProbeActor, prefix: String) -> void:
 	refs[prefix + "actor"] = weakref(actor)
 	refs[prefix + "ability_set"] = weakref(actor.ability_set)
 	refs[prefix + "tag_container"] = weakref(actor.ability_set.tag_container)
 	refs[prefix + "attribute_set"] = weakref(actor.attribute_set)
+	var processor := GameWorld.get_instance_of_actor(actor.get_id()).event_processor
 	# 锁形状：整类 weakref 消失（ability 被提前 revoke、execution 被清空）时
 	# refs 仍能凑过 size 下限而全绿——那样探针就不再探它该探的东西了。
 	var abilities := actor.ability_set.get_abilities()
@@ -429,6 +485,11 @@ static func _collect_actor_refs(refs: Dictionary, actor: ReleaseProbeActor, pref
 		TestFramework.assert_true(not executions.is_empty(), "GRANTED_SELF 应已自激活 execution")
 		for execution in executions:
 			refs["%sexecution:%s" % [prefix, execution.id]] = weakref(execution)
+		# PreEvent 一条 + NoInstance 的 POST_KIND 一条；GRANTED_SELF 是定向投递 kind，不注册
+		var registrations := _registrations_where(processor, &"ability_id", ability.id)
+		TestFramework.assert_equal(2, registrations.size())
+		for registration in registrations:
+			refs["%sregistration:%s" % [prefix, registration.get("id")]] = weakref(registration)
 
 
 ## world 形用例共有的 weakref：world / procedure / recorder / world 自持的事件设施。
@@ -438,6 +499,38 @@ static func _collect_world_refs(refs: Dictionary, world: WorldGameplayInstance, 
 	refs["recorder"] = weakref(procedure.get_recorder())
 	refs["event_processor"] = weakref(world.event_processor)
 	refs["event_collector"] = weakref(world.event_collector)
+
+
+## revoke actor 身上唯一的 ability，返回它与它的注册的 weakref（局部强引用随函数返回消亡）。
+static func _revoke_only_ability(processor: EventProcessor, actor: ReleaseProbeActor) -> Dictionary:
+	var ability := actor.ability_set.get_abilities()[0]
+	var weakrefs := {"ability": weakref(ability)}
+	var registrations := _registrations_where(processor, &"ability_id", ability.id)
+	TestFramework.assert_equal(2, registrations.size())
+	for registration in registrations:
+		weakrefs["registration:%s" % registration.get("id")] = weakref(registration)
+	TestFramework.assert_equal(1, ability._post_unregisters.size())
+	actor.ability_set.revoke_ability(ability.id)
+	TestFramework.assert_true(ability._post_unregisters.is_empty(), "revoke 之后 post 注销闭包应已清空")
+	return weakrefs
+
+
+## processor 两张注册表里 field == value 的注册（field 取 owner_id / ability_id）。
+static func _registrations_where(processor: EventProcessor, field: StringName, value: String) -> Array[RefCounted]:
+	var found: Array[RefCounted] = []
+	for table: Dictionary in [processor._pre_handlers, processor._post_handlers]:
+		for handlers: Array in table.values():
+			for registration: RefCounted in handlers:
+				if registration.get(field) == value:
+					found.append(registration)
+	return found
+
+
+static func _weakrefs_of(objects: Array[RefCounted]) -> Array[WeakRef]:
+	var result: Array[WeakRef] = []
+	for object in objects:
+		result.append(weakref(object))
+	return result
 
 
 ## 被录 actor 都已订阅进 recorder，且 RecordingContext 探针真捕到了（没捕到的 key 不在 refs 里，
@@ -459,14 +552,15 @@ static func _assert_contexts_released(refs: Dictionary, keys: Array[String]) -> 
 				"引用环: %s 在调用返回后仍存活" % key)
 
 
-## destroy_instance / shutdown 必须把 actor 的 pre handler 注册一并注销。
+## destroy_instance / shutdown 必须把 pre / post 两张注册表一并清空。
 ##
 ## processor 归 instance、随 instance 一起释放：整张表的消亡会掩盖幽灵注册，所以在 instance 结束之后、
 ## 建图函数返回（放掉 processor）之前验——「跨战斗累积幽灵注册」是常驻世界真实踩过的形状。
-static func _assert_no_pre_handlers_left(processor: EventProcessor) -> void:
+static func _assert_no_handlers_left(processor: EventProcessor) -> void:
 	var leftover := 0
-	for event_kind: String in processor._pre_handlers.keys():
-		leftover += (processor._pre_handlers[event_kind] as Array).size()
+	for table: Dictionary in [processor._pre_handlers, processor._post_handlers]:
+		for handlers: Array in table.values():
+			leftover += handlers.size()
 	TestFramework.assert_equal(0, leftover)
 
 

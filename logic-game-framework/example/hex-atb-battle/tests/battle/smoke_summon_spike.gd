@@ -78,7 +78,7 @@ func _run_phase_1_spawn() -> void:
 	UGridMap.model.place_occupant(HexCoord.new(1, 0), totem)
 	totem.hex_position = HexCoord.new(1, 0)
 
-	var in_actors: bool = totem.get_id() in (instance as HexWorldGameplayInstance).get_alive_actor_ids()
+	var in_actors: bool = (instance as HexWorldGameplayInstance).get_alive_actors().has(totem)
 	var grid_occupant: bool = UGridMap.model.get_occupant(HexCoord.new(1, 0)) == totem
 	if in_actors and grid_occupant:
 		_record(phase, true, "actor added + grid 占位生效")

@@ -4,12 +4,12 @@ extends Node
 ##
 ## context 里的 instance 一律按 owner 的 actor id 反查（GameWorld.get_instance_of_actor），
 ## 不经调用链递、不缓存。本文件钉住的填充点都拿到 owner 所属的那个 instance：
-## AbilitySet 派发（trigger filter / NoInstance action）、AbilitySet.can_activate 查询（Condition 收到的
-## context）、NoInstance lifecycle（on_apply 用 AbilitySet 建的 context、on_remove 用 Ability 自建的
-## context）、execution 的 start / tag / cancel action（cancel 由 revoke 触发，调用方什么也不递）、
-## PreEvent handler 的重建 context；owner 没注册时老实给 null——而 grant 照样恒投递 AbilityGranted，
-## GRANTED_SELF 照样自激活，拿不到事件设施的几条路径降级而不报错。叠层 / Break 钩子与 on_remove 共用 Ability._build_remove_context，
-## PreEvent filter 与 handler 共用 _rebuild_context，不另钉。
+## AbilitySet 定向投递与 post 派发（trigger filter / NoInstance action）、AbilitySet.can_activate 查询（Condition
+## 收到的 context）、NoInstance lifecycle（on_apply 用 AbilitySet 建的 context、on_remove 用
+## AbilityLifecycleContext.for_ability 建的 context）、execution 的 start / tag / cancel action（cancel 由 revoke
+## 触发，调用方什么也不递）、PreEvent handler 的重建 context；owner 没注册时老实给 null——而 grant 照样恒投递
+## AbilityGranted，GRANTED_SELF 照样自激活，拿不到事件设施的几条路径降级而不报错。叠层 / Break 钩子与 on_remove
+## 共用 for_ability，PreEvent filter / handler 与 post 派发共用 rebuild_for_handler，不另钉。
 
 const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
@@ -103,6 +103,12 @@ func _test_dispatch_sees_owner_instance() -> void:
 	var expected := actor.get_gameplay_instance_id()
 	TestFramework.assert_equal(expected, probe.get("filter_instance", ""))
 	TestFramework.assert_equal(expected, probe.get("action_instance", ""))
+
+	# post 派发按 id 重建的 context 同样带 owner 所属 instance
+	var posted := {"kind": PROBE_KIND}
+	GameWorld.get_instance_by_id(expected).event_processor.process_post_event(posted)
+	TestFramework.assert_equal(expected, posted.get("filter_instance", ""))
+	TestFramework.assert_equal(expected, posted.get("action_instance", ""))
 	GameWorld.destroy_instance(expected)
 
 
@@ -218,9 +224,9 @@ func _test_unregistered_owner() -> void:
 	TestFramework.assert_equal(NO_INSTANCE, probe.get("action_instance", ""))
 
 
-## owner 反查不到 → context 没有事件设施，三条降级路径：PreEvent 不注册 handler、只打一条警告；激活被 Condition
-## 拦下时失败事件无处可推、跳过——去掉 tag 后同一请求能激活，证明前一次确实走到了失败分支；只发表演 cue 的 action
-## 跳过推送、照常返回成功。前两条的守卫退化成报错时引擎只中止出错那一帧，留下的状态与正常降级相同、只有日志分得开，
+## owner 反查不到 → context 没有事件设施，四条降级路径：PreEvent 不注册 handler、只打一条警告；Ability 不注册 post handler；
+## 激活被 Condition 拦下时失败事件无处可推、跳过——去掉 tag 后同一请求能激活，证明前一次确实走到了失败分支；只发表演 cue 的
+## action 跳过推送、照常返回成功。前三条的守卫退化成报错时引擎只中止出错那一帧，留下的状态与正常降级相同、只有日志分得开，
 ## 所以全程挂日志计数器断言零错误（cue 报错时 execute 返回 null，结果断言也抓得到）。
 func _test_unregistered_owner_without_event_infrastructure() -> void:
 	var owner_id := "no_such_instance:ghost_events"
@@ -228,6 +234,10 @@ func _test_unregistered_owner_without_event_infrastructure() -> void:
 	var config := (AbilityConfig.builder()
 		.config_id("instance_ctx_unregistered_events")
 		.component_config(PreEventConfig.new(PRE_KIND, _pre_handler_recording_instance()))
+		.component_config(NoInstanceConfig.builder()
+			.trigger(TriggerConfig.new(PROBE_KIND))
+			.action(RecordToEventAction.new("post_instance"))
+			.build())
 		.active_use(ActiveUseConfig.builder()
 			.timeline(TimelineData.new("t-instance-context-unregistered-events", 100.0, {}))
 			.condition(Condition.NoTagCondition.new("sealed"))
@@ -255,6 +265,7 @@ func _test_unregistered_owner_without_event_infrastructure() -> void:
 	TestFramework.assert_equal(1, pre_components.size())
 	TestFramework.assert_false((pre_components[0] as PreEventComponent)._unregister.is_valid(),
 		"没有 processor 时不应注册 pre handler")
+	TestFramework.assert_true(ability._post_unregisters.is_empty(), "没有 processor 时不应注册 post handler")
 	TestFramework.assert_equal(0, executions_while_sealed)
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 	TestFramework.assert_true(result != null and result.success, "没有 collector 时 cue action 应跳过推送并返回成功")

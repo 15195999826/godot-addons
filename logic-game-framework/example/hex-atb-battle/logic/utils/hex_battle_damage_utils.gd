@@ -1,11 +1,11 @@
 ## HexBattleDamageUtils - 伤害流程公共工具
 ##
 ## 提取 DamageAction 和 ReflectDamageAction 共享的
-## 「push 伤害事件 → 扣血 → 日志 → 死亡检测 → 死亡事件广播 → 清 grid 占用」流程（死者留在 world，不 remove_actor）。
+## 「push 伤害事件 → 扣血 → 日志 → 死亡检测 → 死亡事件派发 → 清 grid 占用」流程（死者留在 world，不 remove_actor）。
 ##
-## 注意：**不包含 post damage 广播**。
+## 注意：**不包含 post damage 派发**。
 ## 调用方需要在回调等后续逻辑完成后，自行调用
-## [code]broadcast_post_damage(damage_event_dict, alive_actor_ids, battle)[/code]。
+## [code]broadcast_post_damage(damage_event_dict, battle)[/code]。
 ## 这是因为 DamageAction 需要在 post 之前执行 on_hit/on_critical/on_kill 回调。
 ##
 ## 所有函数都是静态的，不保存任何状态。
@@ -14,7 +14,7 @@ class_name HexBattleDamageUtils
 
 ## apply_damage 的返回结果
 class DamageResult:
-	## push 后的伤害事件字典（供回调、post 广播等后续流程使用）
+	## push 后的伤害事件字典（供回调、post 派发等后续流程使用）
 	var damage_event_dict: Dictionary = {}
 	## 本次调用产生的所有事件字典（含 damage_event_dict 和可能的 death_event）
 	var all_events: Array[Dictionary] = []
@@ -30,21 +30,19 @@ class DamageResult:
 ## 3. Push 伤害事件到 event_collector
 ## 4. 扣血：target.attribute_set.set_hp_base(hp - actual_life_damage)
 ## 5. 日志：battle.logger.damage_dealt(...)
-## 6. 触发破裂回调：对每个 broken=true 的护盾 push shield_broken event → call on_break → expire ability
+## 6. 触发破裂回调：对每个 broken=true 的护盾 push shield_broken event → call on_break → revoke ability
 ## 7. 死亡检测：check_death() → push death_event → process_post_event(death) → 清 grid 占用（不 remove_actor）
 ##
 ## 关键顺序约束：on_break 必须在死亡检测之前调用，否则爆炸类回调看到的 owner 已判死、grid 占用已清。
 ##
-## 不包含 post damage 广播，由调用方自行处理。
+## 不包含 post damage 派发，由调用方自行处理。
 ##
 ## @param damage_event: 强类型伤害事件（由调用方构造）
-## @param alive_actor_ids: 调用时缓存的存活 actor ID 列表
 ## @param ctx: 执行上下文
 ## @param battle: 战斗实例
 ## @return: DamageResult
 static func apply_damage(
 	damage_event: BattleEvents.DamageEvent,
-	alive_actor_ids: Array[String],
 	ctx: ExecutionContext,
 	battle: HexWorldGameplayInstance,
 ) -> DamageResult:
@@ -118,7 +116,7 @@ static func apply_damage(
 		#   (is_alive=false) signal 能找到 view 触发 _play_death_animation 死亡 tween。
 		# - "死亡" != "离开 world"。死亡只是行为禁止(不行动/不被选作目标/不占格),
 		#   离开 world 是重启战斗 / 永久退场时的另外动作。
-		# - 存活判定(get_alive_actor_ids / _check_battle_end / AI 候选)全走 is_dead(),
+		# - 存活判定(get_alive_actors / _check_battle_end / AI 候选 / post 响应)全走 is_dead(),
 		#   不依赖 world.has_actor, 留尸体不污染战斗逻辑。
 		# - grid 占用仍要清: 否则活人 move_occupant 到尸体格会触发 apply_move_action
 		#   的 UNEXPECTED 兜底 push_error。
@@ -133,8 +131,7 @@ static func apply_damage(
 			result.all_events.append(death_dict)
 			result.target_killed = true
 
-			if alive_actor_ids.size() > 0:
-				event_processor.process_post_event(death_dict, alive_actor_ids)
+			event_processor.process_post_event(death_dict)
 
 			_clear_grid_footprint(battle, target_actor)
 
@@ -155,7 +152,7 @@ static func _clear_grid_footprint(battle: HexWorldGameplayInstance, dead_actor: 
 			battle.grid.cancel_reservation(coord)
 
 
-## 对每个 broken=true 的消耗记录：push shield_broken event → 调 on_break 回调 → expire ability
+## 对每个 broken=true 的消耗记录：push shield_broken event → 调 on_break 回调 → revoke ability
 ##
 ## V1 基础 Ward 的 on_break 为空，本函数仅产生 shield_broken event 用于回放可见。
 ## 回调签名：func(record: Dictionary, ctx: ExecutionContext, battle: HexWorldGameplayInstance) -> void
@@ -206,19 +203,19 @@ static func _process_broken_shields(
 					for ev in (callback_return as Array):
 						if ev is Dictionary:
 							result.all_events.append(ev as Dictionary)
-			# 3. expire 该 ability（让 AbilitySet 在下次 _process_abilities 时 revoke）
-			if not ability.is_expired():
-				ability.expire(HexBattleShieldComponent.EXPIRE_REASON_BROKEN)
+			# 3. 立即 revoke：post 派发不经过 AbilitySet 的过期清扫，只 expire 的话破裂的护盾要挂到 owner 下一次 tick 才移除
+			ability_set.revoke_ability(
+				shield_ability_id, AbilitySet.REVOKE_REASON_EXPIRED, HexBattleShieldComponent.EXPIRE_REASON_BROKEN
+			)
 
 
-## 广播 post damage 事件
+## 派发 post damage 事件
 ##
 ## 从 apply_damage 中分离出来，让调用方控制时机。
 ## DamageAction 需要在 post 之前执行回调，ReflectDamageAction 则直接 post。
+## 观众是订阅了 damage 的 ability；被击杀的目标仍响应自己挨的这一击（HexBattleActor.is_event_responsive）。
 static func broadcast_post_damage(
 	damage_event_dict: Dictionary,
-	alive_actor_ids: Array[String],
 	battle: HexWorldGameplayInstance,
 ) -> void:
-	if alive_actor_ids.size() > 0:
-		battle.event_processor.process_post_event(damage_event_dict, alive_actor_ids)
+	battle.event_processor.process_post_event(damage_event_dict)

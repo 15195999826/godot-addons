@@ -83,7 +83,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var all_events: Array[Dictionary] = []
 	var battle := HexBattleGameStateUtils.world(ctx)
 	var event_processor := battle.event_processor
-	var alive_actor_ids := battle.get_alive_actor_ids()
 	
 	for target_id in targets:
 		var overheal := _calculate_overheal(target_id, heal_amount, battle)
@@ -118,8 +117,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		var callback_events := _process_callbacks(heal_event, overheal, ctx)
 		all_events.append_array(callback_events)
 		
-		if alive_actor_ids.size() > 0:
-			event_processor.process_post_event(heal_event, alive_actor_ids)
+		event_processor.process_post_event(heal_event)
 	
 	return ActionResult.create_success_result(all_events, { "heal_amount": heal_amount })
 

@@ -39,7 +39,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 	var target_id := ability.owner_actor_id
 	var source_id := ability.source_actor_id if not ability.source_actor_id.is_empty() else target_id
-	var alive_actor_ids := battle.get_alive_actor_ids()
 
 	# ========== Pre 阶段（允许减伤/免疫拦截） ==========
 	var pre_event := HexBattlePreEvents.PreDamageEvent.create(
@@ -54,9 +53,9 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		var damage_event := BattleEvents.DamageEvent.create(
 			target_id, final_damage, BattleEvents.DamageType.PURE, source_id, false, false
 		)
-		var damage_result := HexBattleDamageUtils.apply_damage(damage_event, alive_actor_ids, ctx, battle)
+		var damage_result := HexBattleDamageUtils.apply_damage(damage_event, ctx, battle)
 		all_events.append_array(damage_result.all_events)
-		HexBattleDamageUtils.broadcast_post_damage(damage_result.damage_event_dict, alive_actor_ids, battle)
+		HexBattleDamageUtils.broadcast_post_damage(damage_result.damage_event_dict, battle)
 
 	# ========== 层数递减（无论是否 cancelled 都消耗一层） ==========
 	var stacks_before := ability.get_stacks()

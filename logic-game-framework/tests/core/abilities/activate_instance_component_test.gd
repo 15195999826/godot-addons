@@ -34,6 +34,8 @@ func _test_any_trigger() -> void:
 
 	var triggered := component.on_event({"kind": "hit"}, context)
 	TestFramework.assert_true(triggered)
+	var expected_kinds: Array[String] = ["hit", "heal"]
+	TestFramework.assert_equal(expected_kinds, component.get_post_event_kinds())
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 
 func _test_all_trigger() -> void:

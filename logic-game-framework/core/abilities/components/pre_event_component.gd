@@ -23,7 +23,8 @@ func get_event_kind() -> String:
 ##
 ## 关键设计：handler/filter lambda 只捕获 String ID + 用户传入的 Callable，
 ## 绝不捕获 self（PreEventComponent 实例），也不捕获本方法收到的 context（它带 instance 强引用）。
-## 触发时按 owner_id 反查 instance，重建 AbilityLifecycleContext 传给用户 handler。
+## 触发时经 AbilityLifecycleContext.rebuild_for_handler 按 id 重建 context 传给用户 filter / handler；
+## 重建返回 null（owner 此刻不响应这条事件、ability 已被移除等）时 filter 不通过、handler 放行。
 ##
 ## 这样 event_processor._pre_handlers 不会形成回指 Ability / PreEventComponent 的强引用链，
 ## Ability 从 AbilitySet._abilities 移除后即可被 GC。
@@ -45,7 +46,7 @@ func on_apply(context: AbilityLifecycleContext) -> void:
 	var filter_lambda := func(event_dict: Dictionary) -> bool:
 		if not user_filter.is_valid():
 			return true
-		var ctx := _rebuild_context(owner_id, ability_id)
+		var ctx := AbilityLifecycleContext.rebuild_for_handler(owner_id, ability_id, event_dict, EventPhase.PHASE_PRE)
 		if ctx == null:
 			return false
 		return user_filter.call(event_dict, ctx)
@@ -53,7 +54,7 @@ func on_apply(context: AbilityLifecycleContext) -> void:
 	var handler_lambda := func(mutable: MutableEvent, _handler_context: HandlerContext) -> Intent:
 		if not user_handler.is_valid():
 			return EventPhase.pass_intent()
-		var ctx := _rebuild_context(owner_id, ability_id)
+		var ctx := AbilityLifecycleContext.rebuild_for_handler(owner_id, ability_id, mutable.original, EventPhase.PHASE_PRE)
 		if ctx == null:
 			return EventPhase.pass_intent()
 		var result: Variant = user_handler.call(mutable, ctx)
@@ -76,37 +77,6 @@ func on_remove(_context: AbilityLifecycleContext) -> void:
 	if _unregister.is_valid():
 		_unregister.call()
 		_unregister = Callable()
-
-## 静态重建 context 辅助：不捕获 self，避免形成 event_processor → lambda → self 的循环。
-##
-## 返回 null 的条件：
-## - actor 不存在（已从 GameWorld 移除 / 测试未注册）
-## - actor 不是 BattleActor 或没有 AbilitySet（纯数据 actor）
-## - actor 覆盖了 is_pre_event_responsive 返回 false（如死亡/沉默）
-## - ability 已从 AbilitySet._abilities 移除（revoke 后的幽灵 handler 兜底）
-##
-## 任一条件不满足 → 上层 lambda 返回 pass_intent，handler 不执行。
-static func _rebuild_context(owner_id: String, ability_id: String) -> AbilityLifecycleContext:
-	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
-	if owner_instance == null:
-		return null
-	var actor := owner_instance.get_actor(owner_id) as BattleActor
-	if actor == null:
-		return null
-	if not actor.is_pre_event_responsive():
-		return null
-
-	var ab_set := actor.get_ability_set()
-	if ab_set == null:
-		return null
-
-	var ability := ab_set.find_ability_by_id(ability_id)
-	if ability == null:
-		return null
-
-	return AbilityLifecycleContext.new(
-		owner_id, actor.get_attribute_set(), ability, ab_set, owner_instance
-	)
 
 
 func serialize() -> Dictionary:

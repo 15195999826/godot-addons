@@ -171,7 +171,7 @@ func _test_lifecycle_tag_mutation() -> void:
 
 
 func _test_trigger_still_works() -> void:
-	# 旧 trigger+action 行为不应被 lifecycle 扩展破坏
+	# 旧 trigger+action 行为不应被 lifecycle 扩展破坏：事件经 instance 的 post 派发送到 grant 过的 ability
 	_setup()
 	var pair := _make_actor()
 	var aset: AbilitySet = pair[0]
@@ -183,10 +183,7 @@ func _test_trigger_still_works() -> void:
 		.trigger(trigger_cfg)
 		.action(trigger_act)
 		.build())
-	var ability := _build_ability(cfg, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
-	ability.apply_effects(ctx)
-	var comp: NoInstanceComponent = ability.get_all_components()[0] as NoInstanceComponent
-	comp.on_event({"kind": "test_kind"}, ctx)
+	aset.grant_ability(_build_ability(cfg, owner_id))
+	_instance.event_processor.process_post_event({"kind": "test_kind"})
 	TestFramework.assert_equal(1, _recorded_count("trigger"))
 	_teardown()

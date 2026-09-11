@@ -92,7 +92,7 @@ EventProcessor.process_pre_event()
 MutableEvent returned
     ↓ Action checks if cancelled
 EventProcessor.process_post_event()
-    ↓ Broadcast to all alive Actors
+    ↓ Dispatch to registered ability handlers, gated by Actor.is_event_responsive
     ↓ Trigger passive abilities
 instance.event_collector.push()
 ```

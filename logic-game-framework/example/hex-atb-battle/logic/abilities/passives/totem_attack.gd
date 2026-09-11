@@ -81,12 +81,8 @@ class _TotemAttackAction:
 			false,
 			false,  # is_reflected
 		)
-		var damage_result := HexBattleDamageUtils.apply_damage(
-			event, battle.get_alive_actor_ids(), ctx, battle,
-		)
-		HexBattleDamageUtils.broadcast_post_damage(
-			damage_result.damage_event_dict, battle.get_alive_actor_ids(), battle,
-		)
+		var damage_result := HexBattleDamageUtils.apply_damage(event, ctx, battle)
+		HexBattleDamageUtils.broadcast_post_damage(damage_result.damage_event_dict, battle)
 		collected.append_array(damage_result.all_events)
 		return ActionResult.create_success_result(collected, {
 			"totem_attack_target": best_target.get_id(),

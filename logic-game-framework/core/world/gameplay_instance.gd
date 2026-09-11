@@ -9,7 +9,7 @@ var _actors: Array[Actor] = []
 var _actor_id_2_actor_dic: Dictionary = {}
 var _logic_time: float = 0.0
 var _state: String = "created"
-## 本 instance 的事件设施：pre handler 注册表、递归深度、trace 与本帧事件队列都是 instance 级状态，
+## 本 instance 的事件设施：pre / post handler 注册表、递归深度、trace 与本帧事件队列都是 instance 级状态，
 ## 随 instance 生灭，两个 instance 互不可见。强边只向下（instance → processor / collector），两者都不回指 instance。
 var event_processor: EventProcessor
 var event_collector: EventCollector
@@ -68,19 +68,18 @@ func end() -> void:
 		actor.on_despawn()
 	for system in _systems:
 		system.on_unregister()
-	_cleanup_pre_event_handlers()
+	_cleanup_event_handlers()
 
 
-## 清理所有 actor 注册在本 instance event_processor 上的 PreEvent handler。
+## 清空本 instance event_processor 上的 pre / post handler 注册表。
 ##
 ## 不 revoke ability（保留 `_abilities` 数组以支持复活等语义），只清 handler
-## 注册表中的 PreHandlerRegistration，防止跨战斗 handler 孤儿化累积。
+## 注册表，防止跨战斗 handler 孤儿化累积。
 ##
 ## handler 的重新注册应在 actor 重新"激活"时由项目层负责（例如：新战斗开始、
 ## 复活动画播完等）。本框架不假设何时重新激活。
-func _cleanup_pre_event_handlers() -> void:
-	for actor in _actors:
-		event_processor.remove_handlers_by_owner_id(actor.get_id())
+func _cleanup_event_handlers() -> void:
+	event_processor.remove_all_handlers()
 
 func on_start() -> void:
 	pass
@@ -101,6 +100,8 @@ func add_actor(actor: Actor) -> Actor:
 	var local_id := IdGenerator.generate(actor.type)
 	actor.set_id(ActorId.format(id, local_id))
 	actor._instance_id = id
+	# 先登记 post 派发里的先后，再让 actor 同步 id：之后任何 grant 注册的 handler 都排得上 registry 顺序
+	event_processor.note_actor_added(actor.get_id())
 	actor._on_id_assigned()
 	_actors.append(actor)
 	_actor_id_2_actor_dic[actor.get_id()] = actor
@@ -114,6 +115,7 @@ func remove_actor(actor_id: String) -> bool:
 	actor.on_despawn()
 	_actors.erase(actor)
 	_actor_id_2_actor_dic.erase(actor_id)
+	event_processor.note_actor_removed(actor_id)
 	return true
 
 func get_actor(actor_id: String) -> Actor:

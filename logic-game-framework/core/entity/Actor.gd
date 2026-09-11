@@ -44,17 +44,17 @@ func get_owner_gameplay_instance() -> GameplayInstance:
 	return GameWorld.get_instance_by_id(_instance_id)
 
 
-## 是否响应 PreEvent handler 分发
+## 此刻是否响应这条事件的 pre / post handler 派发
 ##
-## PreEvent handler 注册在所属 instance 的 EventProcessor 上，事件触发时框架
-## 会自动遍历该 processor 上所有已注册 handler。此函数给子类一个机会说"我此刻不响应"，
-## 避免状态异常的 actor（如死亡、沉默、眩晕）意外触发被动。
+## handler 注册在所属 instance 的 EventProcessor 上（PreEventComponent / Ability.apply_effects），
+## 派发时按 owner 重建 context 之前先问这里：返回 false，本 actor 的 handler 这一次不执行。
+## 观众由注册决定，死活由 actor 决定——子类借此让状态异常的 actor（如死亡、沉默、眩晕）不触发被动，
+## 也可以按事件豁免（phase 为 EventPhase.PHASE_PRE / PHASE_POST，如死者仍响应自己的 death）。
 ##
-## 其它触发路径（POST event / tick / receive_event）由项目层自行决定
-## 何时调用、传哪些 actor，不受此函数影响。
+## tick 与 AbilitySet.receive_event 的定向投递（激活请求 / grant 自投递）不经过这里。
 ##
 ## 默认返回 true。子类按游戏规则覆盖。
-func is_pre_event_responsive() -> bool:
+func is_event_responsive(_event_dict: Dictionary, _phase: String) -> bool:
 	return true
 
 

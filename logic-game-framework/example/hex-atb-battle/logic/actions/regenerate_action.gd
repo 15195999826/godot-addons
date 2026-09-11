@@ -84,11 +84,8 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		)
 		var event_dict: Dictionary = ctx.event_collector.push(event.to_dict())
 		events.append(event_dict)
-	if events.size() > 0:
-		var alive_actor_ids := battle.get_alive_actor_ids()
-		if alive_actor_ids.size() > 0:
-			# 广播给存活 actor; heal-listening passive (kind="heal") 不会匹配, regeneration-listening
-			# (kind="regeneration", 未来如需) 会匹配. 见 RegenerationEvent header.
-			for ev in events:
-				battle.event_processor.process_post_event(ev, alive_actor_ids)
+	# post 派发 regeneration 事件; heal-listening passive (kind="heal") 不会匹配, regeneration-listening
+	# (kind="regeneration", 未来如需) 会匹配. 见 RegenerationEvent header.
+	for ev in events:
+		battle.event_processor.process_post_event(ev)
 	return ActionResult.create_success_result(events, { "regen_amount_per_target": amount })

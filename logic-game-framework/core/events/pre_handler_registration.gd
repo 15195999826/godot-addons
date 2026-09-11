@@ -47,6 +47,9 @@ var filter: Callable
 ## 处理器显示名称（用于日志/调试）
 var handler_name: String
 
+## 派发时交给 handler 的上下文：构造时按本条注册的 id 建好，每次派发复用（id 构造后不再改）
+var handler_context: HandlerContext
+
 
 func _init(
 	p_id: String = "",
@@ -66,6 +69,7 @@ func _init(
 	handler = p_handler
 	filter = p_filter
 	handler_name = p_handler_name
+	handler_context = HandlerContext.new(owner_id, ability_id, config_id)
 
 
 ## 获取显示名称（优先使用 handler_name，否则使用 config_id）
@@ -85,10 +89,10 @@ func passes_filter(event_dict: Dictionary) -> bool:
 
 
 ## 调用处理函数
-func call_handler(mutable: MutableEvent, ctx: HandlerContext) -> Intent:
+func call_handler(mutable: MutableEvent) -> Intent:
 	if not handler.is_valid():
 		return Intent.pass_through()
-	var result: Variant = handler.call(mutable, ctx)
+	var result: Variant = handler.call(mutable, handler_context)
 	if result is Intent:
 		return result
 	return Intent.pass_through()

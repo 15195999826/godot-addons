@@ -71,7 +71,8 @@ func get_loose_tag_stacks(tag: String) -> int:
 ## ActivateInstanceConfig 自激活 loop timeline）。自不自激活只由 ability 自己声明的 trigger
 ## 决定，与 grant 的调用点无关。
 ##
-## 投递限本人 ability_set，不走 event_processor 全局 post —— 跨 actor 监听由业务层自行广播。
+## 投递限本人 ability_set（定向投递，EventProcessor.DIRECT_DELIVERY_KINDS），不走 post 派发 ——
+## 跨 actor 监听由业务层另发 post 事件。
 func grant_ability(ability: Ability) -> void:
 	for existing in _abilities:
 		if existing.id == ability.id:
@@ -168,6 +169,8 @@ func has_executing_instances() -> bool:
 func _is_blocking_execution(_ability: Ability) -> bool:
 	return true
 
+## 定向投递：把事件交给本 set 的全部 ability（激活请求、grant 自投递——EventProcessor.DIRECT_DELIVERY_KINDS）。
+## 不经 post 派发，也就不问 owner 的 is_event_responsive；跨 actor 的被动走 EventProcessor.process_post_event。
 func receive_event(event_dict: Dictionary) -> void:
 	# owner instance 每次投递只反查一次，本轮所有 ability 的 context 共用。
 	var owner_instance := get_owner_instance()
@@ -260,7 +263,8 @@ func _create_lifecycle_context(ability: Ability, owner_instance: GameplayInstanc
 
 func _process_abilities(processor: Callable) -> void:
 	var expired := []
-	for ability in _abilities:
+	# 遍历快照：processor 里的 revoke（如护盾破裂即时移除）会让活数组左移、跳过下一个 ability。
+	for ability in _abilities.duplicate():
 		if ability.is_expired():
 			expired.append(ability)
 			continue

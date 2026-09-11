@@ -31,6 +31,9 @@ func _init(config: ActivateInstanceConfig):
 	# Debug: 冻结所有 Action，检测无状态约束
 	_freeze_all_actions()
 
+func get_post_event_kinds() -> Array[String]:
+	return AbilityComponent.trigger_event_kinds(_triggers)
+
 func on_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if not _check_triggers(event_dict, context):
 		return false

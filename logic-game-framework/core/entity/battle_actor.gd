@@ -105,8 +105,9 @@ func is_dead() -> bool:
 	return _is_dead
 
 
-## 死亡的 actor 不再响应 PreEvent handler（反伤 / 护盾等被动死后失效）。
-func is_pre_event_responsive() -> bool:
+## 死亡的 actor 不再响应 pre / post handler（反伤 / 护盾 / 吸血等被动死后失效）。
+## 项目层按事件豁免就覆盖它（如让死者响应自己的 death，亡语才触发得了）。
+func is_event_responsive(_event_dict: Dictionary, _phase: String) -> bool:
 	return not _is_dead
 
 

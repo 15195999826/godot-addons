@@ -2,14 +2,14 @@ extends Node
 
 ## PreEventComponent 测试
 ##
-## 注意：PreEventComponent 的 handler/filter lambda 内部调 GameWorld.get_actor(owner_id)
-## 重建 context，要求 actor 必须通过 GameWorld.create_instance + instance.add_actor 注册。
+## 注意：PreEventComponent 的 handler/filter lambda 经 AbilityLifecycleContext.rebuild_for_handler
+## 按 owner id 反查重建 context，要求 actor 必须通过 GameWorld.create_instance + instance.add_actor 注册。
 ## 因此每个测试都走完整注册流程，不能直接 new AbilitySet 用硬编码 owner_id。
 
 class MockActor:
 	extends BattleActor
 
-	## PreEventComponent._rebuild_context 走 BattleActor.get_ability_set()
+	## rebuild_for_handler 走 BattleActor.ability_set_of() → get_ability_set()
 	var ability_set: AbilitySet
 
 	func _init() -> void:
@@ -157,9 +157,8 @@ func _test_cancel_event() -> void:
 
 ## 死者不再触发 PreEvent handler（反伤 / 护盾等被动死后失效）。
 ##
-## 真正执行短路的是 `PreEventComponent._rebuild_context` 里那句
-## `if not actor.is_pre_event_responsive(): return null`，所以断言必须打在派发结果上——
-## 只断言 `is_pre_event_responsive()` 的返回值钉不住这条链。
+## 真正执行短路的是 `AbilityLifecycleContext.rebuild_for_handler` 对 owner `is_event_responsive(event, "pre")`
+## 的询问，所以断言必须打在派发结果上——只断言钩子的返回值钉不住这条链。
 func _test_dead_actor_stops_responding() -> void:
 	var env := _setup_env()
 
