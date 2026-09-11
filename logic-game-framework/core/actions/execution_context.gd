@@ -7,7 +7,7 @@ extends RefCounted
 ##
 ## 设计原则：
 ## - 输入：event_dict_chain, instance, ability_ref
-## - 输出：event_collector
+## - 输出：event_collector（派生自 instance）
 ##
 ## 栈作用域：每次执行现建现弃。`instance` 是强引用——Action / Component / ExecutionInstance
 ## 把 context（或 ctx.instance）存进字段就会成环（RefCounted 无循环 GC）；同理，
@@ -35,6 +35,10 @@ extends RefCounted
 ## (CAST 阶段写, HIT 阶段读); ExecutionContext 不拥有这份字典, 只是引用入口。
 ## 详见 docs/reference/action-architecture.md（Ability execution-local state 节）。
 
+## debug 构建下的存活计数（release 不计）：context 只许活在调用栈上，测试在调用返回后断言它回到基线，
+## 把 context 存进字段或长期存放的 lambda 都会让它回不去。
+static var _debug_live_count := 0
+
 ## 触发事件链（字典形式），记录从原始触发事件到当前回调事件的完整链路。
 ## 每个元素是 GameEvent.to_dict() 的结果。
 var event_dict_chain: Array[Dictionary] = []
@@ -45,8 +49,13 @@ var event_dict_chain: Array[Dictionary] = []
 ## owner 未注册进 GameWorld（孤立单测、注册前的 grant）时为 null。
 var instance: GameplayInstance = null
 
-## 事件收集器
-var event_collector: EventCollector = null
+## 事件收集器：派生自 instance（`instance.event_collector`），instance 为 null 时为 null。
+## 不可赋值（setter 报错）；backing 字段恒为空，调试器里读到的 null 不代表收集器缺席。
+var event_collector: EventCollector:
+	get:
+		return instance.event_collector if instance != null else null
+	set(_value):
+		Log.assert_crash(false, "ExecutionContext", "event_collector 派生自 instance，不可赋值")
 
 ## 触发此 Action 的能力引用（可选）
 var ability_ref: AbilityRef = null
@@ -68,17 +77,27 @@ var execution_state: Dictionary
 func _init(
 	p_event_dict_chain: Array[Dictionary] = [],
 	p_instance: GameplayInstance = null,
-	p_event_collector: EventCollector = null,
 	p_ability_ref: AbilityRef = null,
 	p_execution_info: AbilityExecutionInfo = null,
 	p_execution_state: Dictionary = {}
 ) -> void:
 	event_dict_chain.assign(p_event_dict_chain)
 	instance = p_instance
-	event_collector = p_event_collector
 	ability_ref = p_ability_ref
 	execution_info = p_execution_info
 	execution_state = p_execution_state
+	if OS.is_debug_build():
+		_debug_live_count += 1
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE and OS.is_debug_build():
+		_debug_live_count -= 1
+
+
+## 当前存活的实例数（debug 构建；release 恒为 0）。
+static func get_debug_live_count() -> int:
+	return _debug_live_count
 
 
 ## 获取当前触发事件（事件链的最后一个元素）
@@ -122,7 +141,6 @@ func get_execution_state(key: String, fallback: Variant = null) -> Variant:
 static func create(
 	p_event_dict_chain: Array[Dictionary],
 	p_instance: GameplayInstance,
-	p_event_collector: EventCollector,
 	p_ability_ref: AbilityRef = null,
 	p_execution_info: AbilityExecutionInfo = null,
 	p_execution_state: Dictionary = {}
@@ -130,7 +148,6 @@ static func create(
 	return ExecutionContext.new(
 		p_event_dict_chain,
 		p_instance,
-		p_event_collector,
 		p_ability_ref,
 		p_execution_info,
 		p_execution_state
@@ -140,7 +157,7 @@ static func create(
 ## 创建回调执行上下文
 ##
 ## 在原有上下文基础上追加新事件到事件链。
-## 其他字段（instance, event_collector, ability_ref）保持不变。
+## 其他字段（instance, ability_ref）保持不变，event_collector 随 instance 派生。
 ## 注意：execution_info 不传递到回调上下文（回调不在 Timeline 执行流程中）。
 ## §0.4: execution_state 透传 — hook 内仍可读写本次 execution 的状态。
 static func create_callback_context(ctx: ExecutionContext, callback_event_dict: Dictionary) -> ExecutionContext:
@@ -150,7 +167,6 @@ static func create_callback_context(ctx: ExecutionContext, callback_event_dict: 
 	return ExecutionContext.new(
 		new_chain,
 		ctx.instance,
-		ctx.event_collector,
 		ctx.ability_ref,
 		null,  # 回调上下文不继承 execution_info
 		ctx.execution_state  # §0.4: 携带同一份引用

@@ -50,22 +50,16 @@ func _ready() -> void:
 # ============================================================
 
 func _phase_can_use_skill_on() -> bool:
-	GameWorld.init()
+	GameWorld.shutdown()
 
-	var battle := GameWorld.create_instance(func() -> GameplayInstance:
-		var inst := HexWorldGameplayInstance.new()
-		var grid_cfg := GridMapConfig.new()
-		grid_cfg.grid_type = GridMapConfig.GridType.HEX
-		grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
-		grid_cfg.rows = 9
-		grid_cfg.columns = 9
-		inst.configure_grid(grid_cfg)
-		return inst
-	) as HexWorldGameplayInstance
-
-	if battle == null:
-		_fail("can_use_skill_on phase: failed to create instance")
-		return false
+	var battle := HexWorldGameplayInstance.new()
+	var grid_cfg := GridMapConfig.new()
+	grid_cfg.grid_type = GridMapConfig.GridType.HEX
+	grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
+	grid_cfg.rows = 9
+	grid_cfg.columns = 9
+	battle.configure_grid(grid_cfg)
+	GameWorld.create_instance(battle)
 
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	battle.add_actor(caster)
@@ -105,7 +99,7 @@ func _phase_can_use_skill_on() -> bool:
 		_fail("can_use_skill_on(KP, adj_target) expected true")
 		passed = false
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 	if passed:
 		print("  [PASS] can_use_skill_on (range / kind / sanity)")
@@ -500,21 +494,16 @@ func _phase_action_lock_metadata_and_status() -> bool:
 # ============================================================
 
 func _phase_action_lock_blocks_atb_then_expires() -> bool:
-	GameWorld.init()
+	GameWorld.shutdown()
 
-	var battle := GameWorld.create_instance(func() -> GameplayInstance:
-		var inst := HexWorldGameplayInstance.new()
-		var grid_cfg := GridMapConfig.new()
-		grid_cfg.grid_type = GridMapConfig.GridType.HEX
-		grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
-		grid_cfg.rows = 9
-		grid_cfg.columns = 9
-		inst.configure_grid(grid_cfg)
-		return inst
-	) as HexWorldGameplayInstance
-	if battle == null:
-		_fail("action_lock_gate: failed to create battle")
-		return false
+	var battle := HexWorldGameplayInstance.new()
+	var grid_cfg := GridMapConfig.new()
+	grid_cfg.grid_type = GridMapConfig.GridType.HEX
+	grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
+	grid_cfg.rows = 9
+	grid_cfg.columns = 9
+	battle.configure_grid(grid_cfg)
+	GameWorld.create_instance(battle)
 
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	battle.add_actor(caster)
@@ -522,7 +511,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	caster.equip_abilities()
 	if not battle.grid.place_occupant(HexCoord.new(0, 0), caster):
 		_fail("action_lock_gate: failed to place caster")
-		GameWorld.destroy()
+		GameWorld.shutdown()
 		return false
 	caster.hex_position = HexCoord.new(0, 0)
 
@@ -534,7 +523,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	enemy.attribute_set.set_hp_base(1000.0)
 	if not battle.grid.place_occupant(HexCoord.new(1, 0), enemy):
 		_fail("action_lock_gate: failed to place enemy")
-		GameWorld.destroy()
+		GameWorld.shutdown()
 		return false
 	enemy.hex_position = HexCoord.new(1, 0)
 
@@ -554,7 +543,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	caster.accumulate_atb(100000.0)
 	if caster.get_atb_gauge() < CharacterActor.ATB_FULL:
 		_fail("action_lock_gate: setup failed, caster ATB not full")
-		GameWorld.destroy()
+		GameWorld.shutdown()
 		return false
 
 	var skill := caster.get_skill_ability()
@@ -564,7 +553,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	caster.ability_set.receive_event(direct_event)
 	if skill.get_executing_instances().size() != 0:
 		_fail("action_lock_gate: direct active skill activation should be blocked by cant_act")
-		GameWorld.destroy()
+		GameWorld.shutdown()
 		return false
 
 	var left_team: Array[CharacterActor] = [caster]
@@ -578,11 +567,11 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	procedure.tick_once()
 	if not caster.ability_set.has_tag(HexBattleActionLockStatus.TAG_CANT_ACT):
 		_fail("action_lock_gate: cant_act expired too early")
-		GameWorld.destroy()
+		GameWorld.shutdown()
 		return false
 	if caster.get_atb_gauge() < CharacterActor.ATB_FULL:
 		_fail("action_lock_gate: ATB reset while cant_act was active")
-		GameWorld.destroy()
+		GameWorld.shutdown()
 		return false
 
 	var recovered_and_acted := false
@@ -591,17 +580,17 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 		if not caster.ability_set.has_tag(HexBattleActionLockStatus.TAG_CANT_ACT):
 			if caster.get_atb_gauge() >= CharacterActor.ATB_FULL:
 				_fail("action_lock_gate: action lock expired but caster did not spend ready action")
-				GameWorld.destroy()
+				GameWorld.shutdown()
 				return false
 			recovered_and_acted = true
 			break
 
 	if not recovered_and_acted:
 		_fail("action_lock_gate: action lock did not expire within expected ticks")
-		GameWorld.destroy()
+		GameWorld.shutdown()
 		return false
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	print("  [PASS] action lock gate: ATB held during cant_act, action resumes after expiry")
 	return true
 

@@ -56,7 +56,7 @@ func start(config: Dictionary = {}) -> void:
 	configure_grid(grid_config)
 
 	var collision_detector := MobaCollisionDetector.new()
-	var projectile_system := ProjectileSystem.new(collision_detector, GameWorld.event_collector, false)
+	var projectile_system := ProjectileSystem.new(collision_detector, event_collector, false)
 	add_system(projectile_system)
 
 	# team_id 必须在 add_actor 之前设置:add_actor emit actor_added signal,

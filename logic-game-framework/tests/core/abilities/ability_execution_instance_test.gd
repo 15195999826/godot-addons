@@ -237,7 +237,7 @@ func _test_execution_state_isolated() -> void:
 func _test_execution_state_namespace_assert() -> void:
 	# 此处仅验证带 namespace key 不 crash; 不带 namespace 应 assert_crash,
 	# 但 GDScript 没法在测试内 catch crash, 跳过反例.
-	var ctx := ExecutionContext.new([], GameplayInstance.new("t"), null, null, null)
+	var ctx := ExecutionContext.new([], GameplayInstance.new("t"), null, null)
 	ctx.set_execution_state("ns.key", 42)
 	TestFramework.assert_equal(42, ctx.get_execution_state("ns.key", -1))
 	TestFramework.assert_equal(-1, ctx.get_execution_state("ns.missing", -1))

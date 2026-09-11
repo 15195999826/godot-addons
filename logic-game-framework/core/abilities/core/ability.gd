@@ -292,7 +292,7 @@ func remove_effects() -> void:
 ## 构造 on_remove / 叠层 / Break 钩子用的 lifecycle context（这几条路径手上没有 AbilitySet 递来的 context）。
 ##
 ## 与 grant / 事件派发同一种找法：instance 按 owner_actor_id 反查，actor 从该 instance 取，
-## attribute_set / ability_set 取自 actor；event_processor 在这几条路径上无消费者，传 null。
+## attribute_set / ability_set 取自 actor；event_processor 随 instance 派生。
 ##
 ## 若 owner 未注册到 GameWorld（如隔离单元测试）或不是 BattleActor，instance / attribute_set /
 ## ability_set 为 null —— 对 no-op 的 on_remove（如 PreEventComponent / TestComponent）
@@ -308,7 +308,7 @@ func _build_remove_context() -> AbilityLifecycleContext:
 	if actor != null:
 		attr_set = actor.get_attribute_set()
 		ab_set = actor.get_ability_set()
-	return AbilityLifecycleContext.new(owner_actor_id, attr_set, self, ab_set, null, owner_instance)
+	return AbilityLifecycleContext.new(owner_actor_id, attr_set, self, ab_set, owner_instance)
 
 func expire(reason: String) -> void:
 	if _state == STATE_EXPIRED:

@@ -181,12 +181,12 @@ func _stacks_event(actor_id: String, instance_id: String, config_id: String, old
 func _pass() -> void:
 	_finished = true
 	print("SMOKE_TEST_RESULT: PASS - same-frame ADD+UPDATE merges to U2 → U1 → '' as expected")
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(0)
 
 
 func _fail(reason: String) -> void:
 	_finished = true
 	printerr("SMOKE_TEST_RESULT: FAIL - %s" % reason)
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(1)

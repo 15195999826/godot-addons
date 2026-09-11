@@ -3,7 +3,8 @@ extends RefCounted
 ## 战斗录像器
 ##
 ## 职责：管理一次战斗 session 的录像（meta + world_snapshot + timeline + actor 订阅生命周期）。
-## 不持有事件 buffer —— 所有事件统一走 GameWorld.event_collector，保证调用栈穿插时真实时序自然成立。
+## 不持有事件 buffer —— 所有事件统一走构造时注入的 event_collector（所属 world 的 collector），
+## 保证调用栈穿插时真实时序自然成立。
 ##
 ## world_snapshot（开战初态, 回放的起点）由世界侧 WorldGameplayInstance.capture_world_snapshot
 ## 产出后注入; recorder 专职事件流, 不伸手进世界抄状态。
@@ -12,7 +13,7 @@ extends RefCounted
 ##
 ## 事件流：
 ##   Action.execute() ──┐
-##                      ├─→ GameWorld.event_collector ──flush()──→ record_frame(events)
+##                      ├─→ world.event_collector ──flush()──→ record_frame(events)
 ##   ability/attr CB ───┘    (按调用栈真实顺序入队)
 ##
 ## record_frame(events) 由外部（battle_procedure）每帧调用，传入 flush 出的事件数组写入 timeline。
@@ -39,11 +40,14 @@ extends RefCounted
 
 var _record: PlaybackData.BattleRecord
 var _meta: PlaybackData.BattleMeta
+var _event_collector: EventCollector
 var is_recording: bool = false
 var current_frame: int = 0
 var actor_subscriptions: Dictionary = {}
 
-func _init(recorder_config: Dictionary = {}) -> void:
+func _init(recorder_config: Dictionary, event_collector: EventCollector) -> void:
+	Log.assert_crash(event_collector != null, "BattleRecorder", "event_collector is required")
+	_event_collector = event_collector
 	var battle_id := recorder_config.get("battleId", "") as String
 	if battle_id.is_empty():
 		battle_id = IdGenerator.generate("battle")
@@ -88,19 +92,26 @@ func stop_recording(result: String = "") -> Dictionary:
 		push_error("[BattleRecorder] Not recording")
 		return {}
 
-	for subscription in actor_subscriptions.values():
-		for unsub in subscription.get("unsubscribes", []):
-			if unsub is Callable:
-				unsub.call()
-
-	actor_subscriptions.clear()
-
-	is_recording = false
+	_unsubscribe_all()
 
 	_meta.total_frames = current_frame
 	_meta.result = result
 
 	return _record.to_dict()
+
+## 中止录像：退订全部 actor 订阅并丢弃录像（不序列化）。未在录像时 no-op。
+## 订阅闭包与被录 actor 互相强持，中途拆除战斗不走这里就连同全部被录 actor 一起泄漏。
+func abort_recording() -> void:
+	if is_recording:
+		_unsubscribe_all()
+
+func _unsubscribe_all() -> void:
+	for subscription in actor_subscriptions.values():
+		for unsub in subscription.get("unsubscribes", []):
+			if unsub is Callable:
+				unsub.call()
+	actor_subscriptions.clear()
+	is_recording = false
 
 func export_json(result: String = "", pretty: bool = true) -> String:
 	var record := stop_recording(result)
@@ -128,7 +139,7 @@ func register_actor(actor: Actor) -> void:
 
 	var init_data := PlaybackData.ActorInitData.create(actor)
 	var event := GameEvent.ActorSpawned.create(actor.id, init_data.to_dict())
-	GameWorld.event_collector.push(event.to_dict())
+	_event_collector.push(event.to_dict())
 
 	_subscribe_actor(actor)
 	_record_existing_actor_abilities(actor)
@@ -138,7 +149,7 @@ func unregister_actor(actor_id: String, reason: String = "") -> void:
 		return
 
 	var event := GameEvent.ActorDestroyed.create(actor_id, reason)
-	GameWorld.event_collector.push(event.to_dict())
+	_event_collector.push(event.to_dict())
 
 	var subscription: Dictionary = actor_subscriptions.get(actor_id, {}) as Dictionary
 	if not subscription.is_empty():
@@ -154,7 +165,7 @@ func _subscribe_actor(actor: Actor) -> void:
 	if actor_subscriptions.has(actor_id):
 		return
 
-	var ctx := RecordingContext.new(actor_id, self)
+	var ctx := RecordingContext.new(actor_id, self, _event_collector)
 
 	var unsubscribes: Array[Callable] = actor.setup_recording(ctx)
 
@@ -174,11 +185,11 @@ func _record_existing_actor_abilities(actor: Actor) -> void:
 			continue
 		var granted_payload := ability.serialize()
 		granted_payload["instanceId"] = ability.id
-		GameWorld.event_collector.push(
+		_event_collector.push(
 			GameEvent.AbilityGranted.create(actor.id, granted_payload).to_dict()
 		)
 		for instance in ability.get_executing_instances():
-			GameWorld.event_collector.push(
+			_event_collector.push(
 				GameEvent.ExecutionActivated.create(
 					actor.id,
 					ability.id,

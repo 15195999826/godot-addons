@@ -223,7 +223,7 @@ func _ready() -> void:
 	_apply_clay_theme()
 	_update_workspace_layout()
 	get_viewport().size_changed.connect(_update_workspace_layout)
-	GameWorld.init()
+	GameWorld.shutdown()
 	_inventory_panel = SkillPreviewInventoryPanel.new(self)
 	_timeline_panel = SkillPreviewTimelinePanel.new(self)
 	_inventory_panel._init_inventory_session()
@@ -247,7 +247,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	_inventory_panel.dispose()
 	ItemSystem.reset_session()
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 
 func _process(delta: float) -> void:
@@ -325,7 +325,7 @@ func _apply_skill_preview_window_size() -> void:
 func _init_world_stack() -> void:
 	_world = SkillPreviewWorldGI.new()
 	_world.set_player_inventory(_inventory_panel._inventory)
-	GameWorld.create_instance(func() -> GameplayInstance: return _world)
+	GameWorld.create_instance(_world)
 	_world.start()
 	_world.battle_finished.connect(_on_battle_finished)
 	_world.battle_final_state_ready.connect(_on_battle_final_state_ready)
@@ -2678,7 +2678,7 @@ func _reset_world_to_model_unguarded() -> bool:
 	if _sanitize_environment_positions():
 		_queue_inspector_rebuild()
 	var collision_detector := MobaCollisionDetector.new()
-	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
+	_world.add_system(ProjectileSystem.new(collision_detector, _world.event_collector, false))
 
 	for i in _actors.size():
 		_spawn_one_actor(i)

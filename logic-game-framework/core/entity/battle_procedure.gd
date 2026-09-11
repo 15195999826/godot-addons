@@ -40,23 +40,23 @@ func _init(world: WorldGameplayInstance, participants: Array[Actor]) -> void:
 # ========== 生命周期 ==========
 
 ## 开始战斗: 给参与者打 in_combat tag; 录像开启时（_recording_enabled, 子类构造时
-## 可关）构造 recorder 并由 _start_recorder() 注入世界快照启动。
+## 可关）由 _start_recorder() 构造 recorder 并注入世界快照启动。
 func start() -> void:
 	for pid in _participant_ids:
 		_mark_in_combat(pid, true)
 	if _recording_enabled:
-		_recorder = BattleRecorder.new({"tickInterval": int(_tick_interval)})
 		_start_recorder()
 
 
-## Recorder 启动钩子: 问世界要快照与订阅列表注入 recorder, 并连接 actor_added
-## 让中途 spawn 的 actor 自动补录（否则其 abilityGranted / actorSpawned / damage
-## 不进录像）。连接在 finish() 时释放 —— procedure 短命而 world 常驻, 不释会
-## 跨战斗累积旧 procedure 监听器并阻止其 GC。
+## Recorder 启动钩子: 构造 recorder（注入 world 的 event_collector）, 问世界要快照与订阅列表
+## 启动录像, 并连接 actor_added 让中途 spawn 的 actor 自动补录（否则其 abilityGranted /
+## actorSpawned / damage 不进录像）。连接在 finish() / abort() 时释放 —— procedure 短命而
+## world 常驻, 不释会跨战斗累积旧 procedure 监听器并阻止其 GC。
 func _start_recorder() -> void:
 	var world := _get_world()
-	if _recorder == null or world == null:
+	if world == null:
 		return
+	_recorder = BattleRecorder.new({"tickInterval": int(_tick_interval)}, world.event_collector)
 	_recorder.start_recording(world.capture_world_snapshot(), world.get_recordable_actors())
 	if not world.actor_added.is_connected(_on_world_actor_added):
 		world.actor_added.connect(_on_world_actor_added)
@@ -102,6 +102,18 @@ func finish(result: String = "battle_complete") -> Dictionary:
 	return {}
 
 
+## 中止战斗（world 结束时仍在进行，由 WorldGameplayInstance.on_end 调用）: 释放 actor_added 补录连接、
+## 中止录像（退订全部订阅闭包、不产出录像）、标记结束。不清 in_combat、不经子类 finish() 收尾
+## （不存日志 / 不写回放 / 不发信号）—— world 正在结束, 这些产出无人接收。对已 finish() 的战斗是 no-op。
+func abort() -> void:
+	var world := _get_world()
+	if world != null and world.actor_added.is_connected(_on_world_actor_added):
+		world.actor_added.disconnect(_on_world_actor_added)
+	if _recorder != null:
+		_recorder.abort_recording()
+	_finished = true
+
+
 # ========== 查询 ==========
 
 func get_participant_ids() -> Array[String]:
@@ -126,9 +138,12 @@ func get_tick_interval() -> float:
 
 # ========== 受保护工具 ==========
 
-## 收集当前帧 event_collector 累积的事件并写入录像。
+## 收集当前帧 world.event_collector 累积的事件并写入录像（不录像时照样 flush，事件不跨帧堆积）。
 func record_current_frame_events() -> void:
-	var events := GameWorld.event_collector.flush()
+	var world := _get_world()
+	if world == null:
+		return
+	var events := world.event_collector.flush()
 	if _recorder != null:
 		_recorder.record_frame(_current_tick, events)
 

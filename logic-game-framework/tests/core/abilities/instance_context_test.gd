@@ -183,7 +183,7 @@ func _test_pre_handler_sees_owner_instance() -> void:
 	actor.ability_set.grant_ability(Ability.new(config, actor.get_id()))
 
 	var event := {"kind": PRE_KIND}
-	GameWorld.event_processor.process_pre_event(event)
+	GameWorld.get_instance_of_actor(actor.get_id()).event_processor.process_pre_event(event)
 	var expected := actor.get_gameplay_instance_id()
 	TestFramework.assert_equal(expected, event.get("pre_instance", ""))
 	GameWorld.destroy_instance(expected)
@@ -218,8 +218,7 @@ func _test_unregistered_owner() -> void:
 # ========== 夹具 ==========
 
 static func _spawn(instance_id: String) -> ProbeActor:
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new(instance_id))
+	var instance := GameWorld.create_instance(GameplayInstance.new(instance_id))
 	return instance.add_actor(ProbeActor.new()) as ProbeActor
 
 

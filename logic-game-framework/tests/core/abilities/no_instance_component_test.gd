@@ -65,8 +65,7 @@ func _init() -> void:
 
 
 func _setup() -> void:
-	GameWorld.event_collector.clear()
-	_instance = GameWorld.create_instance(func(): return GameplayInstance.new("no_instance_test"))
+	_instance = GameWorld.create_instance(GameplayInstance.new("no_instance_test"))
 
 
 func _teardown() -> void:
@@ -88,7 +87,7 @@ func _build_ability(cfg: NoInstanceConfig, owner_id: String) -> Ability:
 
 func _recorded_count(tag: String) -> int:
 	var count := 0
-	for event_dict in GameWorld.event_collector.collect():
+	for event_dict in _instance.event_collector.collect():
 		if (event_dict.get("kind", "") as String) == RecordingAction.EVENT_KIND \
 				and (event_dict.get("tag", "") as String) == tag:
 			count += 1
@@ -119,7 +118,7 @@ func _test_on_apply_runs() -> void:
 	var apply_arr: Array[Action.BaseAction] = [apply_act]
 	var cfg := NoInstanceConfig.builder().on_apply_actions(apply_arr).build()
 	var ability := _build_ability(cfg, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null, _instance)
+	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
 	TestFramework.assert_equal(1, _recorded_count("apply"))
 	_teardown()
@@ -134,7 +133,7 @@ func _test_on_remove_runs() -> void:
 	var remove_arr: Array[Action.BaseAction] = [remove_act]
 	var cfg := NoInstanceConfig.builder().on_remove_actions(remove_arr).build()
 	var ability := _build_ability(cfg, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null, _instance)
+	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
 	TestFramework.assert_true(_recorded_count("remove") == 0, "on_remove must not fire on apply")
 	ability.remove_effects()
@@ -160,7 +159,7 @@ func _test_lifecycle_tag_mutation() -> void:
 		.on_remove_actions(remove_arr)
 		.build())
 	var ability := _build_ability(cfg, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null, _instance)
+	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 
 	ability.apply_effects(ctx)
 	TestFramework.assert_true(aset.get_loose_tag_stacks("stance:test:wrath") == 1,
@@ -185,7 +184,7 @@ func _test_trigger_still_works() -> void:
 		.action(trigger_act)
 		.build())
 	var ability := _build_ability(cfg, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null, _instance)
+	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
 	var comp: NoInstanceComponent = ability.get_all_components()[0] as NoInstanceComponent
 	comp.on_event({"kind": "test_kind"}, ctx)

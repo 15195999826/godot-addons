@@ -38,7 +38,7 @@ static func spawn_wave(
 		procedure.register_controller(actor.get_id(), controller)
 		procedure.add_unit_to_team(actor, team_id)
 
-		GameWorld.event_collector.push(Dota2BattleEvents.make_unit_spawned(
+		world.event_collector.push(Dota2BattleEvents.make_unit_spawned(
 			actor.get_id(), team_id, actor.get_unit_type_id(),
 			actor.position_2d, actor.attribute_set.max_hp,
 		))

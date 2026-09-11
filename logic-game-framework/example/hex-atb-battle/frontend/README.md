@@ -6,7 +6,7 @@
 
 ```gdscript
 # main.gd 简化版,完整版见 main.gd 源码
-GameWorld.init()
+GameWorld.shutdown()                          # 清空 instance 注册表(退出时再调一次)
 
 _world_view = FrontendWorldView.new()
 add_child(_world_view)
@@ -17,7 +17,7 @@ _animator.playback_ended.connect(_on_playback_ended)
 
 # 用户按 Start Battle:
 _battle = HexBattle.new()
-GameWorld.create_instance(func() -> GameplayInstance: return _battle)
+GameWorld.create_instance(_battle)            # 注册后再 start
 _battle.battle_finished.connect(func(timeline: Dictionary) -> void:
     _animator.play(timeline, _world_view.get_unit_views())
 )

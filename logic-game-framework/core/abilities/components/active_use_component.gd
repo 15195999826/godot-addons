@@ -125,14 +125,16 @@ func _check_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> bool:
 ##
 ## reason 由 example 层 condition.get_fail_reason / cost.get_fail_reason 提供
 ## (LGF core 不知道"冷却"/"mp 不足", 只搬运字符串)。
+##
+## 事件推进 owner 所属 instance 的 collector; owner 未注册 (ctx.instance 为 null) 时无处可推, 跳过。
 func _push_activate_failed(
 	ctx: AbilityLifecycleContext, event_dict: Dictionary,
 	reason: String, failed_component_type: String,
 ) -> void:
 	var ability := ctx.ability
-	if ability == null:
+	if ability == null or ctx.instance == null:
 		return
-	GameWorld.event_collector.push(GameEvent.AbilityActivateFailed.create(
+	ctx.instance.event_collector.push(GameEvent.AbilityActivateFailed.create(
 		ability.id,
 		ability.config_id,
 		ctx.owner_actor_id,

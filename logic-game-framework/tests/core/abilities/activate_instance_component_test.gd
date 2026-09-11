@@ -29,7 +29,7 @@ func _test_any_trigger() -> void:
 	)
 	var ability := Ability.new(ability_config, owner_actor_id)
 	var component: ActivateInstanceComponent = ability.get_all_components()[0] as ActivateInstanceComponent
-	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null, null)
+	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null)
 	ability.apply_effects(context)
 
 	var triggered := component.on_event({"kind": "hit"}, context)
@@ -60,7 +60,7 @@ func _test_all_trigger() -> void:
 	)
 	var ability := Ability.new(ability_config, owner_actor_id)
 	var component: ActivateInstanceComponent = ability.get_all_components()[0] as ActivateInstanceComponent
-	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null, null)
+	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null)
 	ability.apply_effects(context)
 
 	var triggered := component.on_event({"kind": "hit"}, context)

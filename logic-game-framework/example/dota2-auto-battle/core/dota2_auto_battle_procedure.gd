@@ -100,7 +100,7 @@ func advance_tick(dt_ms: float = -1.0) -> Dota2LogicFrame:
 		if ctrl == null:
 			continue
 		for evt in ctrl.decide_if_needed(world, _current_tick):
-			GameWorld.event_collector.push(evt)
+			world.event_collector.push(evt)
 
 	# 5. movement + ability 推进 current intent。
 	_advance_intents(dt_seconds, step_ms, logic_time_ms)
@@ -114,12 +114,12 @@ func advance_tick(dt_ms: float = -1.0) -> Dota2LogicFrame:
 		if result == null:
 			continue
 		for evt in ctrl2.record_step_result(result, _current_tick):
-			GameWorld.event_collector.push(evt)
+			world.event_collector.push(evt)
 	_pending_step_results.clear()
 
 	# 7. death cleanup（本 tick 致死）+ 出帧。
 	_remove_dead_actors()
-	var events := GameWorld.event_collector.flush()
+	var events := world.event_collector.flush()
 	if _recorder != null:
 		_recorder.record_frame(_current_tick, events)
 	var frame := _build_logic_frame(events)
@@ -235,16 +235,17 @@ func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_m
 ## 移除本 tick 致死的 actor：emit unit_removed → world.remove_actor → 注销移动体 +
 ## controller。team 列表保留引用（is_dead 过滤），用于胜负判定计数。
 func _remove_dead_actors() -> void:
+	var world := _get_world()
 	var dead_ids: Array[String] = []
-	for actor in _get_world().get_actors():
+	for actor in world.get_actors():
 		var ba: Dota2BattleActor = actor as Dota2BattleActor
 		if ba != null and ba.is_dead():
 			dead_ids.append(ba.get_id())
 	for actor_id in dead_ids:
-		GameWorld.event_collector.push(Dota2BattleEvents.make_unit_removed(actor_id))
+		world.event_collector.push(Dota2BattleEvents.make_unit_removed(actor_id))
 		movement_adapter.unregister_unit(actor_id)
 		_controllers.erase(actor_id)
-		_get_world().remove_actor(actor_id)
+		world.remove_actor(actor_id)
 
 
 # ========== 出帧（Dota2LogicFrame 快照）==========

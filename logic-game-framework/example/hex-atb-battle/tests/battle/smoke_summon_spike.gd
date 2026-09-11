@@ -60,7 +60,7 @@ func _ready() -> void:
 # ============================================================
 func _run_phase_1_spawn() -> void:
 	var phase := "1. spawn"
-	GameWorld.init()
+	GameWorld.shutdown()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -68,7 +68,7 @@ func _run_phase_1_spawn() -> void:
 	grid_cfg.radius = 3
 	UGridMap.configure(grid_cfg)
 
-	var instance := GameWorld.create_instance(func(): return HexWorldGameplayInstance.new("spike_p1"))
+	var instance := GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p1"))
 	(instance as HexWorldGameplayInstance).grid = UGridMap.model
 
 	# 中途 spawn: 模拟战斗已经跑了若干 tick 后 add_actor
@@ -85,7 +85,7 @@ func _run_phase_1_spawn() -> void:
 	else:
 		_record(phase, false, "in_actors=%s grid_occupant=%s" % [in_actors, grid_occupant])
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 
 # ============================================================
@@ -93,7 +93,7 @@ func _run_phase_1_spawn() -> void:
 # ============================================================
 func _run_phase_2_drive() -> void:
 	var phase := "2. actor_drive"
-	GameWorld.init()
+	GameWorld.shutdown()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -101,7 +101,7 @@ func _run_phase_2_drive() -> void:
 	grid_cfg.radius = 3
 	UGridMap.configure(grid_cfg)
 
-	var instance: HexWorldGameplayInstance = GameWorld.create_instance(func(): return HexWorldGameplayInstance.new("spike_p2")) as HexWorldGameplayInstance
+	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p2")) as HexWorldGameplayInstance
 	instance.grid = UGridMap.model
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
@@ -129,7 +129,7 @@ func _run_phase_2_drive() -> void:
 	else:
 		_record(phase, false, "stacks=%d (期望 >= 2)" % stacks)
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 
 # ============================================================
@@ -137,7 +137,7 @@ func _run_phase_2_drive() -> void:
 # ============================================================
 func _run_phase_3_replay() -> void:
 	var phase := "3. replay_recording"
-	GameWorld.init()
+	GameWorld.shutdown()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -145,7 +145,7 @@ func _run_phase_3_replay() -> void:
 	grid_cfg.radius = 3
 	UGridMap.configure(grid_cfg)
 
-	var instance: HexWorldGameplayInstance = GameWorld.create_instance(func(): return HexWorldGameplayInstance.new("spike_p3")) as HexWorldGameplayInstance
+	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p3")) as HexWorldGameplayInstance
 	instance.grid = UGridMap.model
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
@@ -154,7 +154,7 @@ func _run_phase_3_replay() -> void:
 	UGridMap.model.place_occupant(HexCoord.new(0, 0), totem)
 	totem.hex_position = HexCoord.new(0, 0)
 
-	var recorder := BattleRecorder.new({"battleId": "spike_p3", "tickInterval": int(TICK_INTERVAL)})
+	var recorder := BattleRecorder.new({"battleId": "spike_p3", "tickInterval": int(TICK_INTERVAL)}, instance.event_collector)
 	var all_actors: Array[Actor] = [totem]
 	var snap := PlaybackData.WorldSnapshot.new()
 	for a in all_actors:
@@ -166,7 +166,7 @@ func _run_phase_3_replay() -> void:
 	var demon_ability := Ability.new(HexBattleDemonForm.ABILITY, totem.get_id())
 	totem.ability_set.grant_ability(demon_ability)
 	# grant 后立即 flush, 让 abilityGranted 进入 frame 0
-	recorder.record_frame(-1, GameWorld.event_collector.flush())
+	recorder.record_frame(-1, instance.event_collector.flush())
 
 	for _i in range(40):
 		instance.base_tick(TICK_INTERVAL)
@@ -175,7 +175,7 @@ func _run_phase_3_replay() -> void:
 		totem.ability_set.tick(TICK_INTERVAL, t_now2)
 		totem.ability_set.tick_executions(TICK_INTERVAL)
 		# Replay 关键: flush event_collector 进入 recorder
-		recorder.record_frame(_i, GameWorld.event_collector.flush())
+		recorder.record_frame(_i, instance.event_collector.flush())
 
 	var replay := recorder.stop_recording("spike_complete")
 	var has_granted := false
@@ -194,7 +194,7 @@ func _run_phase_3_replay() -> void:
 	else:
 		_record(phase, false, "abilityGranted=%s abilityStacksChanged=%s" % [has_granted, has_stacks_changed])
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 
 # ============================================================
@@ -202,7 +202,7 @@ func _run_phase_3_replay() -> void:
 # ============================================================
 func _run_phase_4_manual_remove() -> void:
 	var phase := "4a. manual_remove_release"
-	GameWorld.init()
+	GameWorld.shutdown()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -210,7 +210,7 @@ func _run_phase_4_manual_remove() -> void:
 	grid_cfg.radius = 3
 	UGridMap.configure(grid_cfg)
 
-	var instance: HexWorldGameplayInstance = GameWorld.create_instance(func(): return HexWorldGameplayInstance.new("spike_p4")) as HexWorldGameplayInstance
+	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p4")) as HexWorldGameplayInstance
 	instance.grid = UGridMap.model
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
@@ -239,7 +239,7 @@ func _run_phase_4_manual_remove() -> void:
 	else:
 		_record(phase, false, "still_in_actors=%s grid_still_occupied=%s" % [still_in_actors, grid_still_occupied])
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 
 # ============================================================
@@ -247,7 +247,7 @@ func _run_phase_4_manual_remove() -> void:
 # ============================================================
 func _run_phase_4b_ttl_lifecycle() -> void:
 	var phase := "4b. ttl_lifecycle_on_remove"
-	GameWorld.init()
+	GameWorld.shutdown()
 	var grid_cfg := GridMapConfig.new()
 	grid_cfg.grid_type = GridMapConfig.GridType.HEX
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
@@ -255,7 +255,7 @@ func _run_phase_4b_ttl_lifecycle() -> void:
 	grid_cfg.radius = 3
 	UGridMap.configure(grid_cfg)
 
-	var instance: HexWorldGameplayInstance = GameWorld.create_instance(func(): return HexWorldGameplayInstance.new("spike_p4b")) as HexWorldGameplayInstance
+	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p4b")) as HexWorldGameplayInstance
 	instance.grid = UGridMap.model
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
@@ -296,7 +296,7 @@ func _run_phase_4b_ttl_lifecycle() -> void:
 				removed_by_lifecycle, grid_released, expired_by_duration,
 			])
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 
 # ============================================================

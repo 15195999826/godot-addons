@@ -35,7 +35,7 @@ func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 	print("=== Smoke Test: WorldView + BattleAnimator ===")
 
-	GameWorld.init()
+	GameWorld.shutdown()
 
 	# Step 1: WorldView 先建好进场景树, 但不 bind
 	_world_view = FrontendWorldView.new()
@@ -48,7 +48,7 @@ func _ready() -> void:
 
 	# Step 2: 建 HexDemoWorldGameplayInstance 但 *不* 立即 start —— bind_world 先接管 signal
 	_world = HexDemoWorldGameplayInstance.new()
-	GameWorld.create_instance(func() -> GameplayInstance: return _world)
+	GameWorld.create_instance(_world)
 
 	_world_view.bind_world(_world)
 

@@ -42,7 +42,7 @@ class RecordingAction:
 
 
 func _ctx() -> ExecutionContext:
-	return ExecutionContext.create([{"kind":"test"}], GameplayInstance.new("t"), GameWorld.event_collector, null, null)
+	return ExecutionContext.create([{"kind":"test"}], GameplayInstance.new("t"), null, null)
 
 
 func _init() -> void:

@@ -32,8 +32,8 @@
 ##
 ## @example 在 tick 结束时收集事件
 ## ```gdscript
-## # 收集本帧事件（仅用于录像，状态已在 Action 内同步）
-## var frame_events: Array[Dictionary] = GameWorld.event_collector.flush()
+## # 收集本帧事件（仅用于录像，状态已在 Action 内同步）；collector 归所属 world instance
+## var frame_events: Array[Dictionary] = world.event_collector.flush()
 ## 
 ## # 录像记录
 ## if recorder != null:

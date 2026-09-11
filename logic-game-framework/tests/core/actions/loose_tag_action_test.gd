@@ -41,7 +41,7 @@ func _init() -> void:
 
 
 func _setup() -> void:
-	_instance = GameWorld.create_instance(func(): return GameplayInstance.new("loose_tag_test"))
+	_instance = GameWorld.create_instance(GameplayInstance.new("loose_tag_test"))
 
 
 func _teardown() -> void:
@@ -57,7 +57,7 @@ func _make_actor() -> Array:
 
 
 func _ctx() -> ExecutionContext:
-	return ExecutionContext.create([{"kind":"test"}], _instance, GameWorld.event_collector, null, null)
+	return ExecutionContext.create([{"kind":"test"}], _instance, null, null)
 
 
 func _test_apply_basic() -> void:

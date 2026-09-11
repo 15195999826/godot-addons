@@ -42,10 +42,10 @@ func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 	print("=== Smoke Test: skill_preview reactive path ===")
 
-	GameWorld.init()
+	GameWorld.shutdown()
 
 	_world = SkillPreviewWorldGI.new()
-	GameWorld.create_instance(func() -> GameplayInstance: return _world)
+	GameWorld.create_instance(_world)
 	_world.start()
 	_world.battle_finished.connect(_on_battle_finished)
 
@@ -92,7 +92,7 @@ func _start_next_battle() -> void:
 	_world.configure_grid(cfg)
 
 	var collision_detector := MobaCollisionDetector.new()
-	_world.add_system(ProjectileSystem.new(collision_detector, GameWorld.event_collector, false))
+	_world.add_system(ProjectileSystem.new(collision_detector, _world.event_collector, false))
 
 	# caster: WARRIOR@(0,0), dummy: WARRIOR@(1,0)
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)

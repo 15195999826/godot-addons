@@ -43,10 +43,8 @@ func _ready() -> void:
 
 ## GameWorld + world + procedure 装配 + 首帧（_ready 与 _restart 共用，避免 copy-paste）。
 func _create_world_and_procedure() -> void:
-	GameWorld.init()
-	_world = GameWorld.create_instance(func() -> GameplayInstance:
-		return Dota2WorldGameplayInstance.new()
-	) as Dota2WorldGameplayInstance
+	GameWorld.shutdown()
+	_world = GameWorld.create_instance(Dota2WorldGameplayInstance.new()) as Dota2WorldGameplayInstance
 	_world.start()
 	_procedure = _world.start_dota2_battle({ "tick_interval_ms": LOGIC_DT_MS })
 	# 立即出一帧让首屏非空（tick 0 快照）。
@@ -158,7 +156,7 @@ func _restart() -> void:
 		_procedure.finish()
 	if _world != null:
 		_world.end()
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	_accumulator_ms = 0.0
 	_catchup_frames = 0
 	_debt_drop_frames = 0

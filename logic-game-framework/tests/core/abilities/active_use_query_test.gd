@@ -18,6 +18,16 @@ const QUERY_TIMELINE_ID := "t-active-use-query"
 static var QUERY_TIMELINE := TimelineData.new(QUERY_TIMELINE_ID, 100.0, {})
 
 
+## 夹具 owner：注册进 instance，激活失败事件才有 owner 所属 instance 的 collector 可推。
+class QueryActor:
+	extends BattleActor
+
+	var ability_set := AbilitySet.create("")
+
+	func get_ability_set() -> AbilitySet:
+		return ability_set
+
+
 func _init() -> void:
 	TestFramework.register_test("can_activate allows with zero side effects", _test_allowed_zero_side_effects)
 	TestFramework.register_test("can_activate denies on condition without pushing events", _test_denied_by_condition)
@@ -29,15 +39,20 @@ func _init() -> void:
 
 ## 构造 "granted ability + ability_set" 夹具；conditions/costs 注入唯一的 ActiveUseConfig。
 func _build_fixture(conditions: Array[Condition], costs: Array[Cost]) -> Dictionary:
-	GameWorld.init()
 	var active_use := ActiveUseConfig.new(QUERY_TIMELINE, [], conditions, costs)
 	var active_use_list: Array[ActiveUseConfig] = [active_use]
-	var config := AbilityConfig.new("q-skill", "", "", "", [], active_use_list, [])
-	var ability := Ability.new(config, "actor-q")
-	var ability_set := AbilitySet.create("actor-q")
-	ability_set.grant_ability(ability)
-	GameWorld.event_collector.clear()
-	return {"set": ability_set, "ability": ability}
+	return _grant_fixture(AbilityConfig.new("q-skill", "", "", "", [], active_use_list, []))
+
+
+## 新 instance + 注册的 owner，grant 后清空 collector；返回 {set, ability, collector}。
+func _grant_fixture(config: AbilityConfig) -> Dictionary:
+	GameWorld.shutdown()
+	var instance := GameWorld.create_instance(GameplayInstance.new("active_use_query"))
+	var actor := instance.add_actor(QueryActor.new()) as QueryActor
+	var ability := Ability.new(config, actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	instance.event_collector.clear()
+	return {"set": actor.ability_set, "ability": ability, "collector": instance.event_collector}
 
 
 func _test_allowed_zero_side_effects() -> void:
@@ -46,6 +61,7 @@ func _test_allowed_zero_side_effects() -> void:
 	var fixture := _build_fixture(conditions, costs)
 	var ability_set: AbilitySet = fixture["set"]
 	var ability: Ability = fixture["ability"]
+	var collector: EventCollector = fixture["collector"]
 	ability_set.add_loose_tag("ready")
 	ability_set.add_loose_tag("ammo", 2)
 
@@ -56,14 +72,14 @@ func _test_allowed_zero_side_effects() -> void:
 
 	# 零副作用：资源未扣、无事件入队、无 execution 创建
 	TestFramework.assert_equal(2, ability_set.get_loose_tag_stacks("ammo"))
-	TestFramework.assert_equal(0, GameWorld.event_collector.get_count())
+	TestFramework.assert_equal(0, collector.get_count())
 	TestFramework.assert_equal(0, ability.get_executing_instances().size())
 
 	# 可重入：重复查询结果一致，状态依旧不动
 	var repeated := ability_set.can_activate(ability)
 	TestFramework.assert_true(AbilityActivationQuery.is_allowed(repeated))
 	TestFramework.assert_equal(2, ability_set.get_loose_tag_stacks("ammo"))
-	TestFramework.assert_equal(0, GameWorld.event_collector.get_count())
+	TestFramework.assert_equal(0, collector.get_count())
 
 
 func _test_denied_by_condition() -> void:
@@ -72,6 +88,7 @@ func _test_denied_by_condition() -> void:
 	var fixture := _build_fixture(conditions, costs)
 	var ability_set: AbilitySet = fixture["set"]
 	var ability: Ability = fixture["ability"]
+	var collector: EventCollector = fixture["collector"]
 	ability_set.add_loose_tag("stunned")
 
 	var result := ability_set.can_activate(ability)
@@ -81,13 +98,12 @@ func _test_denied_by_condition() -> void:
 	# reason 与激活失败事件同源（condition.get_fail_reason）
 	TestFramework.assert_equal("已有 Tag: stunned", result[AbilityActivationQuery.KEY_REASON])
 	# 查询是纯读：不像真实激活路径那样 push AbilityActivateFailed
-	TestFramework.assert_equal(0, GameWorld.event_collector.get_count())
+	TestFramework.assert_equal(0, collector.get_count())
 
 	# 对照：真实激活路径对同一失败会 push AbilityActivateFailed
-	var activate_dict := GameEvent.AbilityActivate.create(ability.id, "actor-q").to_dict()
+	var activate_dict := GameEvent.AbilityActivate.create(ability.id, ability.owner_actor_id).to_dict()
 	ability_set.receive_event(activate_dict)
-	var failed_events := GameWorld.event_collector.filter_by_kind(
-		GameEvent.ABILITY_ACTIVATE_FAILED_EVENT)
+	var failed_events := collector.filter_by_kind(GameEvent.ABILITY_ACTIVATE_FAILED_EVENT)
 	TestFramework.assert_equal(1, failed_events.size())
 
 
@@ -97,6 +113,7 @@ func _test_denied_by_cost() -> void:
 	var fixture := _build_fixture(conditions, costs)
 	var ability_set: AbilitySet = fixture["set"]
 	var ability: Ability = fixture["ability"]
+	var collector: EventCollector = fixture["collector"]
 	ability_set.add_loose_tag("ammo", 1)
 
 	var result := ability_set.can_activate(ability)
@@ -105,7 +122,7 @@ func _test_denied_by_cost() -> void:
 		result[AbilityActivationQuery.KEY_FAILED_COMPONENT_TYPE])
 	TestFramework.assert_equal("ammo 层数不足: 1/3", result[AbilityActivationQuery.KEY_REASON])
 	TestFramework.assert_equal(1, ability_set.get_loose_tag_stacks("ammo"))
-	TestFramework.assert_equal(0, GameWorld.event_collector.get_count())
+	TestFramework.assert_equal(0, collector.get_count())
 
 
 func _test_ability_level_shortcircuits() -> void:
@@ -148,7 +165,7 @@ func _test_query_then_real_activation() -> void:
 	TestFramework.assert_equal(1, ability_set.get_loose_tag_stacks("ammo"))
 
 	# 真实激活：默认 ABILITY_ACTIVATE trigger 命中 → 支付 + 创建 execution
-	var activate_dict := GameEvent.AbilityActivate.create(ability.id, "actor-q").to_dict()
+	var activate_dict := GameEvent.AbilityActivate.create(ability.id, ability.owner_actor_id).to_dict()
 	ability_set.receive_event(activate_dict)
 	TestFramework.assert_equal(0, ability_set.get_loose_tag_stacks("ammo"))
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
@@ -161,7 +178,6 @@ func _test_query_then_real_activation() -> void:
 
 
 func _test_multi_component_first_failure() -> void:
-	GameWorld.init()
 	var timeline := QUERY_TIMELINE
 	var pass_conditions: Array[Condition] = []
 	var no_costs: Array[Cost] = []
@@ -169,11 +185,9 @@ func _test_multi_component_first_failure() -> void:
 	var first_use := ActiveUseConfig.new(timeline, [], pass_conditions, no_costs)
 	var second_use := ActiveUseConfig.new(timeline, [], blocked_conditions, no_costs)
 	var active_use_list: Array[ActiveUseConfig] = [first_use, second_use]
-	var config := AbilityConfig.new("q-multi", "", "", "", [], active_use_list, [])
-	var ability := Ability.new(config, "actor-q")
-	var ability_set := AbilitySet.create("actor-q")
-	ability_set.grant_ability(ability)
-	GameWorld.event_collector.clear()
+	var fixture := _grant_fixture(AbilityConfig.new("q-multi", "", "", "", [], active_use_list, []))
+	var ability_set: AbilitySet = fixture["set"]
+	var ability: Ability = fixture["ability"]
 
 	TestFramework.assert_true(AbilityActivationQuery.is_allowed(ability_set.can_activate(ability)))
 

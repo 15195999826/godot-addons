@@ -80,7 +80,7 @@ func _on_start_battle_button_pressed() -> void:
 	print("[RandomMain] Starting random battle with map config: %s" % map_config)
 
 	_battle = HexRandomDemoWorldGameplayInstance.new()
-	GameWorld.create_instance(func() -> GameplayInstance: return _battle)
+	GameWorld.create_instance(_battle)
 	_battle.battle_finished.connect(_on_battle_finished)
 	_battle.battle_final_state_ready.connect(_on_battle_final_state_ready)
 	_final_state = {}

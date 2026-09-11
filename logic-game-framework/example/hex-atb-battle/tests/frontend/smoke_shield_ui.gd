@@ -181,11 +181,11 @@ func _apply_event(
 
 func _pass() -> void:
 	print("SMOKE_TEST_RESULT: PASS - shield UI data contract verified across 5 event paths")
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(0)
 
 
 func _fail(reason: String) -> void:
 	printerr("SMOKE_TEST_RESULT: FAIL - %s" % reason)
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(1)

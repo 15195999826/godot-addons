@@ -34,7 +34,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	if targets.is_empty():
 		return ActionResult.create_success_result([])
 
-	var event_processor: EventProcessor = GameWorld.event_processor
+	var event_processor: EventProcessor = world.event_processor
 	var event_collector: EventCollector = ctx.event_collector
 	var all_events: Array[Dictionary] = []
 	var alive_actor_ids := world.get_alive_actor_ids()

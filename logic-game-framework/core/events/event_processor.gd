@@ -2,9 +2,10 @@
 ##
 ## 统一处理 Pre/Post 双阶段事件，支持深度优先递归和追踪。
 ##
-## 伪单例"模式 —— EventProcessor 实例存放在 GameWorld (Autoload) 中，通过 GameWorld.event_processor 全局访问
-## EventProcessor 有状态（_current_depth, _traces, _pre_handlers），这些状态应该跟随 GameWorld 的生命周期，而不是独立存在
-## GameWorld.init(EventProcessorConfig.new(20, 3))  # 可以重置
+## 每个 GameplayInstance 持有自己的 EventProcessor（`instance.event_processor`）：
+## 有状态（_current_depth, _traces, _pre_handlers），这些状态跟随所属 instance 的生命周期，两个 instance 的 handler 互不可见。
+## 配置随 instance 构造传入：`GameplayInstance._init(id, EventProcessorConfig.new(20, 1))`。
+## 不持有 instance / Ability / Component 的引用（handler 闭包只捕获 id），instance → processor 是单向强边。
 ##
 ## ========== 核心职责 ==========
 ##
@@ -29,8 +30,8 @@
 ##
 ## @example 在 Action 中使用双阶段处理
 ## ```gdscript
-## var event_processor: EventProcessor = GameWorld.event_processor
 ## var battle := HexBattleGameStateUtils.world(ctx)  # 项目层 helper：必须有世界
+## var event_processor := battle.event_processor
 ## var alive_actor_ids := battle.get_alive_actor_ids()  # 效果之前快照：本次被击杀的目标仍是 Post 观众
 ## 
 ## # Pre 阶段：允许减伤/免疫

@@ -182,14 +182,14 @@ func _build_actor_snapshot(actor: HexBattleActor) -> Dictionary:
 ## 服务 BattleProcedure 子类(HexBattleProcedure / SkillPreviewProcedure)的 tick_once,
 ## 复用此方法避免各 procedure 各自内联 collect + match + process_post_event 同一段逻辑。
 func broadcast_projectile_events() -> void:
-	var events := GameWorld.event_collector.collect()
+	var events := event_collector.collect()
 	if events.is_empty():
 		return
 	var alive_ids := get_alive_actor_ids()
 	for event in events:
 		var kind: String = event.get("kind", "")
 		if kind == ProjectileEvents.PROJECTILE_HIT_EVENT or kind == ProjectileEvents.PROJECTILE_MISS_EVENT:
-			GameWorld.event_processor.process_post_event(event, alive_ids)
+			event_processor.process_post_event(event, alive_ids)
 
 
 ## 判断 actor 能否对 target 使用 skill。

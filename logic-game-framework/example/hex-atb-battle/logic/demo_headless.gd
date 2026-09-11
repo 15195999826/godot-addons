@@ -26,11 +26,9 @@ var accumulated_time: float = 0.0
 
 func _ready() -> void:
 	print("HexAtbBattle Example Starting...")
-	GameWorld.init()
+	GameWorld.shutdown()
 
-	battle = GameWorld.create_instance(func() -> GameplayInstance:
-		return HexDemoWorldGameplayInstance.new()
-	)
+	battle = GameWorld.create_instance(HexDemoWorldGameplayInstance.new())
 	battle.start({
 		"logging": enable_logging,
 		"recording": enable_recording,

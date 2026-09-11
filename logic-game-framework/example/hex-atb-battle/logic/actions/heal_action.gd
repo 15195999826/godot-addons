@@ -82,7 +82,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	
 	var all_events: Array[Dictionary] = []
 	var battle := HexBattleGameStateUtils.world(ctx)
-	var event_processor := GameWorld.event_processor
+	var event_processor := battle.event_processor
 	var alive_actor_ids := battle.get_alive_actor_ids()
 	
 	for target_id in targets:

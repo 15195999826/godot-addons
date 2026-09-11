@@ -201,14 +201,14 @@ func _pass(total_frames: int, current_frame: int, unit_count: int, actor_count: 
 	print("  + unit views       = %d" % unit_count)
 	print("  + actor snapshots  = %d" % actor_count)
 	print("SMOKE_TEST_RESULT: PASS - random frontend main scene flow ok")
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(0)
 
 
 func _fail(reason: String) -> void:
 	_finished = true
 	printerr("SMOKE_TEST_RESULT: FAIL - %s" % reason)
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(1)
 
 

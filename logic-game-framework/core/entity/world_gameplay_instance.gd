@@ -41,8 +41,8 @@ var _active_battle: BattleProcedure = null
 
 # ========== 初始化 ==========
 
-func _init(id_value: String = "") -> void:
-	super._init(id_value if id_value != "" else IdGenerator.generate("world"))
+func _init(id_value: String = "", processor_config: EventProcessorConfig = null) -> void:
+	super._init(id_value if id_value != "" else IdGenerator.generate("world"), processor_config)
 	type = "world"
 
 
@@ -131,6 +131,16 @@ func has_active_battle() -> bool:
 
 func get_active_battle() -> BattleProcedure:
 	return _active_battle
+
+
+## world 结束时若仍有进行中的战斗，先中止它（不发 battle_finished、不产出录像），再由基类 despawn actor：
+## 开着录像时 recorder 的订阅闭包与被录 actor 互相强持，不中止就连同全部被录 actor 一起泄漏。
+## 子类覆盖 on_end 须先调 super.on_end()。
+func on_end() -> void:
+	if _active_battle == null:
+		return
+	_active_battle.abort()
+	_active_battle = null
 
 
 # ========== Tick ==========

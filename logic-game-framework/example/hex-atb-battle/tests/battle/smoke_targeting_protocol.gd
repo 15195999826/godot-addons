@@ -11,22 +11,16 @@ func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 	print("=== Smoke Test: TARGETING dual-entry protocol ===")
 
-	GameWorld.init()
+	GameWorld.shutdown()
 
-	var battle := GameWorld.create_instance(func() -> GameplayInstance:
-		var inst := HexWorldGameplayInstance.new()
-		var grid_cfg := GridMapConfig.new()
-		grid_cfg.grid_type = GridMapConfig.GridType.HEX
-		grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
-		grid_cfg.rows = 3
-		grid_cfg.columns = 6
-		inst.configure_grid(grid_cfg)
-		return inst
-	) as HexWorldGameplayInstance
-
-	if battle == null:
-		_fail("failed to create HexWorldGameplayInstance")
-		return
+	var battle := HexWorldGameplayInstance.new()
+	var grid_cfg := GridMapConfig.new()
+	grid_cfg.grid_type = GridMapConfig.GridType.HEX
+	grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
+	grid_cfg.rows = 3
+	grid_cfg.columns = 6
+	battle.configure_grid(grid_cfg)
+	GameWorld.create_instance(battle)
 
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	battle.add_actor(caster)
@@ -88,7 +82,7 @@ func _ready() -> void:
 		_fail("can_use_skill_on(Strike, enemy) expected true")
 		passed = false
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 	if passed:
 		print("SMOKE_TEST_RESULT: PASS - targeting dual-entry protocol checks passed")

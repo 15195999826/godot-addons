@@ -146,8 +146,8 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
     # ... 业务逻辑
 
-    # Post 阶段：EventProcessor 通过 GameWorld.get_actor() + BattleActor.ability_set_of() 获取 AbilitySet
-    event_processor.process_post_event(damage_event, alive_actor_ids)
+    # Post 阶段：事件设施归 instance；EventProcessor 通过 GameWorld.get_actor() + BattleActor.ability_set_of() 获取 AbilitySet
+    battle.event_processor.process_post_event(damage_event, alive_actor_ids)
 
 # 允许在没有世界时静默降级的读点，基类隐式下转后判空：
 #   var battle: HexWorldGameplayInstance = ctx.instance
@@ -219,7 +219,7 @@ DamageAction.execute()
 ```gdscript
 func execute(ctx: ExecutionContext) -> ActionResult:
     var battle := HexBattleGameStateUtils.world(ctx)
-    var event_processor: EventProcessor = GameWorld.event_processor
+    var event_processor := battle.event_processor  # 事件设施归所属 instance，不在 GameWorld 上
     var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()
 
     for target in targets:
@@ -260,7 +260,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 func tick(dt: float) -> void:
     # ... 执行 Action ...
     
-    var frame_events := event_collector.flush()
+    var frame_events := world.event_collector.flush()
     _process_frame_events(frame_events)  # 遍历事件应用状态 ← 违反原子性！
 
 func _process_frame_events(events: Array) -> void:
@@ -281,8 +281,8 @@ func _process_frame_events(events: Array) -> void:
 func tick(dt: float) -> void:
     # ... 执行 Action（内部已完成状态同步） ...
     
-    # 收集本帧事件（仅用于录像，状态已在 Action 内同步）
-    var frame_events := event_collector.flush()
+    # 收集本帧事件（仅用于录像，状态已在 Action 内同步）；collector 归所属 world instance
+    var frame_events := world.event_collector.flush()
     recorder.record_frame(tick_count, frame_events)  # 仅录像
 ```
 
@@ -633,7 +633,7 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 
 ### (c) recorder 单 buffer + playback 模型
 
-`BattleProcedure` 持有短命的 `BattleRecorder`，随 procedure 销毁。录像的核心不变量是 **"调用栈真实顺序 = 录像顺序"**：Action 的 `event_collector.push` 与 callback 触发的 AttributeChanged / AbilityGranted 在同一调用栈穿插发生，因此 recorder **不分** `pending_events` / `frame_events` 双容器，而是统一汇入 `GameWorld.event_collector` 单一队列，`record_frame(frame, events)` 每帧只接收 flush 出的一个有序数组。
+`BattleProcedure` 持有短命的 `BattleRecorder`，随 procedure 销毁。录像的核心不变量是 **"调用栈真实顺序 = 录像顺序"**：Action 的 `event_collector.push` 与 callback 触发的 AttributeChanged / AbilityGranted 在同一调用栈穿插发生，因此 recorder **不分** `pending_events` / `frame_events` 双容器，而是统一汇入所属 world 的 `event_collector` 单一队列（`BattleRecorder` 构造时注入，Action 经 `ctx.event_collector` 推的是同一个），`record_frame(frame, events)` 每帧只接收 flush 出的一个有序数组。事件设施随 instance 生灭：两个 instance 的 collector / pre handler 互不可见；world 结束时若战斗仍在进行，`WorldGameplayInstance.on_end()` 先中止它（退订录像闭包、不发 `battle_finished`、不产出录像）。
 
 播放侧钉死两层命名：**A 层 `Playback`（现役）** 只从录像 dict spawn 视觉 view、不重建逻辑层；**B 层 `Replay`（deterministic 重算，未来不一定做）** 仅保留 `BattleReplayPlayer` / `BattleReplaySession` 命名占位。
 
@@ -646,11 +646,11 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 - **Ability lifecycle hook**：`is_pre_event_responsive()` 是中性钩子，`Actor` 恒 `true`、不含任何领域语义。`BattleActor` 作为 **opt-in** 的战斗基类只提供一个默认答案（`not is_dead()`），项目层照旧 override 说了算 —— 想让亡语在死后再吃一次 PreEvent，覆盖回 `true` 即可。核心约束不变：框架不代管亡语的 `alive_actor_ids` 时序契约，`check_death` 只按 hp 锁存一次，"留尸体还是 tick 末移除"是项目层决定。
 - **Ability 状态不随死亡清除**：死亡时绝不 `revoke_ability`（那会清掉冷却 / execution / modifier，破坏复活语义）。三层分离 —— Ability 本体跟 actor 永存、PreEvent handler 跟战斗走（`end()` 时 `remove_handlers_by_owner_id`）、运行时响应跟 `is_dead` 状态走。
 - **Config 驱动跨属性 clamp**：跨属性约束（如 hp ≤ max_hp）必须声明在 attribute config 的 `maxRef` / `minRef`、由生成器产出 `register_cross_attr_clamp` 调用；**禁止**在 Actor 里用 `set_pre_change` 注入 Callable —— lambda 捕获 owner 会形成无法 GC 的闭包循环。
-- **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 String id 或 `WeakRef`（`AbilityComponent._ability_ref` / `System._instance_ref` / `BattleProcedure._world`）；`BattleProcedure` 子类要具体世界类型就协变覆盖 `_get_world()`，不另存 world 字段（`world._active_battle` 强持 procedure，强回指即成环），procedure 持有的对象也只经调用参数拿 world；需要所属 instance 时按 owner id 反查（`GameWorld.get_instance_of_actor`），**不**在 AbilitySet / Ability / execution 上绑引用。context 对象（`ExecutionContext` / `AbilityLifecycleContext`）携带 `instance` 强引用，只许活在调用栈上、永不存进字段；`execution_state` 被 execution 强持有，同样不许放 instance / actor 这类 owning Object；既有的 `RecordingContext._recorder` 强引用靠 `BattleRecorder.stop_recording` 退订全部订阅闭包来打断 —— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
-- **测试引擎按场景独立**：两种场景生命周期语义冲突（headless 的 init/destroy vs UI 常驻 world）时各写一条 procedure（`SkillPreviewProcedure` vs `HexBattleProcedure`），而非硬塞兼容签名进一条引擎 —— 兼容参数会把 API 撑胖成坑。
+- **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 String id 或 `WeakRef`（`AbilityComponent._ability_ref` / `System._instance_ref` / `BattleProcedure._world`）；`BattleProcedure` 子类要具体世界类型就协变覆盖 `_get_world()`，不另存 world 字段（`world._active_battle` 强持 procedure，强回指即成环），procedure 持有的对象也只经调用参数拿 world；需要所属 instance 时按 owner id 反查（`GameWorld.get_instance_of_actor`），**不**在 AbilitySet / Ability / execution 上绑引用。context 对象（`ExecutionContext` / `AbilityLifecycleContext`）携带 `instance` 强引用，只许活在调用栈上、永不存进字段；`execution_state` 被 execution 强持有，同样不许放 instance / actor 这类 owning Object；既有的 `RecordingContext._recorder` 强引用靠 `BattleRecorder.stop_recording` / `abort_recording`（world 结束时由 `BattleProcedure.abort` 调）退订全部订阅闭包来打断；instance 自持的 `EventProcessor` / `EventCollector` 不回指 instance —— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
+- **测试引擎按场景独立**：两种场景生命周期语义冲突（headless 的 shutdown 清场 vs UI 常驻 world）时各写一条 procedure（`SkillPreviewProcedure` vs `HexBattleProcedure`），而非硬塞兼容签名进一条引擎 —— 兼容参数会把 API 撑胖成坑。
 - **View 是 state 的 reactive projection**：前端只能 `bind_world` + 订阅 mutation signal（`actor_added` / `actor_removed` / `grid_configured`）自动同步，**禁止任何 destructive 的 view 重建 API**（历史反例：已删除的 `FrontendBattleReplayScene.load_replay`）；且只订阅生命周期 / 结构变化，属性变化（HP / tag）交给 timeline 驱动的 Animator。
 - **Playback 不重建逻辑层**：A 层"录像播放"（`Playback`）只从录像 dict spawn 视觉 view、绝不 hydrate 真 Actor / AbilitySet / AttributeSet；B 层"回放"（`Replay`，deterministic 重算）未来不一定做，相关类名仅作命名占位。
-- **录像顺序 = 调用栈真实顺序**：所有录像事件统一走 `GameWorld.event_collector.push()` 单一队列，**禁止**按"入口类型"分两个容器再拼接 —— callback 在同步栈里穿插触发，任何固定拼接顺序都会丢失交错信息（反例：`damage1 → grant → damage2`）。
+- **录像顺序 = 调用栈真实顺序**：所有录像事件统一走所属 world 的 `event_collector.push()` 单一队列（Action 经 `ctx.event_collector`，录像回调经注入 recorder 的同一个 collector），**禁止**按"入口类型"分两个容器再拼接 —— callback 在同步栈里穿插触发，任何固定拼接顺序都会丢失交错信息（反例：`damage1 → grant → damage2`）。
 - **Action 是共享无状态对象**：Action 执行后必须 `_verify_unchanged()`，child action 必须随父 `_freeze()`，跨 tag 的临时状态放 execution-local state 而非 Action 字段 —— 详见 [Action 架构契约](./reference/action-architecture.md)。
 
 ## 版本历史

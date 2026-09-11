@@ -127,7 +127,7 @@ func _ready() -> void:
 		return
 
 	print("SMOKE_TEST_RESULT: PASS - same-frame ADD+UPDATE merges correctly (3→2 / 2→1 / 1→0/remove)")
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(0)
 
 
@@ -153,5 +153,5 @@ func _run_frame(
 
 func _fail(reason: String) -> void:
 	printerr("SMOKE_TEST_RESULT: FAIL - %s" % reason)
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(1)

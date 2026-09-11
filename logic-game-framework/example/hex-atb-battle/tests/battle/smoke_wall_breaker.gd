@@ -30,22 +30,16 @@ func _ready() -> void:
 # ============================================================
 
 func _phase_can_use_skill_on() -> bool:
-	GameWorld.init()
+	GameWorld.shutdown()
 
-	var battle := GameWorld.create_instance(func() -> GameplayInstance:
-		var inst := HexWorldGameplayInstance.new()
-		var grid_cfg := GridMapConfig.new()
-		grid_cfg.grid_type = GridMapConfig.GridType.HEX
-		grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
-		grid_cfg.rows = 3
-		grid_cfg.columns = 3
-		inst.configure_grid(grid_cfg)
-		return inst
-	) as HexWorldGameplayInstance
-
-	if battle == null:
-		_fail("failed to create HexWorldGameplayInstance for can_use_skill_on phase")
-		return false
+	var battle := HexWorldGameplayInstance.new()
+	var grid_cfg := GridMapConfig.new()
+	grid_cfg.grid_type = GridMapConfig.GridType.HEX
+	grid_cfg.draw_mode = GridMapConfig.DrawMode.ROW_COLUMN
+	grid_cfg.rows = 3
+	grid_cfg.columns = 3
+	battle.configure_grid(grid_cfg)
+	GameWorld.create_instance(battle)
 
 	var caster := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	battle.add_actor(caster)
@@ -98,7 +92,7 @@ func _phase_can_use_skill_on() -> bool:
 		_fail("can_use_skill_on(Cleanse, enemy) expected false, got true")
 		passed = false
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 	if passed:
 		print("  [PASS] can_use_skill_on eligibility check")

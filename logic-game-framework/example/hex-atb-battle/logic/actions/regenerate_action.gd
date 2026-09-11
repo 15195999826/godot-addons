@@ -90,5 +90,5 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			# 广播给存活 actor; heal-listening passive (kind="heal") 不会匹配, regeneration-listening
 			# (kind="regeneration", 未来如需) 会匹配. 见 RegenerationEvent header.
 			for ev in events:
-				GameWorld.event_processor.process_post_event(ev, alive_actor_ids)
+				battle.event_processor.process_post_event(ev, alive_actor_ids)
 	return ActionResult.create_success_result(events, { "regen_amount_per_target": amount })

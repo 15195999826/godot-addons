@@ -11,10 +11,8 @@ const MAX_ITERS := 2000
 
 
 func _ready() -> void:
-	GameWorld.init()
-	var world := GameWorld.create_instance(func() -> GameplayInstance:
-		return Dota2WorldGameplayInstance.new()
-	) as Dota2WorldGameplayInstance
+	GameWorld.shutdown()
+	var world := GameWorld.create_instance(Dota2WorldGameplayInstance.new()) as Dota2WorldGameplayInstance
 	world.start()
 
 	var procedure := world.start_dota2_battle({ "tick_interval_ms": LOGIC_DT_MS })
@@ -86,7 +84,7 @@ func _ready() -> void:
 		return
 
 	world.end()
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	print("SMOKE_TEST_RESULT: PASS - 2 waves spawn->march(sim-nav)->aggro->attack(Ability)->damage->death; result=%s ticks=%d dead=%d" % [
 		procedure.get_result(), iters, total_dead])
 	get_tree().quit(0)

@@ -23,7 +23,7 @@ class MockInstance:
 	extends GameplayInstance
 
 	func _init() -> void:
-		super._init()
+		super._init("", EventProcessorConfig.new(10, 2))
 		type = "MockInstance"
 
 
@@ -35,11 +35,9 @@ func _init() -> void:
 	TestFramework.register_test("PreEventComponent - cancels event", _test_cancel_event)
 
 
-## 测试环境：独立 event_processor + 注册到 GameWorld 的 mock actor + 配套 ability_set
+## 测试环境：注册到 GameWorld 的 mock instance（自带 event_processor）+ mock actor + 配套 ability_set
 class TestEnv:
 	extends RefCounted
-	var old_processor: EventProcessor
-	var event_processor: EventProcessor
 	var instance: GameplayInstance
 	var actor: MockActor
 	var owner_id: String
@@ -48,13 +46,7 @@ class TestEnv:
 
 func _setup_env() -> TestEnv:
 	var env := TestEnv.new()
-	env.old_processor = GameWorld.event_processor
-	env.event_processor = EventProcessor.new(EventProcessorConfig.new(10, 2))
-	GameWorld.event_processor = env.event_processor
-
-	env.instance = GameWorld.create_instance(func() -> GameplayInstance:
-		return MockInstance.new()
-	)
+	env.instance = GameWorld.create_instance(MockInstance.new())
 
 	env.actor = MockActor.new()
 	env.instance.add_actor(env.actor)
@@ -67,7 +59,6 @@ func _setup_env() -> TestEnv:
 
 func _teardown_env(env: TestEnv) -> void:
 	GameWorld.destroy_instance(env.instance.id)
-	GameWorld.event_processor = env.old_processor
 
 
 func _test_registration() -> void:
@@ -88,7 +79,7 @@ func _test_registration() -> void:
 	env.ability_set.grant_ability(ability)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event)
+	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	TestFramework.assert_true(not mutable.cancelled)
 	TestFramework.assert_near(70, float(mutable.get_current_value("damage")))
@@ -112,7 +103,7 @@ func _test_unregistration() -> void:
 	env.ability_set.revoke_ability(ability.id)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event)
+	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	TestFramework.assert_near(100, float(mutable.get_current_value("damage")))
 	_teardown_env(env)
@@ -135,7 +126,7 @@ func _test_modify_event() -> void:
 	env.ability_set.grant_ability(ability)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event)
+	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	# 计算顺序: SET → ADD → MULTIPLY
 	# (100 + (-10)) * 0.7 = 63
@@ -157,7 +148,7 @@ func _test_cancel_event() -> void:
 	env.ability_set.grant_ability(ability)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event)
+	var mutable := env.instance.event_processor.process_pre_event(event)
 
 	TestFramework.assert_true(mutable.cancelled)
 	TestFramework.assert_equal("immune", mutable.cancel_reason)
@@ -184,16 +175,16 @@ func _test_dead_actor_stops_responding() -> void:
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
 	TestFramework.assert_near(
-		float(env.event_processor.process_pre_event(event).get_current_value("damage")),
+		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
 		50.0, 0.0001, "活着时 handler 应生效")
 
 	env.actor.mark_dead()
 	TestFramework.assert_near(
-		float(env.event_processor.process_pre_event(event).get_current_value("damage")),
+		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
 		100.0, 0.0001, "死后 handler 不应再改事件")
 
 	env.actor.set_death_latch(false)
 	TestFramework.assert_near(
-		float(env.event_processor.process_pre_event(event).get_current_value("damage")),
+		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
 		50.0, 0.0001, "解闩后 handler 应恢复（注册没被销毁）")
 	_teardown_env(env)

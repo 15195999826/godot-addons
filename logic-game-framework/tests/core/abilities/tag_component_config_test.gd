@@ -38,7 +38,7 @@ func _init() -> void:
 
 
 func _setup() -> void:
-	_instance = GameWorld.create_instance(func(): return GameplayInstance.new("tag_cfg_test"))
+	_instance = GameWorld.create_instance(GameplayInstance.new("tag_cfg_test"))
 
 
 func _teardown() -> void:
@@ -78,7 +78,7 @@ func _test_lifecycle_apply() -> void:
 	var cfg := TagComponentConfig.builder().tag(STATUS_TAG).tag(ACTION_LOCK_TAG).build()
 	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [], [cfg])
 	var ability := Ability.new(ability_config, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null, _instance)
+	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
 	# 这两 tag 都属于 component tag,聚合查询能命中
 	TestFramework.assert_true(aset.has_tag(STATUS_TAG), "STATUS_TAG should be present after apply")
@@ -96,7 +96,7 @@ func _test_lifecycle_remove() -> void:
 	var cfg := TagComponentConfig.builder().tag(STATUS_TAG).build()
 	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [], [cfg])
 	var ability := Ability.new(ability_config, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null, _instance)
+	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
 	TestFramework.assert_true(aset.has_tag(STATUS_TAG))
 	ability.remove_effects()
@@ -112,7 +112,7 @@ func _test_independent_from_loose() -> void:
 	var cfg := TagComponentConfig.builder().tag(STATUS_TAG).build()
 	var ability_config := AbilityConfig.new("dummy_ability", "", "", "", [], [], [cfg])
 	var ability := Ability.new(ability_config, owner_id)
-	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, null, _instance)
+	var ctx := AbilityLifecycleContext.new(owner_id, null, ability, aset, _instance)
 	ability.apply_effects(ctx)
 	# 同名 loose tag 与 component tag 共存
 	aset.add_loose_tag(STATUS_TAG, 3)

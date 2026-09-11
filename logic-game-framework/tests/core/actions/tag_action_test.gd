@@ -38,7 +38,7 @@ func _init() -> void:
 
 func _setup_test_instance() -> void:
 	# 创建测试用 GameplayInstance 并注册到 GameWorld
-	_test_instance = GameWorld.create_instance(func(): return GameplayInstance.new("test_instance"))
+	_test_instance = GameWorld.create_instance(GameplayInstance.new("test_instance"))
 
 
 func _teardown_test_instance() -> void:
@@ -56,7 +56,6 @@ func _build_context(event: Dictionary = {}) -> ExecutionContext:
 	return ExecutionContext.create(
 		event_dict_chain,
 		_test_instance,
-		GameWorld.event_collector,
 		null,  # ability_ref
 		null   # execution_info
 	)

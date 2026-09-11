@@ -112,11 +112,11 @@ func _visible_bars(view: FrontendShieldBarView) -> Array:
 
 func _pass() -> void:
 	print("SMOKE_TEST_RESULT: PASS - shield bar layout: per-type stacked bars verified")
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(0)
 
 
 func _fail(reason: String) -> void:
 	printerr("SMOKE_TEST_RESULT: FAIL - %s" % reason)
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(1)

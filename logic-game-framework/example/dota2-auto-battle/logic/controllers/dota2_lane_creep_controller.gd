@@ -67,4 +67,4 @@ func _schedule_next_reconsider(tick: int) -> void:
 
 func _emit_target_acquired(world: Dota2WorldGameplayInstance, unit: Dota2UnitActor, target_id: String) -> void:
 	var dist := Dota2TargetingSystem.distance_to(world, unit, target_id)
-	GameWorld.event_collector.push(Dota2BattleEvents.make_target_acquired(actor_id, target_id, dist))
+	world.event_collector.push(Dota2BattleEvents.make_target_acquired(actor_id, target_id, dist))

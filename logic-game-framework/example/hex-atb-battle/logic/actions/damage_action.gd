@@ -134,7 +134,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var source_ability_config_id := ctx.ability_ref.config_id if ctx.ability_ref != null else ""
 	var targets := get_targets(ctx)
 	var battle := HexBattleGameStateUtils.world(ctx)
-	var event_processor := GameWorld.event_processor
+	var event_processor := battle.event_processor
 	var all_events: Array[Dictionary] = []
 	var alive_actor_ids := battle.get_alive_actor_ids()
 	# 每次 execute 解析一次 base damage（同一次施法对所有目标使用同一数值）

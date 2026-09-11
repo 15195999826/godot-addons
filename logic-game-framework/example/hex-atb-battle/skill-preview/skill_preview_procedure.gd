@@ -8,7 +8,7 @@
 ## ability runtime tick 复用 AbilitySet.tick_runtime；本类只替换
 ## 正式战斗里的"AI 决策并启动 action"阶段。
 ##
-## 寄生在外部常驻 WorldGI 上 —— 不 GameWorld.destroy()，actor 生命周期归
+## 寄生在外部常驻 WorldGI 上 —— 不 GameWorld.shutdown()，actor 生命周期归
 ## world 管，procedure 结束后可再次 start_battle。
 ##
 ## 触发语义: keyframe.time_ms <= world.get_logic_time() 即触发。time_ms<=0
@@ -230,7 +230,7 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		var event := GameEvent.AbilityActivate.create(
 			ability.id, actor.get_id(), float(kf["time_ms"]), target_id, target_coord
 		).to_dict()
-		HexFacing.face_actor_for_active_event(actor, event, world, GameWorld.event_collector)
+		HexFacing.face_actor_for_active_event(actor, event, world)
 		actor.ability_set.receive_event(event)
 
 

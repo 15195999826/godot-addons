@@ -3,8 +3,8 @@ extends Node
 class DummyInstance:
 	extends GameplayInstance
 
-	func _init(id_value: String = ""):
-		super._init(id_value)
+	func _init(id_value: String = "", processor_config: EventProcessorConfig = null):
+		super._init(id_value, processor_config)
 		type = "dummy"
 
 	func tick(dt: float) -> void:
@@ -37,23 +37,51 @@ class OrderProbeSystem:
 
 func _init() -> void:
 	TestFramework.register_test("GameWorld manages instances", _test_world_instances)
+	TestFramework.register_test("GameWorld.shutdown ends every instance and is idempotent", _test_shutdown_idempotent)
+	TestFramework.register_test("GameplayInstance owns its EventProcessor / EventCollector", _test_instance_owns_event_infrastructure)
 	TestFramework.register_test("GameplayInstance runs systems and actors", _test_instance_lifecycle)
 	TestFramework.register_test("System order: same priority keeps registration order", _test_system_order_same_priority)
 	TestFramework.register_test("System order: mid-run insert does not disturb same-priority order", _test_system_order_mid_insert)
 	TestFramework.register_test("System order: stable after remove", _test_system_order_after_remove)
 
 func _test_world_instances() -> void:
-	GameWorld.init()
-	var world := GameWorld
-	var instance := world.create_instance(func():
-		return DummyInstance.new("inst-1")
-	)
-	TestFramework.assert_true(instance != null)
-	TestFramework.assert_equal(1, world.get_instance_count())
-	TestFramework.assert_true(world.has_running_instances() == false)
-	world.destroy_all_instances()
-	TestFramework.assert_equal(0, world.get_instance_count())
-	GameWorld.destroy()
+	GameWorld.shutdown()
+	var instance := DummyInstance.new("inst-1")
+	TestFramework.assert_true(GameWorld.create_instance(instance) == instance, "create_instance 注册并原样返回")
+	TestFramework.assert_equal(1, GameWorld.get_instance_count())
+	TestFramework.assert_true(GameWorld.get_instance_by_id("inst-1") == instance)
+	TestFramework.assert_true(GameWorld.has_running_instances() == false)
+	GameWorld.destroy_all_instances()
+	TestFramework.assert_equal(0, GameWorld.get_instance_count())
+	GameWorld.shutdown()
+
+## shutdown 结束全部 instance（不论是否 running）并清空注册表；空表上再调同样安全。
+func _test_shutdown_idempotent() -> void:
+	GameWorld.shutdown()
+	var running := DummyInstance.new("inst-shutdown-running")
+	var created := DummyInstance.new("inst-shutdown-created")
+	GameWorld.create_instance(running)
+	GameWorld.create_instance(created)
+	running.start()
+	GameWorld.shutdown()
+	TestFramework.assert_equal(0, GameWorld.get_instance_count())
+	TestFramework.assert_equal("ended", running.get_state())
+	TestFramework.assert_equal("ended", created.get_state())
+	GameWorld.shutdown()
+	TestFramework.assert_equal(0, GameWorld.get_instance_count())
+
+## 事件设施归 instance：各自一套 processor / collector，配置随构造传入，互不共享。
+func _test_instance_owns_event_infrastructure() -> void:
+	var a := DummyInstance.new("inst-events-a", EventProcessorConfig.new(7))
+	var b := DummyInstance.new("inst-events-b")
+	TestFramework.assert_true(a.event_processor != null and a.event_collector != null)
+	TestFramework.assert_true(a.event_processor != b.event_processor, "processor 不共享")
+	TestFramework.assert_true(a.event_collector != b.event_collector, "collector 不共享")
+	TestFramework.assert_equal(7, a.event_processor._config.max_depth)
+	TestFramework.assert_equal(EventProcessorConfig.DEFAULT_MAX_DEPTH, b.event_processor._config.max_depth)
+	a.event_collector.push({"kind": "only_a"})
+	TestFramework.assert_equal(1, a.event_collector.get_count())
+	TestFramework.assert_equal(0, b.event_collector.get_count())
 
 func _test_instance_lifecycle() -> void:
 	var instance := DummyInstance.new("inst-2")

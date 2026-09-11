@@ -3,27 +3,28 @@ extends Node
 ## 释放测试（循环引用硬关卡）
 ##
 ## GDScript RefCounted 没有循环 GC：对象图里只要有一条回指强边，整张图在
-## destroy_instance 后仍活着。本测试对图中每个节点取 weakref，销毁 instance 并让
+## 销毁后仍活着。本测试对图中每个节点取 weakref，销毁 instance 并让
 ## 测试自己的所有强引用随建图函数返回一并消亡（比逐个置 null 更彻底：循环变量 /
 ## 临时值同样释放），然后断言 weakref 全部归 null——RefCounted 计数归零即时释放，
 ## 不需要等 GC。任一断言失败 = 存在引用环。
 ##
-## 两个用例：
+## 四个用例：
 ##  1. 裸 instance：actor(ability_set + attribute_set) + 四组件 ability
 ##     (PreEvent / NoInstance / StatModifier / ActivateInstance(GRANTED_SELF + loop timeline))，
-##     tick 到 execution 真 fire 过 action，pre / post 各派发一次。
-##  2. start_battle + 录像：BattleProcedure / BattleRecorder / RecordingContext / 订阅闭包，
-##     battle_finished 后同样全部释放。
+##     tick 到 execution 真 fire 过 action，pre / post 各派发一次；destroy_instance 后连同 instance
+##     自持的 EventProcessor / EventCollector 全部释放。
+##  2. start_battle + 录像：BattleProcedure / 注入 world collector 的 BattleRecorder / RecordingContext /
+##     订阅闭包，battle_finished 后同样全部释放。
+##  3. procedure 子类（协变 _get_world、持有不回指 world 的 helper）被调用方直接 finish()——不经
+##     world.tick 收尾，world._active_battle 仍指着它：销毁 world 后全部释放。
+##  4. 开着录像的战斗进行中 GameWorld.shutdown()：被录范围含不参战的常驻 actor 与战斗中途 spawn 的补录
+##     actor；world 结束时中止战斗（不发 battle_finished），recorder 与全部被录 actor 一并释放。
 ##
 ## context 对象（AbilityLifecycleContext / ExecutionContext）携带 instance 强引用，只许活在
 ## 调用栈上：探针在 NoInstance 的 on_apply action、trigger filter、事件 action 与 timeline tag action
-## 里把收到的 context 以 weakref 捕出，grant / tick / 派发一返回就断言已释放（不等 destroy_instance）——
-## 这四处任一把 context 缓存进字段，它都会当场存活。其余构造点——on_remove / 叠层 / Break 钩子、cancel、
-## can_activate、PreEvent 重建与 callback context——都不在探针内（「拿到 owner 的 instance」大多由
-## instance_context_test 钉住，释放与否没有断言）。
-##
-## EventProcessor / EventCollector 归 GameWorld 持有：用 GameWorld.init() 换新，
-## 让旧实例失去唯一持有者后断言释放。
+## 里把收到的 context 以 weakref 捕出，grant / tick / 派发一返回就断言已释放（不等 destroy_instance）。
+## 本测试走到的其余构造点（PreEvent 重建、AbilitySet 派发建的 lifecycle context 等）没有 weakref 探针，
+## 由两类 context 的 debug 存活计数兜底：每个用例结束后计数必须回到用例开始前。
 
 const PRE_KIND := "release_probe_pre"
 const POST_KIND := "release_probe_post"
@@ -90,29 +91,81 @@ class ContextProbeAction:
 		return ActionResult.create_success_result([])
 
 
+## procedure 子类形状的世界：工厂钩子返回 ProbeProcedure。
+class ProbeWorld:
+	extends WorldGameplayInstance
+
+	func _create_battle_procedure(participants: Array[Actor]) -> BattleProcedure:
+		return ProbeProcedure.new(self, participants)
+
+
+## procedure 子类：协变 _get_world()、持有一个只经调用参数拿 world 的 helper（同 hex logger / dota2 controller）。
+class ProbeProcedure:
+	extends BattleProcedure
+
+	var helper := ProbeProcedureHelper.new()
+
+	func _get_world() -> ProbeWorld:
+		return super._get_world() as ProbeWorld
+
+	func tick_once() -> void:
+		_current_tick += 1
+		helper.observe(_get_world())
+		record_current_frame_events()
+
+
+class ProbeProcedureHelper:
+	extends RefCounted
+
+	var observed_actor_count := 0
+
+	func observe(world: WorldGameplayInstance) -> void:
+		observed_actor_count = world.get_actor_count() if world != null else 0
+
+
 func _init() -> void:
 	TestFramework.register_test("Release: instance graph fully released after destroy_instance", _test_instance_graph_released)
 	TestFramework.register_test("Release: recorded battle graph fully released after battle_finished", _test_recorded_battle_released)
+	TestFramework.register_test("Release: procedure subclass finished directly releases world graph", _test_subclass_procedure_finished_directly_released)
+	TestFramework.register_test("Release: shutdown mid recorded battle releases recorder and every recorded actor", _test_shutdown_mid_recorded_battle_released)
 
 
 # ========== 用例 ==========
 
 func _test_instance_graph_released() -> void:
-	GameWorld.init()
+	GameWorld.shutdown()
+	var live_before := _live_context_counts()
 	var refs: Dictionary = {}
 	_build_and_destroy_instance_graph(refs)
-	_assert_no_pre_handlers_left()
-	GameWorld.init()
 	_assert_all_released(refs)
+	_assert_live_contexts_back_to(live_before)
 
 
 func _test_recorded_battle_released() -> void:
-	GameWorld.init()
+	GameWorld.shutdown()
+	var live_before := _live_context_counts()
 	var refs: Dictionary = {}
 	_build_and_finish_recorded_battle(refs)
-	_assert_no_pre_handlers_left()
-	GameWorld.init()
 	_assert_all_released(refs)
+	_assert_live_contexts_back_to(live_before)
+
+
+func _test_subclass_procedure_finished_directly_released() -> void:
+	GameWorld.shutdown()
+	var live_before := _live_context_counts()
+	var refs: Dictionary = {}
+	_build_and_finish_subclass_procedure_directly(refs)
+	_assert_all_released(refs)
+	_assert_live_contexts_back_to(live_before)
+
+
+func _test_shutdown_mid_recorded_battle_released() -> void:
+	GameWorld.shutdown()
+	var live_before := _live_context_counts()
+	var refs: Dictionary = {}
+	_build_and_shutdown_mid_recorded_battle(refs)
+	_assert_all_released(refs)
+	_assert_live_contexts_back_to(live_before)
 
 
 # ========== 建图（局部强引用随函数返回消亡） ==========
@@ -120,8 +173,7 @@ func _test_recorded_battle_released() -> void:
 ## 用例 1：建图 → execution fire 过 action → pre / post 各派发一次 → 取 weakref → destroy_instance。
 func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 	var timeline := _make_loop_timeline()
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new())
+	var instance := GameWorld.create_instance(GameplayInstance.new())
 	var actor := instance.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
 	actor.probe_sink = refs
 	var actor_id := actor.get_id()
@@ -138,10 +190,10 @@ func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_END))
 	_assert_contexts_released(refs, [_probe_key(PROBE_TIMELINE, actor_id)])
 
-	var mutable := GameWorld.event_processor.process_pre_event({"kind": PRE_KIND, "value": 10.0})
+	var mutable := instance.event_processor.process_pre_event({"kind": PRE_KIND, "value": 10.0})
 	TestFramework.assert_near(float(mutable.get_current_value("value")), 15.0)
 	var audience: Array[String] = [actor_id]
-	GameWorld.event_processor.process_post_event({"kind": POST_KIND}, audience)
+	instance.event_processor.process_post_event({"kind": POST_KIND}, audience)
 	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_POST))
 	_assert_contexts_released(refs, [
 		_probe_key(PROBE_LIFECYCLE, actor_id),
@@ -150,16 +202,16 @@ func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 
 	_collect_actor_refs(refs, actor, "")
 	refs["instance"] = weakref(instance)
-	refs["event_processor"] = weakref(GameWorld.event_processor)
-	refs["event_collector"] = weakref(GameWorld.event_collector)
+	refs["event_processor"] = weakref(instance.event_processor)
+	refs["event_collector"] = weakref(instance.event_collector)
 	GameWorld.destroy_instance(instance.id)
+	_assert_no_pre_handlers_left(instance.event_processor)
 
 
-## 用例 2：world + 两个 actor → start_battle（录像开启）→ 战斗中产生真实事件 → finish。
+## 用例 2：world + 两个 actor → start_battle（录像开启）→ 战斗中产生真实事件 → world.tick 收尾 finish。
 func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	var timeline := _make_loop_timeline()
-	var world := GameWorld.create_instance(func() -> GameplayInstance:
-		return WorldGameplayInstance.new()) as WorldGameplayInstance
+	var world := GameWorld.create_instance(WorldGameplayInstance.new()) as WorldGameplayInstance
 	var caster := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
 	var target := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
 	caster.probe_sink = refs
@@ -180,12 +232,13 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	var procedure := world.start_battle(participants)
 	var recorder := procedure.get_recorder()
 	TestFramework.assert_true(recorder != null and recorder.get_is_recording(), "录像应已开启")
+	TestFramework.assert_true(recorder._event_collector == world.event_collector, "recorder 应注入 world 的 collector")
 
 	# 战斗中的真实事件：execution tick 打 tag（TagChanged 进录像）、post 派发触发被动
 	caster.ability_set.tick_executions(100.0)
 	_assert_contexts_released(refs, [_probe_key(PROBE_TIMELINE, caster.get_id())])
 	var audience: Array[String] = [caster.get_id(), target.get_id()]
-	GameWorld.event_processor.process_post_event({"kind": POST_KIND}, audience)
+	world.event_processor.process_post_event({"kind": POST_KIND}, audience)
 	var dispatched: Array[String] = []
 	for actor: ReleaseProbeActor in [caster, target]:
 		dispatched.append(_probe_key(PROBE_LIFECYCLE, actor.get_id()))
@@ -208,9 +261,92 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	refs["world"] = weakref(world)
 	refs["procedure"] = weakref(procedure)
 	refs["recorder"] = weakref(recorder)
-	refs["event_processor"] = weakref(GameWorld.event_processor)
-	refs["event_collector"] = weakref(GameWorld.event_collector)
+	refs["event_processor"] = weakref(world.event_processor)
+	refs["event_collector"] = weakref(world.event_collector)
 	GameWorld.destroy_instance(world.id)
+	_assert_no_pre_handlers_left(world.event_processor)
+
+
+## 用例 3：procedure 子类 + 录像，调用方直接 finish()（dota2 形状：不经 world.tick 收尾）。
+func _build_and_finish_subclass_procedure_directly(refs: Dictionary) -> void:
+	var world := GameWorld.create_instance(ProbeWorld.new()) as ProbeWorld
+	var caster := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var target := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var probe_config := _build_probe_config(_make_loop_timeline())
+	for actor: ReleaseProbeActor in [caster, target]:
+		actor.probe_sink = refs
+		actor.ability_set.grant_ability(Ability.new(probe_config, actor.get_id()))
+	world.start()
+	var participants: Array[Actor] = [caster, target]
+	var procedure := world.start_battle(participants) as ProbeProcedure
+	TestFramework.assert_true(procedure != null, "工厂钩子应返回 ProbeProcedure")
+	var recorder := procedure.get_recorder()
+
+	caster.ability_set.tick_executions(100.0)
+	procedure.tick_once()
+	var record := procedure.finish()
+	var frames: Array[Dictionary] = []
+	frames.assign(record.get("timeline", []))
+	TestFramework.assert_true(not frames.is_empty(), "直接 finish 应产出录到事件的录像")
+	TestFramework.assert_true(world.get_active_battle() == procedure, "直接 finish 不经 world.tick，_active_battle 仍指着 procedure")
+	TestFramework.assert_equal(2, procedure.helper.observed_actor_count)
+
+	_collect_actor_refs(refs, caster, "caster.")
+	_collect_actor_refs(refs, target, "target.")
+	refs["world"] = weakref(world)
+	refs["procedure"] = weakref(procedure)
+	refs["procedure.helper"] = weakref(procedure.helper)
+	refs["recorder"] = weakref(recorder)
+	refs["event_processor"] = weakref(world.event_processor)
+	refs["event_collector"] = weakref(world.event_collector)
+	GameWorld.destroy_instance(world.id)
+	_assert_no_pre_handlers_left(world.event_processor)
+
+
+## 用例 4：录像开着的战斗进行中 GameWorld.shutdown()。被录范围 = registry 全体（含不参战的常驻 actor）
+## + 战斗中途 spawn 经 actor_added 补录的 actor；weakref 挂在全部被录 actor 上。
+func _build_and_shutdown_mid_recorded_battle(refs: Dictionary) -> void:
+	var world := GameWorld.create_instance(WorldGameplayInstance.new()) as WorldGameplayInstance
+	var caster := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var target := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var bystander := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	var probe_config := _build_probe_config(_make_loop_timeline())
+	for actor: ReleaseProbeActor in [caster, target, bystander]:
+		actor.probe_sink = refs
+		actor.ability_set.grant_ability(Ability.new(probe_config, actor.get_id()))
+
+	var finish_sink: Dictionary = {}
+	world.battle_finished.connect(func(result: Dictionary) -> void:
+		finish_sink["result"] = result)
+	world.start()
+	var participants: Array[Actor] = [caster, target]
+	var procedure := world.start_battle(participants)
+	var recorder := procedure.get_recorder()
+	var spawned := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	spawned.probe_sink = refs
+	spawned.ability_set.grant_ability(Ability.new(probe_config, spawned.get_id()))
+	caster.ability_set.tick_executions(100.0)
+	procedure.tick_once()
+	for actor: ReleaseProbeActor in [caster, target, bystander, spawned]:
+		TestFramework.assert_true(recorder.actor_subscriptions.has(actor.get_id()),
+			"被录 actor 应已订阅: %s" % actor.get_id())
+	TestFramework.assert_true(world.has_active_battle() and recorder.get_is_recording(), "战斗应仍在进行、录像开着")
+
+	_collect_actor_refs(refs, caster, "caster.")
+	_collect_actor_refs(refs, target, "target.")
+	_collect_actor_refs(refs, bystander, "bystander.")
+	_collect_actor_refs(refs, spawned, "spawned.")
+	refs["world"] = weakref(world)
+	refs["procedure"] = weakref(procedure)
+	refs["recorder"] = weakref(recorder)
+	refs["event_processor"] = weakref(world.event_processor)
+	refs["event_collector"] = weakref(world.event_collector)
+	GameWorld.shutdown()
+	TestFramework.assert_false(finish_sink.has("result"), "中止战斗不应发 battle_finished")
+	TestFramework.assert_false(world.has_active_battle(), "world 结束应清掉进行中的战斗")
+	TestFramework.assert_false(recorder.get_is_recording(), "world 结束应中止录像")
+	TestFramework.assert_true(recorder.actor_subscriptions.is_empty(), "中止录像应退订全部被录 actor")
+	_assert_no_pre_handlers_left(world.event_processor)
 
 
 # ========== 夹具 ==========
@@ -297,13 +433,11 @@ static func _assert_contexts_released(refs: Dictionary, keys: Array[String]) -> 
 				"引用环: %s 在调用返回后仍存活" % key)
 
 
-## destroy_instance / end() 必须把 actor 的 pre handler 注册一并注销。
+## destroy_instance / shutdown 必须把 actor 的 pre handler 注册一并注销。
 ##
-## 必须在换 GameWorld.event_processor 之前验：换掉整个 processor 会连 _pre_handlers
-## 整张表一起丢，幽灵注册在那之后无从查起——而「跨战斗累积幽灵注册」正是
-## 常驻世界（GameWorld 是长命 autoload）真实踩过的形状。
-static func _assert_no_pre_handlers_left() -> void:
-	var processor := GameWorld.event_processor
+## processor 归 instance、随 instance 一起释放：整张表的消亡会掩盖幽灵注册，所以在 instance 结束之后、
+## 建图函数返回（放掉 processor）之前验——「跨战斗累积幽灵注册」是常驻世界真实踩过的形状。
+static func _assert_no_pre_handlers_left(processor: EventProcessor) -> void:
 	var leftover := 0
 	for event_kind: String in processor._pre_handlers.keys():
 		leftover += (processor._pre_handlers[event_kind] as Array).size()
@@ -315,3 +449,15 @@ static func _assert_all_released(refs: Dictionary) -> void:
 	for key: String in refs.keys():
 		var ref: WeakRef = refs[key]
 		TestFramework.assert_true(ref.get_ref() == null, "引用环: %s 在销毁后仍存活" % key)
+
+
+static func _live_context_counts() -> Array[int]:
+	return [ExecutionContext.get_debug_live_count(), AbilityLifecycleContext.get_debug_live_count()]
+
+
+## 未挂探针的 context 构造点兜底：用例结束后两类 context 的存活数必须回到用例开始前。
+static func _assert_live_contexts_back_to(before: Array[int]) -> void:
+	var after := _live_context_counts()
+	TestFramework.assert_true(after == before,
+		"context 活过了调用栈: ExecutionContext %d -> %d, AbilityLifecycleContext %d -> %d" % [
+			before[0], after[0], before[1], after[1]])

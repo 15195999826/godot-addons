@@ -83,17 +83,15 @@ func _phase_fire_tile() -> bool:
 
 
 func _run_production_skill(skill_config: AbilityConfig, target_mode: String, tick_count: int) -> Dictionary:
-	GameWorld.init()
+	GameWorld.shutdown()
 
-	var world := GameWorld.create_instance(func() -> GameplayInstance:
-		var inst := HexWorldGameplayInstance.new()
-		var grid_cfg := GridMapConfig.new()
-		grid_cfg.grid_type = GridMapConfig.GridType.HEX
-		grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
-		grid_cfg.radius = 3
-		inst.configure_grid(grid_cfg)
-		return inst
-	) as HexWorldGameplayInstance
+	var world := HexWorldGameplayInstance.new()
+	var grid_cfg := GridMapConfig.new()
+	grid_cfg.grid_type = GridMapConfig.GridType.HEX
+	grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
+	grid_cfg.radius = 3
+	world.configure_grid(grid_cfg)
+	GameWorld.create_instance(world)
 	world.start()
 
 	var caster := _add_character(world, HexBattleClassConfig.CharacterClass.WARRIOR, 0, HexCoord.new(0, 0), 2000.0, 50.0)
@@ -118,7 +116,7 @@ func _run_production_skill(skill_config: AbilityConfig, target_mode: String, tic
 		proc.tick_once()
 
 	var replay := proc.finish("mid_spawn_smoke")
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	# procedure 回指 world 只许经基类 WeakRef：proc 仍被持有、world 的其余持有者都已放掉，world 必须已释放。
 	var world_ref := weakref(world)
 	world = null

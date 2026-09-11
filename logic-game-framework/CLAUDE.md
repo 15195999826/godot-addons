@@ -11,7 +11,8 @@ Godot 回合制 / ATB 战斗框架的核心模块依赖与数据流总览。
 ```mermaid
 graph TB
     subgraph "Core"
-        World[GameWorld<br/>Autoload]
+        World[GameWorld<br/>Autoload registry]
+        Instance[GameplayInstance<br/>owns EventProcessor/EventCollector]
         Entity[Entity System<br/>Actor/BattleActor/System]
         Attributes[Attribute System<br/>RawAttributeSet]
         Abilities[Ability System<br/>Ability/AbilitySet]
@@ -33,8 +34,9 @@ graph TB
         Frontend[hex-atb-battle/frontend<br/>Presentation Layer]
     end
 
-    World --> Entity
-    World --> Events
+    World --> Instance
+    Instance --> Entity
+    Instance --> Events
     Entity --> Abilities
     Abilities --> Attributes
     Abilities --> Tags
@@ -63,7 +65,7 @@ Action.execute()
     ↓ Pre-Event processing (damage reduction/immunity)
 Atomic operations (push event + apply state)
     ↓ Post-Event processing (thorns/lifesteal)
-EventCollector collects (replay recording)
+instance.event_collector collects (replay recording)
 ```
 
 ### 2. Attribute Modification Flow
@@ -92,7 +94,7 @@ MutableEvent returned
 EventProcessor.process_post_event()
     ↓ Broadcast to all alive Actors
     ↓ Trigger passive abilities
-EventCollector.push()
+instance.event_collector.push()
 ```
 
 ---

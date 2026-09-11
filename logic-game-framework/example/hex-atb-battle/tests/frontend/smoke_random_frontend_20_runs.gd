@@ -117,7 +117,7 @@ func _ready() -> void:
 		return
 
 	print("SMOKE_TEST_RESULT: PASS - random frontend 20 runs completed")
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(0)
 
 
@@ -584,7 +584,7 @@ func _cleanup_scene(main_scene: Node) -> void:
 	if main_scene != null:
 		remove_child(main_scene)
 		main_scene.queue_free()
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	await get_tree().process_frame
 
 
@@ -686,5 +686,5 @@ func _kind(event: Dictionary) -> String:
 
 func _fail(reason: String) -> void:
 	printerr("SMOKE_TEST_RESULT: FAIL - %s" % reason)
-	GameWorld.destroy()
+	GameWorld.shutdown()
 	get_tree().quit(1)

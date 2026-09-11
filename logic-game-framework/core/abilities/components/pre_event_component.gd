@@ -105,7 +105,7 @@ static func _rebuild_context(owner_id: String, ability_id: String) -> AbilityLif
 		return null
 
 	return AbilityLifecycleContext.new(
-		owner_id, actor.get_attribute_set(), ability, ab_set, GameWorld.event_processor, owner_instance
+		owner_id, actor.get_attribute_set(), ability, ab_set, owner_instance
 	)
 
 

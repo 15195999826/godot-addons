@@ -1,59 +1,31 @@
 extends Node
 
+## GameWorld —— GameplayInstance 注册表（Autoload）。
+##
+## 只管 instance 的注册 / 查找 / 批量结束，以及按 actor id 反查 actor 与它所属的 instance。
+## 事件设施（EventProcessor / EventCollector）归各 GameplayInstance 所有，不挂在这里。
+
 var _instances: Dictionary = {}
-var event_processor: EventProcessor
-var event_collector: EventCollector
-var _initialized := false
 
-func _init():
-	# 延迟初始化以避免循环依赖
-	pass
 
-func _ready() -> void:
-	_ensure_initialized()
-
-func _ensure_initialized() -> void:
-	if event_processor == null:
-		event_processor = EventProcessor.new()
-	if event_collector == null:
-		event_collector = EventCollector.new()
-
-func init(config: EventProcessorConfig = null) -> void:
-	if _initialized:
-		Log.warning("GameWorld", "GameWorld already initialized, reinitializing...")
-		shutdown()
-	event_processor = EventProcessor.new(config)
-	event_collector = EventCollector.new()
-	initialize()
-
-func destroy() -> void:
-	if _initialized:
-		shutdown()
-
-func initialize() -> void:
-	if _initialized:
-		return
-	_initialized = true
-	Log.info("GameWorld", "GameWorld initialized")
-
+## 结束并注销全部 instance。幂等：场景 / 测试在开头与收尾各调一次，拿到干净的注册表。
 func shutdown() -> void:
 	_end_all_instances()
 	_instances.clear()
-	_initialized = false
 	Log.info("GameWorld", "GameWorld shutdown")
 
-## factory 只负责构造：注册发生在 factory 返回之后。start() / add_actor / grant 放到本调用之后——
+
+## 注册 instance 并原样返回。start() / add_actor / grant 放到本调用之后——
 ## context 的 instance 按 owner id 从注册表反查，注册前一律为 null。
-func create_instance(factory: Callable) -> GameplayInstance:
-	var instance: GameplayInstance = factory.call()
+func create_instance(instance: GameplayInstance) -> GameplayInstance:
 	if instance == null or instance.id == "":
-		Log.warning("GameWorld", "Instance factory returned invalid instance")
+		Log.warning("GameWorld", "create_instance: instance is null or has no id")
 		return instance
 	if _instances.has(instance.id):
 		Log.warning("GameWorld", "Instance already exists: %s" % instance.id)
 		return _instances[instance.id]
 	_instances[instance.id] = instance
-	Log.debug("GameWorld", "Instance created: %s (%s)" % [instance.id, instance.type])
+	Log.debug("GameWorld", "Instance registered: %s (%s)" % [instance.id, instance.type])
 	return instance
 
 func get_instance_by_id(id_value: String) -> GameplayInstance:
@@ -104,7 +76,6 @@ func get_debug_info() -> Dictionary:
 			"actorCount": instance.get_actor_count(),
 		})
 	return {
-		"initialized": _initialized,
 		"instanceCount": _instances.size(),
 		"instances": instances_info,
 	}

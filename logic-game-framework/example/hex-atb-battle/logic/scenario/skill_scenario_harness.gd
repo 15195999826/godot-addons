@@ -98,12 +98,10 @@ static func run_with_actions(
 ) -> Dictionary:
 	var errors: Array[String] = []
 
-	GameWorld.init()
+	GameWorld.shutdown()
 
 	var preview_config := _build_preview_config(scene_config)
-	var battle := GameWorld.create_instance(func() -> GameplayInstance:
-		return _PreviewInstance.new()
-	) as _PreviewInstance
+	var battle := GameWorld.create_instance(_PreviewInstance.new()) as _PreviewInstance
 
 	battle.start(preview_config)
 
@@ -214,7 +212,7 @@ static func run_with_actions(
 			actor.ability_set.tick(TICK_INTERVAL, cur_logic_time)
 			actor.ability_set.tick_executions(TICK_INTERVAL)
 
-		var frame_events := GameWorld.event_collector.flush()
+		var frame_events := battle.event_collector.flush()
 		battle.recorder.record_frame(tick_count, frame_events)
 
 		if post_execution_countdown < 0:
@@ -317,7 +315,7 @@ static func run_with_actions(
 		if not final_actor_attributes.has(aid):
 			final_actor_attributes[aid] = {}
 
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 	if tick_count >= max_ticks:
 		errors.append("Preview timed out after %d ticks" % max_ticks)
@@ -364,7 +362,7 @@ static func _fire_action(
 	var activate_event := GameEvent.AbilityActivate.create(
 		ability.id, action_caster.get_id(), keyframe_time_ms, target_id, target_coord
 	).to_dict()
-	HexFacing.face_actor_for_active_event(action_caster, activate_event, battle, GameWorld.event_collector)
+	HexFacing.face_actor_for_active_event(action_caster, activate_event, battle)
 	action_caster.ability_set.receive_event(activate_event)
 
 
@@ -593,7 +591,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		# 投射物系统
 		var collision_detector := MobaCollisionDetector.new()
 		_projectile_system = ProjectileSystem.new(
-			collision_detector, GameWorld.event_collector, false
+			collision_detector, event_collector, false
 		)
 		add_system(_projectile_system)
 
@@ -624,7 +622,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		recorder = BattleRecorder.new({
 			"battleId": id,
 			"tickInterval": int(HexBattleSkillScenarioHarness.TICK_INTERVAL),
-		})
+		}, event_collector)
 		var all_actors: Array[Actor] = []
 		for c in left_team:
 			all_actors.append(c)

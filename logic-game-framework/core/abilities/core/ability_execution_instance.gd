@@ -228,7 +228,6 @@ func _build_execution_context(current_tag: String) -> ExecutionContext:
 	return ExecutionContext.create(
 		[_trigger_event_dict],
 		GameWorld.get_instance_of_actor(owner_actor_id),
-		GameWorld.event_collector,
 		_ability_ref,
 		exec_info,
 		_execution_state  # §0.4: 引用共享; 同一 execution 跨 tag 可见

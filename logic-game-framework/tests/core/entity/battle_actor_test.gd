@@ -150,12 +150,11 @@ func _test_data_actor_null_safe() -> void:
 	TestFramework.assert_true(actor.get_ability_snapshot().is_empty())
 	TestFramework.assert_true(actor.get_tag_snapshot().is_empty())
 
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new("battle_actor_null_safe"))
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_null_safe"))
 	instance.add_actor(actor)
 	TestFramework.assert_true(actor.is_id_valid(), "_on_id_assigned 不应因两个 set 为 null 中断")
 
-	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}))
+	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}, instance.event_collector), instance.event_collector)
 	TestFramework.assert_true(_drain(actor.setup_recording(ctx)) == 1,
 		"没有两个 set 时仍应订阅 actor 生命周期这一条")
 
@@ -168,8 +167,7 @@ func _test_data_actor_null_safe() -> void:
 # ========== id 分配 ==========
 
 func _test_id_assignment_syncs_owner() -> void:
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new("battle_actor_id_sync"))
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_id_sync"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
 	var actor_id := actor.get_id()
 	TestFramework.assert_true(actor_id != "")
@@ -192,8 +190,7 @@ func _test_ability_set_of() -> void:
 ## blocking 在 tick_executions **之前**算：本 tick 跑完的 execution 仍占这一帧，
 ## 否则角色会在收招那一帧既施法又充能。
 func _test_tick_runtime_blocking() -> void:
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new("battle_actor_tick_runtime"))
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_tick_runtime"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
 	actor.ability_set.grant_ability(Ability.new(_build_probe_config(), actor.get_id()))
 	TestFramework.assert_true(actor.ability_set.has_executing_instances(), "GRANTED_SELF 应已自激活")
@@ -207,8 +204,7 @@ func _test_tick_runtime_blocking() -> void:
 
 
 func _test_tick_runtime_non_blocking() -> void:
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new("battle_actor_tick_runtime_intrinsic"))
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_tick_runtime_intrinsic"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
 	var tags: Array[String] = [TAG_INTRINSIC]
 	actor.ability_set.grant_ability(Ability.new(_build_probe_config(tags), actor.get_id()))
@@ -251,10 +247,9 @@ func _test_serialize_with_sets() -> void:
 
 
 func _test_setup_recording_full() -> void:
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new("battle_actor_recording"))
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_recording"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
-	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}))
+	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}, instance.event_collector), instance.event_collector)
 	# 期望条数从三个 RecordingUtils 现算, 免得把数字抄死; 探针订阅当场退订 ——
 	# 它们捕获的 ctx → recorder 不退订会活到进程结束, 泄漏直方图会当场报红。
 	var expected := _drain(RecordingUtils.record_attribute_changes(actor.attribute_set, ctx)) \
@@ -274,8 +269,7 @@ static func _drain(unsubscribes: Array[Callable]) -> int:
 
 
 func _test_get_instance_of_actor() -> void:
-	var instance := GameWorld.create_instance(func() -> GameplayInstance:
-		return GameplayInstance.new("battle_actor_instance_lookup"))
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_instance_lookup"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
 	TestFramework.assert_true(GameWorld.get_instance_of_actor(actor.get_id()) == instance)
 	TestFramework.assert_true(GameWorld.get_instance_of_actor("") == null)

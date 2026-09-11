@@ -57,7 +57,7 @@ func _ready() -> void:
 	print("  1/2/3/4 - Set playback speed (0.5x/1x/2x/4x)")
 	print("")
 
-	GameWorld.init()
+	GameWorld.shutdown()
 
 	_setup_config_ui()
 	_setup_camera_and_env()
@@ -71,7 +71,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if _world_view != null:
 		_world_view.unbind_world()
-	GameWorld.destroy()
+	GameWorld.shutdown()
 
 
 # ========== Config UI ==========
@@ -229,7 +229,7 @@ func _on_start_battle_button_pressed() -> void:
 	print("[Main] Starting battle with map config: %s" % map_config)
 
 	_battle = HexDemoWorldGameplayInstance.new()
-	GameWorld.create_instance(func() -> GameplayInstance: return _battle)
+	GameWorld.create_instance(_battle)
 	_battle.battle_finished.connect(_on_battle_finished)
 	# 对账 oracle: 在 battle_finished 之前 connect, 让 base GI 的 emit 顺序
 	# (base handler -> 子类 demo._on_battle_finished) 把 final_state 先送达。

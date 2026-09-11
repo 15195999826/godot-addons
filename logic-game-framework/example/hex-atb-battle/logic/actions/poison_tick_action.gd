@@ -46,7 +46,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		source_id, target_id, float(stacks),
 		BattleEvents._damage_type_to_string(BattleEvents.DamageType.PURE)
 	)
-	var mutable: MutableEvent = GameWorld.event_processor.process_pre_event(pre_event.to_dict())
+	var mutable: MutableEvent = battle.event_processor.process_pre_event(pre_event.to_dict())
 	var all_events: Array[Dictionary] = []
 
 	if not mutable.cancelled:

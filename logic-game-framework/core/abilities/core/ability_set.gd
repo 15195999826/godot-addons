@@ -25,9 +25,6 @@ func bind_owner(actor_id: String) -> void:
 	owner_actor_id = actor_id
 	tag_container.owner_id = actor_id
 
-func get_event_processor() -> EventProcessor:
-	return GameWorld.event_processor
-
 ## owner 所属的 GameplayInstance，每次按 owner_actor_id 反查（owner 未注册时为 null）。
 ##
 ## 只存 id、不绑引用：AbilitySet 在 actor 拿到 id 之前就构造，还会被项目层整个换新
@@ -258,7 +255,6 @@ func _create_lifecycle_context(ability: Ability, owner_instance: GameplayInstanc
 		_attribute_set,
 		ability,
 		self,
-		get_event_processor(),
 		owner_instance
 	)
 

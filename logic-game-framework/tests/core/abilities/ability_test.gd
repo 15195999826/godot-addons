@@ -60,7 +60,7 @@ func _test_lifecycle() -> void:
 	)
 	var ability := Ability.new(config, owner_actor_id)
 	var component: TestComponent = ability.get_all_components()[0] as TestComponent
-	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null, null)
+	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null)
 
 	ability.apply_effects(context)
 	TestFramework.assert_equal(Ability.STATE_GRANTED, ability.get_state())
@@ -86,7 +86,7 @@ func _test_triggered_listener() -> void:
 	)
 	var ability := Ability.new(config, owner_actor_id)
 	var component: TestComponent = ability.get_all_components()[0] as TestComponent
-	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null, null)
+	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null)
 	ability.apply_effects(context)
 
 	var result := { "event": {}, "components": [] as Array[String] }

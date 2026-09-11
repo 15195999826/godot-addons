@@ -85,7 +85,6 @@ func _execute_actions(actions: Array[Action.BaseAction], event_dict: Dictionary,
 	var exec_context := ExecutionContext.create(
 		event_dict_chain,
 		context.instance,
-		GameWorld.event_collector,
 		AbilityRef.from_ability(context.ability),
 		null  # NoInstanceComponent 不产生 ExecutionInfo
 	)
