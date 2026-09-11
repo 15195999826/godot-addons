@@ -6,7 +6,7 @@ Logic Game Framework 的**回合制 / ATB + hex grid** 战斗示例，也是框�
 
 ## 架构
 
-三层单向依赖（详见框架 [`docs/README.md`](../../docs/README.md) 的"逻辑表演分离架构"与"World owns Battle + 响应式前端"两节）：
+三层单向依赖（World owns Battle 与框架设计铁律见框架 [`CLAUDE.md`](../../CLAUDE.md)）：
 
 | 层 | 目录 | 职责 | 说明 |
 |---|---|---|---|
@@ -15,7 +15,7 @@ Logic Game Framework 的**回合制 / ATB + hex grid** 战斗示例，也是框�
 | **frontend**（表演） | `frontend/` | 响应式 view + 事件动画 | `FrontendWorldView`（观察 world 结构）、`FrontendBattleAnimator`（消费 event timeline）。见 [`frontend/README.md`](frontend/README.md) |
 
 - **World owns Battle**：`HexWorldGameplayInstance` 持有 actor / grid / systems；战斗是短命的 `HexBattleProcedure`。每个场景（demo / skill-preview）有自己的 `HexWorldGameplayInstance` 子类（`HexDemoWorldGameplayInstance` / `SkillPreviewWorldGI`），框架基类保持通用。
-- **逻辑→表演数据流**见 [`logic/docs/logic-to-presentation-guide.md`](logic/docs/logic-to-presentation-guide.md)（StageCue 事件、Timeline 配置）。
+- **逻辑→表演数据流**：逻辑层只产事件（Timeline tag 驱动 Action；表演提示走 `StageCueAction` + `logic/config/hex_battle_cues.gd` 的 cue 菜单），表演层由 `frontend/visualizers/` 消费；接入清单见主仓 `.claude/skills/lgf-new-logic-skill/SKILL.md` §7。
 
 ## 设计铁律
 
@@ -28,7 +28,9 @@ hex 演进中固化的不可违反约束：
 - **目标选择三层分工（geometry 层强制共用）**：①合法性 = declarative metadata（上一条）；②**形状几何 = static 纯函数**——coord 型区域技能必须提供 `compute_checked_coords()`（grid_cone / angle_cone 范式），执行 selector 与前端预览 / overlay **只能调它**，不许各算各的（预览=实际覆盖区的单一真相源）；③执行期命中 = TargetSelector 专属（ATB 出手延迟决定占格 / 存活 / 阵营过滤必须在结算帧重解析）。UE/GAS 式"预览与执行公用 TargetActor"在此架构映射为只共用②层。
 - **强制位移是原子逻辑操作**：`PushAction` 在单个 HIT keyframe 内完成 raycast / 碰撞 / `grid.move_occupant` / `hex_position` / 位移事件，发过去式单事件 `actor_displaced`，**不**向 timeline scheduler 暴露中间"被推中"态；"推完不能立即行动"靠目标侧 `HexBattleActionLockStatus`（`cant_act` tag）而非 scheduler 延迟。事件元数据（`actual_distance` 等）逻辑层算一次写入，前端 visualizer 直接消费不重算。
 - **Gateway 是入口资格规则，不是效果执行**：Stun / Silence / Break 状态控制走 `ActiveGateway` —— 它在 active 入口处消费 component-owned 的 functional gate tag：`cant_act`（`action_lock_status.gd`，挡 Move / Strike / 所有 active skill）、`cant_use_skill`（`silence_buff.gd`）、`cant_use_passive`（`break_buff.gd`，仅查询用）。语义 tag（`stun` / `silence`）放 buff `ability_tags`、功能 gate tag 放 component tag，二者分离。Gateway 只挡入口、**不**自动 cancel in-flight execution（Stun 打断须显式组合 `CancelActiveExecutionsAction`）。target eligibility 仍走 ability metadata（`can_use_skill_on`），不进 gateway condition。
-- **hex = 技能展示 + AI 沙盒，非可平衡对战**：balance 类"设计债"按"范式一致 / 可预测 / 可 introspect"验收而非"数值公平"，多数经评审撤销 / 降级（scaling vs flat 由技能自定、expose 指数叠加是有意设计、未播种 shuffle 不破坏契约因 hex replay = 事件流回放非 seed 重模拟）。真正的债是"约定一致性靠逐文件手抄、无共享 helper 固化标准技能骨架"（见下「未来规划」）。
+- **hex = 技能展示 + AI 沙盒，非可平衡对战**：balance 类"设计债"按"范式一致 / 可预测 / 可 introspect"验收而非"数值公平"，多数经评审撤销 / 降级（scaling vs flat 由技能自定、expose 指数叠加是有意设计、未播种 shuffle 不破坏契约因 hex replay = 事件流回放非 seed 重模拟）。真正该守的是约定一致性——标准技能骨架由共享 helper 固化（`HexBattleCooldownSystem` / `HexBattleSkillPresets`），不靠逐文件手抄。
+- **伤害只走 `HexBattleDamageUtils.apply_damage`**：所有产生伤害的 Action（`DamageAction` / `ReflectDamageAction` / 中毒 / 反伤 / AoE）都经它，不得绕开。顺序不可妥协：护盾结算（`HexBattleShieldResolver.resolve`，纯结算、不 push 事件不扣血）在扣血之前；破裂回调 `on_break` 在死亡检测之前（死亡会锁存 `is_dead()` 并清 grid 占用，爆炸类回调要看到活的 owner 与位置）；`on_break` 只能 push 新事件、不得回写本次伤害事件（因果链是「伤害 → 护盾破 → 新事件」，否则盾爆反向放大打破它的那次伤害）；post damage 派发在死亡检测之后、由调用方触发（`DamageAction` 要先跑 on_hit / on_kill 回调）。`damage_types` 取值只有 `physical` / `magical` / `pure`，`all` 是通配；要无视护盾单独加 `bypass_shield` 类字段，不得新增 `true` 类型。
+- **事件定义约定**：事件 kind 用具名常量声明再赋给 `kind`，不写裸字符串（消费端比常量，不会拼错漂移）；事件里引用 actor 只传 `actor_id`，不传对象。
 
 <a id="event-vs-state"></a>
 ### 事件 vs 状态边界
@@ -39,7 +41,7 @@ hex 演进中固化的不可违反约束：
 - **Event —— timeline transition 消费（一次性）**：死亡动画 / 复活 / 受击 / 暴击大字由 `RenderWorld` 发 transition-only event（如 `actor_died(id)`，只在 `was_alive && now_dead` 那帧 emit 一次，统一走 `_set_actor_alive` helper）。`FrontendBattleAnimator._on_actor_died` wire 到 `UnitView.play_death()`。
 - **关键约定**：transition-only 是 **emit 端契约**（prev-state 对比保证只 emit 一次），下游 wire 无需做幂等；触发策略（once / retrigger / queue）是 **view 方法本地决定**（`play_death` 用 `_death_played` flag 挡重入）。Reset / Replay 复活属 session control，走 `FrontendBattleAnimator.reset()` 遍历 `view.revive()`，不污染 event bus。
 
-> 战后还有一道 **View ↔ Logic 终态对账 oracle** 抓"漏 visualizer / 翻译错"漂移，详见 [`docs/reference/view-logic-reconciliation.md`](docs/reference/view-logic-reconciliation.md)。
+> 战后还有一道 **View ↔ Logic 终态对账 oracle**（`tests/frontend/view_logic_reconciler.gd`）抓"漏 visualizer / 翻译错"漂移。它是 hex 私有设施，不进框架、别的 example 自行决定；若新增「死亡时主动 expire 某 buff」的 ability，必须同时让 `BuffVisualizer` 接住对应的 ability removed 事件，否则双方不对称、oracle 会抓出来（这是设计完整性提醒，不是要回避它）。
 
 ## 技能模式速览
 
@@ -52,11 +54,11 @@ hex 演进中固化的不可违反约束：
 
 **通用技能结构**：每个主动技能 = 一段 **Timeline** + 挂在 keyframe tag（`CAST` / `HIT` / `LAUNCH` / `END`）上的 **Action**。`strike` 在 `HIT` 跑 `HexBattleDamageAction`；`fireball` 在 `LAUNCH` 发射弹体、再由独立 `*_HIT` timeline 结算伤害（弹体本身 0 HP 伤害）。
 
-**标准主动门控四件套**：`NoTagCondition(cant_act)` + `NoTagCondition(cant_use_skill)` + `CooldownCondition` + `TimedCooldownCost(cd_ms)`。`shared/cooldown_system.gd` 提供 `HexBattleCooldownSystem.apply_standard_active_gating(builder, cd_ms)`（新技能统一入口）与 `apply_basic_attack_gating(...)`（普攻豁免 silence，ARPG/MOBA 惯例）。当前多数技能仍逐文件手抄这 4 行 —— 迁移到 helper 见下「未来规划」。
+**标准主动门控四件套**：`NoTagCondition(cant_act)` + `NoTagCondition(cant_use_skill)` + `CooldownCondition` + `TimedCooldownCost(cd_ms)`。`shared/cooldown_system.gd` 提供 `HexBattleCooldownSystem.apply_standard_active_gating(builder, cd_ms)`（新技能统一入口）与 `apply_basic_attack_gating(...)`（普攻豁免 silence，ARPG/MOBA 惯例）。全部主动技能都经这两个入口接线（直接调用或经 `HexBattleSkillPresets.buff_applier`），`move` 零门控例外；不得再逐文件手抄。
 
 **伤害用 Resolver** 在 `execute()` 时按 ctx 解析：`HexBattleSkillHelpers.caster_atk_damage(mult)` 读 `caster.atk × mult`（让 buff / 装备对 atk 的修改自动生效），固定值伤害用 `Resolvers.float_val(x)`。
 
-**Action 分层**（详见框架 [`docs/reference/action-architecture.md`](../../docs/reference/action-architecture.md)）：底层 Primitive（`HexBattleDamageAction` / `ApplyBuffAction` / `LaunchProjectileAction`）→ 流程控制 `FlowAction.if_(predicate, [...])`（如 `shadow_step` 仅瞬移成功时造伤）→ 技能私有 `SkillLocalAction` 子类（`_ShadowStepTeleportAction` / `_DemonFormTickAction` 等，不进 public action 注册表、不用 `class_name`）。
+**Action 分层**（目录规则见主仓 `.claude/skills/enforcing-lgf/SKILL.md` §8）：底层 Primitive（`HexBattleDamageAction` / `ApplyBuffAction` / `LaunchProjectileAction`）→ 流程控制 `FlowAction.if_(predicate, [...])`（如 `shadow_step` 仅瞬移成功时造伤）→ 技能私有 `SkillLocalAction` 子类（`_ShadowStepTeleportAction` / `_DemonFormTickAction` 等，不进 public action 注册表、不用 `class_name`）。
 
 **skill-preview 沙盒 + SkillValidator**：技能可在独立战斗 world 里预览。AI 生成的技能脚本由主仓 `scripts/SkillValidator.gd` 做五级校验：Stage 1 编译 → Stage 2 接口 → Stage 3 运行 → Stage 4 结构 → Stage 5 进阶建议（warn-only，永不改 success；扫 determinism / cooldown / 缺失门控 / 缺失 range meta）。
 
@@ -70,16 +72,11 @@ hex 演进中固化的不可违反约束：
 - **多攻击特效策略**：当一个 actor 同时持多个暴击 / on-hit 来源时再设计叠加规则（候选 `AttackEffectPolicy`：只允许一个 / 按 priority / 按最高倍率）；`PreBasicAttackEvent` 也仅在真实需求时再补 `damage_type` / `can_crit` / `guaranteed_crit` 字段。当前 V1 只保证单一 equipment-granted passive。
 - **长期演化**：能力稳定且多 example 都需要这套「普攻前事件 + 命中事件 + 攻击特效策略」时，再上提到 LGF 框架层；仅当装备自身有 HP / cooldown / 可被战斗事件命中时，才把装备从「item + granted passive」升级为 Actor。
 
-### 标准技能门控迁移
-
-~28 个技能仍逐文件手抄门控四件套，应迁移到 `apply_standard_active_gating` helper（防漂移，非修 bug）—— 见框架 [`docs/README.md`](../../docs/README.md) 的"已知债务"。
-
 ## 文档索引
 
 | 文档 | 内容 |
 |---|---|
-| [`docs/reference/damage-pipeline.md`](docs/reference/damage-pipeline.md) | 伤害结算 9 步流程 + damage event schema 各字段「该读哪个」对照 |
-| [`docs/reference/shield-system.md`](docs/reference/shield-system.md) | 护盾 / on-damage-taken 反伤契约 |
-| [`docs/reference/view-logic-reconciliation.md`](docs/reference/view-logic-reconciliation.md) | 战后 View ↔ Logic 终态对账 oracle 契约 |
 | [`core/README.md`](core/README.md) / [`frontend/README.md`](frontend/README.md) | 分层架构说明 |
-| [`logic/docs/logic-to-presentation-guide.md`](logic/docs/logic-to-presentation-guide.md) | StageCue 事件、Timeline 配置、数据流 |
+| `skill-preview/DEV_AGENT.md` / `item-preview/DEV_AGENT.md` | DevAgent 场景契约（`run-dev-scene` skill 依赖） |
+
+伤害管线 / 护盾 / 对账 oracle 的规则已并入上文「设计铁律」；流程细节看 `logic/utils/hex_battle_damage_utils.gd`、`logic/utils/hex_battle_shield_resolver.gd`、`tests/frontend/view_logic_reconciler.gd` 的头注释。

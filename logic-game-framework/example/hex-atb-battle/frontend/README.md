@@ -1,6 +1,6 @@
 # Hex ATB Battle Frontend (表演层)
 
-> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `main.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。详见 `addons/logic-game-framework/docs/README.md`（World owns Battle + 响应式前端 节）。
+> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `main.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。详见 `addons/logic-game-framework/CLAUDE.md`（World owns Battle 节）。
 
 ## 现状响应式 wire(2026-04-26 起)
 

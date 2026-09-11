@@ -8,7 +8,7 @@
 
 World / Procedure 两个 hex 特化类(`hex_world_gameplay_instance.gd` / `hex_battle_procedure.gd`)自 2026-07(线 3 轮 A)起物理归位 `../logic/`——它们的方法签名依赖 logic 层类型(`CharacterActor` / `BattleAbilitySet` / `HexBattleSkillMetaKeys`),按「单向依赖 frontend → logic → core」应属 logic 层;本目录不再承载任何引用上层类型的代码,旧「阶段 5 把 Actor 下沉 core 消除倒挂」路线随之作废(下沉会把职业 config / 技能 / 装备整条链拖进 core)。
 
-设计背景见 `addons/logic-game-framework/docs/README.md`(World owns Battle + 响应式前端 节)。
+设计背景见框架 `addons/logic-game-framework/CLAUDE.md`(World owns Battle 节)。
 
 ## 三层架构
 
