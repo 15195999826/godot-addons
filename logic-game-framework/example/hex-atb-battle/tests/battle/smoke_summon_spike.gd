@@ -113,7 +113,7 @@ func _run_phase_2_drive() -> void:
 
 	# 给 totem 装 Demon Form passive (periodic loop) 来验证 mid-add actor 能不能被 ability tick 驱动
 	var demon_ability := Ability.new(HexBattleDemonForm.ABILITY, totem.get_id())
-	totem.ability_set.grant_ability(demon_ability, instance)
+	totem.ability_set.grant_ability(demon_ability)
 
 	# tick ~7s, 期望 DemonForm tick 至少 2 次 (3s + 6s)
 	for _i in range(70):
@@ -121,7 +121,7 @@ func _run_phase_2_drive() -> void:
 		var t_now := instance.get_logic_time()
 		totem.ability_set.tag_container.tick(0.0, t_now)
 		totem.ability_set.tick(TICK_INTERVAL, t_now)
-		totem.ability_set.tick_executions(TICK_INTERVAL, instance)
+		totem.ability_set.tick_executions(TICK_INTERVAL)
 
 	var stacks := demon_ability.get_stacks()
 	if stacks >= 2:
@@ -164,7 +164,7 @@ func _run_phase_3_replay() -> void:
 
 	# grant DemonForm 让它有 ability_granted 事件;tick 数次让 stacks_changed 产生
 	var demon_ability := Ability.new(HexBattleDemonForm.ABILITY, totem.get_id())
-	totem.ability_set.grant_ability(demon_ability, instance)
+	totem.ability_set.grant_ability(demon_ability)
 	# grant 后立即 flush, 让 abilityGranted 进入 frame 0
 	recorder.record_frame(-1, GameWorld.event_collector.flush())
 
@@ -173,7 +173,7 @@ func _run_phase_3_replay() -> void:
 		var t_now2 := instance.get_logic_time()
 		totem.ability_set.tag_container.tick(0.0, t_now2)
 		totem.ability_set.tick(TICK_INTERVAL, t_now2)
-		totem.ability_set.tick_executions(TICK_INTERVAL, instance)
+		totem.ability_set.tick_executions(TICK_INTERVAL)
 		# Replay 关键: flush event_collector 进入 recorder
 		recorder.record_frame(_i, GameWorld.event_collector.flush())
 
@@ -276,7 +276,7 @@ func _run_phase_4b_ttl_lifecycle() -> void:
 			.build())
 		.build())
 	var ttl_ability := Ability.new(ttl_config, totem_id)
-	totem.ability_set.grant_ability(ttl_ability, instance)
+	totem.ability_set.grant_ability(ttl_ability)
 
 	for _i in range(10):
 		totem.ability_set.tick(TICK_INTERVAL, instance.get_logic_time())

@@ -22,8 +22,8 @@ func get_event_kind() -> String:
 ## on_apply：注册 handler 到 EventProcessor。
 ##
 ## 关键设计：handler/filter lambda 只捕获 String ID + 用户传入的 Callable，
-## 绝不捕获 self（PreEventComponent 实例）。触发时按需通过 GameWorld.get_actor
-## 重建 AbilityLifecycleContext 传给用户 handler。
+## 绝不捕获 self（PreEventComponent 实例），也不捕获本方法收到的 context（它带 instance 强引用）。
+## 触发时按 owner_id 反查 instance，重建 AbilityLifecycleContext 传给用户 handler。
 ##
 ## 这样 event_processor._pre_handlers 不会形成回指 Ability / PreEventComponent 的强引用链，
 ## Ability 从 AbilitySet._abilities 移除后即可被 GC。
@@ -87,7 +87,10 @@ func on_remove(_context: AbilityLifecycleContext) -> void:
 ##
 ## 任一条件不满足 → 上层 lambda 返回 pass_intent，handler 不执行。
 static func _rebuild_context(owner_id: String, ability_id: String) -> AbilityLifecycleContext:
-	var actor := GameWorld.get_actor(owner_id) as BattleActor
+	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
+	if owner_instance == null:
+		return null
+	var actor := owner_instance.get_actor(owner_id) as BattleActor
 	if actor == null:
 		return null
 	if not actor.is_pre_event_responsive():
@@ -102,7 +105,7 @@ static func _rebuild_context(owner_id: String, ability_id: String) -> AbilityLif
 		return null
 
 	return AbilityLifecycleContext.new(
-		owner_id, actor.get_attribute_set(), ability, ab_set, GameWorld.event_processor
+		owner_id, actor.get_attribute_set(), ability, ab_set, GameWorld.event_processor, owner_instance
 	)
 
 

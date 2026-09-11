@@ -45,9 +45,9 @@ func _init(
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.instance
 	if battle == null:
-		return ActionResult.create_success_result([], { "regen_skipped": "no_game_state" })
+		return ActionResult.create_success_result([], { "regen_skipped": "no_instance" })
 	# Phase C V1 只支持 hp; 未来扩展到 mp 时需把下面 attribute_set.hp/max_hp/set_hp_base 也按
 	# _resource 分支, 不只是删 assert. 放 execute 顶部做单次检查, 不在 target 循环内重复.
 	Log.assert_crash(_resource == "hp",
@@ -90,5 +90,5 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			# 广播给存活 actor; heal-listening passive (kind="heal") 不会匹配, regeneration-listening
 			# (kind="regeneration", 未来如需) 会匹配. 见 RegenerationEvent header.
 			for ev in events:
-				GameWorld.event_processor.process_post_event(ev, alive_actor_ids, battle)
+				GameWorld.event_processor.process_post_event(ev, alive_actor_ids)
 	return ActionResult.create_success_result(events, { "regen_amount_per_target": amount })

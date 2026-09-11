@@ -99,8 +99,9 @@ func select(ctx: ExecutionContext) -> Array[ActorRef]:
     var targets: Array[ActorRef] = []
     
     # 例如：选择所有敌人
-    var all_actors = ctx.game_state_provider.get_alive_actors()
-    var owner_team = ctx.ability.owner.team
+    var battle: MyBattle = ctx.instance
+    var all_actors = battle.get_alive_actors()
+    var owner_team = battle.get_actor(ctx.ability_ref.owner_actor_id).team
     
     for actor in all_actors:
         if actor.team != owner_team:
@@ -130,11 +131,12 @@ func select(ctx: ExecutionContext) -> Array[ActorRef]:
     if centers.is_empty():
         return targets
     
-    var center_actor = ctx.game_state_provider.get_actor(centers[0].id)
+    var battle: MyBattle = ctx.instance
+    var center_actor = battle.get_actor(centers[0].id)
     var center_pos = center_actor.hex_position
     
     # 获取范围内的所有目标
-    var all_actors = ctx.game_state_provider.get_alive_actors()
+    var all_actors = battle.get_alive_actors()
     for actor in all_actors:
         var distance = hex_distance(center_pos, actor.hex_position)
         if distance <= _radius:
@@ -161,7 +163,7 @@ func select(ctx: ExecutionContext) -> Array[ActorRef]:
     var filtered: Array[ActorRef] = []
     
     for target in base_targets:
-        var actor = ctx.game_state_provider.get_actor(target.id)
+        var actor = ctx.instance.get_actor(target.id)
         if _filter.call(actor, ctx):
             filtered.append(target)
     

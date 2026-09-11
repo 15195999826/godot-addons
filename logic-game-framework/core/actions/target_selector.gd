@@ -7,13 +7,13 @@
 ## 项目层扩展示例:
 ##   class AllEnemies extends TargetSelector:
 ##       func select(ctx: ExecutionContext) -> Array[String]:
-##           var battle: MyBattle = ctx.game_state_provider
+##           var battle: MyBattle = ctx.instance
 ##           return battle.get_enemy_ids(ctx.ability_ref.owner_actor_id)
 ##
 ## 过滤示例:
 ##   MySelectors.all_enemies().filtered(
 ##       func(id: String, ctx: ExecutionContext) -> bool:
-##           var battle: MyBattle = ctx.game_state_provider
+##           var battle: MyBattle = ctx.instance
 ##           return battle.get_actor(id).attribute_set.hp > 0
 ##   )
 class_name TargetSelector

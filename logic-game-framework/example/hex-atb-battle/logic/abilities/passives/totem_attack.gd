@@ -28,7 +28,7 @@ class _TotemAttackAction:
 		type = "totem_attack_tick"
 
 	func _execute_local(ctx: ExecutionContext) -> ActionResult:
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		if battle == null:
 			return ActionResult.create_success_result([], {})
 		var self_ability := ctx.ability_ref.resolve() if ctx.ability_ref != null else null

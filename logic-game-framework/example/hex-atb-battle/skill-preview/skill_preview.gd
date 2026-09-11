@@ -2782,7 +2782,7 @@ func _spawn_one_actor(idx: int) -> void:
 	# GeneralPassive 是每个 CharacterActor 必有的 intrinsic, 不挂会让 attack-lifesteal /
 	# 未来 hp_regen 在 preview 里失效. attribute_set 默认 attack_lifesteal_pct=0 时它 no-op.
 	var general_passive := Ability.new(HexBattleGeneralPassive.ABILITY, cchar.get_id())
-	cchar.ability_set.grant_ability(general_passive, _world)
+	cchar.ability_set.grant_ability(general_passive)
 
 	_role_id_to_actor_id[role_id] = cchar.get_id()
 	if idx >= _actor_ids.size():

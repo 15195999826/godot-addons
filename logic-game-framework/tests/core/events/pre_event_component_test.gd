@@ -27,20 +27,6 @@ class MockInstance:
 		type = "MockInstance"
 
 
-class MockState:
-	extends RefCounted
-
-	var _actor: MockActor
-	var event_processor: EventProcessor
-
-	func _init(actor_value: MockActor, event_processor_value: EventProcessor) -> void:
-		_actor = actor_value
-		event_processor = event_processor_value
-
-	func get_actor(_actor_id: String) -> MockActor:
-		return _actor
-
-
 func _init() -> void:
 	TestFramework.register_test("PreEventComponent - registers handler when granted", _test_registration)
 	TestFramework.register_test("PreEventComponent - unregisters handler when revoked", _test_unregistration)
@@ -58,7 +44,6 @@ class TestEnv:
 	var actor: MockActor
 	var owner_id: String
 	var ability_set: AbilitySet
-	var state: MockState
 
 
 func _setup_env() -> TestEnv:
@@ -77,8 +62,6 @@ func _setup_env() -> TestEnv:
 
 	env.ability_set = AbilitySet.new(env.owner_id, null)
 	env.actor.ability_set = env.ability_set
-
-	env.state = MockState.new(env.actor, env.event_processor)
 	return env
 
 
@@ -105,7 +88,7 @@ func _test_registration() -> void:
 	env.ability_set.grant_ability(ability)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event, env.state)
+	var mutable := env.event_processor.process_pre_event(event)
 
 	TestFramework.assert_true(not mutable.cancelled)
 	TestFramework.assert_near(70, float(mutable.get_current_value("damage")))
@@ -129,7 +112,7 @@ func _test_unregistration() -> void:
 	env.ability_set.revoke_ability(ability.id)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event, env.state)
+	var mutable := env.event_processor.process_pre_event(event)
 
 	TestFramework.assert_near(100, float(mutable.get_current_value("damage")))
 	_teardown_env(env)
@@ -152,7 +135,7 @@ func _test_modify_event() -> void:
 	env.ability_set.grant_ability(ability)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event, env.state)
+	var mutable := env.event_processor.process_pre_event(event)
 
 	# 计算顺序: SET → ADD → MULTIPLY
 	# (100 + (-10)) * 0.7 = 63
@@ -174,7 +157,7 @@ func _test_cancel_event() -> void:
 	env.ability_set.grant_ability(ability)
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
-	var mutable := env.event_processor.process_pre_event(event, env.state)
+	var mutable := env.event_processor.process_pre_event(event)
 
 	TestFramework.assert_true(mutable.cancelled)
 	TestFramework.assert_equal("immune", mutable.cancel_reason)
@@ -201,16 +184,16 @@ func _test_dead_actor_stops_responding() -> void:
 
 	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
 	TestFramework.assert_near(
-		float(env.event_processor.process_pre_event(event, env.state).get_current_value("damage")),
+		float(env.event_processor.process_pre_event(event).get_current_value("damage")),
 		50.0, 0.0001, "活着时 handler 应生效")
 
 	env.actor.mark_dead()
 	TestFramework.assert_near(
-		float(env.event_processor.process_pre_event(event, env.state).get_current_value("damage")),
+		float(env.event_processor.process_pre_event(event).get_current_value("damage")),
 		100.0, 0.0001, "死后 handler 不应再改事件")
 
 	env.actor.set_death_latch(false)
 	TestFramework.assert_near(
-		float(env.event_processor.process_pre_event(event, env.state).get_current_value("damage")),
+		float(env.event_processor.process_pre_event(event).get_current_value("damage")),
 		50.0, 0.0001, "解闩后 handler 应恢复（注册没被销毁）")
 	_teardown_env(env)

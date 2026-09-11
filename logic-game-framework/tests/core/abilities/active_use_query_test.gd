@@ -85,7 +85,7 @@ func _test_denied_by_condition() -> void:
 
 	# 对照：真实激活路径对同一失败会 push AbilityActivateFailed
 	var activate_dict := GameEvent.AbilityActivate.create(ability.id, "actor-q").to_dict()
-	ability_set.receive_event(activate_dict, null)
+	ability_set.receive_event(activate_dict)
 	var failed_events := GameWorld.event_collector.filter_by_kind(
 		GameEvent.ABILITY_ACTIVATE_FAILED_EVENT)
 	TestFramework.assert_equal(1, failed_events.size())
@@ -149,7 +149,7 @@ func _test_query_then_real_activation() -> void:
 
 	# 真实激活：默认 ABILITY_ACTIVATE trigger 命中 → 支付 + 创建 execution
 	var activate_dict := GameEvent.AbilityActivate.create(ability.id, "actor-q").to_dict()
-	ability_set.receive_event(activate_dict, null)
+	ability_set.receive_event(activate_dict)
 	TestFramework.assert_equal(0, ability_set.get_loose_tag_stacks("ammo"))
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 

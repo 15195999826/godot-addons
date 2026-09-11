@@ -28,6 +28,14 @@ func bind_owner(actor_id: String) -> void:
 func get_event_processor() -> EventProcessor:
 	return GameWorld.event_processor
 
+## owner 所属的 GameplayInstance，每次按 owner_actor_id 反查（owner 未注册时为 null）。
+##
+## 只存 id、不绑引用：AbilitySet 在 actor 拿到 id 之前就构造，还会被项目层整个换新
+## （inkmon reset_battle_runtime 每场重建、构造时只带 id），「绑一次」式的引用会在这类
+## 路径上漏绑；强引用更会接成 instance → actor → ability_set → instance 的环。
+func get_owner_instance() -> GameplayInstance:
+	return GameWorld.get_instance_of_actor(owner_actor_id)
+
 func add_loose_tag(tag: String, stacks: int = 1) -> void:
 	tag_container.add_loose_tag(tag, stacks)
 
@@ -61,25 +69,25 @@ func has_loose_tag(tag: String) -> bool:
 func get_loose_tag_stacks(tag: String) -> int:
 	return tag_container.get_loose_tag_stacks(tag)
 
-## grant 新 ability。传入 game_state_provider 后 grant 会同步广播 ABILITY_GRANTED_EVENT
-## 给本 ability_set 的所有 ability，让 TriggerConfig.GRANTED_SELF 等 trigger 能响应
-## （典型用途：挂上就自动 tick 的 buff 通过 ActivateInstanceConfig 自激活 loop timeline）。
+## grant 新 ability，随后恒向本 ability_set 的全部 ability 同步投递 ABILITY_GRANTED_EVENT，
+## 让 TriggerConfig.GRANTED_SELF 等 trigger 能响应（典型用途：挂上就自动 tick 的 buff 通过
+## ActivateInstanceConfig 自激活 loop timeline）。自不自激活只由 ability 自己声明的 trigger
+## 决定，与 grant 的调用点无关。
 ##
-## 广播限本人 ability_set，不走 event_processor 全局 post —— 跨 actor 监听由业务层自行广播。
-func grant_ability(ability: Ability, game_state_provider: Variant = null) -> void:
+## 投递限本人 ability_set，不走 event_processor 全局 post —— 跨 actor 监听由业务层自行广播。
+func grant_ability(ability: Ability) -> void:
 	for existing in _abilities:
 		if existing.id == ability.id:
 			Log.warning("AbilitySet", "Ability already granted: %s" % ability.id)
 			return
 	_abilities.append(ability)
-	var context: AbilityLifecycleContext = _create_lifecycle_context(ability)
+	var context: AbilityLifecycleContext = _create_lifecycle_context(ability, get_owner_instance())
 	ability.apply_effects(context)
 	Log.debug("AbilitySet", "获得能力")
 	_notify_granted(ability)
 
-	if game_state_provider != null:
-		var event_dict := GameEvent.AbilityGranted.create(owner_actor_id, ability.serialize()).to_dict()
-		receive_event(event_dict, game_state_provider)
+	var event_dict := GameEvent.AbilityGranted.create(owner_actor_id, ability.serialize()).to_dict()
+	receive_event(event_dict)
 
 func revoke_ability(ability_id: String, reason: String = REVOKE_REASON_MANUAL, expire_reason: String = "") -> bool:
 	var index := -1
@@ -123,10 +131,10 @@ func tick(dt: float, logic_time: float = -1.0) -> void:
 		ability.tick(dt)
 	)
 
-func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
+func tick_executions(dt: float) -> Array[String]:
 	var all_triggered: Array[String] = []
 	_process_abilities(func(ability: Ability):
-		var triggered := ability.tick_executions(dt, game_state_provider)
+		var triggered := ability.tick_executions(dt)
 		all_triggered.append_array(triggered)
 	)
 	return all_triggered
@@ -136,7 +144,7 @@ func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 ## blocking 必须在 tick_executions **之前**算：本帧内跑完的 execution 也算占用了这一帧，
 ## 战斗主循环据此决定「施法期间 ATB 冻结」；先推进再问，刚结束的那帧会被误判成空闲，
 ## 角色一帧内既施法又充能。
-func tick_runtime(dt: float, logic_time: float, game_state_provider: Variant) -> bool:
+func tick_runtime(dt: float, logic_time: float) -> bool:
 	tick(dt, logic_time)
 	var has_any_execution := false
 	var blocking := false
@@ -149,7 +157,7 @@ func tick_runtime(dt: float, logic_time: float, game_state_provider: Variant) ->
 			blocking = true
 			break
 	if has_any_execution:
-		tick_executions(dt, game_state_provider)
+		tick_executions(dt)
 	return blocking
 
 ## 是否有任一 ability 处于执行中（不区分是否阻塞）。
@@ -163,10 +171,12 @@ func has_executing_instances() -> bool:
 func _is_blocking_execution(_ability: Ability) -> bool:
 	return true
 
-func receive_event(event_dict: Dictionary, game_state_provider: Variant) -> void:
+func receive_event(event_dict: Dictionary) -> void:
+	# owner instance 每次投递只反查一次，本轮所有 ability 的 context 共用。
+	var owner_instance := get_owner_instance()
 	_process_abilities(func(ability: Ability):
-		var context: AbilityLifecycleContext = _create_lifecycle_context(ability)
-		ability.receive_event(event_dict, context, game_state_provider)
+		var context: AbilityLifecycleContext = _create_lifecycle_context(ability, owner_instance)
+		ability.receive_event(event_dict, context)
 	)
 
 ## 激活门的纯查询干跑（零副作用、可重入）：UI / AI / tooltip 三源共用的合法性
@@ -182,13 +192,12 @@ func receive_event(event_dict: Dictionary, game_state_provider: Variant) -> void
 func can_activate(
 	ability: Ability,
 	event_dict: Dictionary = {},
-	game_state_provider: Variant = null,
 ) -> Dictionary:
 	Log.assert_crash(ability != null, "AbilitySet", "can_activate 要求非空 ability")
 	Log.assert_crash(_abilities.has(ability), "AbilitySet",
 		"can_activate: ability '%s' 不属于本 AbilitySet (owner=%s)" % [ability.id, owner_actor_id])
-	var context: AbilityLifecycleContext = _create_lifecycle_context(ability)
-	return ability.can_activate(context, event_dict, game_state_provider)
+	var context: AbilityLifecycleContext = _create_lifecycle_context(ability, get_owner_instance())
+	return ability.can_activate(context, event_dict)
 
 func get_abilities() -> Array[Ability]:
 	return _abilities
@@ -243,13 +252,14 @@ func serialize() -> Dictionary:
 		"abilities": abilities,
 	}
 
-func _create_lifecycle_context(ability: Ability) -> AbilityLifecycleContext:
+func _create_lifecycle_context(ability: Ability, owner_instance: GameplayInstance) -> AbilityLifecycleContext:
 	return AbilityLifecycleContext.new(
 		owner_actor_id,
 		_attribute_set,
 		ability,
 		self,
-		get_event_processor()
+		get_event_processor(),
+		owner_instance
 	)
 
 func _process_abilities(processor: Callable) -> void:

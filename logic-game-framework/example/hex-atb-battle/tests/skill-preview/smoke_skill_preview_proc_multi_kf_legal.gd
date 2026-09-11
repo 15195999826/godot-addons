@@ -68,8 +68,8 @@ func _ready() -> void:
 
 	_caster_id = caster.get_id()
 	_dummy_id = dummy.get_id()
-	caster.ability_set.grant_ability(Ability.new(HexBattleGeneralPassive.ABILITY, _caster_id), _world)
-	dummy.ability_set.grant_ability(Ability.new(HexBattleGeneralPassive.ABILITY, _dummy_id), _world)
+	caster.ability_set.grant_ability(Ability.new(HexBattleGeneralPassive.ABILITY, _caster_id))
+	dummy.ability_set.grant_ability(Ability.new(HexBattleGeneralPassive.ABILITY, _dummy_id))
 
 	_world.queue_preview([
 		{

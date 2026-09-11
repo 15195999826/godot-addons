@@ -86,7 +86,7 @@ func _test_initial_scaled() -> void:
 		.scale_by_stacks()
 		.build())
 	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 3)
-	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null)
+	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null, _instance)
 	ability.apply_effects(ctx)
 	# stacks=3 → atk +6 (3 * 2.0 ADD_BASE)
 	TestFramework.assert_true(absf(actor.attribute_set.atk - (initial_atk + 6.0)) < 0.01,
@@ -103,7 +103,7 @@ func _test_add_stacks() -> void:
 		.scale_by_stacks()
 		.build())
 	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 1)
-	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null)
+	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null, _instance)
 	ability.apply_effects(ctx)
 	# initial stacks=1 → +2
 	TestFramework.assert_true(absf(actor.attribute_set.atk - (initial_atk + 2.0)) < 0.01)
@@ -123,7 +123,7 @@ func _test_stack_update_emits_attribute_event() -> void:
 		.scale_by_stacks()
 		.build())
 	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 1)
-	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null)
+	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null, _instance)
 	ability.apply_effects(ctx)
 
 	var events: Array[Dictionary] = []
@@ -157,7 +157,7 @@ func _test_remove_stacks() -> void:
 		.scale_by_stacks()
 		.build())
 	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 5)
-	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null)
+	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null, _instance)
 	ability.apply_effects(ctx)
 	# stacks=5 → +10
 	TestFramework.assert_true(absf(actor.attribute_set.atk - (initial_atk + 10.0)) < 0.01)
@@ -177,7 +177,7 @@ func _test_set_stacks() -> void:
 		.scale_by_stacks()
 		.build())
 	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 1)
-	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null)
+	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null, _instance)
 	ability.apply_effects(ctx)
 	ability.set_stacks(10)
 	TestFramework.assert_true(absf(actor.attribute_set.atk - (initial_atk + 20.0)) < 0.01,
@@ -194,7 +194,7 @@ func _test_non_scale_mode_noop() -> void:
 		.modifier("atk", AttributeModifier.Type.ADD_BASE, 5.0)
 		.build())
 	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 1)
-	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null)
+	var ctx := AbilityLifecycleContext.new(actor.get_id(), actor.attribute_set, ability, actor.ability_set, null, _instance)
 	ability.apply_effects(ctx)
 	TestFramework.assert_true(absf(actor.attribute_set.atk - (initial_atk + 5.0)) < 0.01)
 	# 增加 stacks 不应改变 modifier value (非 scale 模式)

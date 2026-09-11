@@ -70,7 +70,7 @@ func _init(
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle := HexBattleGameStateUtils.world(ctx)
 	var caster_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 	var caster := battle.get_actor(caster_id)
 	var targets := get_targets(ctx)
@@ -224,7 +224,7 @@ func _grant_displacement_action_lock(
 		character.get_id(),
 		source_caster_id
 	)
-	character.ability_set.grant_ability(action_lock, battle)
+	character.ability_set.grant_ability(action_lock)
 
 
 ## inline collision damage helper.

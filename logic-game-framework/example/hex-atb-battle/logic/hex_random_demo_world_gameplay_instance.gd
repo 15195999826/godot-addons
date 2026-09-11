@@ -151,7 +151,7 @@ func _assign_team_loadouts(team: Array[CharacterActor]) -> void:
 func _assign_actor_loadout(actor: CharacterActor, force_offensive: bool) -> void:
 	var active_pool := _offensive_pool if force_offensive and not _offensive_pool.is_empty() else _active_pool
 	var active_cfg := _pick_config(active_pool)
-	var active_ability := actor.replace_skill_ability(active_cfg, self)
+	var active_ability := actor.replace_skill_ability(active_cfg)
 	_grant_fallback_strike(actor, active_cfg)
 	actor.ai_strategy = _shared_random_strategy
 	var granted_passives := _grant_random_passives(actor)
@@ -171,7 +171,7 @@ func _grant_fallback_strike(actor: CharacterActor, active_cfg: AbilityConfig) ->
 	if actor.ability_set.has_ability(HexBattleStrike.CONFIG_ID):
 		return
 	var fallback_ability := Ability.new(HexBattleStrike.ABILITY, actor.get_id())
-	actor.ability_set.grant_ability(fallback_ability, self)
+	actor.ability_set.grant_ability(fallback_ability)
 
 
 func _grant_random_passives(actor: CharacterActor) -> Array[String]:
@@ -185,7 +185,7 @@ func _grant_random_passives(actor: CharacterActor) -> Array[String]:
 		if actor.ability_set.has_ability(passive_cfg.config_id):
 			continue
 		var passive_ability := Ability.new(passive_cfg, actor.get_id())
-		actor.ability_set.grant_ability(passive_ability, self)
+		actor.ability_set.grant_ability(passive_ability)
 		granted.append(passive_cfg.config_id)
 	return granted
 

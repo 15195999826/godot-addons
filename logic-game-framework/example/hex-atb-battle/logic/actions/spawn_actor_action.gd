@@ -34,9 +34,9 @@ func _init(
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.instance
 	if battle == null:
-		return ActionResult.create_success_result([], { "spawn_failed": "no_game_state" })
+		return ActionResult.create_success_result([], { "spawn_failed": "no_instance" })
 	var caster_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 	if caster_id.is_empty():
 		return ActionResult.create_success_result([], { "spawn_failed": "no_caster" })
@@ -89,7 +89,7 @@ func _initialize_spawned_actor(
 	for cfg in _grant_ability_configs:
 		if cfg is AbilityConfig:
 			var ab := Ability.new(cfg, spawned.get_id(), caster_id)
-			spawned.ability_set.grant_ability(ab, battle)
+			spawned.ability_set.grant_ability(ab)
 
 
 ## 找 anchor 的第一个未占邻格。全占满返回 null。

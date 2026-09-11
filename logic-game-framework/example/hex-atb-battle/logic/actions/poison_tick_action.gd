@@ -33,7 +33,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		ability.expire("poison_exhausted")
 		return ActionResult.create_success_result([], {})
 
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.instance
 	if battle == null:
 		return ActionResult.create_success_result([], {})
 
@@ -46,7 +46,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		source_id, target_id, float(stacks),
 		BattleEvents._damage_type_to_string(BattleEvents.DamageType.PURE)
 	)
-	var mutable: MutableEvent = GameWorld.event_processor.process_pre_event(pre_event.to_dict(), battle)
+	var mutable: MutableEvent = GameWorld.event_processor.process_pre_event(pre_event.to_dict())
 	var all_events: Array[Dictionary] = []
 
 	if not mutable.cancelled:

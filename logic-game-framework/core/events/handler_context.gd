@@ -1,7 +1,9 @@
 ## HandlerContext - 处理器上下文
 ##
-## 传递给 Pre 阶段处理器的上下文信息。
-## 包含处理器所属的 owner、ability 等信息，以及游戏状态访问。
+## 传递给 Pre 阶段处理器的上下文信息：处理器所属的 owner / ability / config 的 id。
+## 只携带 id、不携带 instance：PreEventConfig 的用户 handler 拿到的是按 owner 重建的
+## AbilityLifecycleContext（含 instance）；直接注册 PreHandlerRegistration 的底层 handler
+## 需要世界状态时按 owner_id 反查。
 ##
 ## ========== 使用示例 ==========
 ##
@@ -13,8 +15,8 @@
 ##     if target_id != ctx.owner_id:
 ##         return Intent.pass_through()
 ##
-##     # 使用游戏状态
-##     var battle: HexWorldGameplayInstance = ctx.game_state
+##     # 需要世界状态时按 owner id 反查
+##     var battle: HexWorldGameplayInstance = GameWorld.get_instance_of_actor(ctx.owner_id)
 ##     # ...
 ## ```
 class_name HandlerContext
@@ -30,20 +32,15 @@ var ability_id: String
 ## 处理器所属的 Ability Config ID
 var config_id: String
 
-## 游戏状态提供者（类型由游戏层决定）
-var game_state: Variant
-
 
 func _init(
 	p_owner_id: String = "",
 	p_ability_id: String = "",
-	p_config_id: String = "",
-	p_game_state: Variant = null
+	p_config_id: String = ""
 ) -> void:
 	owner_id = p_owner_id
 	ability_id = p_ability_id
 	config_id = p_config_id
-	game_state = p_game_state
 
 
 ## 转换为 Dictionary（用于日志/调试）

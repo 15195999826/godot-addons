@@ -81,7 +81,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	print("  [HealAction] %s 对 [%s] 治疗 %.0f HP" % [source_id_for_log, ", ".join(target_ids), heal_amount])
 	
 	var all_events: Array[Dictionary] = []
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle := HexBattleGameStateUtils.world(ctx)
 	var event_processor := GameWorld.event_processor
 	var alive_actor_ids := battle.get_alive_actor_ids()
 	
@@ -119,7 +119,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		all_events.append_array(callback_events)
 		
 		if alive_actor_ids.size() > 0:
-			event_processor.process_post_event(heal_event, alive_actor_ids, battle)
+			event_processor.process_post_event(heal_event, alive_actor_ids)
 	
 	return ActionResult.create_success_result(all_events, { "heal_amount": heal_amount })
 
@@ -151,10 +151,10 @@ func _process_callbacks(heal_event: Dictionary, overheal: float, ctx: ExecutionC
 
 
 func _calculate_overheal(target_actor_id: String, heal_amount: float, ctx: ExecutionContext) -> float:
-	if ctx.game_state_provider == null:
+	if ctx.instance == null:
 		return 0.0
 	
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle := HexBattleGameStateUtils.world(ctx)
 	var target_actor := battle.get_character_actor(target_actor_id)
 	if target_actor != null:
 		var current_hp: float = target_actor.attribute_set.hp

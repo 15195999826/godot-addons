@@ -8,7 +8,7 @@
 ##   还没结束)
 ## - 不影响 NoInstance / PreEvent / buff tick / DOT / deathrattle / post-damage 这类被动响应
 ##   (它们的 ability 不带 "active" tag)
-## - GameWorld.get_actor → ability_set, 因此可在 lifecycle (game_state_provider=null) 跑
+## - 经 GameWorld.get_actor 取 ability_set、不读 ctx.instance; 被取消 execution 的 on_cancel 由 execution 按 owner 反查 instance
 ##
 ## V1 用例: HexBattleStunBuff on_apply 取消目标当前 in-flight active skill/strike/move execution。
 class_name HexBattleCancelActiveExecutionsAction
@@ -41,5 +41,5 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 				continue
 			if ability.get_executing_instances().is_empty():
 				continue
-			ability.cancel_all_executions(ctx.game_state_provider)
+			ability.cancel_all_executions()
 	return ActionResult.create_success_result([])

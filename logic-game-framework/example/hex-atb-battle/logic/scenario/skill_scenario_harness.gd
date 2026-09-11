@@ -125,7 +125,7 @@ static func run_with_actions(
 	for passive_config in passives:
 		if passive_config is AbilityConfig:
 			var passive_ability := Ability.new(passive_config, caster.get_id())
-			caster.ability_set.grant_ability(passive_ability, battle)
+			caster.ability_set.grant_ability(passive_ability)
 
 	# §Phase G: 可选 setup_callback (装备 scenarios 在此注册 inventory / equip item)。
 	# 失败 (返回 false / callback append 到 setup_errors) 直接 errors 累计, 仍跑 tick
@@ -216,7 +216,7 @@ static func run_with_actions(
 		# EnvironmentActor 的 passive (FireTilePulse / FireTileLifetime) 也被驱动。
 		for actor in battle.get_all_hex_battle_actors():
 			actor.ability_set.tick(TICK_INTERVAL, cur_logic_time)
-			actor.ability_set.tick_executions(TICK_INTERVAL, battle)
+			actor.ability_set.tick_executions(TICK_INTERVAL)
 
 		var frame_events := GameWorld.event_collector.flush()
 		battle.recorder.record_frame(tick_count, frame_events)
@@ -364,12 +364,12 @@ static func _fire_action(
 		ability = existing
 	else:
 		ability = Ability.new(ability_config, action_caster.get_id())
-		action_caster.ability_set.grant_ability(ability, battle)
+		action_caster.ability_set.grant_ability(ability)
 	var activate_event := GameEvent.AbilityActivate.create(
 		ability.id, action_caster.get_id(), keyframe_time_ms, target_id, target_coord
 	).to_dict()
 	HexFacing.face_actor_for_active_event(action_caster, activate_event, battle, GameWorld.event_collector)
-	action_caster.ability_set.receive_event(activate_event, battle)
+	action_caster.ability_set.receive_event(activate_event)
 
 
 static func _sync_all_actor_tag_logic_time(battle: _PreviewInstance, now_ms: float) -> void:
@@ -690,13 +690,13 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		for passive_config in passives:
 			if passive_config is AbilityConfig:
 				var passive_ability := Ability.new(passive_config, actor.get_id())
-				actor.ability_set.grant_ability(passive_ability, self)
+				actor.ability_set.grant_ability(passive_ability)
 		# Phase B: 角色内建规则桥, 每个 CharacterActor 必有 (与 CharacterActor.equip_abilities
 		# 对齐). Harness 不走 equip_abilities (per-scenario 不要默认 Move/Strike grant), 单独
 		# grant GeneralPassive 以让 attack_lifesteal_pct / hp_regen_per_sec 等 attribute-driven
 		# 规则在 scenario 中生效.
 		var general_passive := Ability.new(HexBattleGeneralPassive.ABILITY, actor.get_id())
-		actor.ability_set.grant_ability(general_passive, self)
+		actor.ability_set.grant_ability(general_passive)
 		return actor
 
 	## projectile_hit 必须从 event_collector 广播出去, 否则 Fireball/PreciseShot

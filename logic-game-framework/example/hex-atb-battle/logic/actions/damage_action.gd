@@ -133,7 +133,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var source_ability_id := ctx.ability_ref.id if ctx.ability_ref != null else ""
 	var source_ability_config_id := ctx.ability_ref.config_id if ctx.ability_ref != null else ""
 	var targets := get_targets(ctx)
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle := HexBattleGameStateUtils.world(ctx)
 	var event_processor := GameWorld.event_processor
 	var all_events: Array[Dictionary] = []
 	var alive_actor_ids := battle.get_alive_actor_ids()
@@ -160,7 +160,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 				source_actor_id, target_id, base_damage,
 				source_ability_id, source_ability_config_id,
 			)
-			var mutable_basic: MutableEvent = event_processor.process_pre_event(pre_basic.to_dict(), battle)
+			var mutable_basic: MutableEvent = event_processor.process_pre_event(pre_basic.to_dict())
 			if mutable_basic.cancelled:
 				var cancelled_target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
 				print("  [DamageAction] %s 的普攻被 PreBasicAttackEvent 取消" % cancelled_target_name)
@@ -176,7 +176,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 			BattleEvents._damage_type_to_string(_damage_type)
 		)
 
-		var mutable: MutableEvent = event_processor.process_pre_event(pre_event.to_dict(), battle)
+		var mutable: MutableEvent = event_processor.process_pre_event(pre_event.to_dict())
 
 		if mutable.cancelled:
 			var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
@@ -255,4 +255,4 @@ func _check_target_killed(damage_event: Dictionary, ctx: ExecutionContext) -> bo
 	var event := BattleEvents.DamageEvent.from_dict(damage_event)
 	if event.target_actor_id.is_empty():
 		return false
-	return HexBattleGameStateUtils.is_actor_dead(event.target_actor_id, ctx.game_state_provider)
+	return HexBattleGameStateUtils.is_actor_dead(event.target_actor_id, ctx.instance)

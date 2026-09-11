@@ -6,10 +6,10 @@ var _frozen_hash: int = 0
 func get_condition_type() -> String:
 	return "condition"
 
-func check(_ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> bool:
+func check(_ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 	return true
 
-func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> String:
+func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> String:
 	return ""
 
 ## 冻结 Condition，记录当前状态 hash
@@ -31,10 +31,10 @@ class HasTagCondition:
 	func get_condition_type() -> String:
 		return "hasTag"
 
-	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> bool:
+	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 		return ctx.ability_set != null and ctx.ability_set.has_tag(tag)
 
-	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> String:
+	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> String:
 		return "缺少 Tag: %s" % tag
 
 
@@ -49,10 +49,10 @@ class NoTagCondition:
 	func get_condition_type() -> String:
 		return "noTag"
 
-	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> bool:
+	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 		return ctx.ability_set == null or not ctx.ability_set.has_tag(tag)
 
-	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> String:
+	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> String:
 		return "已有 Tag: %s" % tag
 
 
@@ -69,12 +69,12 @@ class TagStacksCondition:
 	func get_condition_type() -> String:
 		return "tagStacks"
 
-	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> bool:
+	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 		if ctx.ability_set == null:
 			return false
 		return ctx.ability_set.get_tag_stacks(tag) >= min_stacks
 
-	func get_fail_reason(ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> String:
+	func get_fail_reason(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> String:
 		var current := 0
 		if ctx.ability_set != null:
 			current = ctx.ability_set.get_tag_stacks(tag)
@@ -98,18 +98,18 @@ class AllConditions:
 		for condition in conditions:
 			condition._freeze()
 
-	func check(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> bool:
+	func check(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> bool:
 		for condition in conditions:
-			var passed := condition.check(ctx, event_dict, game_state)
+			var passed := condition.check(ctx, event_dict)
 			condition._verify_unchanged()
 			if not passed:
 				return false
 		return true
 
-	func get_fail_reason(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> String:
+	func get_fail_reason(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> String:
 		for condition in conditions:
-			if not condition.check(ctx, event_dict, game_state):
-				var reason := condition.get_fail_reason(ctx, event_dict, game_state)
+			if not condition.check(ctx, event_dict):
+				var reason := condition.get_fail_reason(ctx, event_dict)
 				if reason != "":
 					return reason
 				return "条件不满足: %s" % condition.get_condition_type()
@@ -133,13 +133,13 @@ class AnyCondition:
 		for condition in conditions:
 			condition._freeze()
 
-	func check(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> bool:
+	func check(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> bool:
 		for condition in conditions:
-			var passed := condition.check(ctx, event_dict, game_state)
+			var passed := condition.check(ctx, event_dict)
 			condition._verify_unchanged()
 			if passed:
 				return true
 		return false
 
-	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> String:
+	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> String:
 		return "所有条件都不满足"

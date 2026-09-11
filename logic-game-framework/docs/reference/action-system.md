@@ -191,7 +191,7 @@ HexBattleDamageAction.new(
     TargetSelector.current_target(),
     func(ctx: ExecutionContext) -> float:
         # 根据攻击者属性计算伤害
-        var attacker = ctx.game_state_provider.get_actor(ctx.ability.owner.id)
+        var attacker = ctx.instance.get_actor(ctx.ability_ref.owner_actor_id)
         return attacker.get_attack() * 1.5,
     DamageType.PHYSICAL
 )

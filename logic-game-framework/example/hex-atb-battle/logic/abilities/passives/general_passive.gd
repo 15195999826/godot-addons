@@ -61,9 +61,9 @@ class _LifestealAction:
 		if actual_life_damage <= 0.0:
 			return ActionResult.create_success_result([], { "lifesteal_skipped": "no_actual_damage" })
 
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		if battle == null:
-			return ActionResult.create_success_result([], { "lifesteal_skipped": "no_game_state" })
+			return ActionResult.create_success_result([], { "lifesteal_skipped": "no_instance" })
 		var owner_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 		if owner_id.is_empty():
 			return ActionResult.create_success_result([], { "lifesteal_skipped": "no_owner" })

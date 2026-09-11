@@ -129,7 +129,7 @@ static func _next_chain_state(ctx: ExecutionContext) -> Dictionary:
 ##   {} -> 链终止 (达到 MAX_HITS / 无更近未命中敌人 / caster dead / target dead)
 ##   { start_actor_id, target_actor_id, chain_id, hit_index, damage, visited_actor_ids }
 static func _next_chain_data(ctx: ExecutionContext) -> Dictionary:
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.instance
 	if battle == null or ctx.ability_ref == null:
 		return {}
 	var hit_event := ctx.get_original_event()
@@ -231,14 +231,14 @@ static func _actor_world_pos(actor_id: String, battle: HexWorldGameplayInstance)
 static func _next_chain_start_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:
 		var data := _next_chain_state(ctx)
-		return _actor_world_pos(str(data.get("start_actor_id", "")), ctx.game_state_provider)
+		return _actor_world_pos(str(data.get("start_actor_id", "")), ctx.instance)
 	)
 
 
 static func _next_chain_target_position_resolver() -> Vector3Resolver:
 	return Resolvers.vec3_fn(func(ctx: ExecutionContext) -> Vector3:
 		var data := _next_chain_state(ctx)
-		return _actor_world_pos(str(data.get("target_actor_id", "")), ctx.game_state_provider)
+		return _actor_world_pos(str(data.get("target_actor_id", "")), ctx.instance)
 	)
 
 

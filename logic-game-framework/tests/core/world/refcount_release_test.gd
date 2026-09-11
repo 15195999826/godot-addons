@@ -15,6 +15,11 @@ extends Node
 ##  2. start_battle + 录像：BattleProcedure / BattleRecorder / RecordingContext / 订阅闭包，
 ##     battle_finished 后同样全部释放。
 ##
+## context 对象（AbilityLifecycleContext / ExecutionContext）携带 instance 强引用，只许活在
+## 调用栈上：探针在 NoInstance 的 trigger filter、NoInstance action 与 timeline tag action 里
+## 把收到的 context 以 weakref 捕出，tick / 派发一返回就断言已释放（不等 destroy_instance）——
+## 任何一处把 context 缓存进字段，它都会当场存活。
+##
 ## EventProcessor / EventCollector 归 GameWorld 持有：用 GameWorld.init() 换新，
 ## 让旧实例失去唯一持有者后断言释放。
 
@@ -24,6 +29,11 @@ const TAG_TICK := "release_probe_tick"
 const TAG_END := "release_probe_end"
 const TAG_POST := "release_probe_post"
 
+## 探针捕出的 context 在 refs 里的 key 前缀（后接 ":<actor_id>"）。
+const PROBE_LIFECYCLE := "lifecycle_context"
+const PROBE_NO_INSTANCE := "no_instance_context"
+const PROBE_TIMELINE := "timeline_context"
+
 
 ## 带 ability_set + attribute_set 的探针 actor。
 ## 生命周期 / 录像订阅全走 BattleActor 默认实现——本测试也是那套默认订阅的释放硬关卡。
@@ -32,7 +42,7 @@ class ReleaseProbeActor:
 
 	var ability_set: AbilitySet
 	var attribute_set: ExampleHeroAttributeSet
-	## 测试侧 weakref 汇集处：setup_recording 收到的 RecordingContext 只以 weakref 存入。
+	## 测试侧 weakref 汇集处：RecordingContext 与探针捕到的 context 只以 weakref 存入。
 	var probe_sink: Dictionary = {}
 
 	func _init() -> void:
@@ -57,6 +67,24 @@ class OwnerSelector:
 
 	func select(ctx: ExecutionContext) -> Array[String]:
 		return [ctx.ability_ref.owner_actor_id]
+
+
+## 把执行时收到的 ExecutionContext 以 weakref 捕进 owner 的 probe_sink（无状态：key 构造后只读）。
+class ContextProbeAction:
+	extends Action.BaseAction
+
+	var key: String
+
+	func _init(p_key: String) -> void:
+		super._init(TargetSelector.new())
+		key = p_key
+
+	func execute(ctx: ExecutionContext) -> ActionResult:
+		# 没带 instance 的 context 放了也白放——释放断言就证明不了「带 instance 的 context 不被缓存」。
+		TestFramework.assert_true(ctx.instance != null, "%s 应携带 owner 所属 instance" % key)
+		var probe_actor := GameWorld.get_actor(ctx.ability_ref.owner_actor_id) as ReleaseProbeActor
+		probe_actor.probe_sink["%s:%s" % [key, probe_actor.get_id()]] = weakref(ctx)
+		return ActionResult.create_success_result([])
 
 
 func _init() -> void:
@@ -92,23 +120,29 @@ func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 	var instance := GameWorld.create_instance(func() -> GameplayInstance:
 		return GameplayInstance.new())
 	var actor := instance.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
+	actor.probe_sink = refs
 	var actor_id := actor.get_id()
 	var ability := Ability.new(_build_probe_config(timeline), actor_id)
-	# 传 provider → grant 广播 AbilityGranted → GRANTED_SELF 自激活 loop timeline
-	actor.ability_set.grant_ability(ability, instance)
+	# grant 恒投递 AbilityGranted → GRANTED_SELF 自激活 loop timeline
+	actor.ability_set.grant_ability(ability)
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 	TestFramework.assert_near(actor.attribute_set.attack, 15.0)
 
 	# tick 一个周期：tag@50 与周期末 on_timeline_end 各 fire 一次
-	actor.ability_set.tick_executions(100.0, instance)
+	actor.ability_set.tick_executions(100.0)
 	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_TICK))
 	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_END))
+	_assert_contexts_released(refs, [_probe_key(PROBE_TIMELINE, actor_id)])
 
-	var mutable := GameWorld.event_processor.process_pre_event({"kind": PRE_KIND, "value": 10.0}, instance)
+	var mutable := GameWorld.event_processor.process_pre_event({"kind": PRE_KIND, "value": 10.0})
 	TestFramework.assert_near(float(mutable.get_current_value("value")), 15.0)
 	var audience: Array[String] = [actor_id]
-	GameWorld.event_processor.process_post_event({"kind": POST_KIND}, audience, instance)
+	GameWorld.event_processor.process_post_event({"kind": POST_KIND}, audience)
 	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_POST))
+	_assert_contexts_released(refs, [
+		_probe_key(PROBE_LIFECYCLE, actor_id),
+		_probe_key(PROBE_NO_INSTANCE, actor_id),
+	])
 
 	_collect_actor_refs(refs, actor, "")
 	refs["instance"] = weakref(instance)
@@ -129,7 +163,7 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	# 一份 config 两个 actor 共享: 与生产的 static var 声明同形, 也是最容易藏回指边的形状
 	var probe_config := _build_probe_config(timeline)
 	for actor: ReleaseProbeActor in [caster, target]:
-		actor.ability_set.grant_ability(Ability.new(probe_config, actor.get_id()), world)
+		actor.ability_set.grant_ability(Ability.new(probe_config, actor.get_id()))
 
 	var finish_sink: Dictionary = {}
 	world.battle_finished.connect(func(result: Dictionary) -> void:
@@ -141,9 +175,15 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	TestFramework.assert_true(recorder != null and recorder.get_is_recording(), "录像应已开启")
 
 	# 战斗中的真实事件：execution tick 打 tag（TagChanged 进录像）、post 派发触发被动
-	caster.ability_set.tick_executions(100.0, world)
+	caster.ability_set.tick_executions(100.0)
+	_assert_contexts_released(refs, [_probe_key(PROBE_TIMELINE, caster.get_id())])
 	var audience: Array[String] = [caster.get_id(), target.get_id()]
-	GameWorld.event_processor.process_post_event({"kind": POST_KIND}, audience, world)
+	GameWorld.event_processor.process_post_event({"kind": POST_KIND}, audience)
+	var dispatched: Array[String] = []
+	for actor: ReleaseProbeActor in [caster, target]:
+		dispatched.append(_probe_key(PROBE_LIFECYCLE, actor.get_id()))
+		dispatched.append(_probe_key(PROBE_NO_INSTANCE, actor.get_id()))
+	_assert_contexts_released(refs, dispatched)
 	procedure.mark_finished()
 	world.tick(100.0)  # tick_once 录帧 → should_end → finish → battle_finished
 
@@ -175,17 +215,28 @@ static func _make_loop_timeline() -> TimelineData:
 
 
 ## 四组件 ability：pre 改值 / post 打 tag / 属性加成 / GRANTED_SELF 自激活 loop timeline。
+## NoInstance 的 trigger filter、NoInstance action、timeline tag action 各挂一个 context 探针。
 static func _build_probe_config(timeline: TimelineData) -> AbilityConfig:
 	var pre_handler := func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
 		return EventPhase.modify_intent(ctx.ability.id, [Modification.add("value", 5.0)])
-	var tick_actions: Array[Action.BaseAction] = [LooseTagAction.Apply.new(OwnerSelector.new(), TAG_TICK)]
+	# static 上下文里的 lambda：只捕常量，不捕 self。
+	var capture_lifecycle_context := func(_event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
+		TestFramework.assert_true(context.instance != null, "trigger filter 收到的 lifecycle context 应携带 instance")
+		var probe_actor := GameWorld.get_actor(context.owner_actor_id) as ReleaseProbeActor
+		probe_actor.probe_sink["%s:%s" % [PROBE_LIFECYCLE, probe_actor.get_id()]] = weakref(context)
+		return true
+	var tick_actions: Array[Action.BaseAction] = [
+		LooseTagAction.Apply.new(OwnerSelector.new(), TAG_TICK),
+		ContextProbeAction.new(PROBE_TIMELINE),
+	]
 	var end_actions: Array[Action.BaseAction] = [LooseTagAction.Apply.new(OwnerSelector.new(), TAG_END)]
 	return (AbilityConfig.builder()
 		.config_id("release_probe")
 		.component_config(PreEventConfig.new(PRE_KIND, pre_handler))
 		.component_config(NoInstanceConfig.builder()
-			.trigger(TriggerConfig.new(POST_KIND))
+			.trigger(TriggerConfig.new(POST_KIND, capture_lifecycle_context))
 			.action(LooseTagAction.Apply.new(OwnerSelector.new(), TAG_POST))
+			.action(ContextProbeAction.new(PROBE_NO_INSTANCE))
 			.build())
 		.component_config(StatModifierConfig.builder()
 			.modifier("attack", AttributeModifier.Type.ADD_BASE, 3.0)
@@ -197,6 +248,10 @@ static func _build_probe_config(timeline: TimelineData) -> AbilityConfig:
 			.on_timeline_end(end_actions)
 			.build())
 		.build())
+
+
+static func _probe_key(kind: String, actor_id: String) -> String:
+	return "%s:%s" % [kind, actor_id]
 
 
 ## actor 子图：ability_set / tag_container / attribute_set / 每个 ability / 每个 component / 每个 execution。
@@ -221,6 +276,16 @@ static func _collect_actor_refs(refs: Dictionary, actor: ReleaseProbeActor, pref
 		TestFramework.assert_true(not executions.is_empty(), "GRANTED_SELF 应已自激活 execution")
 		for execution in executions:
 			refs["%sexecution:%s" % [prefix, execution.id]] = weakref(execution)
+
+
+## tick / 派发一返回，探针捕出的 context 就必须已释放：它们带 instance 强引用，只许活在调用栈上。
+## 先断言 key 在（探针真跑到了），免得「没捕到」被当成「已释放」而假绿。
+static func _assert_contexts_released(refs: Dictionary, keys: Array[String]) -> void:
+	for key in keys:
+		TestFramework.assert_true(refs.has(key), "探针未捕获 %s" % key)
+		if refs.has(key):
+			TestFramework.assert_true((refs[key] as WeakRef).get_ref() == null,
+				"引用环: %s 在调用返回后仍存活" % key)
 
 
 ## destroy_instance / end() 必须把 actor 的 pre handler 注册一并注销。

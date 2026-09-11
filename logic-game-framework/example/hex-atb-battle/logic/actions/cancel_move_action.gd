@@ -13,7 +13,7 @@ func _init(target_selector: TargetSelector, target_coord: DictResolver) -> void:
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-	var battle := ctx.game_state_provider as HexWorldGameplayInstance
+	var battle := ctx.instance as HexWorldGameplayInstance
 	if battle == null:
 		return ActionResult.create_failure_result("HexWorldGameplayInstance is required")
 	var target_coord_dict := _target_coord.resolve(ctx)

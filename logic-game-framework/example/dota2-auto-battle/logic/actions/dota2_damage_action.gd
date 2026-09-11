@@ -22,9 +22,9 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	if source_id.is_empty():
 		return ActionResult.create_failure_result("no source actor (ability_ref missing)")
 
-	var world: Dota2WorldGameplayInstance = ctx.game_state_provider as Dota2WorldGameplayInstance
+	var world := Dota2GameStateUtils.world(ctx)
 	if world == null:
-		return ActionResult.create_failure_result("game_state_provider not Dota2WorldGameplayInstance")
+		return ActionResult.create_failure_result("ctx.instance is not Dota2WorldGameplayInstance")
 
 	var attacker: Dota2UnitActor = world.get_actor(source_id) as Dota2UnitActor
 	if attacker == null or attacker.is_dead():
@@ -47,7 +47,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 		# ===== Pre 阶段（M1 handler 空，一律 PASS；边界先在给未来 buff/passive）=====
 		var pre_event := Dota2BattleEvents.make_pre_damage(source_id, target_id, base_damage)
-		var mutable: MutableEvent = event_processor.process_pre_event(pre_event, world)
+		var mutable: MutableEvent = event_processor.process_pre_event(pre_event)
 		if mutable.cancelled:
 			continue
 		var final_damage: float = mutable.get_current_value("damage")
@@ -76,6 +76,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 		# ===== Post 阶段（thorns/lifesteal 等未来被动 hook；M1 广播即可）=====
 		var post_event := Dota2BattleEvents.make_post_damage(source_id, target_id, final_damage, hp_after)
-		event_processor.process_post_event(post_event, alive_actor_ids, world)
+		event_processor.process_post_event(post_event, alive_actor_ids)
 
 	return ActionResult.create_success_result(all_events)

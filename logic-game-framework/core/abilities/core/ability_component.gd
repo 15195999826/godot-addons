@@ -42,7 +42,7 @@ func on_tick(_dt: float) -> void:
 
 ## 响应事件（可选覆盖）
 ## @return true 表示组件被触发
-func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext, _game_state_provider: Variant) -> bool:
+func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext) -> bool:
 	return false
 
 ## 能力生效时调用（可选覆盖）

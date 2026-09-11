@@ -26,7 +26,7 @@ class CancelExecutionAction:
 
 	func execute(ctx: ExecutionContext) -> ActionResult:
 		var instance := _instance_ref.get_ref() as AbilityExecutionInstance
-		instance.cancel(ctx.game_state_provider)
+		instance.cancel()
 		return ActionResult.create_success_result([])
 
 
@@ -57,12 +57,12 @@ func _test_trigger_tags() -> void:
 	)
 
 	# 模拟 ability.activate_new_execution_instance 的同步触发
-	instance.fire_sync_actions(sync_list, "__timeline_start__", null)
+	instance.fire_sync_actions(sync_list, "__timeline_start__")
 	TestFramework.assert_equal(1, sync_action.calls.size())
 	TestFramework.assert_equal(0, async_action.calls.size())
 
 	# 异步 tag：tick 到 0.5 时触发 impact
-	var triggered := instance.tick(0.5, null)
+	var triggered := instance.tick(0.5)
 	TestFramework.assert_equal(1, triggered.size())
 	TestFramework.assert_equal("impact", triggered[0])
 	TestFramework.assert_equal(1, async_action.calls.size())
@@ -81,7 +81,7 @@ func _test_wildcard() -> void:
 		AbilityRef.new("a2", "c2")
 	)
 
-	var triggered := instance.tick(0.2, null)
+	var triggered := instance.tick(0.2)
 	TestFramework.assert_equal(1, triggered.size())
 	TestFramework.assert_equal("hit-1", triggered[0])
 	TestFramework.assert_equal(1, action.calls.size())
@@ -107,7 +107,7 @@ func _test_same_timestamp_tag_order() -> void:
 	)
 
 	# 一次 tick 覆盖全部 tag：时间序在先（mid@0.3），同刻组按定义序 zeta → alpha → omega
-	var triggered := instance.tick(1.0, null)
+	var triggered := instance.tick(1.0)
 	TestFramework.assert_equal(4, triggered.size())
 	TestFramework.assert_equal("mid", triggered[0])
 	TestFramework.assert_equal("zeta", triggered[1])
@@ -124,7 +124,7 @@ func _test_complete_cancel() -> void:
 	)
 
 	TestFramework.assert_true(instance.is_executing())
-	instance.tick(0.1, null)
+	instance.tick(0.1)
 	TestFramework.assert_true(instance.is_completed())
 
 	var cancel_timeline := TimelineData.new("t-cancel", 1.0, {})
@@ -151,7 +151,7 @@ func _test_end_cancel() -> void:
 	var instance := AbilityExecutionInstance.new(
 		timeline, [], empty_actions, end_actions, {}, AbilityRef.new(), cancel_actions)
 	cancel_action.bind(instance)
-	instance.tick(0.1, null)
+	instance.tick(0.1)
 	TestFramework.assert_true(instance.is_cancelled())
 	TestFramework.assert_equal(0, skipped_action.calls.size())
 	TestFramework.assert_equal(1, cleanup_action.calls.size())
@@ -201,9 +201,9 @@ func _test_execution_state_shared() -> void:
 		AbilityRef.new("a-state", "c-state")
 	)
 	# 1. sync action 在 timeline_start 写
-	instance.fire_sync_actions(sync_list, "__timeline_start__", null)
+	instance.fire_sync_actions(sync_list, "__timeline_start__")
 	# 2. tick 到 0.5 触发 later tag, ReadStateAction 应读到刚写的值
-	instance.tick(0.5, null)
+	instance.tick(0.5)
 	TestFramework.assert_true(read.captured == true,
 		"execution_state should be shared across tag contexts; got %s" % str(read.captured))
 
@@ -224,8 +224,8 @@ func _test_execution_state_isolated() -> void:
 	var read2 := ReadStateAction.new("test.x")
 	var arr1: Array[Action.BaseAction] = [write1, read1]
 	var arr2: Array[Action.BaseAction] = [write2, read2]
-	inst1.fire_sync_actions(arr1, "tag1", null)
-	inst2.fire_sync_actions(arr2, "tag2", null)
+	inst1.fire_sync_actions(arr1, "tag1")
+	inst2.fire_sync_actions(arr2, "tag2")
 	# inst1 write后 inst2 write 不应污染 inst1 的 state
 	# read1 在 inst1.fire_sync_actions 链尾,读的是 inst1 state
 	TestFramework.assert_true(read1.captured == "from_inst1",
@@ -237,7 +237,7 @@ func _test_execution_state_isolated() -> void:
 func _test_execution_state_namespace_assert() -> void:
 	# 此处仅验证带 namespace key 不 crash; 不带 namespace 应 assert_crash,
 	# 但 GDScript 没法在测试内 catch crash, 跳过反例.
-	var ctx := ExecutionContext.new([], null, null, null, null)
+	var ctx := ExecutionContext.new([], GameplayInstance.new("t"), null, null, null)
 	ctx.set_execution_state("ns.key", 42)
 	TestFramework.assert_equal(42, ctx.get_execution_state("ns.key", -1))
 	TestFramework.assert_equal(-1, ctx.get_execution_state("ns.missing", -1))

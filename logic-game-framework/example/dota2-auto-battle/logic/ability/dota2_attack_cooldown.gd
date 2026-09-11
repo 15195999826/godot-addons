@@ -18,10 +18,10 @@ class TimedCooldownCost extends Cost:
 	func _init() -> void:
 		type = "dota2_attack_cooldown"
 
-	func can_pay(_ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> bool:
+	func can_pay(_ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 		return true
 
-	func pay(ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> void:
+	func pay(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> void:
 		if ctx.ability_set == null:
 			return
 		var interval_ms := 1000.0
@@ -30,5 +30,5 @@ class TimedCooldownCost extends Cost:
 			interval_ms = attrs.attack_interval_ms
 		ctx.ability_set.add_auto_duration_tag(COOLDOWN_TAG, interval_ms)
 
-	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary, _game_state: Variant) -> String:
+	func get_fail_reason(_ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> String:
 		return ""

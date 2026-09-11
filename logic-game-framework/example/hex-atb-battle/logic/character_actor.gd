@@ -63,7 +63,7 @@ func _init(p_character_class: HexBattleClassConfig.CharacterClass) -> void:
 
 
 ## 装备技能 (在 HexBattle 初始化时调用)
-func equip_abilities(game_state_provider: Variant = null) -> void:
+func equip_abilities() -> void:
 	var move_ability := Ability.new(HexBattleMove.ABILITY, get_id())
 	ability_set.grant_ability(move_ability)
 	_move_ability_id = move_ability.id
@@ -77,10 +77,7 @@ func equip_abilities(game_state_provider: Variant = null) -> void:
 	# 当前承载 attack_lifesteal_pct → BasicAttackLandedEvent → heal 链路;
 	# Phase C 起加 hp_regen_per_sec.
 	var general_passive := Ability.new(HexBattleGeneralPassive.ABILITY, get_id())
-	var provider := game_state_provider
-	if provider == null:
-		provider = get_owner_gameplay_instance()
-	ability_set.grant_ability(general_passive, provider)
+	ability_set.grant_ability(general_passive)
 
 	_grant_class_passives()
 
@@ -146,13 +143,13 @@ func get_skill_ability() -> Ability:
 
 
 ## 替换 AI/战斗流程读取的主技能。保留移动、角色内建 passive 与职业 passive。
-func replace_skill_ability(skill_config: AbilityConfig, game_state_provider: Variant = null) -> Ability:
+func replace_skill_ability(skill_config: AbilityConfig) -> Ability:
 	Log.assert_crash(skill_config != null, "CharacterActor", "replace_skill_ability requires a skill_config")
 	var current_skill := get_skill_ability()
 	if current_skill != null:
 		ability_set.revoke_ability(current_skill.id, AbilitySet.REVOKE_REASON_REPLACED)
 	var skill_ability := Ability.new(skill_config, get_id())
-	ability_set.grant_ability(skill_ability, game_state_provider)
+	ability_set.grant_ability(skill_ability)
 	_skill_ability_id = skill_ability.id
 	return skill_ability
 

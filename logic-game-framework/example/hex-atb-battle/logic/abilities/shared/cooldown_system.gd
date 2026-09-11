@@ -14,12 +14,12 @@ class CooldownCondition:
 	func get_condition_type() -> String:
 		return "cooldown_ready"
 	
-	func check(ctx: AbilityLifecycleContext, _event: Dictionary, _game_state: Variant) -> bool:
+	func check(ctx: AbilityLifecycleContext, _event: Dictionary) -> bool:
 		var battle_ability_set := ctx.ability_set as BattleAbilitySet
 		Log.assert_crash(battle_ability_set != null, "CooldownCondition", "requires BattleAbilitySet")
 		return not battle_ability_set.is_on_cooldown(ctx.ability.config_id)
 	
-	func get_fail_reason(_ctx: AbilityLifecycleContext, _event: Dictionary, _game_state: Variant) -> String:
+	func get_fail_reason(_ctx: AbilityLifecycleContext, _event: Dictionary) -> String:
 		return "技能冷却中"
 
 
@@ -35,16 +35,16 @@ class TimedCooldownCost:
 		type = "timed_cooldown"
 		_duration = duration
 
-	func can_pay(_ctx: AbilityLifecycleContext, _event: Dictionary, _game_state: Variant) -> bool:
+	func can_pay(_ctx: AbilityLifecycleContext, _event: Dictionary) -> bool:
 		# 冷却消耗总是可以支付（条件检查在 CooldownCondition 中）
 		return true
 	
-	func pay(ctx: AbilityLifecycleContext, _event: Dictionary, _game_state: Variant) -> void:
+	func pay(ctx: AbilityLifecycleContext, _event: Dictionary) -> void:
 		var battle_ability_set := ctx.ability_set as BattleAbilitySet
 		Log.assert_crash(battle_ability_set != null, "TimedCooldownCost", "requires BattleAbilitySet")
 		battle_ability_set.start_cooldown(ctx.ability.config_id, _duration)
 	
-	func get_fail_reason(_ctx: AbilityLifecycleContext, _event: Dictionary, _game_state: Variant) -> String:
+	func get_fail_reason(_ctx: AbilityLifecycleContext, _event: Dictionary) -> String:
 		return "冷却消耗失败"
 
 

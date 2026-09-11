@@ -6,8 +6,12 @@ extends RefCounted
 ## Action 执行时的上下文信息，仅存在于 Action 链执行流程中。
 ##
 ## 设计原则：
-## - 输入：event_dict_chain, game_state_provider, ability_ref
+## - 输入：event_dict_chain, instance, ability_ref
 ## - 输出：event_collector
+##
+## 栈作用域：每次执行现建现弃。`instance` 是强引用——Action / Component / ExecutionInstance
+## 把 context（或 ctx.instance）存进字段就会成环（RefCounted 无循环 GC）；同理，
+## execution_state 里不许放 instance / actor 这类 owning Object。
 ##
 ## 事件链（字典形式）：
 ## [code]
@@ -35,8 +39,11 @@ extends RefCounted
 ## 每个元素是 GameEvent.to_dict() 的结果。
 var event_dict_chain: Array[Dictionary] = []
 
-## 游戏状态提供者（项目层实现）
-var game_state_provider: Variant = null
+## 本次执行所属的 GameplayInstance（按 ability owner 的 id 反查）。
+## 项目层收窄成具体世界类型读：`var battle: HexWorldGameplayInstance = ctx.instance`
+## （基类隐式下转，类型不符运行时硬错），或经项目的 `world(ctx)` helper（类型不符响亮报错）。
+## owner 未注册进 GameWorld（孤立单测）时为 null。
+var instance: GameplayInstance = null
 
 ## 事件收集器
 var event_collector: EventCollector = null
@@ -60,14 +67,14 @@ var execution_state: Dictionary
 
 func _init(
 	p_event_dict_chain: Array[Dictionary] = [],
-	p_game_state_provider: Variant = null,
+	p_instance: GameplayInstance = null,
 	p_event_collector: EventCollector = null,
 	p_ability_ref: AbilityRef = null,
 	p_execution_info: AbilityExecutionInfo = null,
 	p_execution_state: Dictionary = {}
 ) -> void:
 	event_dict_chain.assign(p_event_dict_chain)
-	game_state_provider = p_game_state_provider
+	instance = p_instance
 	event_collector = p_event_collector
 	ability_ref = p_ability_ref
 	execution_info = p_execution_info
@@ -114,7 +121,7 @@ func get_execution_state(key: String, fallback: Variant = null) -> Variant:
 ## 创建执行上下文
 static func create(
 	p_event_dict_chain: Array[Dictionary],
-	p_game_state_provider: Variant,
+	p_instance: GameplayInstance,
 	p_event_collector: EventCollector,
 	p_ability_ref: AbilityRef = null,
 	p_execution_info: AbilityExecutionInfo = null,
@@ -122,7 +129,7 @@ static func create(
 ) -> ExecutionContext:
 	return ExecutionContext.new(
 		p_event_dict_chain,
-		p_game_state_provider,
+		p_instance,
 		p_event_collector,
 		p_ability_ref,
 		p_execution_info,
@@ -133,7 +140,7 @@ static func create(
 ## 创建回调执行上下文
 ##
 ## 在原有上下文基础上追加新事件到事件链。
-## 其他字段（game_state_provider, event_collector, ability_ref）保持不变。
+## 其他字段（instance, event_collector, ability_ref）保持不变。
 ## 注意：execution_info 不传递到回调上下文（回调不在 Timeline 执行流程中）。
 ## §0.4: execution_state 透传 — hook 内仍可读写本次 execution 的状态。
 static func create_callback_context(ctx: ExecutionContext, callback_event_dict: Dictionary) -> ExecutionContext:
@@ -142,7 +149,7 @@ static func create_callback_context(ctx: ExecutionContext, callback_event_dict: 
 	new_chain.append(callback_event_dict)
 	return ExecutionContext.new(
 		new_chain,
-		ctx.game_state_provider,
+		ctx.instance,
 		ctx.event_collector,
 		ctx.ability_ref,
 		null,  # 回调上下文不继承 execution_info

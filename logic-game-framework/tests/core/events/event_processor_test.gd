@@ -5,7 +5,6 @@ func _init() -> void:
 	TestFramework.register_test("EventProcessor pre cancels event", _test_pre_cancel)
 
 func _test_pre_modify() -> void:
-	var mock_state := {}
 	var config := EventProcessorConfig.new(5, 2)
 	var processor := EventProcessor.new(config)
 	
@@ -22,12 +21,11 @@ func _test_pre_modify() -> void:
 	)
 	processor.register_pre_handler(registration)
 
-	var mutable := processor.process_pre_event({ "kind": "damage", "damage": 100.0 }, mock_state)
+	var mutable := processor.process_pre_event({ "kind": "damage", "damage": 100.0 })
 	TestFramework.assert_near(50.0, float(mutable.get_current_value("damage")))
 	TestFramework.assert_true(not mutable.cancelled)
 
 func _test_pre_cancel() -> void:
-	var mock_state := {}
 	var config := EventProcessorConfig.new(5, 2)
 	var processor := EventProcessor.new(config)
 	
@@ -42,6 +40,6 @@ func _test_pre_cancel() -> void:
 	)
 	processor.register_pre_handler(registration)
 
-	var mutable := processor.process_pre_event({ "kind": "damage", "damage": 100.0 }, mock_state)
+	var mutable := processor.process_pre_event({ "kind": "damage", "damage": 100.0 })
 	TestFramework.assert_true(mutable.cancelled)
 	TestFramework.assert_equal("immune", mutable.cancel_reason)

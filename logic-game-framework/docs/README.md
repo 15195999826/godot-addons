@@ -10,7 +10,7 @@
 - **Ability**: 技能配置，包含触发条件、消耗、Timeline 和 Actions
 - **Timeline**: 定义技能执行的时间轴和关键帧（tags）
 - **TargetSelector**: 目标选择器，决定 Action 作用于哪些目标
-- **ExecutionContext**: 执行上下文，包含当前事件、Ability、game_state_provider 等
+- **ExecutionContext**: 执行上下文，包含当前事件链、Ability 引用、所属 GameplayInstance（`instance`）等
 
 ### 基本用法
 
@@ -110,37 +110,25 @@ TargetSelector.ability_owner()
 TargetSelector.fixed([actor_ref1, actor_ref2])
 ```
 
-### 4. GameStateProvider 最佳实践
+### 4. GameplayInstance 上下文（`ctx.instance`）
 
-`ExecutionContext.game_state_provider` 是框架传递游戏状态的机制。**框架层不知道也不应该知道它的具体类型**，这是设计意图。
+`ExecutionContext.instance` / `AbilityLifecycleContext.instance` 是本次执行所属的 `GameplayInstance`——框架传的是**真基类**，项目层按需收窄到自己的世界类型。框架层不再有 `Variant` provider，也没有沿调用链一路递下去的尾随参数。
 
-#### 框架层 vs 项目层
+#### 找 instance 只有一种方式
 
-| 层级 | 职责 | 类型 |
-|------|------|------|
-| **框架层** | 传递游戏状态引用 | `Variant`（无类型） |
-| **项目层** | 转换为具体类型并使用 | 项目定义的类型（如 `HexWorldGameplayInstance` 或其子类 `HexDemoWorldGameplayInstance` / `SkillPreviewWorldGI`） |
+instance 一律按 owner 的 actor id 反查（`GameWorld.get_instance_of_actor(actor_id)`，与 `Actor.get_owner_gameplay_instance()` 同一「id 自描述归属」机制），**不经调用链递、不缓存**：AbilitySet 的派发 / grant、`Ability` 的 on_remove / 叠层 / Break 钩子、`PreEventComponent` 的重建 context、`AbilityExecutionInstance` 每次建的 ExecutionContext（含 revoke / expire 触发的取消）、`NoInstanceComponent` 的事件与 lifecycle action 都走这一条。owner 未注册进 GameWorld（孤立单测）时为 `null`。
 
-#### 推荐做法：创建项目级 Utils 类
+#### 推荐做法：每个项目一个 `world(ctx)` helper
 
-项目层应创建一个 `[ProjectName]GameStateUtils` 类，包含：
-- 只有静态函数，不保存任何状态
-- 显式指定 `game_state_provider` 的具体类型
-- 封装所有需要访问游戏状态的辅助函数
+项目层的 `[ProjectName]GameStateUtils` 提供 `world(ctx) -> <具体世界类型>`：`as` 收窄，类型不符（含 `null`）视为接线错误、`Log.assert_crash` 响亮报错。hex `HexBattleGameStateUtils.world`、inkmon `InkMonBattleGameStateUtils.world`、dota2 `Dota2GameStateUtils.world` 同形：
 
 ```gdscript
-## HexBattleGameStateUtils - 项目层的 GameState 辅助函数
-class_name HexBattleGameStateUtils
-
-## 获取角色显示名称
-static func get_actor_display_name(actor_ref: ActorRef, game_state_provider: HexWorldGameplayInstance) -> String:
-    if actor_ref == null:
-        return "???"
-    if game_state_provider != null:
-        var actor := game_state_provider.get_actor(actor_ref.id)
-        if actor != null:
-            return actor.get_display_name()
-    return actor_ref.id
+static func world(ctx: ExecutionContext) -> HexWorldGameplayInstance:
+    var battle := ctx.instance as HexWorldGameplayInstance
+    if battle == null:
+        Log.assert_crash(false, "HexBattleGameStateUtils",
+            "ctx.instance 不是 HexWorldGameplayInstance: %s" % ctx.instance)
+    return battle
 ```
 
 #### 在 Action 中使用
@@ -151,25 +139,26 @@ class_name MyProjectDamageAction
 extends Action.BaseAction
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-    # 项目层负责类型转换 — 收敛到框架基类, 不绑死具体场景子类
-    var battle: HexWorldGameplayInstance = ctx.game_state_provider
+    # 必须有世界：经 helper 收窄 — 收敛到框架基类, 不绑死具体场景子类
+    var battle := HexBattleGameStateUtils.world(ctx)
+    var target_name := HexBattleGameStateUtils.get_actor_display_name(target_id, battle)
 
-    # 获取存活角色 ID 列表（用于 Post 阶段广播）
-    var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()
-    var name := HexBattleGameStateUtils.get_actor_display_name(target, battle)
-    
     # ... 业务逻辑
-    
+
     # Post 阶段：EventProcessor 通过 GameWorld.get_actor() + BattleActor.ability_set_of() 获取 AbilitySet
-    event_processor.process_post_event(damage_event, alive_actor_ids, battle)
+    event_processor.process_post_event(damage_event, battle.get_alive_actor_ids())
+
+# 允许在没有世界时静默降级的读点，基类隐式下转后判空：
+#   var battle: HexWorldGameplayInstance = ctx.instance
+#   if battle == null:
+#       return ActionResult.create_success_result([], { "skipped": "no_instance" })
 ```
 
 #### 为什么这样设计？
 
-1. **框架灵活性**：不同项目可以有完全不同的游戏状态结构
-2. **类型安全**：项目层代码获得完整的类型检查和自动补全
-3. **代码复用**：辅助函数集中在一处，避免重复
-4. **关注点分离**：框架不依赖具体项目实现
+1. **类型在边界上说清楚**：框架只承诺 `GameplayInstance`，项目层一次收窄就拿到完整的类型检查与补全；`Variant` provider 下 41 个读点里 37 个拿到手就强转，类型错误只是被推迟到运行时。
+2. **一种找法**：id 反查不依赖调用方把谁递进来——取消、lifecycle 这类手上没有 world 的路径同样拿得到，execution 不必为此持 WeakRef 回指。
+3. **不成环**：context 只活在调用栈上、永不缓存；instance 的强边只向下（见「设计铁律」）。
 
 ### 5. 技能执行流程（Action 原子性）⚡
 
@@ -228,38 +217,38 @@ DamageAction.execute()
 
 ```gdscript
 func execute(ctx: ExecutionContext) -> ActionResult:
-    var battle: HexWorldGameplayInstance = ctx.game_state_provider
+    var battle := HexBattleGameStateUtils.world(ctx)
     var event_processor: EventProcessor = GameWorld.event_processor
     var alive_actor_ids: Array[String] = battle.get_alive_actor_ids()
-    
+
     for target in targets:
         # ========== Pre 阶段 ==========
         var pre_event := { "kind": "pre_damage", "damage": _damage, ... }
-        var mutable: MutableEvent = event_processor.process_pre_event(pre_event, battle)
-        
+        var mutable: MutableEvent = event_processor.process_pre_event(pre_event)
+
         if mutable.cancelled:
             continue  # 被减伤/免疫取消
-        
+
         var final_damage: float = mutable.get_current_value("damage")
-        
+
         # ========== 产生事件 + 应用状态（原子操作） ==========
         var event := BattleEvents.DamageEvent.create(target.id, final_damage, ...)
         var damage_event: Dictionary = ctx.event_collector.push(event.to_dict())
-        
+
         var target_actor := battle.get_actor(target.id)
         if target_actor != null:
             target_actor.modify_hp(-final_damage)  # 立即扣血
-            
+
             # ========== 死亡检测 ==========
             if target_actor.check_death():
                 var death_event := BattleEvents.DeathEvent.create(target.id, source_id)
                 ctx.event_collector.push(death_event.to_dict())
-                event_processor.process_post_event(death_event, alive_actor_ids, battle)
+                event_processor.process_post_event(death_event, alive_actor_ids)
                 battle.remove_actor(target.id)
-        
+
         # ========== Post 阶段 ==========
-        event_processor.process_post_event(damage_event, alive_actor_ids, battle)
-    
+        event_processor.process_post_event(damage_event, alive_actor_ids)
+
     return ActionResult.create_success_result(all_events, { "damage": _damage })
 ```
 
@@ -656,7 +645,7 @@ func visualize(event: Dictionary, context: Dictionary) -> void:
 - **Ability lifecycle hook**：`is_pre_event_responsive()` 是中性钩子，`Actor` 恒 `true`、不含任何领域语义。`BattleActor` 作为 **opt-in** 的战斗基类只提供一个默认答案（`not is_dead()`），项目层照旧 override 说了算 —— 想让亡语在死后再吃一次 PreEvent，覆盖回 `true` 即可。核心约束不变：框架不代管亡语的 `alive_actor_ids` 时序契约，`check_death` 只按 hp 锁存一次，"留尸体还是 tick 末移除"是项目层决定。
 - **Ability 状态不随死亡清除**：死亡时绝不 `revoke_ability`（那会清掉冷却 / execution / modifier，破坏复活语义）。三层分离 —— Ability 本体跟 actor 永存、PreEvent handler 跟战斗走（`end()` 时 `remove_handlers_by_owner_id`）、运行时响应跟 `is_dead` 状态走。
 - **Config 驱动跨属性 clamp**：跨属性约束（如 hp ≤ max_hp）必须声明在 attribute config 的 `maxRef` / `minRef`、由生成器产出 `register_cross_attr_clamp` 调用；**禁止**在 Actor 里用 `set_pre_change` 注入 Callable —— lambda 捕获 owner 会形成无法 GC 的闭包循环。
-- **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 `WeakRef`（类型明确时，如 `AbilityComponent._ability`）或调用链参数流（类型是 Variant 接口时，如 `game_state_provider` 不缓存而每次 tick 传入）—— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
+- **子对象回指 container 禁止强引用**：子对象指向所属 container 一律用 String id 或 `WeakRef`（`AbilityComponent._ability_ref` / `System._instance_ref` / `BattleProcedure._world`）；需要所属 instance 时按 owner id 反查（`GameWorld.get_instance_of_actor`），**不**在 AbilitySet / Ability / execution 上绑引用。context 对象（`ExecutionContext` / `AbilityLifecycleContext`）携带 `instance` 强引用，只许活在调用栈上、永不存进字段；`execution_state` 被 execution 强持有，同样不许放 instance / actor 这类 owning Object；既有的 `RecordingContext._recorder` 强引用靠 `BattleRecorder.stop_recording` 退订全部订阅闭包来打断 —— GDScript `RefCounted` 无循环 GC，字段缓存即真泄漏。
 - **测试引擎按场景独立**：两种场景生命周期语义冲突（headless 的 init/destroy vs UI 常驻 world）时各写一条 procedure（`SkillPreviewProcedure` vs `HexBattleProcedure`），而非硬塞兼容签名进一条引擎 —— 兼容参数会把 API 撑胖成坑。
 - **View 是 state 的 reactive projection**：前端只能 `bind_world` + 订阅 mutation signal（`actor_added` / `actor_removed` / `grid_configured`）自动同步，**禁止任何 destructive 的 view 重建 API**（历史反例：已删除的 `FrontendBattleReplayScene.load_replay`）；且只订阅生命周期 / 结构变化，属性变化（HP / tag）交给 timeline 驱动的 Animator。
 - **Playback 不重建逻辑层**：A 层"录像播放"（`Playback`）只从录像 dict spawn 视觉 view、绝不 hydrate 真 Actor / AbilitySet / AttributeSet；B 层"回放"（`Replay`，deterministic 重算）未来不一定做，相关类名仅作命名占位。
@@ -711,15 +700,15 @@ GameWorld (Autoload 单例)
 var actor := GameWorld.get_actor(actor_ref.id)
 var ability_set := BattleActor.ability_set_of(actor)
 
-# ❌ 错误：框架层不应依赖 game_state_provider 的具体类型
-var actor = game_state_provider.get_actor(actor_ref.id)
+# ❌ 错误：框架层不应把 ctx.instance 收窄成某个项目的具体世界类型
+var battle := ctx.instance as HexWorldGameplayInstance
 ```
 
 **项目层**：可以直接使用具体实例
 
 ```gdscript
-# 项目层可以使用具体类型 — 默认收敛到框架基类, 仅在需要场景独有字段时收窄
-var battle: HexWorldGameplayInstance = ctx.game_state_provider
+# 项目层经 world(ctx) 收窄 — 默认收敛到框架基类, 仅在需要场景独有字段时收窄到子类
+var battle := HexBattleGameStateUtils.world(ctx)
 var actor := battle.get_actor(actor_id)
 ```
 
@@ -769,7 +758,7 @@ if ability_set != null:
     ability_set.add_loose_tag("buff", 1)
 ```
 
-回合 / ATB 主循环里，一帧 ability runtime 走 `AbilitySet.tick_runtime(dt, logic_time, provider) -> bool`：
+回合 / ATB 主循环里，一帧 ability runtime 走 `AbilitySet.tick_runtime(dt, logic_time) -> bool`：
 内部顺序固定为 `tick` → 算 blocking → `tick_executions`，返回本帧是否有阻塞执行。
 "哪些 ability 算阻塞"由项目子类覆盖 `_is_blocking_execution(ability)` 表达（默认全部阻塞）。
 自行编排相位的实时 example（dota2）不走它，直接用 `has_executing_instances()` + `tick_executions()`。

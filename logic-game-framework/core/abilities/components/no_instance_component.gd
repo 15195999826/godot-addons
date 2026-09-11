@@ -37,9 +37,9 @@ func matches_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> 
 	return _check_triggers(event_dict, context)
 
 
-func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> bool:
+func on_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if _check_triggers(event_dict, context):
-		_execute_actions(event_dict, context, game_state_provider)
+		_execute_actions(_actions, event_dict, context)
 		return true
 	return false
 
@@ -62,23 +62,14 @@ func _check_triggers(event_dict: Dictionary, context: AbilityLifecycleContext) -
 	return AbilityComponent.match_triggers(_triggers, _trigger_mode, event_dict, context)
 
 
-func _execute_actions(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> void:
-	var exec_context := _build_execution_context(event_dict, context, game_state_provider)
-	for action in _actions:
-		action.execute(exec_context)
-		action._verify_unchanged()
-
-
-## §0.6: lifecycle actions 走单独的 execution context (lifecycle event)。
+## §0.6: lifecycle actions 以一个内部 lifecycle event 作为事件链起点执行。
 ##
 ## 合同:
 ## - event_dict_chain = [{ "kind": "ability_lifecycle", "phase": "on_apply"|"on_remove",
-##   "ability_id": ..., "ability_config_id": ... }]; 不写入 EventCollector 历史。
-## - game_state_provider 当前传 null (lifecycle actions 不应依赖 battle 状态;
-##   读取缺失字段的 action 应 Log.assert_crash)。
+##   "ability_id": ..., "ability_config_id": ... }]; 这条 lifecycle event 不写入 EventCollector 历史。
+## - ctx.instance 与事件触发路径同源 (context.instance, 按 owner 反查; 孤立单测里为 null)。
 ## - lifecycle 行为本身不进 replay; 但 action 修改 tag 时既有 RecordingUtils 记录 tag 变化。
 func _execute_lifecycle_actions(actions: Array[Action.BaseAction], context: AbilityLifecycleContext, phase: String) -> void:
-	var ability_ref := AbilityRef.from_ability(context.ability)
 	var event_dict := {
 		"kind": "ability_lifecycle",
 		"phase": phase,
@@ -86,12 +77,17 @@ func _execute_lifecycle_actions(actions: Array[Action.BaseAction], context: Abil
 		"ability_config_id": context.ability.config_id if context.ability != null else "",
 		"owner_actor_id": context.owner_actor_id,
 	}
+	_execute_actions(actions, event_dict, context)
+
+
+func _execute_actions(actions: Array[Action.BaseAction], event_dict: Dictionary, context: AbilityLifecycleContext) -> void:
+	var event_dict_chain: Array[Dictionary] = [event_dict]
 	var exec_context := ExecutionContext.create(
-		[event_dict] as Array[Dictionary],
-		null,  # game_state_provider; lifecycle actions 不依赖
+		event_dict_chain,
+		context.instance,
 		GameWorld.event_collector,
-		ability_ref,
-		null
+		AbilityRef.from_ability(context.ability),
+		null  # NoInstanceComponent 不产生 ExecutionInfo
 	)
 	for action in actions:
 		action.execute(exec_context)
@@ -106,18 +102,6 @@ func _freeze_all_actions() -> void:
 		action._freeze()
 	for action in _on_remove_actions:
 		action._freeze()
-
-
-func _build_execution_context(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> ExecutionContext:
-	var ability_ref := AbilityRef.from_ability(context.ability)
-	var event_dict_chain: Array[Dictionary] = [event_dict]
-	return ExecutionContext.create(
-		event_dict_chain,
-		game_state_provider,
-		GameWorld.event_collector,
-		ability_ref,
-		null  # NoInstanceComponent 不产生 ExecutionInfo
-	)
 
 
 func serialize() -> Dictionary:

@@ -99,7 +99,7 @@ func tick(dt: float) -> void:
 		if component.is_active():
 			component.on_tick(dt)
 
-func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
+func tick_executions(dt: float) -> Array[String]:
 	if _state == STATE_EXPIRED:
 		return []
 	# Phase B2 (Break) 顶层短路: disabled passive ability 冻结 periodic timeline,
@@ -109,19 +109,16 @@ func tick_executions(dt: float, game_state_provider: Variant) -> Array[String]:
 	var all_triggered: Array[String] = []
 	for instance in _execution_instances:
 		if _is_executing_instance(instance):
-			all_triggered.append_array(instance.tick(dt, game_state_provider))
+			all_triggered.append_array(instance.tick(dt))
 	_execution_instances = _execution_instances.filter(_is_executing_instance)
 	return all_triggered
 
-## p_game_state_provider 用于激活瞬间 start Action，并由 execution 仅以 WeakRef 保留，
-## 供 revoke/expire 等无显式 provider 的取消清理使用；不会形成 battle ↔ execution 强引用环。
 func activate_new_execution_instance(
 	p_timeline: TimelineData,
 	p_tag_actions: Array[TagActionsEntry],
 	p_on_timeline_start_actions: Array[Action.BaseAction],
 	p_on_timeline_end_actions: Array[Action.BaseAction],
 	p_trigger_event_dict: Dictionary,
-	p_game_state_provider: Variant,
 	p_on_cancel_actions: Array[Action.BaseAction] = []
 ) -> AbilityExecutionInstance:
 	var ability_ref := AbilityRef.from_ability(self)
@@ -132,8 +129,7 @@ func activate_new_execution_instance(
 		p_on_timeline_end_actions,
 		p_trigger_event_dict,
 		ability_ref,
-		p_on_cancel_actions,
-		p_game_state_provider
+		p_on_cancel_actions
 	)
 	_execution_instances.append(instance)
 	for callback in _on_execution_callbacks:
@@ -141,8 +137,7 @@ func activate_new_execution_instance(
 			callback.call(instance)
 	# Callback 可同步取消；取消后不得再执行 start Action（否则会在 cleanup 后重新占用资源）。
 	if instance.is_executing():
-		instance.fire_sync_actions(
-			p_on_timeline_start_actions, "__timeline_start__", p_game_state_provider)
+		instance.fire_sync_actions(p_on_timeline_start_actions, "__timeline_start__")
 	return instance
 
 func get_executing_instances() -> Array[AbilityExecutionInstance]:
@@ -159,13 +154,13 @@ func has_executing_instance() -> bool:
 			return true
 	return false
 
-func cancel_all_executions(game_state_provider: Variant = null) -> void:
+func cancel_all_executions() -> void:
 	for instance in _execution_instances:
 		if instance:
-			instance.cancel(game_state_provider)
+			instance.cancel()
 	_execution_instances = []
 
-func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> void:
+func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> void:
 	if _state == STATE_EXPIRED:
 		return
 	# Phase B2 (Break) 顶层短路: disabled passive ability 不派发事件给 NoInstanceComponent
@@ -177,7 +172,7 @@ func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext, gam
 	for comp in _components:
 		if not comp.is_active():
 			continue
-		if comp.on_event(event_dict, context, game_state_provider):
+		if comp.on_event(event_dict, context):
 			triggered_components.append(_get_component_name(comp))
 	if not triggered_components.is_empty():
 		for callback in _on_triggered_callbacks:
@@ -198,7 +193,6 @@ func receive_event(event_dict: Dictionary, context: AbilityLifecycleContext, gam
 func can_activate(
 	context: AbilityLifecycleContext,
 	event_dict: Dictionary = {},
-	game_state_provider: Variant = null,
 ) -> Dictionary:
 	if _state != STATE_GRANTED:
 		return AbilityActivationQuery.denied(
@@ -210,7 +204,7 @@ func can_activate(
 		var active_use := component as ActiveUseComponent
 		if active_use == null or not active_use.is_active():
 			continue
-		var gate_result := active_use.can_activate(context, event_dict, game_state_provider)
+		var gate_result := active_use.can_activate(context, event_dict)
 		if not AbilityActivationQuery.is_allowed(gate_result):
 			return gate_result
 	return AbilityActivationQuery.allowed()
@@ -295,24 +289,26 @@ func remove_effects() -> void:
 	_on_execution_callbacks.clear()
 
 
-## 构造 on_remove 阶段专用的精简 context。
+## 构造 on_remove / 叠层 / Break 钩子用的 lifecycle context（这几条路径手上没有 AbilitySet 递来的 context）。
 ##
-## on_remove 实际只读取 context.ability / context.attribute_set / context.ability_set 三字段，
-## 因此通过 GameWorld.get_actor(owner_actor_id) 查到 actor 并取其 attribute_set / ability_set 即可；
-## 其它字段（owner_actor_id / event_processor）on_remove 路径上无消费者，传 null 安全。
+## 与 grant / 事件派发同一种找法：instance 按 owner_actor_id 反查，actor 从该 instance 取，
+## attribute_set / ability_set 取自 actor；event_processor 在这几条路径上无消费者，传 null。
 ##
-## 若 actor 未注册到 GameWorld（如隔离单元测试）或不是 BattleActor，attribute_set /
+## 若 owner 未注册到 GameWorld（如隔离单元测试）或不是 BattleActor，instance / attribute_set /
 ## ability_set 为 null —— 对 no-op 的 on_remove（如 PreEventComponent / TestComponent）
 ## 完全不影响；对会读取这些字段的 component（StatModifier / Tag / DynamicStatModifier），
 ## 测试须注册 mock actor。
 func _build_remove_context() -> AbilityLifecycleContext:
+	var owner_instance := GameWorld.get_instance_of_actor(owner_actor_id)
+	var actor: BattleActor = null
+	if owner_instance != null:
+		actor = owner_instance.get_actor(owner_actor_id) as BattleActor
 	var attr_set: BaseGeneratedAttributeSet = null
 	var ab_set: AbilitySet = null
-	var actor := GameWorld.get_actor(owner_actor_id) as BattleActor
 	if actor != null:
 		attr_set = actor.get_attribute_set()
 		ab_set = actor.get_ability_set()
-	return AbilityLifecycleContext.new(owner_actor_id, attr_set, self, ab_set, null)
+	return AbilityLifecycleContext.new(owner_actor_id, attr_set, self, ab_set, null, owner_instance)
 
 func expire(reason: String) -> void:
 	if _state == STATE_EXPIRED:

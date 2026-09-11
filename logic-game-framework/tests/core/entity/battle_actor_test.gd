@@ -195,13 +195,13 @@ func _test_tick_runtime_blocking() -> void:
 	var instance := GameWorld.create_instance(func() -> GameplayInstance:
 		return GameplayInstance.new("battle_actor_tick_runtime"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
-	actor.ability_set.grant_ability(Ability.new(_build_probe_config(), actor.get_id()), instance)
+	actor.ability_set.grant_ability(Ability.new(_build_probe_config(), actor.get_id()))
 	TestFramework.assert_true(actor.ability_set.has_executing_instances(), "GRANTED_SELF 应已自激活")
 
-	TestFramework.assert_true(actor.ability_set.tick_runtime(100.0, 100.0, instance),
+	TestFramework.assert_true(actor.ability_set.tick_runtime(100.0, 100.0),
 		"execution 在本 tick 内跑完，本 tick 仍算阻塞")
 	TestFramework.assert_false(actor.ability_set.has_executing_instances(), "execution 应已结束")
-	TestFramework.assert_false(actor.ability_set.tick_runtime(100.0, 200.0, instance),
+	TestFramework.assert_false(actor.ability_set.tick_runtime(100.0, 200.0),
 		"下一 tick 才解除阻塞")
 	GameWorld.destroy_instance(instance.id)
 
@@ -211,10 +211,10 @@ func _test_tick_runtime_non_blocking() -> void:
 		return GameplayInstance.new("battle_actor_tick_runtime_intrinsic"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
 	var tags: Array[String] = [TAG_INTRINSIC]
-	actor.ability_set.grant_ability(Ability.new(_build_probe_config(tags), actor.get_id()), instance)
+	actor.ability_set.grant_ability(Ability.new(_build_probe_config(tags), actor.get_id()))
 	TestFramework.assert_true(actor.ability_set.has_executing_instances(),
 		"intrinsic ability 同样在执行中")
-	TestFramework.assert_false(actor.ability_set.tick_runtime(50.0, 50.0, instance),
+	TestFramework.assert_false(actor.ability_set.tick_runtime(50.0, 50.0),
 		"_is_blocking_execution 为 false 的 ability 不冻结行动")
 	# 关键：不阻塞 ≠ 不推进。若 tick_executions 被误挂在 blocking 而不是 has_any 上,
 	# intrinsic ability 的 timeline 会永久冻结——而只断言「还在执行中」看不出这个。

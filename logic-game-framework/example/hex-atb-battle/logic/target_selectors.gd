@@ -52,7 +52,7 @@ class AllEnemies extends TargetSelector:
 	func select(ctx: ExecutionContext) -> Array[String]:
 		if ctx.ability_ref == null or ctx.ability_ref.owner_actor_id.is_empty():
 			return []
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		if battle == null:
 			return []
 		# AllEnemies 隔离边界: owner 必须是 character (env 不施法)

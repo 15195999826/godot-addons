@@ -64,7 +64,7 @@ func start(config: Dictionary = {}) -> void:
 	# view 一律按默认 team=0 染色。
 	_setup_teams(config, grid_config)
 	for actor in get_all_actors():
-		actor.equip_abilities(self)
+		actor.equip_abilities()
 	_after_teams_equipped(config)
 
 	var placement_ranges := _calculate_placement_ranges(grid_config)

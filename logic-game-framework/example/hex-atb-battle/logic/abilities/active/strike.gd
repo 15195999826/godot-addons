@@ -48,9 +48,9 @@ class _EmitBasicAttackLandedAction:
 		var damage_event_dict := ctx.get_current_event()
 		if damage_event_dict.is_empty():
 			return ActionResult.create_success_result([], { "basic_attack_landed_skipped": "no_damage_event" })
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		if battle == null:
-			return ActionResult.create_success_result([], { "basic_attack_landed_skipped": "no_game_state" })
+			return ActionResult.create_success_result([], { "basic_attack_landed_skipped": "no_instance" })
 		var attacker_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 		if attacker_id.is_empty():
 			return ActionResult.create_success_result([], { "basic_attack_landed_skipped": "no_attacker" })
@@ -79,7 +79,7 @@ class _EmitBasicAttackLandedAction:
 
 		var alive_actor_ids := battle.get_alive_actor_ids()
 		if alive_actor_ids.size() > 0:
-			GameWorld.event_processor.process_post_event(event_dict, alive_actor_ids, battle)
+			GameWorld.event_processor.process_post_event(event_dict, alive_actor_ids)
 
 		return ActionResult.create_success_result(
 			[event_dict],

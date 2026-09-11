@@ -23,9 +23,9 @@ class _SwapPositionsAction:
 		type = "swap_positions"
 
 	func _execute_local(ctx: ExecutionContext) -> ActionResult:
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		if battle == null:
-			return ActionResult.create_success_result([], { "swap_failed": "no_game_state" })
+			return ActionResult.create_success_result([], { "swap_failed": "no_instance" })
 		var caster_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 		var targets := get_targets(ctx)
 		if targets.is_empty():

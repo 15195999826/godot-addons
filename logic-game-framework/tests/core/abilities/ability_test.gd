@@ -16,7 +16,7 @@ class TestComponent:
 	func on_remove(_context: AbilityLifecycleContext) -> void:
 		removed = true
 
-	func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext, _game_state_provider: Variant) -> bool:
+	func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext) -> bool:
 		event_hit = true
 		return true
 
@@ -60,7 +60,7 @@ func _test_lifecycle() -> void:
 	)
 	var ability := Ability.new(config, owner_actor_id)
 	var component: TestComponent = ability.get_all_components()[0] as TestComponent
-	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null)
+	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null, null)
 
 	ability.apply_effects(context)
 	TestFramework.assert_equal(Ability.STATE_GRANTED, ability.get_state())
@@ -86,7 +86,7 @@ func _test_triggered_listener() -> void:
 	)
 	var ability := Ability.new(config, owner_actor_id)
 	var component: TestComponent = ability.get_all_components()[0] as TestComponent
-	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null)
+	var context := AbilityLifecycleContext.new(owner_actor_id, null, ability, null, null, null)
 	ability.apply_effects(context)
 
 	var result := { "event": {}, "components": [] as Array[String] }
@@ -95,7 +95,7 @@ func _test_triggered_listener() -> void:
 		result["components"] = triggered_components
 	)
 
-	ability.receive_event({ "kind": "hit" }, context, null)
+	ability.receive_event({ "kind": "hit" }, context)
 
 	TestFramework.assert_true(component.event_hit)
 	TestFramework.assert_true(not result["event"].is_empty())
@@ -110,10 +110,10 @@ func _test_execution_instances() -> void:
 	var ability := Ability.new(config, owner_actor_id)
 
 	var empty_actions: Array[Action.BaseAction] = []
-	ability.activate_new_execution_instance(timeline, [], empty_actions, empty_actions, {}, null)
+	ability.activate_new_execution_instance(timeline, [], empty_actions, empty_actions, {})
 
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
-	ability.tick_executions(1.0, null)
+	ability.tick_executions(1.0)
 	TestFramework.assert_equal(0, ability.get_executing_instances().size())
 
 
@@ -127,6 +127,6 @@ func _test_callback_cancel() -> void:
 		func(instance: AbilityExecutionInstance) -> void:
 			instance.cancel())
 	var instance := ability.activate_new_execution_instance(
-		timeline, [], start_actions, empty_actions, {}, null)
+		timeline, [], start_actions, empty_actions, {})
 	TestFramework.assert_true(instance.is_cancelled())
 	TestFramework.assert_equal(0, start_action.calls)

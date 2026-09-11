@@ -34,7 +34,7 @@ class _DemonFormTickAction:
 		var ability := ctx.ability_ref.resolve() if ctx.ability_ref != null else null
 		if ability == null or ability.is_expired():
 			return ActionResult.create_success_result([], {})
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		var actor := battle.get_character_actor(ability.owner_actor_id) if battle != null else null
 		if actor == null or actor.is_dead():
 			return ActionResult.create_success_result([], {})

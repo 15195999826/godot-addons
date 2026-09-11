@@ -71,7 +71,7 @@ func start() -> void:
 			continue
 		for passive_cfg in setup.get("passives", []) as Array:
 			if passive_cfg != null and passive_cfg is AbilityConfig:
-				actor.ability_set.grant_ability(Ability.new(passive_cfg, actor.get_id()), world)
+				actor.ability_set.grant_ability(Ability.new(passive_cfg, actor.get_id()))
 
 	# 2. 平铺 keyframe 到 _pending_keyframes, 按 (time_ms, actor_order, track_order) 稳定排序。
 	#    actor_order = setup 在 _actor_setups 里的 idx; track_order = keyframe 在 track 里的 idx。
@@ -131,7 +131,7 @@ func tick_once() -> void:
 	# 跑正式 hex battle 的 ability runtime tick；preview 只负责上面的 keyframe 调度。
 	var any_ability_executing := false
 	for actor in _get_alive_participants():
-		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time, world):
+		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time):
 			any_ability_executing = true
 
 	# Phase C (Fire Tile): EnvironmentActor 的 ability_set 也要 tick / tick_executions。
@@ -143,7 +143,7 @@ func tick_once() -> void:
 			var h := actor as HexBattleActor
 			h.ability_set.tag_container.tick(0.0, cur_logic_time)
 			h.ability_set.tick(_tick_interval, cur_logic_time)
-			var triggered := h.ability_set.tick_executions(_tick_interval, world)
+			var triggered := h.ability_set.tick_executions(_tick_interval)
 			# 任何 in-flight execution → any_ability_executing 防 idle 提前
 			if not triggered.is_empty():
 				any_ability_executing = true
@@ -217,7 +217,7 @@ func _fire_due_keyframes(now_ms: float) -> void:
 		var ability := actor.ability_set.find_ability_by_config_id(ability_cfg.config_id)
 		if ability == null:
 			ability = Ability.new(ability_cfg, actor.get_id())
-			actor.ability_set.grant_ability(ability, world)
+			actor.ability_set.grant_ability(ability)
 		# Phase D: target_coord 由 SkillPreview._collect_actor_setups 在 fixed_pos mode 时填充,
 		# cone / move 等 coord-based ability 直接读 event["target_coord"].
 		var target_id: String = kf["target_id"] as String
@@ -226,7 +226,7 @@ func _fire_due_keyframes(now_ms: float) -> void:
 			ability.id, actor.get_id(), float(kf["time_ms"]), target_id, target_coord
 		).to_dict()
 		HexFacing.face_actor_for_active_event(actor, event, world, GameWorld.event_collector)
-		actor.ability_set.receive_event(event, world)
+		actor.ability_set.receive_event(event)
 
 
 func _sync_participant_tag_logic_time(now_ms: float) -> void:

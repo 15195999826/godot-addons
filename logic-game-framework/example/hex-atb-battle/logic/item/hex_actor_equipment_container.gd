@@ -17,8 +17,9 @@
 ##     必须 `ability.metadata = ability.metadata.duplicate(true)`, 不 mutate 共享 AbilityConfig.metadata。
 ##   - granted_abilities 解析失败 (resolver 返回 null) 应在 `can_add_item` 阶段就被
 ##     reject (Plan §"callback 不能承担失败回滚"); 本类 callback 阶段假定 prevalidated。
-##   - V1 不存 `owner_instance_id` (没有 GRANTED_SELF self-trigger 需求);
-##     grant_ability 不传 game_state_provider, 不广播 ABILITY_GRANTED_EVENT。
+##   - 不存 `owner_instance_id`: grant_ability 恒向 owner 的 ability_set 投递 ABILITY_GRANTED_EVENT,
+##     执行期 instance 由 owner id 反查; 装备 ability 会不会自激活只看其 config 是否声明
+##     GRANTED_SELF (现役装备 passive 都没有声明)。
 ##
 ## 槽位编号约定:
 ## - 底层 slot_index: 0..5 (InventoryKit FixedSlotSpaceManager 用整数索引)
@@ -129,7 +130,7 @@ func on_item_moved_out(item_id: int, target_container_id: int, target_slot_index
 ## 给 item 关联的 granted_abilities 在 owner 身上 grant 出来 (Phase G):
 ##   - 通过 HexEquipmentAbilityResolver 拿 AbilityConfig (预校验已通过, 此处 null 视为 lifecycle bug)
 ##   - `Ability.new(cfg, owner_actor_id)` → metadata.duplicate(true) 后写 source/item_id/item_config_id
-##   - `actor.ability_set.grant_ability(ability)` (V1 不传 game_state_provider, 不触发 self-trigger)
+##   - `actor.ability_set.grant_ability(ability)` (恒投递 AbilityGranted; 是否自激活由 config 的 trigger 声明)
 ##   - 记录 instance id 到 `_granted_abilities[item_id]` 供后续精确 revoke
 func _grant_item_abilities(item_id: int) -> void:
 	var actor := GameWorld.get_actor(owner_actor_id)

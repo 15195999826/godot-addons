@@ -31,16 +31,16 @@ func _init(config: ActivateInstanceConfig):
 	# Debug: 冻结所有 Action，检测无状态约束
 	_freeze_all_actions()
 
-func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> bool:
+func on_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if not _check_triggers(event_dict, context):
 		return false
-	_activate_execution(event_dict, context, game_state_provider)
+	_activate_execution(event_dict, context)
 	return true
 
 func _check_triggers(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	return AbilityComponent.match_triggers(_triggers, _trigger_mode, event_dict, context)
 
-func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> void:
+func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContext) -> void:
 	var ability := context.ability
 	if ability == null:
 		return
@@ -50,7 +50,6 @@ func _activate_execution(event_dict: Dictionary, context: AbilityLifecycleContex
 		_on_timeline_start_actions,
 		_on_timeline_end_actions,
 		event_dict,
-		game_state_provider,
 		_on_cancel_actions
 	)
 	Log.debug("ActivateInstanceComponent", "开始执行")

@@ -54,7 +54,7 @@ class _ShadowStepTeleportAction:
 
 	func _execute_local(ctx: ExecutionContext) -> ActionResult:
 		ctx.set_execution_state(HexBattleShadowStep.TELEPORT_SUCCESS_KEY, false)
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		var caster_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 		var targets := get_targets(ctx)
 		if battle == null or caster_id == "" or targets.is_empty():

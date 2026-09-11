@@ -144,7 +144,7 @@ class _GridConeSelector:
 	extends TargetSelector
 
 	func select(ctx: ExecutionContext) -> Array[String]:
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		if battle == null:
 			return []
 		var caster_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""

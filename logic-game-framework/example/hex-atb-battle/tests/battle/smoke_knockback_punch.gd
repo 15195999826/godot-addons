@@ -550,7 +550,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 		caster.get_id(),
 		enemy.get_id()
 	)
-	caster.ability_set.grant_ability(action_lock, battle)
+	caster.ability_set.grant_ability(action_lock)
 	caster.accumulate_atb(100000.0)
 	if caster.get_atb_gauge() < CharacterActor.ATB_FULL:
 		_fail("action_lock_gate: setup failed, caster ATB not full")
@@ -561,7 +561,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	var direct_event := GameEvent.AbilityActivate.create(
 		skill.id, caster.get_id(), 0.0, enemy.get_id()
 	).to_dict()
-	caster.ability_set.receive_event(direct_event, battle)
+	caster.ability_set.receive_event(direct_event)
 	if skill.get_executing_instances().size() != 0:
 		_fail("action_lock_gate: direct active skill activation should be blocked by cant_act")
 		GameWorld.destroy()

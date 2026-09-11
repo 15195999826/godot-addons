@@ -134,7 +134,7 @@ static func apply_damage(
 			result.target_killed = true
 
 			if alive_actor_ids.size() > 0:
-				event_processor.process_post_event(death_dict, alive_actor_ids, battle)
+				event_processor.process_post_event(death_dict, alive_actor_ids)
 
 			_clear_grid_footprint(battle, target_actor)
 
@@ -221,4 +221,4 @@ static func broadcast_post_damage(
 	battle: HexWorldGameplayInstance,
 ) -> void:
 	if alive_actor_ids.size() > 0:
-		GameWorld.event_processor.process_post_event(damage_event_dict, alive_actor_ids, battle)
+		GameWorld.event_processor.process_post_event(damage_event_dict, alive_actor_ids)

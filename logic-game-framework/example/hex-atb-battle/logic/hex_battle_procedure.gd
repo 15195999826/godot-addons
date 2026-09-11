@@ -82,7 +82,7 @@ func tick_once() -> void:
 
 	# ATB 与技能执行互斥: 施法期间 ATB 冻结, 不继续充能(经典 ATB 模式)。
 	for actor in get_alive_characters():
-		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time, world):
+		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time):
 			continue
 		actor.accumulate_atb(_tick_interval)
 		if actor.can_act():
@@ -104,7 +104,7 @@ func tick_once() -> void:
 				continue
 			# CharacterActor mid-spawn: 与 production 主循环同一条 runtime tick, 但不进 ATB/AI
 			# EnvironmentActor (fire tile): 同上
-			h.ability_set.tick_runtime(_tick_interval, cur_logic_time, world)
+			h.ability_set.tick_runtime(_tick_interval, cur_logic_time)
 
 	record_current_frame_events()
 
@@ -206,12 +206,11 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 	)
 
 	HexFacing.face_actor_for_active_event(actor, event, world, GameWorld.event_collector)
-	actor.ability_set.receive_event(event, world)
+	actor.ability_set.receive_event(event)
 	actor.reset_atb()
 
 
 ## AI 决策: 委托给 actor 的 AI 策略对象。
-## game_state 参数传 world instance(运行时 HexBattle 实例, 兼容现有 AI/Action 转型)。
 func _decide_action(actor: CharacterActor) -> Dictionary:
 	return actor.ai_strategy.decide(actor, _world_instance)
 

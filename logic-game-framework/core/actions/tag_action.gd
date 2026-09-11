@@ -21,12 +21,6 @@ static func _get_ability_set_for_target(_ctx: ExecutionContext, target_id: Strin
 	var actor := GameWorld.get_actor(target_id)
 	return BattleActor.ability_set_of(actor)
 
-static func _get_logic_time(ctx: ExecutionContext) -> float:
-	var event := ctx.get_current_event()
-	if event.has("logicTime") and typeof(event["logicTime"]) in [TYPE_INT, TYPE_FLOAT]:
-		return float(event["logicTime"])
-	return IGameStateProvider.get_logic_time(ctx.game_state_provider)
-
 class ApplyTagAction:
 	extends Action.BaseAction
 

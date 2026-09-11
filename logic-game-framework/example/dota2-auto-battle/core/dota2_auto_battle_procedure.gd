@@ -163,7 +163,7 @@ func _advance_intents(dt_seconds: float, step_ms: float, logic_time_ms: float) -
 	# 5c. 推进已激活的基础攻击 Timeline 执行（到 attack point 触发伤害 Action）。
 	for unit in alive:
 		if unit.ability_set != null and unit.ability_set.has_executing_instances():
-			unit.ability_set.tick_executions(step_ms, _world_instance)
+			unit.ability_set.tick_executions(step_ms)
 
 	# 5d. ATTACK_TARGET：在攻击距离内且基础攻击合法 → 发 ABILITY_ACTIVATE_EVENT
 	#     （cooldown/legality 由 Ability 的 condition+cost 把关，非 controller ad-hoc）。
@@ -221,7 +221,7 @@ func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_m
 	var event := GameEvent.AbilityActivate.create(
 		ability.id, unit.get_id(), logic_time_ms, target_id
 	).to_dict()
-	unit.ability_set.receive_event(event, _world_instance)
+	unit.ability_set.receive_event(event)
 
 
 # ========== step 7：death cleanup ==========

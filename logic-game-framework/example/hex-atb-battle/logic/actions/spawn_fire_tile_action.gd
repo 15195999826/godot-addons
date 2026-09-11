@@ -32,9 +32,9 @@ func _init(
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.instance
 	if battle == null:
-		return ActionResult.create_success_result([], { "spawn_failed": "no_game_state" })
+		return ActionResult.create_success_result([], { "spawn_failed": "no_instance" })
 	var caster_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 	var targets := get_targets(ctx)
 	if targets.is_empty():
@@ -74,10 +74,10 @@ func _initialize_fire_tile(
 	# Note: HexBattleFireTilePulse.ABILITY 默认 1s interval / 20 damage; 自定义 interval/damage
 	# 留给后续 (当前 V1 用默认值, 与 SpawnFireTileAction 的 _pulse_interval_ms 等参数解耦)。
 	var pulse_ab := Ability.new(HexBattleFireTilePulse.ABILITY, tile.get_id(), caster_id)
-	tile.ability_set.grant_ability(pulse_ab, battle)
+	tile.ability_set.grant_ability(pulse_ab)
 	var lifetime_ab := Ability.new(
 		HexBattleFireTileLifetime.create_config(_lifetime_ms),
 		tile.get_id(),
 		caster_id,
 	)
-	tile.ability_set.grant_ability(lifetime_ab, battle)
+	tile.ability_set.grant_ability(lifetime_ab)

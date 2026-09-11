@@ -89,7 +89,7 @@ class _FaceTargetAction:
 		_reason = reason
 
 	func execute(ctx: ExecutionContext) -> ActionResult:
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		var caster_id := ctx.ability_ref.owner_actor_id if ctx.ability_ref != null else ""
 		if battle == null or caster_id == "":
 			return ActionResult.create_success_result([])

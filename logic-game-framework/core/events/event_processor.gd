@@ -32,7 +32,7 @@
 ## var event_processor: EventProcessor = GameWorld.event_processor
 ## 
 ## # Pre 阶段：允许减伤/免疫
-## var mutable: MutableEvent = event_processor.process_pre_event(pre_event, game_state_provider)
+## var mutable: MutableEvent = event_processor.process_pre_event(pre_event)
 ## 
 ## if not mutable.cancelled:
 ##     # 获取修改后的伤害值
@@ -43,8 +43,8 @@
 ##     target.modify_hp(-final_damage)
 ##     
 ##     # Post 阶段：触发反伤/吸血等被动
-##     var alive_actor_ids := game_state_provider.get_alive_actor_ids()
-##     event_processor.process_post_event(damage_event, alive_actor_ids, game_state_provider)
+##     var battle: HexWorldGameplayInstance = ctx.instance
+##     event_processor.process_post_event(damage_event, battle.get_alive_actor_ids())
 ## ```
 ##
 ## @example 查看追踪日志
@@ -119,8 +119,7 @@ func _remove_handlers_where(should_remove: Callable) -> void:
 ##    - cancel       → 标记事件取消，立即停止遍历
 ##    - modify       → 将修改（Modification）追加到 MutableEvent
 ## 4. 返回 MutableEvent，调用方通过 mutable.cancelled / mutable.get_current_value() 读取结果
-func process_pre_event(event_dict: Dictionary, game_state_provider: Variant) -> MutableEvent:
-	Log.assert_crash(game_state_provider != null, "EventProcessor", "game_state_provider is required")
+func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 	var mutable := MutableEvent.new(event_dict, EventPhase.PHASE_PRE)
 
 	# ── 递归保护 ──
@@ -157,8 +156,7 @@ func process_pre_event(event_dict: Dictionary, game_state_provider: Variant) -> 
 		var handler_context := HandlerContext.new(
 			registration.owner_id,
 			registration.ability_id,
-			registration.config_id,
-			game_state_provider
+			registration.config_id
 		)
 
 		var start_time := Time.get_ticks_msec()
@@ -213,16 +211,15 @@ func process_pre_event(event_dict: Dictionary, game_state_provider: Variant) -> 
 
 	return mutable
 
-func process_post_event(event_dict: Dictionary, actor_ids: Array[String], game_state_provider: Variant) -> void:
-	_process_post_event_impl(event_dict, actor_ids, {}, game_state_provider)
+func process_post_event(event_dict: Dictionary, actor_ids: Array[String]) -> void:
+	_process_post_event_impl(event_dict, actor_ids, {})
 
-func process_post_event_to_related(event_dict: Dictionary, actor_ids: Array[String], related_actor_ids: Dictionary, game_state_provider: Variant) -> void:
-	_process_post_event_impl(event_dict, actor_ids, related_actor_ids, game_state_provider)
+func process_post_event_to_related(event_dict: Dictionary, actor_ids: Array[String], related_actor_ids: Dictionary) -> void:
+	_process_post_event_impl(event_dict, actor_ids, related_actor_ids)
 
 ## 内部实现：统一 Post 阶段处理逻辑
 ## related_filter 为空表示不过滤（广播给所有 actor_ids），非空表示只广播给 related 中的 actor
-func _process_post_event_impl(event_dict: Dictionary, actor_ids: Array[String], related_filter: Dictionary, game_state_provider: Variant) -> void:
-	Log.assert_crash(game_state_provider != null, "EventProcessor", "game_state_provider is required")
+func _process_post_event_impl(event_dict: Dictionary, actor_ids: Array[String], related_filter: Dictionary) -> void:
 	if _current_depth >= _config.max_depth:
 		var error_msg := "Event recursion depth exceeded: %s\nCurrent event: %s\nEvent call chain:\n%s" % [
 			_current_depth,
@@ -251,7 +248,7 @@ func _process_post_event_impl(event_dict: Dictionary, actor_ids: Array[String], 
 			Log.assert_crash(false, "EventProcessor",
 				"Actor '%s' in actor_ids has no AbilitySet (pure data actor?)" % actor_id)
 			continue
-		ability_set.receive_event(event_dict, game_state_provider)
+		ability_set.receive_event(event_dict)
 
 	_current_depth -= 1
 	_current_trace_id = parent_trace_id

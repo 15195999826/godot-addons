@@ -189,7 +189,7 @@ func broadcast_projectile_events() -> void:
 	for event in events:
 		var kind: String = event.get("kind", "")
 		if kind == ProjectileEvents.PROJECTILE_HIT_EVENT or kind == ProjectileEvents.PROJECTILE_MISS_EVENT:
-			GameWorld.event_processor.process_post_event(event, alive_ids, self)
+			GameWorld.event_processor.process_post_event(event, alive_ids)
 
 
 ## 判断 actor 能否对 target 使用 skill。

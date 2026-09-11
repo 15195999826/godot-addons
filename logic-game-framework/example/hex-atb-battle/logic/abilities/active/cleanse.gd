@@ -35,7 +35,7 @@ class _CleanseAction:
 		type = "cleanse_dispel"
 
 	func _execute_local(ctx: ExecutionContext) -> ActionResult:
-		var battle: HexWorldGameplayInstance = ctx.game_state_provider
+		var battle: HexWorldGameplayInstance = ctx.instance
 		if battle == null:
 			return ActionResult.create_success_result([], { "cleanse_removed": false })
 		var targets := get_targets(ctx)

@@ -19,7 +19,7 @@ func _init(target_selector: TargetSelector, buff_config: AbilityConfig) -> void:
 
 
 func execute(ctx: ExecutionContext) -> ActionResult:
-	var battle: HexWorldGameplayInstance = ctx.game_state_provider
+	var battle: HexWorldGameplayInstance = ctx.instance
 	if battle == null:
 		return ActionResult.create_success_result([], {})
 
@@ -34,6 +34,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		if ability_set == null:
 			continue
 		var new_buff := Ability.new(_buff_config, target_id, source_id)
-		ability_set.grant_ability(new_buff, battle)
+		ability_set.grant_ability(new_buff)
 
 	return ActionResult.create_success_result([], { "buff_config_id": _buff_config.config_id })

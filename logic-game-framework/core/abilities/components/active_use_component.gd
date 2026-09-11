@@ -37,15 +37,15 @@ func _init(config: ActiveUseConfig):
 	_freeze_conditions_and_costs()
 
 
-func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_state_provider: Variant) -> bool:
+func on_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if not _check_triggers(event_dict, context):
 		return false
-	if not _check_conditions(context, event_dict, game_state_provider):
+	if not _check_conditions(context, event_dict):
 		return false
-	if not _check_costs(context, event_dict, game_state_provider):
+	if not _check_costs(context, event_dict):
 		return false
-	_pay_costs(context, event_dict, game_state_provider)
-	_activate_execution(event_dict, context, game_state_provider)
+	_pay_costs(context, event_dict)
+	_activate_execution(event_dict, context)
 	return true
 
 
@@ -64,32 +64,31 @@ func on_event(event_dict: Dictionary, context: AbilityLifecycleContext, game_sta
 func can_activate(
 	context: AbilityLifecycleContext,
 	event_dict: Dictionary = {},
-	game_state_provider: Variant = null,
 ) -> Dictionary:
 	for condition in _conditions:
-		var passed := condition.check(context, event_dict, game_state_provider)
+		var passed := condition.check(context, event_dict)
 		condition._verify_unchanged()
 		if not passed:
-			var condition_reason := condition.get_fail_reason(context, event_dict, game_state_provider)
+			var condition_reason := condition.get_fail_reason(context, event_dict)
 			if condition_reason == "":
 				condition_reason = condition.get_condition_type()
 			return AbilityActivationQuery.denied(
 				condition_reason, AbilityActivationQuery.FAILED_CONDITION)
 	for cost in _costs:
-		var payable := cost.can_pay(context, event_dict, game_state_provider)
+		var payable := cost.can_pay(context, event_dict)
 		cost._verify_unchanged()
 		if not payable:
-			var cost_reason := cost.get_fail_reason(context, event_dict, game_state_provider)
+			var cost_reason := cost.get_fail_reason(context, event_dict)
 			if cost_reason == "":
 				cost_reason = cost.type
 			return AbilityActivationQuery.denied(
 				cost_reason, AbilityActivationQuery.FAILED_COST)
 	return AbilityActivationQuery.allowed()
 
-func _check_conditions(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> bool:
+func _check_conditions(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> bool:
 	for condition in _conditions:
-		if not condition.check(ctx, event_dict, game_state):
-			var reason := condition.get_fail_reason(ctx, event_dict, game_state)
+		if not condition.check(ctx, event_dict):
+			var reason := condition.get_fail_reason(ctx, event_dict)
 			if reason == "":
 				reason = condition.get_condition_type()
 			Log.debug("ActiveUseComponent", "条件不满足: %s" % reason)
@@ -101,10 +100,10 @@ func _check_conditions(ctx: AbilityLifecycleContext, event_dict: Dictionary, gam
 		condition._verify_unchanged()
 	return true
 
-func _check_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> bool:
+func _check_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> bool:
 	for cost in _costs:
-		if not cost.can_pay(ctx, event_dict, game_state):
-			var reason := cost.get_fail_reason(ctx, event_dict, game_state)
+		if not cost.can_pay(ctx, event_dict):
+			var reason := cost.get_fail_reason(ctx, event_dict)
 			if reason == "":
 				reason = cost.type
 			Log.debug("ActiveUseComponent", "消耗不足: %s" % reason)
@@ -142,9 +141,9 @@ func _push_activate_failed(
 		failed_component_type,
 	).to_dict())
 
-func _pay_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary, game_state: Variant) -> void:
+func _pay_costs(ctx: AbilityLifecycleContext, event_dict: Dictionary) -> void:
 	for cost in _costs:
-		cost.pay(ctx, event_dict, game_state)
+		cost.pay(ctx, event_dict)
 		# Debug: 验证 Cost 状态未被修改（pay 不应修改 self）
 		cost._verify_unchanged()
 
