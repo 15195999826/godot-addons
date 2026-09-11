@@ -174,38 +174,36 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 ## 构造函数参数类型
 
-### 静态值 vs Callable
+### 固定值 vs 执行期计算（Resolver）
 
-某些参数支持 `Callable`，允许在执行时动态计算：
+数值 / 坐标 / cue 参数一律是 Resolver：固定值用 `Resolvers.*_val`，执行期计算用 `Resolvers.*_fn` 包一个 `func(ctx: ExecutionContext)`：
 
 ```gdscript
-# 静态值
+# 固定值
 HexBattleDamageAction.new(
-    TargetSelector.current_target(),
-    50.0,  # 固定 50 点伤害
-    DamageType.PHYSICAL
+    HexBattleTargetSelectors.current_target(),
+    Resolvers.float_val(50.0),  # 固定 50 点伤害
+    BattleEvents.DamageType.PHYSICAL
 )
 
-# 动态值（Callable）
-HexBattleDamageAction.new(
-    TargetSelector.current_target(),
-    func(ctx: ExecutionContext) -> float:
-        # 根据攻击者属性计算伤害
-        var attacker = HexBattleGameStateUtils.world(ctx).get_actor(ctx.ability_ref.owner_actor_id)
-        return attacker.get_attack() * 1.5,
-    DamageType.PHYSICAL
+# 执行期计算：按施法者攻击力缩放
+var scaled_damage := Resolvers.float_fn(func(ctx: ExecutionContext) -> float:
+    var caster := HexBattleGameStateUtils.world(ctx).get_character_actor(ctx.ability_ref.owner_actor_id)
+    return caster.attribute_set.atk * 1.5
 )
+HexBattleDamageAction.new(HexBattleTargetSelectors.current_target(), scaled_damage, BattleEvents.DamageType.PHYSICAL)
 ```
 
-### 支持 Callable 的参数
+### Resolver 类型的参数
 
 | Action | 参数 | 类型 |
 |--------|------|------|
-| `HexBattleHealAction` | `heal_amount` | `float` 或 `Callable` |
-| `HexBattleStartMoveAction` | `target_coord` | `Dictionary` 或 `Callable` |
-| `HexBattleApplyMoveAction` | `target_coord` | `Dictionary` 或 `Callable` |
-| `StageCueAction` | `cue_id` | `String` 或 `Callable` |
-| `StageCueAction` | `cue_params` | `Dictionary` 或 `Callable` |
+| `HexBattleDamageAction` | `damage_resolver` | `FloatResolver` |
+| `HexBattleHealAction` | `heal_amount` | `FloatResolver` |
+| `HexBattleStartMoveAction` | `target_coord` | `DictResolver` |
+| `HexBattleApplyMoveAction` | `target_coord` | `DictResolver` |
+| `StageCueAction` | `cue_id` | `StringResolver` |
+| `StageCueAction` | `cue_params` | `DictResolver`（默认 `Resolvers.dict_val({})`） |
 
 ## ActionResult
 

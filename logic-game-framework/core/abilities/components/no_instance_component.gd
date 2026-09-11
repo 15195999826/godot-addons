@@ -67,7 +67,7 @@ func _check_triggers(event_dict: Dictionary, context: AbilityLifecycleContext) -
 ## 合同:
 ## - event_dict_chain = [{ "kind": "ability_lifecycle", "phase": "on_apply"|"on_remove",
 ##   "ability_id": ..., "ability_config_id": ... }]; 这条 lifecycle event 不写入 EventCollector 历史。
-## - ctx.instance 与事件触发路径同源 (context.instance, 按 owner 反查; 孤立单测里为 null)。
+## - ctx.instance 与事件触发路径同源 (context.instance, 按 owner 反查; owner 未注册时为 null)。
 ## - lifecycle 行为本身不进 replay; 但 action 修改 tag 时既有 RecordingUtils 记录 tag 变化。
 func _execute_lifecycle_actions(actions: Array[Action.BaseAction], context: AbilityLifecycleContext, phase: String) -> void:
 	var event_dict := {

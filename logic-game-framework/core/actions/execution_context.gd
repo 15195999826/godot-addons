@@ -42,7 +42,7 @@ var event_dict_chain: Array[Dictionary] = []
 ## 本次执行所属的 GameplayInstance（按 ability owner 的 id 反查）。
 ## 项目层收窄成具体世界类型读：`var battle: HexWorldGameplayInstance = ctx.instance`
 ## （基类隐式下转：类型检查只在 debug 构建生效，release 不查），或经项目的 `world(ctx)` helper（`as` 收窄，类型不符响亮报错）。
-## owner 未注册进 GameWorld（孤立单测）时为 null。
+## owner 未注册进 GameWorld（孤立单测、注册前的 grant）时为 null。
 var instance: GameplayInstance = null
 
 ## 事件收集器

@@ -18,13 +18,6 @@ var left_team: Array[CharacterActor] = []
 var right_team: Array[CharacterActor] = []
 var logger: HexBattleLogger = null
 
-## 回指 world 只经基类的 _world（WeakRef）：world._active_battle 强持本 procedure，这里再存强引用就成环。
-var _world_instance: HexWorldGameplayInstance:
-	get:
-		return _get_world() as HexWorldGameplayInstance
-	set(_value):
-		# 只写 getter 时赋值会静默落进 backing 字段、把环接回来，所以显式拒绝写入。
-		Log.assert_crash(false, "HexBattleProcedure", "_world_instance 只读：回指 world 只经基类 _world（WeakRef）")
 var _logging_enabled: bool = true
 var _result: String = ""
 
@@ -73,7 +66,7 @@ func tick_once() -> void:
 		return
 	_current_tick += 1
 
-	var world := _world_instance
+	var world := _get_world()
 	if world != null:
 		world.base_tick(_tick_interval)
 
@@ -123,8 +116,6 @@ func tick_once() -> void:
 
 
 func finish(result: String = "") -> Dictionary:
-	if _world_instance != null and _world_instance.actor_added.is_connected(_on_world_actor_added):
-		_world_instance.actor_added.disconnect(_on_world_actor_added)
 	var effective := result if result != "" else _result
 	if effective == "":
 		effective = "battle_complete"
@@ -136,8 +127,13 @@ func finish(result: String = "") -> Dictionary:
 
 # ========== Virtual hooks ==========
 
+## 协变收窄基类的 WeakRef 回指：world._active_battle 强持本 procedure，子类只经本方法触达 world，不另存 world 字段（会成环）。
+func _get_world() -> HexWorldGameplayInstance:
+	return super._get_world() as HexWorldGameplayInstance
+
+
 func _mark_in_combat(actor_id: String, active: bool) -> void:
-	var world := _world_instance
+	var world := _get_world()
 	if world == null:
 		return
 	var actor := world.get_actor(actor_id)
@@ -173,7 +169,7 @@ func get_result() -> String:
 # ========== 战斗主循环辅助 ==========
 
 func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
-	var world := _world_instance
+	var world := _get_world()
 	if _logging_enabled and logger != null:
 		logger.actor_ready(actor.get_id(), actor.get_display_name(), actor.get_atb_gauge())
 
@@ -217,7 +213,7 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 
 ## AI 决策: 委托给 actor 的 AI 策略对象。
 func _decide_action(actor: CharacterActor) -> Dictionary:
-	return actor.ai_strategy.decide(actor, _world_instance)
+	return actor.ai_strategy.decide(actor, _get_world())
 
 
 func _create_action_use_event(

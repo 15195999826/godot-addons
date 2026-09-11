@@ -29,13 +29,6 @@ var movement_adapter: Dota2MovementAdapter = null
 var left_team: Array[Dota2BattleActor] = []
 var right_team: Array[Dota2BattleActor] = []
 
-## 回指 world 只经基类的 _world（WeakRef）：world._active_battle 强持本 procedure，这里再存强引用就成环。
-var _world_instance: Dota2WorldGameplayInstance:
-	get:
-		return _get_world() as Dota2WorldGameplayInstance
-	set(_value):
-		# 只写 getter 时赋值会静默落进 backing 字段、把环接回来，所以显式拒绝写入。
-		Log.assert_crash(false, "Dota2AutoBattleProcedure", "_world_instance 只读：回指 world 只经基类 _world（WeakRef）")
 var _controllers: Dictionary = {}
 var _result: String = ""
 var _global_spawn_counter: int = 0
@@ -56,6 +49,11 @@ func _init(world: Dota2WorldGameplayInstance, opts: Dictionary = {}) -> void:
 	_recording_enabled = false
 
 
+## 协变收窄基类的 WeakRef 回指：world._active_battle 强持本 procedure，子类只经本方法触达 world，不另存 world 字段（会成环）。
+func _get_world() -> Dota2WorldGameplayInstance:
+	return super._get_world() as Dota2WorldGameplayInstance
+
+
 # ========== 生命周期 ==========
 
 ## 战斗起手：左右各刷一波 lane creep（spawner 不发 intent）。
@@ -68,7 +66,7 @@ func start() -> void:
 func _spawn_wave(team_id: int) -> void:
 	if int(_waves_spawned[team_id]) >= Dota2LaneConfig.MAX_WAVES:
 		return
-	Dota2WaveSpawner.spawn_wave(_world_instance, self, team_id, _global_spawn_counter)
+	Dota2WaveSpawner.spawn_wave(_get_world(), self, team_id, _global_spawn_counter)
 	_global_spawn_counter += Dota2LaneConfig.get_wave_composition().size()
 	_waves_spawned[team_id] = int(_waves_spawned[team_id]) + 1
 
@@ -83,9 +81,10 @@ func advance_tick(dt_ms: float = -1.0) -> Dota2LogicFrame:
 	var dt_seconds := step_ms / 1000.0
 	_current_tick += 1
 	var logic_time_ms := get_logic_time()
+	var world := _get_world()
 
 	# 1. AbilitySet cooldown / duration tick（cooldown tag 自动过期在此清）。
-	for unit in _world_instance.get_alive_units():
+	for unit in world.get_alive_units():
 		if unit.ability_set != null:
 			unit.ability_set.tick(step_ms, logic_time_ms)
 
@@ -96,18 +95,18 @@ func advance_tick(dt_ms: float = -1.0) -> Dota2LogicFrame:
 	# 3. update targeting/spatial：M1 aggro 走 Dota2TargetingSystem on-demand，无独立索引。
 
 	# 4. controller decision step（仅在 _needs_decision 时决策）。
-	for unit in _world_instance.get_alive_units():
+	for unit in world.get_alive_units():
 		var ctrl: Dota2UnitController = _controllers.get(unit.get_id(), null)
 		if ctrl == null:
 			continue
-		for evt in ctrl.decide_if_needed(_world_instance, _current_tick):
+		for evt in ctrl.decide_if_needed(world, _current_tick):
 			GameWorld.event_collector.push(evt)
 
 	# 5. movement + ability 推进 current intent。
 	_advance_intents(dt_seconds, step_ms, logic_time_ms)
 
 	# 6. controller result step：回灌 IntentStepResult。
-	for unit in _world_instance.get_alive_units():
+	for unit in world.get_alive_units():
 		var ctrl2: Dota2UnitController = _controllers.get(unit.get_id(), null)
 		if ctrl2 == null:
 			continue
@@ -144,7 +143,8 @@ func finish(result: String = "") -> Dictionary:
 # ========== step 5：推进 current intent ==========
 
 func _advance_intents(dt_seconds: float, step_ms: float, logic_time_ms: float) -> void:
-	var alive := _world_instance.get_alive_units()
+	var world := _get_world()
+	var alive := world.get_alive_units()
 
 	# 5a. 据 current intent 给 adapter 下移动原语（不移动，仅排 order）。
 	for unit in alive:
@@ -157,7 +157,7 @@ func _advance_intents(dt_seconds: float, step_ms: float, logic_time_ms: float) -
 			Dota2Intent.KIND_LANE_MARCH:
 				movement_adapter.ensure_march(unit, intent.get_lane_goal())
 			Dota2Intent.KIND_ATTACK_TARGET:
-				var tgt: Dota2BattleActor = _world_instance.get_actor(intent.get_target_id())
+				var tgt: Dota2BattleActor = world.get_actor(intent.get_target_id())
 				if tgt != null and not tgt.is_dead():
 					var stop_dist: float = unit.attribute_set.attack_range
 					movement_adapter.ensure_chase(unit, tgt.position_2d, stop_dist)
@@ -179,9 +179,9 @@ func _advance_intents(dt_seconds: float, step_ms: float, logic_time_ms: float) -
 		if ctrl3.current_intent.kind != Dota2Intent.KIND_ATTACK_TARGET:
 			continue
 		var target_id := ctrl3.current_intent.get_target_id()
-		if not Dota2TargetingSystem.is_target_valid(_world_instance, unit, target_id):
+		if not Dota2TargetingSystem.is_target_valid(world, unit, target_id):
 			continue
-		if not Dota2TargetingSystem.is_in_attack_range(_world_instance, unit, target_id):
+		if not Dota2TargetingSystem.is_in_attack_range(world, unit, target_id):
 			continue
 		if unit.ability_set != null and unit.ability_set.has_executing_instances():
 			continue
@@ -207,10 +207,11 @@ func _eval_step_result(unit: Dota2UnitActor, intent: Dota2Intent) -> Dota2Intent
 			return Dota2IntentStepResult.running()
 		Dota2Intent.KIND_ATTACK_TARGET:
 			var target_id := intent.get_target_id()
-			var target: Dota2BattleActor = _world_instance.get_actor(target_id)
+			var world := _get_world()
+			var target: Dota2BattleActor = world.get_actor(target_id)
 			if target == null or target.is_dead():
 				return Dota2IntentStepResult.completed("target_dead")
-			if not Dota2TargetingSystem.is_target_valid(_world_instance, unit, target_id):
+			if not Dota2TargetingSystem.is_target_valid(world, unit, target_id):
 				return Dota2IntentStepResult.failed("target_invalid")
 			return Dota2IntentStepResult.running()
 	return Dota2IntentStepResult.running()
@@ -235,7 +236,7 @@ func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_m
 ## controller。team 列表保留引用（is_dead 过滤），用于胜负判定计数。
 func _remove_dead_actors() -> void:
 	var dead_ids: Array[String] = []
-	for actor in _world_instance.get_actors():
+	for actor in _get_world().get_actors():
 		var ba: Dota2BattleActor = actor as Dota2BattleActor
 		if ba != null and ba.is_dead():
 			dead_ids.append(ba.get_id())
@@ -243,14 +244,14 @@ func _remove_dead_actors() -> void:
 		GameWorld.event_collector.push(Dota2BattleEvents.make_unit_removed(actor_id))
 		movement_adapter.unregister_unit(actor_id)
 		_controllers.erase(actor_id)
-		_world_instance.remove_actor(actor_id)
+		_get_world().remove_actor(actor_id)
 
 
 # ========== 出帧（Dota2LogicFrame 快照）==========
 
 func _build_logic_frame(events: Array) -> Dota2LogicFrame:
 	var snaps: Dictionary = {}
-	for actor in _world_instance.get_actors():
+	for actor in _get_world().get_actors():
 		var unit: Dota2UnitActor = actor as Dota2UnitActor
 		if unit == null:
 			continue

@@ -27,6 +27,8 @@ func _phase_summon_totem() -> bool:
 		"",
 		60,
 	)
+	if not replay.get("world_released", false):
+		return _fail("SummonTotem: HexBattleProcedure kept its world alive after finish")
 	var spawned := _find_spawned_actor_by_config(replay, "Totem")
 	if spawned.is_empty():
 		return _fail("SummonTotem: missing actorSpawned for Totem")
@@ -57,6 +59,8 @@ func _phase_fire_tile() -> bool:
 		"enemy",
 		45,
 	)
+	if not replay.get("world_released", false):
+		return _fail("FireTile: HexBattleProcedure kept its world alive after finish")
 	var spawned := _find_spawned_actor_by_config(replay, HexBattleFireTile.KIND)
 	if spawned.is_empty():
 		return _fail("FireTile: missing actorSpawned for fire_tile")
@@ -115,6 +119,10 @@ func _run_production_skill(skill_config: AbilityConfig, target_mode: String, tic
 
 	var replay := proc.finish("mid_spawn_smoke")
 	GameWorld.destroy()
+	# procedure 回指 world 只许经基类 WeakRef：proc 仍被持有、world 的其余持有者都已放掉，world 必须已释放。
+	var world_ref := weakref(world)
+	world = null
+	replay["world_released"] = world_ref.get_ref() == null
 	return replay
 
 

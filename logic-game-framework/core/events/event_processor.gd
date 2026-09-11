@@ -212,6 +212,7 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 
 	return mutable
 
+## actor_ids 是 Post 的观众：通常在效果之前快照存活列表——本次被击杀的目标仍应收到自己的 post（反伤 / 亡语）。
 func process_post_event(event_dict: Dictionary, actor_ids: Array[String]) -> void:
 	_process_post_event_impl(event_dict, actor_ids, {})
 

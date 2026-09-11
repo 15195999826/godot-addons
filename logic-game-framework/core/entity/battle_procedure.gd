@@ -16,6 +16,8 @@ const DEFAULT_TICK_INTERVAL: float = 100.0
 
 # ========== 字段 ==========
 
+## 回指 world 只存 WeakRef：world._active_battle 强持本 procedure，再存强引用就成环。
+## 子类要具体世界类型就协变覆盖 _get_world()，不另存 world 字段。
 var _world: WeakRef = null
 var _participant_ids: Array[String] = []
 var _recorder: BattleRecorder = null
@@ -144,7 +146,7 @@ func _mark_in_combat(_actor_id: String, _active: bool) -> void:
 	pass
 
 
-## 获取 world instance。world 已销毁时返回 null。
+## 获取 world instance。world 已销毁时返回 null。子类可协变覆盖以收窄返回类型（见 _world）。
 func _get_world() -> WorldGameplayInstance:
 	if _world == null:
 		return null

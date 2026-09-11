@@ -18,9 +18,7 @@ static func format(instance_id: String, local_id: String) -> String:
 	return "%s%s%s" % [instance_id, SEPARATOR, local_id]
 
 
-## 解析 Actor ID
-## 返回 { "instance_id": String, "local_id": String }
-## 如果格式无效，返回 { "instance_id": "", "local_id": actor_id }
+## 解析 Actor ID：返回 { "instance_id": String, "local_id": String }，两段的切法见 extract_instance_id / extract_local_id。
 static func parse(actor_id: String) -> Dictionary:
 	return {
 		"instance_id": extract_instance_id(actor_id),
@@ -39,14 +37,14 @@ static func is_valid(actor_id: String) -> bool:
 	return sep_index > 0 and sep_index < actor_id.length() - 1
 
 
-## 提取 instance_id 部分（语义同 parse()）
-## 两个 extract 不经 parse()：instance 按 owner id 反查，每次派发 / 建 context 都会调，不为取一段子串分配 Dictionary。
+## 提取 instance_id：第一个分隔符之前的部分；没有分隔符时为空串（按 id 反查 instance 自然查不到）。
+## 按 owner id 反查 instance 每次派发 / 建 context 都会调，所以只做 find + substr、不建 Dictionary。
 static func extract_instance_id(actor_id: String) -> String:
 	var sep_index := actor_id.find(SEPARATOR)
 	return "" if sep_index == -1 else actor_id.substr(0, sep_index)
 
 
-## 提取 local_id 部分（语义同 parse()）
+## 提取 local_id：第一个分隔符之后的部分；没有分隔符时为整个 id。
 static func extract_local_id(actor_id: String) -> String:
 	var sep_index := actor_id.find(SEPARATOR)
 	return actor_id if sep_index == -1 else actor_id.substr(sep_index + 1)

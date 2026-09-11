@@ -105,12 +105,13 @@ func _test_dispatch_sees_owner_instance() -> void:
 
 func _test_can_activate_sees_owner_instance() -> void:
 	var actor := _spawn("instance_ctx_query")
-	var conditions: Array[Condition] = [RecordInstanceCondition.new()]
-	var costs: Array[Cost] = []
-	var active_use_list: Array[ActiveUseConfig] = [
-		ActiveUseConfig.new(TimelineData.new("t-instance-context-query", 100.0, {}), [], conditions, costs),
-	]
-	var config := AbilityConfig.new("instance_ctx_query", "", "", "", [], active_use_list, [])
+	var config := (AbilityConfig.builder()
+		.config_id("instance_ctx_query")
+		.active_use(ActiveUseConfig.builder()
+			.timeline(TimelineData.new("t-instance-context-query", 100.0, {}))
+			.condition(RecordInstanceCondition.new())
+			.build())
+		.build())
 	var ability := Ability.new(config, actor.get_id())
 	actor.ability_set.grant_ability(ability)
 

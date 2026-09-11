@@ -204,7 +204,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		all_events.append_array(damage_result.all_events)
 
 		# ========== 回调处理（在 post damage 广播之前） ==========
-		var callback_events := _process_callbacks(damage_result.damage_event_dict, is_critical, ctx, battle)
+		var callback_events := _process_callbacks(damage_result.damage_event_dict, is_critical, ctx, target_actor)
 		all_events.append_array(callback_events)
 
 		# ========== Post damage 广播 ==========
@@ -219,7 +219,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 # 回调处理
 # ============================================================
 
-func _process_callbacks(damage_event: Dictionary, is_critical: bool, ctx: ExecutionContext, battle: HexWorldGameplayInstance) -> Array[Dictionary]:
+func _process_callbacks(damage_event: Dictionary, is_critical: bool, ctx: ExecutionContext, target_actor: HexBattleActor) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
 	var callback_ctx := ExecutionContext.create_callback_context(ctx, damage_event)
 	
@@ -239,7 +239,7 @@ func _process_callbacks(damage_event: Dictionary, is_critical: bool, ctx: Execut
 				events.append_array(result.event_dicts)
 	
 	# on_kill: 检查目标是否死亡
-	var is_kill := _check_target_killed(damage_event, battle)
+	var is_kill := target_actor.is_dead()
 	if is_kill:
 		for callback in _on_kill_callbacks:
 			var result := callback.execute(callback_ctx)
@@ -248,11 +248,3 @@ func _process_callbacks(damage_event: Dictionary, is_critical: bool, ctx: Execut
 				events.append_array(result.event_dicts)
 	
 	return events
-
-
-func _check_target_killed(damage_event: Dictionary, battle: HexWorldGameplayInstance) -> bool:
-	# 使用强类型事件
-	var event := BattleEvents.DamageEvent.from_dict(damage_event)
-	if event.target_actor_id.is_empty():
-		return false
-	return HexBattleGameStateUtils.is_actor_dead(event.target_actor_id, battle)

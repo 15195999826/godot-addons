@@ -34,16 +34,3 @@ static func get_actor_display_name(actor_id: String, battle: HexWorldGameplayIns
 		if actor != null:
 			return actor.get_display_name()
 	return actor_id
-
-
-## 检查角色是否已死亡
-## @param actor_id: 角色 ID
-## @param battle: HexWorldGameplayInstance 实例(或其子类如 HexDemoWorldGameplayInstance / SkillPreviewWorldGI)
-## @return: 角色是否已死亡，如果无法获取角色则返回 false
-static func is_actor_dead(actor_id: String, battle: HexWorldGameplayInstance) -> bool:
-	if battle == null:
-		return false
-	var actor := battle.get_actor(actor_id)
-	if actor != null:
-		return actor.is_dead()
-	return true
