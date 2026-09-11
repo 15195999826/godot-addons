@@ -30,6 +30,8 @@
 ## @example 在 Action 中使用双阶段处理
 ## ```gdscript
 ## var event_processor: EventProcessor = GameWorld.event_processor
+## var battle := HexBattleGameStateUtils.world(ctx)  # 项目层 helper：必须有世界
+## var alive_actor_ids := battle.get_alive_actor_ids()  # 效果之前快照：本次被击杀的目标仍是 Post 观众
 ## 
 ## # Pre 阶段：允许减伤/免疫
 ## var mutable: MutableEvent = event_processor.process_pre_event(pre_event)
@@ -43,8 +45,7 @@
 ##     target.modify_hp(-final_damage)
 ##     
 ##     # Post 阶段：触发反伤/吸血等被动
-##     var battle: HexWorldGameplayInstance = ctx.instance
-##     event_processor.process_post_event(damage_event, battle.get_alive_actor_ids())
+##     event_processor.process_post_event(damage_event, alive_actor_ids)
 ## ```
 ##
 ## @example 查看追踪日志

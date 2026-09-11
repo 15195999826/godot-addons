@@ -19,7 +19,7 @@ extends Node
 ## 调用栈上：探针在 NoInstance 的 on_apply action、trigger filter、事件 action 与 timeline tag action
 ## 里把收到的 context 以 weakref 捕出，grant / tick / 派发一返回就断言已释放（不等 destroy_instance）——
 ## 这四处任一把 context 缓存进字段，它都会当场存活。on_remove / cancel / can_activate 建的 context
-## 不在探针内（前两者「拿到 owner 的 instance」由 instance_context_test 钉住）。
+## 不在探针内（三者「拿到 owner 的 instance」由 instance_context_test 钉住，释放与否没有断言）。
 ##
 ## EventProcessor / EventCollector 归 GameWorld 持有：用 GameWorld.init() 换新，
 ## 让旧实例失去唯一持有者后断言释放。

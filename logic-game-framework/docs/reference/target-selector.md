@@ -97,7 +97,7 @@ extends TargetSelector
 func select(ctx: ExecutionContext) -> Array[String]:
     # 例如：选择与 owner 不同队的所有存活 actor
     var targets: Array[String] = []
-    var battle: MyBattle = ctx.instance
+    var battle := MyGameStateUtils.world(ctx)
     var owner_team: int = battle.get_actor(ctx.ability_ref.owner_actor_id).get_team_id()
 
     for actor in battle.get_alive_actors():
@@ -128,7 +128,7 @@ func select(ctx: ExecutionContext) -> Array[String]:
     if centers.is_empty():
         return targets
 
-    var battle: MyBattle = ctx.instance
+    var battle := MyGameStateUtils.world(ctx)
     var center_pos = battle.get_actor(centers[0]).hex_position
 
     # 获取范围内的所有目标
@@ -147,7 +147,7 @@ func select(ctx: ExecutionContext) -> Array[String]:
 # 只选择 HP 低于 50% 的目标
 var low_hp_selector := MySelectors.all_enemies().filtered(
     func(actor_id: String, ctx: ExecutionContext) -> bool:
-        var battle: MyBattle = ctx.instance
+        var battle := MyGameStateUtils.world(ctx)
         var attrs = battle.get_actor(actor_id).attribute_set
         return attrs.hp < attrs.max_hp * 0.5
 )

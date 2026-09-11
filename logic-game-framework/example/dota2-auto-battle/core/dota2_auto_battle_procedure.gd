@@ -33,6 +33,9 @@ var right_team: Array[Dota2BattleActor] = []
 var _world_instance: Dota2WorldGameplayInstance:
 	get:
 		return _get_world() as Dota2WorldGameplayInstance
+	set(_value):
+		# 只写 getter 时赋值会静默落进 backing 字段、把环接回来，所以显式拒绝写入。
+		Log.assert_crash(false, "Dota2AutoBattleProcedure", "_world_instance 只读：回指 world 只经基类 _world（WeakRef）")
 var _controllers: Dictionary = {}
 var _result: String = ""
 var _global_spawn_counter: int = 0
