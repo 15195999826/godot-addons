@@ -5,7 +5,7 @@
 ## event_timeline 回放，在已有 view 上叠加飘字 / 特效。
 ##
 ## 设计哲学：view 是 state 的 reactive projection，不存在 destructive 重建 API。
-## 详见 docs/README.md（World owns Battle + 响应式前端 节）
+## 详见 LGF CLAUDE.md「World owns Battle」节。
 class_name FrontendWorldView
 extends Node3D
 
@@ -41,7 +41,7 @@ func _exit_tree() -> void:
 
 ## 绑定到 world。hydrate 当前所有 actor + 订阅 mutation signal。
 ## 调用前 WorldView 必须已经 _ready（进入场景树）；否则内部节点未创建。
-func bind_world(world: WorldGameplayInstance) -> void:
+func bind_world(world: GridWorldGameplayInstance) -> void:
 	if world == null:
 		return
 	unbind_world()
@@ -203,7 +203,7 @@ func hex_to_world(coord: HexCoord) -> Vector3:
 	return Vector3(pixel.x, 0.0, pixel.y)
 
 
-func _get_world() -> WorldGameplayInstance:
+func _get_world() -> GridWorldGameplayInstance:
 	if _world_ref == null:
 		return null
-	return _world_ref.get_ref() as WorldGameplayInstance
+	return _world_ref.get_ref() as GridWorldGameplayInstance

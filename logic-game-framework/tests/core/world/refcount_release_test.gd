@@ -14,7 +14,8 @@ extends Node
 ##     tick 到 execution 真 fire 过 action，pre / post 各派发一次；destroy_instance 后连同 instance
 ##     自持的 EventProcessor / EventCollector 与 ability 的 pre / post 注册全部释放。
 ##  2. start_battle + 录像：BattleProcedure / 注入 world collector 的 BattleRecorder / RecordingContext /
-##     订阅闭包，battle_finished 后同样全部释放。
+##     订阅闭包，battle_finished 后同样全部释放；world 是 stdlib GridWorldGameplayInstance，两个 actor
+##     站在棋盘上（occupant 表存 actor 引用）并留一条预订，棋盘随 world 一起释放。
 ##  3. procedure 子类（协变 _get_world、持有只经调用参数拿 world 的 helper）被调用方直接 finish()——
 ##     不经 world.tick 收尾，finish 自己交还战斗槽位：销毁 world 后全部释放。
 ##  4. 开着录像的战斗 tick 里 GameWorld.shutdown()（经 world.tick() 驱动；world 是覆盖 on_end 且不调 super 的子类）：
@@ -215,14 +216,19 @@ func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 	_assert_no_handlers_left(instance.event_processor)
 
 
-## 用例 2：world + 两个 actor → start_battle（录像开启）→ 战斗中产生真实事件 → world.tick 收尾 finish。
+## 用例 2：带棋盘的 world + 两个站在棋盘上的 actor → start_battle（录像开启）→ 战斗中产生真实事件
+## → world.tick 收尾 finish。棋盘是 instance → grid → actor 的向下强边（与 registry 同向）。
 func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	var timeline := _make_loop_timeline()
-	var world := GameWorld.create_instance(WorldGameplayInstance.new()) as WorldGameplayInstance
+	var world := GameWorld.create_instance(GridWorldGameplayInstance.new()) as GridWorldGameplayInstance
+	world.configure_grid(_make_grid_config())
 	var caster := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
 	var target := world.add_actor(ReleaseProbeActor.new()) as ReleaseProbeActor
 	caster.probe_sink = refs
 	target.probe_sink = refs
+	TestFramework.assert_true(world.grid.place_occupant(HexCoord.new(0, 0), caster), "棋盘应放下 caster")
+	TestFramework.assert_true(world.grid.place_occupant(HexCoord.new(1, 0), target), "棋盘应放下 target")
+	TestFramework.assert_true(world.grid.reserve_tile(HexCoord.new(2, 0), caster.get_id()), "棋盘应记下 caster 的预订")
 	# 一份 config 两个 actor 共享: 与生产的 static var 声明同形, 也是最容易藏回指边的形状
 	var probe_config := _build_probe_config(timeline)
 	var applied: Array[String] = []
@@ -266,6 +272,7 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	_collect_actor_refs(refs, caster, "caster.")
 	_collect_actor_refs(refs, target, "target.")
 	_collect_world_refs(refs, world, procedure)
+	refs["grid"] = weakref(world.grid)
 	var processor := world.event_processor
 	GameWorld.destroy_instance(world.id)
 	_assert_no_handlers_left(processor)
@@ -417,6 +424,15 @@ static func _make_loop_timeline() -> TimelineData:
 	var timeline := TimelineData.new("t-release-probe", 100.0, {"tick": 50.0})
 	timeline.loop = true
 	return timeline
+
+
+static func _make_grid_config() -> GridMapConfig:
+	var config := GridMapConfig.new()
+	config.grid_type = GridMapConfig.GridType.HEX
+	config.orientation = GridMapConfig.Orientation.FLAT
+	config.draw_mode = GridMapConfig.DrawMode.RADIUS
+	config.radius = 2
+	return config
 
 
 ## 四组件 ability：pre 改值 / post 打 tag / 属性加成 / GRANTED_SELF 自激活 loop timeline。

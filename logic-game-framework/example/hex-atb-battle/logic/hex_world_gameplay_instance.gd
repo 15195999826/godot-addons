@@ -1,9 +1,9 @@
 ## HexWorldGameplayInstance - 六边形战斗世界 Instance
 ##
-## 继承 WorldGameplayInstance, 承担六边形战斗系统的 actor registry / grid / systems 管理。
+## 继承 stdlib 的 GridWorldGameplayInstance, 承担六边形战斗系统的 actor registry / grid / systems 管理。
 ## 战斗推进由 HexBattleProcedure 承担 —— 参见 hex_battle_procedure.gd。
 class_name HexWorldGameplayInstance
-extends WorldGameplayInstance
+extends GridWorldGameplayInstance
 
 
 # ========== 信号 ==========
@@ -15,7 +15,7 @@ extends WorldGameplayInstance
 ## 子类 (HexDemoWorldGI / SkillPreviewWorldGI) 的 _on_battle_finished 跑, 因此 snapshot
 ## 数据是子类 end() / _save_replay 之前的干净终态。
 ##
-## 数据契约见 docs/reference/view-logic-reconciliation.md。
+## 数据契约见 tests/frontend/view_logic_reconciler.gd (HexBattleViewLogicReconciler) 头注释。
 signal battle_final_state_ready(final_state: Dictionary)
 
 
@@ -40,11 +40,11 @@ func _init(id_value: String = "") -> void:
 
 # ========== Grid ==========
 
-## 接入 UGridMap autoload: configure 后把 autoload 的 model 同步到 self.grid。
+## 接入 UGridMap autoload: 棋盘同时灌进 autoload (hex 的 AI / 锥形技能 / 前端指示器直接读 UGridMap.model),
+## 再经 stdlib 的 configure_grid_model 落到 self.grid 并发 grid_configured。
 func configure_grid(config: GridMapConfig) -> void:
 	UGridMap.configure(config)
-	grid = UGridMap.model
-	grid_configured.emit(config)
+	configure_grid_model(UGridMap.model)
 
 
 ## 录像 world_snapshot 的坐标格式声明: hex 例子全员 hex 坐标（position = [q, r]）。
@@ -56,33 +56,6 @@ func _get_position_formats() -> Dictionary:
 
 
 # ========== Actor registry ==========
-
-## 覆盖父类: 移除 Actor 时清理格子占用与预订。
-## 框架层 remove_actor 不感知格子系统, 此处补充 hex 特化清理。
-## 所有 HexBattleActor 子类 (CharacterActor / EnvironmentActor) 都走同一清理流程。
-func remove_actor(actor_id: String) -> bool:
-	var actor := super.get_actor(actor_id)
-	if actor != null and actor is HexBattleActor:
-		var battle_actor := actor as HexBattleActor
-		if grid != null and battle_actor.hex_position != null and battle_actor.hex_position.is_valid():
-			var occupant := grid.get_occupant(battle_actor.hex_position)
-			if occupant == battle_actor:
-				grid.remove_occupant(battle_actor.hex_position)
-			for coord in _find_reservations_by(actor_id):
-				grid.cancel_reservation(coord)
-	return super.remove_actor(actor_id)
-
-
-## 查找指定 actor 预订的所有格子。
-func _find_reservations_by(actor_id: String) -> Array[HexCoord]:
-	var result: Array[HexCoord] = []
-	if grid == null:
-		return result
-	for coord in grid.get_all_coords():
-		if grid.get_reservation(coord) == actor_id:
-			result.append(coord)
-	return result
-
 
 ## 覆盖父类, 返回类型收窄为 HexBattleActor。
 ## 公共战斗管线 (DamageUtils / event broadcast) 走此入口, 平权处理 character + environment。

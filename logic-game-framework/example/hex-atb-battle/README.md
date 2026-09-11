@@ -21,7 +21,7 @@ Logic Game Framework 的**回合制 / ATB + hex grid** 战斗示例，也是框�
 
 hex 演进中固化的不可违反约束：
 
-- **死亡 ≠ 离开 world**：hp ≤ 0 时只清 grid footprint（`_clear_grid_footprint` in `hex_battle_damage_utils.gd`），**绝不**调 `world.remove_actor` —— actor 留在 registry（`is_dead()=true`、behavior 禁用、`hex_position` 保留），给复活 / 救起 / 亡语 / 尸爆留路。逻辑实例 / grid 占用 / view 三维度独立配置，不绑成"清=全清"。
+- **死亡 ≠ 离开 world**：hp ≤ 0 时只清 grid footprint（`hex_battle_damage_utils.gd` 调 world 的 `clear_grid_footprint`），**绝不**调 `world.remove_actor` —— actor 留在 registry（`is_dead()=true`、behavior 禁用、`hex_position` 保留），给复活 / 救起 / 亡语 / 尸爆留路。逻辑实例 / grid 占用 / view 三维度独立配置，不绑成"清=全清"。
 - **每个场景拥有自己的 `HexWorldGameplayInstance` 子类**：demo 战斗行为（grid 配置 / 六职业 / 随机放置 / inspire buff / 战报 / 录像）封装在 `HexDemoWorldGameplayInstance`，框架基类保持通用 —— 不许把 demo 内容写进基类（污染分层）或 inline 复制到多个 entry（同步地狱）。新场景沿用"子类化"范式。
 - **表演层 Event vs State 是根边界**：可每帧重复且幂等的（HP 条 / 闪白 / 染色 / 位置）走 State snapshot；重复执行会建节点 / 起 tween / 播音效 / 发粒子的（死亡动画 / 受击 / 暴击大字）走 transition-only Event —— 混用会导致一次性动画重复播放（详见下「事件 vs 状态边界」）。
 - **Cast eligibility 走 declarative metadata，不进 Condition**："能不能对环境物 / 阵营 / 范围释放"用 ability metadata（`HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS`，默认 `["Character"]`），由 `can_use_skill_on()` 事前查询 —— AI / UI / tooltip / 玩家 cast 都需要事前过滤候选；Condition 是事件到达时的 reactive 判断，承载 cast 配置会变双源真相。**施法输入协议也是 cast 配置**：`TARGETING` metadata（`actor` / `coord` / `self`）声明 activate 事件带 `target_actor_id` 还是 `target_coord`，AI / UI 按它分派（不嗅探 "cone" 描述 tag）；ACTOR/SELF 合法性走 `can_use_skill_on`，COORD 走 `can_use_skill_at`。

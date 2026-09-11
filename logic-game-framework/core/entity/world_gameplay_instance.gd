@@ -1,11 +1,12 @@
 ## WorldGameplayInstance - 世界 Instance（整局游戏一个 session）
 ##
-## 从"战斗 owns 世界"切换为"世界 owns 战斗"。World 长期持有 actor / grid / systems,
-## 战斗是 procedure(短命 RefCounted)。Signal 由显式 mutation API 触发, 服务于
-## frontend 非战斗期的 view lifecycle 同步;战斗期间视觉靠 BattleAnimator 消费
-## event_timeline 回放, 不消费这些 signal。
+## 世界 owns 战斗：World 长期持有 actor / systems, 战斗是 procedure(短命 RefCounted)。
+## Signal 由显式 mutation API 触发, 服务于 frontend 非战斗期的 view lifecycle 同步;
+## 战斗期间视觉靠 BattleAnimator 消费 event_timeline 回放, 不消费这些 signal。
+## core 不认识棋盘: 需要 hex 棋盘的世界继承 stdlib 的 GridWorldGameplayInstance,
+## 本类只留 _get_map_config() 一个钩子给录像快照。
 ##
-## 详见 docs/README.md（World owns Battle + 响应式前端 节）
+## 详见 CLAUDE.md「World owns Battle」节。
 class_name WorldGameplayInstance
 extends GameplayInstance
 
@@ -26,15 +27,10 @@ const BATTLE_TICKS_PER_WORLD_FRAME: int = 9223372036854775807
 
 signal actor_added(actor_id: String)
 signal actor_removed(actor_id: String)
-signal actor_position_changed(actor_id: String, old_coord: HexCoord, new_coord: HexCoord)
-signal grid_configured(config: GridMapConfig)
-signal grid_cell_changed(coord: HexCoord, change_type: String)
 signal battle_finished(timeline: Dictionary)
 
 
 # ========== 字段 ==========
-
-var grid: GridMapModel = null
 
 var _active_battle: BattleProcedure = null
 
@@ -66,14 +62,6 @@ func remove_actor(actor_id: String) -> bool:
 	return removed
 
 
-## 配置网格。子类可覆盖以接入具体的 grid backend(如 UGridMap autoload)。
-## 必须最后 emit grid_configured 以保证 signal 只由显式 mutation 触发。
-func configure_grid(config: GridMapConfig) -> void:
-	grid = GridMapModel.new()
-	grid.initialize(config)
-	grid_configured.emit(config)
-
-
 # ========== 战斗调度 ==========
 
 ## 拍摄开战时刻的世界快照（录像范围内的 registry actor + 地图配置 + 坐标格式声明）,
@@ -83,10 +71,15 @@ func capture_world_snapshot() -> PlaybackData.WorldSnapshot:
 	var snap := PlaybackData.WorldSnapshot.new()
 	for actor in get_recordable_actors():
 		snap.actors.append(PlaybackData.ActorInitData.create(actor))
-	if grid != null:
-		snap.map_config = grid.to_config_dict()
+	snap.map_config = _get_map_config()
 	snap.position_formats = _get_position_formats()
 	return snap
+
+
+## 地图配置钩子: 回放器用它重建台面。core 不认识地图, 默认 {}; 带棋盘的子类
+## (stdlib GridWorldGameplayInstance) 返回当前棋盘的 config dict。
+func _get_map_config() -> Dictionary:
+	return {}
 
 
 ## 战斗录像范围内的 actor（快照 + 变化订阅共用同一集合）。

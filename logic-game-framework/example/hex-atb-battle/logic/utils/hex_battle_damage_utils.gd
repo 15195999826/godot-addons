@@ -133,23 +133,10 @@ static func apply_damage(
 
 			event_processor.process_post_event(death_dict)
 
-			_clear_grid_footprint(battle, target_actor)
+			# 死者留在 world registry, 只离开棋盘 (占用 / 预订), 让活人可以走到尸体格上。
+			battle.clear_grid_footprint(target_actor)
 
 	return result
-
-
-## 死亡后清掉死者在 grid 上的占用 / 预订, 让活人可以走到尸体格上。
-## 不动 actor 本身, 不动 world registry —— 这是 "死了但还在 world" 的中间态。
-## 接 HexBattleActor: 平权处理 character + environment。
-static func _clear_grid_footprint(battle: HexWorldGameplayInstance, dead_actor: HexBattleActor) -> void:
-	if battle == null or battle.grid == null or dead_actor == null:
-		return
-	var pos := dead_actor.hex_position
-	if pos != null and pos.is_valid():
-		battle.grid.remove_occupant(pos)
-	for coord in battle.grid.get_all_coords():
-		if battle.grid.get_reservation(coord) == dead_actor.get_id():
-			battle.grid.cancel_reservation(coord)
 
 
 ## 对每个 broken=true 的消耗记录：push shield_broken event → 调 on_break 回调 → revoke ability
