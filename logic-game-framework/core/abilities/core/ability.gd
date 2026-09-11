@@ -44,7 +44,7 @@ var _execution_instances: Array[AbilityExecutionInstance] = []
 var _on_triggered_callbacks: Array[Callable] = []
 var _on_execution_callbacks: Array[Callable] = []
 ## 注册在 owner 所属 EventProcessor 上的 post handler 的注销闭包：apply_effects 注册、remove_effects 注销。
-## 闭包持有 processor（ability → processor，与 instance → processor 同向）；processor 那头的 handler 只带 id，不回指本 ability。
+## 闭包只捕获注册表与 id（见 EventProcessor._make_unregister），表里的 handler 只带 id，不回指本 ability。
 var _post_unregisters: Array[Callable] = []
 
 ## Phase B2 (Break) — passive disabled-source 引用计数。
@@ -283,7 +283,9 @@ func apply_effects(context: AbilityLifecycleContext) -> void:
 	_effects_active = true
 	for component in _components:
 		component.on_apply(context)
-	_register_post_handlers(context.event_processor)
+	# on_apply 里本 ability 已过期（remove_effects 已跑完）时再注册，就没有人注销了
+	if _effects_active:
+		_register_post_handlers(context)
 
 ## on_remove / 叠层 / Break 钩子的 context 由 AbilityLifecycleContext.for_ability 按 owner id 反查建出。
 ## 先注销 post handler：移除中的 ability 不再响应 on_remove 期间派发的事件。
@@ -302,8 +304,10 @@ func remove_effects() -> void:
 
 
 ## 按 component 声明的 kind（去掉定向投递 kind）各注册一条 post handler，派发时经 receive_event 交给全部 component。
+## owner 取 context 的（本 ability 所在 AbilitySet 的 owner）：派发按它找回本 ability，remove_actor 按它注销。
 ## owner 未注册进 GameWorld（孤立单测）时 context 没有 processor：不注册，这样的 ability 只收得到 AbilitySet 的定向投递。
-func _register_post_handlers(processor: EventProcessor) -> void:
+func _register_post_handlers(context: AbilityLifecycleContext) -> void:
+	var processor := context.event_processor
 	if processor == null:
 		return
 	var kinds: Array[String] = []
@@ -311,21 +315,22 @@ func _register_post_handlers(processor: EventProcessor) -> void:
 		for kind in component.get_post_event_kinds():
 			if not kinds.has(kind) and not EventProcessor.DIRECT_DELIVERY_KINDS.has(kind):
 				kinds.append(kind)
+	var owner_id := context.owner_actor_id
 	for kind in kinds:
 		var registration := PostHandlerRegistration.new(
 			"%s_post_%s" % [id, kind],
 			kind,
-			owner_actor_id,
+			owner_id,
 			id,
 			config_id,
-			_make_post_handler(owner_actor_id, id),
+			_make_post_handler(owner_id, id),
 			display_name
 		)
 		_post_unregisters.append(processor.register_post_handler(registration))
 
 
 ## post handler 在 static 上下文里建：没有 self 可捕获，lambda 只带 owner / ability 两个 id，派发时按 id 取回 ability。
-## 捕获本 ability（或它的 component / context）就接上 ability → _post_unregisters → processor → registration → handler → ability 的环。
+## 捕获本 ability（或它的 component / context）就接上 ability → _post_unregisters → 注册表 → registration → handler → ability 的环。
 static func _make_post_handler(owner_id: String, ability_id: String) -> Callable:
 	return func(event_dict: Dictionary, _handler_context: HandlerContext) -> bool:
 		var context := AbilityLifecycleContext.rebuild_for_handler(owner_id, ability_id, event_dict, EventPhase.PHASE_POST)

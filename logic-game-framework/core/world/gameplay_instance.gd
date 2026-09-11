@@ -71,13 +71,9 @@ func end() -> void:
 	_cleanup_event_handlers()
 
 
-## 清空本 instance event_processor 上的 pre / post handler 注册表。
+## 清空本 instance event_processor 上的 pre / post handler 注册表：结束的 instance 不再派发事件。
 ##
-## 不 revoke ability（保留 `_abilities` 数组以支持复活等语义），只清 handler
-## 注册表，防止跨战斗 handler 孤儿化累积。
-##
-## handler 的重新注册应在 actor 重新"激活"时由项目层负责（例如：新战斗开始、
-## 复活动画播完等）。本框架不假设何时重新激活。
+## 不 revoke ability、不跑 on_remove；ability 手上残留的注销闭包按 id 查表，查不到即无操作。
 func _cleanup_event_handlers() -> void:
 	event_processor.remove_all_handlers()
 

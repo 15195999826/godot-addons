@@ -79,6 +79,22 @@ class OwnerSelector:
 		return [ctx.ability_ref.owner_actor_id]
 
 
+## revoke 拥有者身上 config_id 的全部 ability（config_id 构造后只读，action 无状态）。
+class RevokeByConfigAction:
+	extends Action.BaseAction
+
+	var config_id: String
+
+	func _init(p_config_id: String) -> void:
+		super._init(TargetSelector.new())
+		config_id = p_config_id
+
+	func execute(ctx: ExecutionContext) -> ActionResult:
+		var owner_set := BattleActor.ability_set_of(ctx.instance.get_actor(ctx.ability_ref.owner_actor_id))
+		owner_set.revoke_abilities_by_config_id(config_id)
+		return ActionResult.create_success_result([])
+
+
 func _init() -> void:
 	TestFramework.register_test("BattleActor check_death latches once", _test_check_death_latches_once)
 	TestFramework.register_test("BattleActor check_death ignores actors without hp", _test_check_death_without_hp)
@@ -89,6 +105,7 @@ func _init() -> void:
 	TestFramework.register_test("BattleActor ability_set_of returns null for plain Actor", _test_ability_set_of)
 	TestFramework.register_test("AbilitySet.tick_runtime blocks on the tick an execution ends", _test_tick_runtime_blocking)
 	TestFramework.register_test("AbilitySet.tick_runtime ignores non-blocking abilities", _test_tick_runtime_non_blocking)
+	TestFramework.register_test("AbilitySet tick pass survives revoking an earlier ability", _test_tick_survives_mid_pass_revoke)
 	TestFramework.register_test("BattleActor team id syncs both int and string views", _test_team_id)
 	TestFramework.register_test("BattleActor serializes attributes and death latch", _test_serialize_with_sets)
 	TestFramework.register_test("BattleActor subscribes attributes + abilities + lifecycle", _test_setup_recording_full)
@@ -123,6 +140,7 @@ func _test_mark_dead() -> void:
 	TestFramework.assert_true(actor.is_dead())
 	TestFramework.assert_false(actor.mark_dead(), "已死再标记不应报首次")
 	TestFramework.assert_false(actor.is_event_responsive({}, EventPhase.PHASE_PRE), "死者不再响应 PreEvent")
+	TestFramework.assert_false(actor.is_event_responsive({}, EventPhase.PHASE_POST), "死者也不再响应 post 事件（默认没有豁免）")
 
 
 ## 复活是项目层规则, core 只提供解闩入口 (否则项目层只能直写基类私有字段)。
@@ -133,6 +151,7 @@ func _test_set_death_latch() -> void:
 	actor.set_death_latch(false)
 	TestFramework.assert_false(actor.is_dead())
 	TestFramework.assert_true(actor.is_event_responsive({}, EventPhase.PHASE_PRE))
+	TestFramework.assert_true(actor.is_event_responsive({}, EventPhase.PHASE_POST))
 	TestFramework.assert_true(actor.mark_dead(), "解闩后再死应重新算首次")
 
 
@@ -219,6 +238,24 @@ func _test_tick_runtime_non_blocking() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
+## 一轮 tick_executions 遍历 ability 的快照：中间的 ability 本轮 revoke 掉排在它前面的那个，
+## 排在它后面的 ability 本轮照常推进（遍历活数组时数组左移，最后一个会被跳过）。
+func _test_tick_survives_mid_pass_revoke() -> void:
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_mid_pass_revoke"))
+	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
+	var revoked_config := "battle_actor_probe_revoked"
+	actor.ability_set.grant_ability(Ability.new(AbilityConfig.builder().config_id(revoked_config).build(), actor.get_id()))
+	var revoke_actions: Array[Action.BaseAction] = [RevokeByConfigAction.new(revoked_config)]
+	actor.ability_set.grant_ability(Ability.new(_build_timeline_config("battle_actor_probe_revoker", revoke_actions), actor.get_id()))
+	actor.ability_set.grant_ability(Ability.new(_build_probe_config(), actor.get_id()))
+
+	actor.ability_set.tick_executions(50.0)
+	TestFramework.assert_false(actor.ability_set.has_ability(revoked_config), "排在前面的 ability 应已 revoke")
+	# 排在后面的 ability 本轮仍应推进
+	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_TICKED))
+	GameWorld.destroy_instance(instance.id)
+
+
 # ========== 队伍 / 序列化 / 录像 / 实例反查 ==========
 
 ## set_team_id 要同时写 int 与 Actor 基类的字符串 team——录像的 _get_team_int 读前者,
@@ -285,12 +322,17 @@ static func _build_probe_config(tags: Array[String] = []) -> AbilityConfig:
 	var tick_actions: Array[Action.BaseAction] = [
 		LooseTagAction.Apply.new(OwnerSelector.new(), TAG_TICKED)
 	]
+	return _build_timeline_config("battle_actor_probe", tick_actions, tags)
+
+
+## grant 即自激活一条 100ms timeline 的 ability；40ms 处跑 tick_actions。
+static func _build_timeline_config(config_id: String, tick_actions: Array[Action.BaseAction], tags: Array[String] = []) -> AbilityConfig:
 	return (AbilityConfig.builder()
-		.config_id("battle_actor_probe")
+		.config_id(config_id)
 		.ability_tags(tags)
 		.component_config(ActivateInstanceConfig.builder()
 			.trigger(TriggerConfig.GRANTED_SELF)
-			.timeline(TimelineData.new("t-battle-actor-probe", 100.0, {"ticked": 40.0}))
+			.timeline(TimelineData.new("t-" + config_id, 100.0, {"ticked": 40.0}))
 			.on_tag("ticked", tick_actions)
 			.build())
 		.build())

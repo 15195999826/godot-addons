@@ -71,14 +71,14 @@ var _config: EventProcessorConfig
 var _current_depth := 0
 var _traces: Array[Dictionary] = []
 var _current_trace_id := ""
+## 两张注册表只 clear、不重新赋值：注销闭包捕获的是表本身（见 _make_unregister）。派发遍历快照，表可以原地增删。
 ## 存储格式: { event_kind: Array[PreHandlerRegistration] }
 var _pre_handlers: Dictionary = {}
-## 存储格式: { event_kind: Array[PostHandlerRegistration] }，按 (owner_seq, seq) 升序
+## 存储格式: { event_kind: Array[PostHandlerRegistration] }，按 owner 进 registry 的顺序排，同 owner 按注册顺序
 var _post_handlers: Dictionary = {}
 ## 存储格式: { owner_id: int }，owner 进 registry 的顺序
 var _owner_seq: Dictionary = {}
 var _next_owner_seq := 0
-var _next_post_seq := 0
 
 
 ## 初始化事件处理器
@@ -104,27 +104,18 @@ func note_actor_removed(actor_id: String) -> void:
 
 
 ## 注册 Pre 阶段处理器
-## @return 取消注册的 Callable（按 id 注销、幂等；只捕获 kind 与 id，不延长 registration 的寿命）
+## @return 取消注册的 Callable（按 id 注销、幂等；见 _make_unregister）
 func register_pre_handler(registration: PreHandlerRegistration) -> Callable:
 	var event_kind: String = registration.event_kind
 	if not _pre_handlers.has(event_kind):
 		_pre_handlers[event_kind] = [] as Array[PreHandlerRegistration]
 	(_pre_handlers[event_kind] as Array[PreHandlerRegistration]).append(registration)
-
-	var registration_id := registration.id
-	return func() -> void:
-		if not _pre_handlers.has(event_kind):
-			return
-		var handlers: Array[PreHandlerRegistration] = _pre_handlers[event_kind]
-		for i in range(handlers.size()):
-			if handlers[i].id == registration_id:
-				handlers.remove_at(i)
-				break
+	return _make_unregister(_pre_handlers, event_kind, registration.id)
 
 
-## 注册 Post 阶段处理器，按 (owner_seq, seq) 插入：派发顺序 = owner 进 registry 的顺序 → 注册顺序
+## 注册 Post 阶段处理器：派发顺序 = owner 进 registry 的顺序 → 注册顺序
 ## （同一 ability 的多个 component 由 Ability.receive_event 按 component 顺序处理）。
-## @return 取消注册的 Callable（按 id 注销、幂等；只捕获 kind 与 id，不延长 registration 的寿命）
+## @return 取消注册的 Callable（按 id 注销、幂等；见 _make_unregister）
 func register_post_handler(registration: PostHandlerRegistration) -> Callable:
 	var event_kind := registration.event_kind
 	if DIRECT_DELIVERY_KINDS.has(event_kind):
@@ -132,26 +123,26 @@ func register_post_handler(registration: PostHandlerRegistration) -> Callable:
 			"'%s' 是定向投递 kind，只经 AbilitySet.receive_event 投递，不能注册 post handler" % event_kind)
 		return func() -> void: pass
 	registration.owner_seq = _owner_seq.get(registration.owner_id, _UNLISTED_OWNER_SEQ)
-	registration.seq = _next_post_seq
-	_next_post_seq += 1
 	if not _post_handlers.has(event_kind):
 		_post_handlers[event_kind] = [] as Array[PostHandlerRegistration]
 	var handlers: Array[PostHandlerRegistration] = _post_handlers[event_kind]
-	# seq 单调递增：插入点只需越过尾部 owner_seq 更大的那些
+	# 从尾部越过 owner 序号更大的注册：同 owner 的注册保持先来后到
 	var index := handlers.size()
 	while index > 0 and handlers[index - 1].owner_seq > registration.owner_seq:
 		index -= 1
 	handlers.insert(index, registration)
+	return _make_unregister(_post_handlers, event_kind, registration.id)
 
-	var registration_id := registration.id
+
+## 注销闭包在 static 上下文里建，只捕获注册表、kind 与 id：Ability / PreEventComponent 长期存放它，
+## 捕获 processor 或 registration 就会让它们活得和 ability 一样久。
+static func _make_unregister(table: Dictionary, event_kind: String, registration_id: String) -> Callable:
 	return func() -> void:
-		if not _post_handlers.has(event_kind):
-			return
-		var registered: Array[PostHandlerRegistration] = _post_handlers[event_kind]
+		var registered: Array = table.get(event_kind, [])
 		for i in range(registered.size()):
 			if registered[i].id == registration_id:
 				registered.remove_at(i)
-				break
+				return
 
 
 func remove_handlers_by_ability_id(ability_id: String) -> void:
@@ -171,20 +162,12 @@ func remove_all_handlers() -> void:
 
 
 ## 同时清 pre / post 两张表。should_remove: func(owner_id: String, ability_id: String) -> bool。
-## 换新数组而非原地删：进行中的 pre 派发遍历的是旧数组，不会跳元素。
 func _remove_handlers_where(should_remove: Callable) -> void:
-	for event_kind: String in _pre_handlers.keys():
-		var kept_pre: Array[PreHandlerRegistration] = []
-		for registration: PreHandlerRegistration in _pre_handlers[event_kind]:
-			if not should_remove.call(registration.owner_id, registration.ability_id):
-				kept_pre.append(registration)
-		_pre_handlers[event_kind] = kept_pre
-	for event_kind: String in _post_handlers.keys():
-		var kept_post: Array[PostHandlerRegistration] = []
-		for registration: PostHandlerRegistration in _post_handlers[event_kind]:
-			if not should_remove.call(registration.owner_id, registration.ability_id):
-				kept_post.append(registration)
-		_post_handlers[event_kind] = kept_post
+	for table: Dictionary in [_pre_handlers, _post_handlers]:
+		for registered: Array in table.values():
+			for i in range(registered.size() - 1, -1, -1):
+				if should_remove.call(registered[i].owner_id, registered[i].ability_id):
+					registered.remove_at(i)
 
 ## Pre 阶段处理：收集所有处理器的意图（修改/取消/放行），返回 MutableEvent。
 ##
@@ -223,8 +206,9 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 		_finalize_trace(trace)
 		return mutable
 
-	# ── 遍历处理器：依次调用，收集意图 ──
-	var handlers: Array[PreHandlerRegistration] = _pre_handlers[event_kind]
+	# ── 遍历处理器快照：依次调用，收集意图；handler 里注册 / 注销 handler 不改变这条事件的派发名单 ──
+	var handlers: Array[PreHandlerRegistration] = []
+	handlers.assign(_pre_handlers[event_kind])
 	for registration in handlers:
 		# 过滤：handler 可指定只处理特定条件的事件（如只处理对自己的伤害）
 		if not registration.passes_filter(event_dict):
@@ -285,8 +269,8 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 ## Post 阶段派发：依次调用订阅了该 kind 的处理器（顺序 = owner 进 registry 的顺序 → 注册顺序）。
 ##
 ## 观众由注册决定、死活由 actor 决定：Ability 注册的 handler 按 id 重建 context，owner 此刻不响应这条事件
-## （is_event_responsive 返回 false）或 ability 已不在 owner 的 AbilitySet 里时，本条不执行。
-## 遍历注册表的快照：派发中新注册的 handler 收不到进行中的这条事件。
+## （is_event_responsive 返回 false）或 ability 已不在 owner 的 AbilitySet 里、已过期时，本条不执行。
+## 遍历注册表快照（同 pre）：派发中注册 / 注销 handler 不改变这条事件的派发名单。
 ## 定向投递 kind 不许走这里（见 DIRECT_DELIVERY_KINDS）。
 func process_post_event(event_dict: Dictionary) -> void:
 	var event_kind: String = event_dict.get("kind", "")
@@ -357,15 +341,16 @@ func export_trace_log() -> String:
 			var original_values: Dictionary = trace.get("originalValues", {})
 			if not original_values.is_empty():
 				lines.append("  Original: %s" % JSON.stringify(original_values))
-			var intents: Array[Dictionary] = trace.get("intents", []) as Array[Dictionary]
-			for record in intents:
-				var intent: Dictionary = record.get("intent", {})
+			var intent_records: Array[Dictionary] = []
+			intent_records.assign(trace.get("intents", []))
+			for intent_record in intent_records:
+				var intent: Dictionary = intent_record.get("intent", {})
 				var intent_type: String = intent.get("type", "")
-				var has_error: bool = record.get("error", null) != null
+				var has_error: bool = intent_record.get("error", null) != null
 				var error_suffix := " ERROR" if has_error else ""
-				lines.append("  [%s] -> %s%s" % [record.get("handlerName", record.get("handlerId", "")), intent_type, error_suffix])
+				lines.append("  [%s] -> %s%s" % [intent_record.get("handlerName", intent_record.get("handlerId", "")), intent_type, error_suffix])
 				if has_error:
-					lines.append("    Error: %s" % record["error"].get("message", ""))
+					lines.append("    Error: %s" % intent_record["error"].get("message", ""))
 				elif intent_type == EventPhase.INTENT_CANCEL:
 					lines.append("    Reason: %s" % intent.get("reason", ""))
 				elif intent_type == EventPhase.INTENT_MODIFY:
@@ -379,11 +364,12 @@ func export_trace_log() -> String:
 				if not final_values.is_empty():
 					lines.append("  Final: %s" % JSON.stringify(final_values))
 		else:
-			var handler_records: Array = trace.get("handlers", [])
-			for record: Dictionary in handler_records:
+			var handler_records: Array[Dictionary] = []
+			handler_records.assign(trace.get("handlers", []))
+			for handler_record in handler_records:
 				lines.append("  [%s] -> %s" % [
-					record.get("handlerName", record.get("handlerId", "")),
-					"triggered" if record.get("triggered", false) else "not triggered",
+					handler_record.get("handlerName", handler_record.get("handlerId", "")),
+					"triggered" if handler_record.get("triggered", false) else "not triggered",
 				])
 
 		var duration := 0

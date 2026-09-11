@@ -171,7 +171,7 @@ func _test_lifecycle_tag_mutation() -> void:
 
 
 func _test_trigger_still_works() -> void:
-	# 旧 trigger+action 行为不应被 lifecycle 扩展破坏：事件经 instance 的 post 派发送到 grant 过的 ability
+	# trigger + action：事件经 instance 的 post 派发送到 grant 过的 ability，匹配 trigger 即跑 action
 	_setup()
 	var pair := _make_actor()
 	var aset: AbilitySet = pair[0]

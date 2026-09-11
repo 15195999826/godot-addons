@@ -72,7 +72,7 @@ func _init(
 	handler_context = HandlerContext.new(owner_id, ability_id, config_id)
 
 
-## 获取显示名称（优先使用 handler_name，否则使用 config_id）
+## 显示名称：handler_name，为空时退回 config_id，再退回 id
 func get_display_name() -> String:
 	if handler_name != "":
 		return handler_name

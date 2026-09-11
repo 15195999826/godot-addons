@@ -27,8 +27,8 @@ extends Node
 ## 战斗结束 / world 结束已拆掉 world → procedure 这条强边，这一步单独验反向那条
 ## （procedure 及其持有的对象只许弱回指 world）。
 ##
-## Ability 的 post 注销闭包（_post_unregisters）不是 Object、取不到 weakref：它只捕获 processor 与 kind / id，
-## 由 processor 的 weakref 与「revoke 之后 _post_unregisters 已清空」两条断言兜住。
+## Ability 的 post 注销闭包（_post_unregisters）不是 Object、取不到 weakref：它只捕获注册表与 kind / id，
+## 由 ability 的 weakref 与「revoke 之后 _post_unregisters 已清空」两条断言兜住。
 ##
 ## context 对象（AbilityLifecycleContext / ExecutionContext）携带 instance 强引用，只许活在
 ## 调用栈上：探针在 NoInstance 的 on_apply action、trigger filter（post 派发按 id 重建的 lifecycle context）、

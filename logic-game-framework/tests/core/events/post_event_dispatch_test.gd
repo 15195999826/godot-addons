@@ -5,7 +5,8 @@ extends Node
 ## 观众由注册决定：Ability.apply_effects 按 component 的 trigger kind 各注册一条 PostHandlerRegistration、
 ## remove_effects 注销；死活由 actor 决定：派发时按 id 重建 context，先问 owner 的 is_event_responsive。
 ## 本文件钉住：同 kind 只注册一条、定向投递 kind 永不注册且照常定向投递恰一次、派发顺序（registry 顺序 → grant 顺序）、
-## revoke / expire / remove_actor / end() 注销、响应钩子与豁免、Break 短路、嵌套派发的深度上限、triggered 监听者只回调一次。
+## revoke / expire / remove_actor / end() 注销、响应钩子与豁免、Break 短路、嵌套派发的深度上限、triggered 监听者只回调一次、
+## on_apply 里已过期的 ability 不注册、注册的 owner 取所在 AbilitySet 的 owner。
 
 const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
@@ -62,6 +63,21 @@ class RedispatchAction:
 		return ActionResult.create_success_result([])
 
 
+## on_apply 里让所属 ability 过期的 component（一次性 on_apply 效果的形状）。
+class ExpireOnApplyComponent:
+	extends AbilityComponent
+
+	func on_apply(context: AbilityLifecycleContext) -> void:
+		context.ability.expire("post_dispatch_expire_on_apply")
+
+
+class ExpireOnApplyConfig:
+	extends AbilityComponentConfig
+
+	func create_component() -> AbilityComponent:
+		return ExpireOnApplyComponent.new()
+
+
 func _init() -> void:
 	TestFramework.register_test("PostDispatch: same kind on two components registers once, both run", _test_one_registration_per_kind)
 	TestFramework.register_test("PostDispatch: direct delivery kinds never register, still delivered exactly once", _test_direct_delivery_kinds)
@@ -72,6 +88,8 @@ func _init() -> void:
 	TestFramework.register_test("PostDispatch: disabled ability skipped", _test_disabled_ability_skipped)
 	TestFramework.register_test("PostDispatch: nested dispatch stops at max_depth", _test_nested_dispatch_depth)
 	TestFramework.register_test("PostDispatch: triggered listener fires once with component names", _test_triggered_listener_once)
+	TestFramework.register_test("PostDispatch: ability expired during on_apply registers nothing", _test_expired_during_apply_registers_nothing)
+	TestFramework.register_test("PostDispatch: registration owner is the ability set's owner", _test_registration_owner_follows_ability_set)
 
 
 ## 同一 ability 两个 component 都监听 KIND：kind 去重后只注册一条，一次派发两个 component 各跑一次。
@@ -222,13 +240,44 @@ func _test_triggered_listener_once() -> void:
 		_no_instance(KIND, AppendLabelAction.new("second")),
 	]), actor.get_id())
 	actor.ability_set.grant_ability(ability)
-	var calls: Array = []
+	var calls: Array[Array] = []
 	ability.add_triggered_listener(func(event_dict: Dictionary, triggered_components: Array[String]) -> void:
 		calls.append([str(event_dict.get("kind", "")), triggered_components.duplicate()]))
 
 	_dispatch(instance)
 	TestFramework.assert_equal(1, calls.size())
 	TestFramework.assert_equal([KIND, [NoInstanceComponent.TYPE, NoInstanceComponent.TYPE]], calls[0])
+	GameWorld.destroy_instance(instance.id)
+
+
+## component 的 on_apply 让本 ability 过期（remove_effects 已跑完）：apply_effects 不再注册，否则这条注册没有人注销。
+func _test_expired_during_apply_registers_nothing() -> void:
+	var instance := _create_instance("post_dispatch_expire_on_apply")
+	var actor := _spawn(instance)
+	var ability := Ability.new(_ability_config("expire_on_apply", [
+		_no_instance(KIND, AppendLabelAction.new("never")),
+		ExpireOnApplyConfig.new(),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+
+	TestFramework.assert_true(ability.is_expired())
+	TestFramework.assert_equal(0, _registration_count(instance, KIND))
+	TestFramework.assert_true(ability._post_unregisters.is_empty())
+	GameWorld.destroy_instance(instance.id)
+
+
+## 注册的 owner 取 ability 所在 AbilitySet 的 owner，不取 Ability 构造时记下的 owner_actor_id：
+## 派发按它找回 ability，remove_actor 按它注销。
+func _test_registration_owner_follows_ability_set() -> void:
+	var instance := _create_instance("post_dispatch_owner")
+	var actor := _spawn(instance)
+	actor.ability_set.grant_ability(Ability.new(_ability_config("owner_from_set", [
+		_no_instance(KIND, AppendLabelAction.new("heard")),
+	]), ""))
+
+	TestFramework.assert_equal(["heard"], _dispatch(instance))
+	instance.remove_actor(actor.get_id())
+	TestFramework.assert_equal(0, _registration_count(instance, KIND))
 	GameWorld.destroy_instance(instance.id)
 
 
@@ -267,7 +316,9 @@ static func _registration_count(instance: GameplayInstance, kind: String) -> int
 
 
 ## 派发一条 kind 事件，返回 action 记下的 label（按派发顺序）。
-static func _dispatch(instance: GameplayInstance, kind: String = KIND) -> Array:
+static func _dispatch(instance: GameplayInstance, kind: String = KIND) -> Array[String]:
 	var event := {"kind": kind, "log": []}
 	instance.event_processor.process_post_event(event)
-	return event["log"]
+	var labels: Array[String] = []
+	labels.assign(event["log"])
+	return labels

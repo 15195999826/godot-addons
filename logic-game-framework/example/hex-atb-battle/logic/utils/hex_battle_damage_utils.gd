@@ -116,7 +116,7 @@ static func apply_damage(
 		#   (is_alive=false) signal 能找到 view 触发 _play_death_animation 死亡 tween。
 		# - "死亡" != "离开 world"。死亡只是行为禁止(不行动/不被选作目标/不占格),
 		#   离开 world 是重启战斗 / 永久退场时的另外动作。
-		# - 存活判定(get_alive_actors / _check_battle_end / AI 候选 / post 响应)全走 is_dead(),
+		# - 存活判定(get_alive_actors / _check_battle_end / AI 候选)全走 is_dead(),
 		#   不依赖 world.has_actor, 留尸体不污染战斗逻辑。
 		# - grid 占用仍要清: 否则活人 move_occupant 到尸体格会触发 apply_move_action
 		#   的 UNEXPECTED 兜底 push_error。

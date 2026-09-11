@@ -132,7 +132,7 @@ WorldGI.tick: battle_finished.emit(timeline)
 
 ### Edge: post-death buff tick
 
-`HexBattleActor.is_event_responsive(event_dict, phase)` ([hex_battle_actor.gd](../../logic/hex_battle_actor.gd)) 决定死者**不响应** pre / post handler (只有自己的 death 与自己挨的 damage 例外). 死者身上的 buff 不会被主动 expire — 仍挂着, 双方依然对称.
+死者的 ability 还会不会被 tick 由 procedure 决定, 与 `HexBattleActor.is_event_responsive(event_dict, phase)` ([hex_battle_actor.gd](../../logic/hex_battle_actor.gd)) 无关——后者只管死者还响应哪些 pre / post 事件 (自己的 death 与自己挨的 damage). 死者身上的 buff 到期被 revoke 时 logic 推 `ABILITY_REMOVED`, view 照单移除; 没到期就仍挂着. 两种情况双方都对称.
 
 → 唯一需要警惕的: **如果未来加了"死亡时主动 expire 某 buff"的 ability** (例如某个 buff 设计 = "死亡时移除"), 必须同时让 BuffVisualizer 接住对应 ABILITY_REMOVED, 否则双方不对称, oracle 会抓出来. 这是 oracle 帮你提醒的设计完整性, 不是要回避它.
 

@@ -4,7 +4,7 @@
 ## 输出：实际生命伤害 + 护盾吸收总量 + 护盾消耗记录
 ##
 ## 副作用：仅修改各 ShieldComponent.current（这是它的职责）。
-##         不 push 事件、不扣 actor.hp、不触发 on_break / on_expire 回调，也不 expire ability。
+##         不 push 事件、不扣 actor.hp、不触发 on_break / on_expire 回调，也不移除 ability。
 ##         这些由调用方（HexBattleDamageUtils.apply_damage）按文档流程顺序处理。
 ##
 ## 排序规则（确定性）：
@@ -33,8 +33,8 @@ class Result extends RefCounted:
 ##   shield_ability_id / shield_config_id / owner_actor_id / source_actor_id /
 ##   capacity / remaining / priority / absorbed / broken / damage_type
 ##
-## 调用方需对每个 broken=true 的记录在伤害事件 push 之后、actor 移除之前
-## 触发 ShieldComponent.on_break 回调并 expire 对应 ability。
+## 调用方需对每个 broken=true 的记录在伤害事件 push 之后、死亡检测之前
+## 触发 ShieldComponent.on_break 回调并 revoke 对应 ability（见 HexBattleDamageUtils._process_broken_shields）。
 static func resolve(actor: Actor, incoming_damage: float, damage_type: String) -> Result:
 	var result := Result.new()
 	if actor == null or incoming_damage <= 0.0:

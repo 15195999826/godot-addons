@@ -141,7 +141,7 @@ func _release_battle(procedure: BattleProcedure) -> void:
 
 
 ## world 结束时若仍有进行中的战斗，先中止它（不发 battle_finished、不产出录像），再走基类拆除
-## （on_end → despawn actor → 注销 system → 清 pre handler）：开着录像时 recorder 的订阅闭包与被录 actor
+## （on_end → despawn actor → 注销 system → 清事件 handler）：开着录像时 recorder 的订阅闭包与被录 actor
 ## 互相强持，不中止就连同全部被录 actor 一起泄漏。写在 end() 而非 on_end()：on_end 是留给子类的空钩子。
 func end() -> void:
 	var battle := _active_battle

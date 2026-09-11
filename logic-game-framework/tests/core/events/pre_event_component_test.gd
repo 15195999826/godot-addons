@@ -33,6 +33,7 @@ func _init() -> void:
 	TestFramework.register_test("PreEventComponent - modifies event values", _test_modify_event)
 	TestFramework.register_test("PreEventComponent - dead actor stops responding", _test_dead_actor_stops_responding)
 	TestFramework.register_test("PreEventComponent - cancels event", _test_cancel_event)
+	TestFramework.register_test("PreEventComponent - ability expired earlier in the same dispatch is skipped", _test_expired_mid_dispatch_skipped)
 
 
 ## 测试环境：注册到 GameWorld 的 mock instance（自带 event_processor）+ mock actor + 配套 ability_set
@@ -186,4 +187,34 @@ func _test_dead_actor_stops_responding() -> void:
 	TestFramework.assert_near(
 		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
 		50.0, 0.0001, "解闩后 handler 应恢复（注册没被销毁）")
+	_teardown_env(env)
+
+
+## pre 派发遍历快照：先执行的 handler 让排在后面的 ability 过期，后者的注册仍在快照里，
+## 但重建 context 时发现 ability 已过期，不再改事件。
+func _test_expired_mid_dispatch_skipped() -> void:
+	var env := _setup_env()
+
+	var expirer_config := PreEventConfig.new(
+		"pre_damage",
+		func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
+			ctx.ability_set.find_ability_by_config_id("buff_halve").expire("expired_mid_dispatch")
+			return EventPhase.pass_intent()
+	)
+	env.ability_set.grant_ability(Ability.new(
+		AbilityConfig.new("buff_expirer", "", "", "", [], [], [expirer_config]), env.owner_id))
+	var halve_config := PreEventConfig.new(
+		"pre_damage",
+		func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
+			return EventPhase.modify_intent(ctx.ability.id, [
+				Modification.multiply("damage", 0.5),
+			])
+	)
+	env.ability_set.grant_ability(Ability.new(
+		AbilityConfig.new("buff_halve", "", "", "", [], [], [halve_config]), env.owner_id))
+
+	var event := {"kind": "pre_damage", "sourceId": "enemy-1", "targetId": env.owner_id, "damage": 100}
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
+		100.0, 0.0001, "同一次派发里已过期的 ability 不应再改事件")
 	_teardown_env(env)

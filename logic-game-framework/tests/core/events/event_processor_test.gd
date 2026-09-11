@@ -7,6 +7,8 @@ func _init() -> void:
 	TestFramework.register_test("EventProcessor post dispatches in owner order then registration order", _test_post_dispatch_order)
 	TestFramework.register_test("EventProcessor owner order survives handler cleanup, not registry removal", _test_owner_order_lifecycle)
 	TestFramework.register_test("EventProcessor unregister is idempotent; owner removal clears both tables", _test_handler_removal)
+	TestFramework.register_test("EventProcessor dispatch iterates a snapshot of the handlers", _test_dispatch_iterates_snapshot)
+	TestFramework.register_test("EventProcessor export_trace_log prints pre intents and post handlers", _test_export_trace_log)
 
 func _test_pre_modify() -> void:
 	var config := EventProcessorConfig.new(5, 2)
@@ -132,6 +134,87 @@ func _test_handler_removal() -> void:
 	processor.remove_all_handlers()
 	processor.process_post_event({ "kind": "damage" })
 	TestFramework.assert_equal(1, calls["actor-2"])
+
+## 派发遍历注册表快照（pre / post 同一规则）：handler 在派发中注销自己，同 kind 的下一个 handler 照常执行；
+## 派发中注册的 handler 从下一条事件起才收到。
+func _test_dispatch_iterates_snapshot() -> void:
+	var processor := EventProcessor.new(EventProcessorConfig.new(5))
+	var dispatched: Array[String] = []
+	var unregisters := {}
+	unregisters["pre-a"] = processor.register_pre_handler(PreHandlerRegistration.new(
+		"h-pre-a",  # id
+		"damage",  # event_kind
+		"actor-1",  # owner_id
+		"ability-pre-a",  # ability_id
+		"config-pre-a",  # config_id
+		func(_mutable: MutableEvent, _context: HandlerContext) -> Intent:
+			dispatched.append("pre-a")
+			(unregisters["pre-a"] as Callable).call()
+			processor.register_pre_handler(_labeled_pre_registration("pre-late", dispatched))
+			return EventPhase.pass_intent()
+	))
+	processor.register_pre_handler(_labeled_pre_registration("pre-b", dispatched))
+	unregisters["post-a"] = processor.register_post_handler(PostHandlerRegistration.new(
+		"h-post-a",  # id
+		"damage",  # event_kind
+		"actor-1",  # owner_id
+		"ability-post-a",  # ability_id
+		"config-post-a",  # config_id
+		func(_event_dict: Dictionary, _context: HandlerContext) -> bool:
+			dispatched.append("post-a")
+			(unregisters["post-a"] as Callable).call()
+			processor.register_post_handler(_labeled_post_registration("post-late", "actor-1", dispatched))
+			return true
+	))
+	processor.register_post_handler(_labeled_post_registration("post-b", "actor-1", dispatched))
+
+	processor.process_pre_event({ "kind": "damage" })
+	processor.process_post_event({ "kind": "damage" })
+	var first_event: Array[String] = ["pre-a", "pre-b", "post-a", "post-b@actor-1"]
+	TestFramework.assert_equal(first_event, dispatched)
+
+	dispatched.clear()
+	processor.process_pre_event({ "kind": "damage" })
+	processor.process_post_event({ "kind": "damage" })
+	var second_event: Array[String] = ["pre-b", "pre-late", "post-b@actor-1", "post-late@actor-1"]
+	TestFramework.assert_equal(second_event, dispatched)
+	# 两个 handler 捕获了 processor：清表断开 processor → 注册 → handler → processor 的环
+	processor.remove_all_handlers()
+
+## trace_level 2 时 export_trace_log 打出每个 pre handler 的意图与每个 post handler 是否触发。
+func _test_export_trace_log() -> void:
+	var processor := EventProcessor.new(EventProcessorConfig.new(5, 2))
+	var dispatched: Array[String] = []
+	processor.register_pre_handler(PreHandlerRegistration.new(
+		"h-trace-pre",  # id
+		"damage",  # event_kind
+		"actor-1",  # owner_id
+		"ability-trace-pre",  # ability_id
+		"config-trace-pre",  # config_id
+		func(_mutable: MutableEvent, _context: HandlerContext) -> Intent:
+			return EventPhase.cancel_intent("h-trace-pre", "traced")
+	))
+	processor.register_post_handler(_labeled_post_registration("trace-post", "actor-1", dispatched))
+	processor.process_pre_event({ "kind": "damage" })
+	processor.process_post_event({ "kind": "damage" })
+
+	var trace_log := processor.export_trace_log()
+	TestFramework.assert_true(trace_log.contains("[config-trace-pre] -> cancel"), trace_log)
+	TestFramework.assert_true(trace_log.contains("[config-trace-post] -> triggered"), trace_log)
+
+
+## 触发时往 dispatched 记 label、放行的 pre 注册。
+static func _labeled_pre_registration(label: String, dispatched: Array[String]) -> PreHandlerRegistration:
+	return PreHandlerRegistration.new(
+		"h-" + label,  # id
+		"damage",  # event_kind
+		"actor-1",  # owner_id
+		"ability-" + label,  # ability_id
+		"config-" + label,  # config_id
+		func(_mutable: MutableEvent, _context: HandlerContext) -> Intent:
+			dispatched.append(label)
+			return EventPhase.pass_intent()
+	)
 
 
 ## 触发时往 dispatched 记 "<label>@<HandlerContext.owner_id>" 的 post 注册。

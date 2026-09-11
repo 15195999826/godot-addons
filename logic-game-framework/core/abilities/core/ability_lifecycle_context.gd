@@ -65,7 +65,7 @@ static func get_live_count() -> int:
 ## 为 on_remove / 叠层 / Break 钩子建 context：手上有 ability、没有 AbilitySet 递来的 context。
 ##
 ## 与 handler 重建同一种找法：instance 按 owner id 反查，actor 从该 instance 取，两个 set 取自 actor。
-## owner 未注册进 GameWorld（隔离单测）或不是 BattleActor 时 instance / attribute_set / ability_set 为 null，
+## owner id 反查不到 instance（隔离单测）时 instance 为 null；owner 已不在 instance 里或不是 BattleActor 时两个 set 为 null。
 ## context 照建——清理类钩子不能因为 owner 缺席就不跑；会读这些字段的 component（StatModifier / Tag /
 ## DynamicStatModifier）要求测试注册 owner。
 static func for_ability(ability: Ability) -> AbilityLifecycleContext:
@@ -81,7 +81,7 @@ static func for_ability(ability: Ability) -> AbilityLifecycleContext:
 ##
 ## 返回 null = 本 handler 这一次不执行：owner 未注册或已移出 instance、owner 此刻不响应这条事件
 ## （is_event_responsive 返回 false）、不是 BattleActor 或没有 AbilitySet、ability 已不在 owner 的 AbilitySet 里
-## （revoke 之后残留的注册）。
+## 或已过期（AbilitySet 被整个换掉后残留的注册、派发快照里先一步被移除或过期的 ability）。
 static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict: Dictionary, phase: String) -> AbilityLifecycleContext:
 	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
 	if owner_instance == null:
@@ -93,7 +93,7 @@ static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict
 	if owner_ability_set == null:
 		return null
 	var ability := owner_ability_set.find_ability_by_id(ability_id)
-	if ability == null:
+	if ability == null or ability.is_expired():
 		return null
 	return _from_actor(owner_id, ability, actor as BattleActor, owner_instance)
 

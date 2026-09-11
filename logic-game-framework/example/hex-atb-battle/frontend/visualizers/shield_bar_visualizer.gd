@@ -112,8 +112,8 @@ func _handle_damage(event: Dictionary, actions: Array[FrontendVisualAction]) -> 
 		var ability_id := record.get("shield_ability_id", "") as String
 		if actor_id.is_empty() or ability_id.is_empty():
 			continue
-		# broken=true 时 remaining=0,这里只 UPDATE 不删除;ability 自然 expire
-		# 后由 AbilityRemoved 触发 REMOVE,语义和 BuffVisualizer 对齐。
+		# broken=true 时 remaining=0,这里只 UPDATE 不删除;逻辑侧破裂当场 revoke,
+		# 随后的 AbilityRemoved 触发 REMOVE,语义和 BuffVisualizer 对齐。
 		var summary := FrontendShieldSummary.new()
 		summary.id = ability_id
 		summary.config_id = config_id

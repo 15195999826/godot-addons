@@ -47,7 +47,8 @@ func get_player_inventory() -> HexPlayerInventory:
 
 ## 清空 actor / grid / systems，让同一个 world 可以再次配置 + add_actor + start_battle。
 ##
-## 每个被移除的 actor emit actor_removed，WorldView 自动回收对应 unit view；
+## 每个被移除的 actor emit actor_removed，WorldView 自动回收对应 unit view；并通知 event_processor 注销
+## 它的 pre / post handler 与派发序号（常驻 world 每次 reset 换一批 actor，不注销就逐次累积）。
 ## 不走 remove_actor 以省略逐个清 grid occupant 的开销 —— 反正 grid 字段也一起清掉。
 ## _state 不动 —— start_battle 由 _active_battle 单例保护，不依赖 _state 流转；
 ## _logic_time 清零方便录像时间戳起点稳定。
@@ -58,8 +59,9 @@ func reset() -> bool:
 			Log.error("SkillPreviewWorldGI",
 				"failed to clear actor equipment containers before world reset")
 			return false
-	# 先 emit, 再 clear —— emit 不 mutate _actors, 不需要中转 array。
+	# 先注销 / emit, 再 clear —— 两者都不 mutate _actors, 不需要中转 array。
 	for a in _actors:
+		event_processor.note_actor_removed(a.get_id())
 		actor_removed.emit(a.get_id())
 	_actors.clear()
 	_actor_id_2_actor_dic.clear()
