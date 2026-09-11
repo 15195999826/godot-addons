@@ -45,6 +45,7 @@ func _init() -> void:
 	TestFramework.register_test("Ability triggers component listeners", _test_triggered_listener)
 	TestFramework.register_test("Ability ticks execution instances", _test_execution_instances)
 	TestFramework.register_test("Ability callback cancellation skips timeline start", _test_callback_cancel)
+	TestFramework.register_test("Ability resolves active_use components ahead of other components", _test_component_order_active_use_first)
 
 func _test_lifecycle() -> void:
 	var owner_actor_id := "actor-1"
@@ -130,3 +131,24 @@ func _test_callback_cancel() -> void:
 		timeline, [], start_actions, empty_actions, {})
 	TestFramework.assert_true(instance.is_cancelled())
 	TestFramework.assert_equal(0, start_action.calls)
+
+
+## 钉：component 解析顺序不随 builder 调用顺序走——active_use 恒排在普通 component 之前
+## （同一 ability 内 component 顺序 = 事件响应顺序；hex stance 就是先 component_config 后 active_use 的写法）。
+func _test_component_order_active_use_first() -> void:
+	var timeline := TimelineData.new("t-order-pin", 1.0, {})
+	var config := (AbilityConfig.builder()
+		.config_id("order_pin")
+		.component_config(TagComponentConfig.builder().tag("order_pin_tag").build())
+		.active_use(ActiveUseConfig.builder().timeline(timeline).build())
+		.build())
+	var owner_id := "actor-order-pin"
+	var ability_set := AbilitySet.create(owner_id)
+	var ability := Ability.new(config, owner_id)
+	ability_set.grant_ability(ability)
+
+	var components := ability.get_all_components()
+	TestFramework.assert_equal(2, components.size())
+	TestFramework.assert_true(components[0] is ActiveUseComponent, "active_use 组件应排在最前")
+	TestFramework.assert_true(components[1] is TagComponent, "普通 component 应排在 active_use 之后")
+	TestFramework.assert_true(ability_set.has_tag("order_pin_tag"))
