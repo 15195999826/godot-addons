@@ -22,9 +22,9 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	if source_id.is_empty():
 		return ActionResult.create_failure_result("no source actor (ability_ref missing)")
 
-	var world := Dota2GameStateUtils.world(ctx)
+	var world: Dota2WorldGameplayInstance = ctx.instance
 	if world == null:
-		return ActionResult.create_failure_result("ctx.instance is not Dota2WorldGameplayInstance")
+		return ActionResult.create_failure_result("no Dota2WorldGameplayInstance (ctx.instance is null)")
 
 	var attacker: Dota2UnitActor = world.get_actor(source_id) as Dota2UnitActor
 	if attacker == null or attacker.is_dead():

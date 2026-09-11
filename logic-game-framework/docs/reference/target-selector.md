@@ -94,19 +94,16 @@ var selector = TargetSelector.Fixed.new(targets)
 class_name MyCustomSelector
 extends TargetSelector
 
-func select(ctx: ExecutionContext) -> Array[ActorRef]:
-    # 实现自定义选择逻辑
-    var targets: Array[ActorRef] = []
-    
-    # 例如：选择所有敌人
+func select(ctx: ExecutionContext) -> Array[String]:
+    # 例如：选择与 owner 不同队的所有存活 actor
+    var targets: Array[String] = []
     var battle: MyBattle = ctx.instance
-    var all_actors = battle.get_alive_actors()
-    var owner_team = battle.get_actor(ctx.ability_ref.owner_actor_id).team
-    
-    for actor in all_actors:
-        if actor.team != owner_team:
-            targets.append(ActorRef.new(actor.id))
-    
+    var owner_team: int = battle.get_actor(ctx.ability_ref.owner_actor_id).get_team_id()
+
+    for actor in battle.get_alive_actors():
+        if actor.get_team_id() != owner_team:
+            targets.append(actor.get_id())
+
     return targets
 ```
 
@@ -123,57 +120,36 @@ func _init(center_selector: TargetSelector, radius: int) -> void:
     _center_selector = center_selector
     _radius = radius
 
-func select(ctx: ExecutionContext) -> Array[ActorRef]:
-    var targets: Array[ActorRef] = []
-    
+func select(ctx: ExecutionContext) -> Array[String]:
+    var targets: Array[String] = []
+
     # 获取中心点
     var centers := _center_selector.select(ctx)
     if centers.is_empty():
         return targets
-    
+
     var battle: MyBattle = ctx.instance
-    var center_actor = battle.get_actor(centers[0].id)
-    var center_pos = center_actor.hex_position
-    
+    var center_pos = battle.get_actor(centers[0]).hex_position
+
     # 获取范围内的所有目标
-    var all_actors = battle.get_alive_actors()
-    for actor in all_actors:
-        var distance = hex_distance(center_pos, actor.hex_position)
-        if distance <= _radius:
-            targets.append(ActorRef.new(actor.id))
-    
+    for actor in battle.get_alive_actors():
+        if hex_distance(center_pos, actor.hex_position) <= _radius:
+            targets.append(actor.get_id())
+
     return targets
 ```
 
-### 示例：条件选择器
+### 示例：条件过滤
+
+过滤不必另写子类：基类自带 `filtered(filter_fn)`（内部是 `TargetSelector.Filtered`），在任一选择器的结果上逐个 actor_id 过滤。
 
 ```gdscript
-class_name FilteredSelector
-extends TargetSelector
-
-var _base_selector: TargetSelector
-var _filter: Callable  # func(actor, ctx) -> bool
-
-func _init(base_selector: TargetSelector, filter: Callable) -> void:
-    _base_selector = base_selector
-    _filter = filter
-
-func select(ctx: ExecutionContext) -> Array[ActorRef]:
-    var base_targets := _base_selector.select(ctx)
-    var filtered: Array[ActorRef] = []
-    
-    for target in base_targets:
-        var actor = ctx.instance.get_actor(target.id)
-        if _filter.call(actor, ctx):
-            filtered.append(target)
-    
-    return filtered
-
-# 使用示例：只选择 HP 低于 50% 的目标
-var low_hp_selector = FilteredSelector.new(
-    TargetSelector.current_target(),
-    func(actor, _ctx):
-        return actor.get_current_hp() < actor.get_max_hp() * 0.5
+# 只选择 HP 低于 50% 的目标
+var low_hp_selector := MySelectors.all_enemies().filtered(
+    func(actor_id: String, ctx: ExecutionContext) -> bool:
+        var battle: MyBattle = ctx.instance
+        var attrs = battle.get_actor(actor_id).attribute_set
+        return attrs.hp < attrs.max_hp * 0.5
 )
 ```
 

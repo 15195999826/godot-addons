@@ -86,7 +86,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	var alive_actor_ids := battle.get_alive_actor_ids()
 	
 	for target_id in targets:
-		var overheal := _calculate_overheal(target_id, heal_amount, ctx)
+		var overheal := _calculate_overheal(target_id, heal_amount, battle)
 		
 		var event := BattleEvents.HealEvent.create(
 			target_id,
@@ -150,11 +150,7 @@ func _process_callbacks(heal_event: Dictionary, overheal: float, ctx: ExecutionC
 	return events
 
 
-func _calculate_overheal(target_actor_id: String, heal_amount: float, ctx: ExecutionContext) -> float:
-	if ctx.instance == null:
-		return 0.0
-	
-	var battle := HexBattleGameStateUtils.world(ctx)
+func _calculate_overheal(target_actor_id: String, heal_amount: float, battle: HexWorldGameplayInstance) -> float:
 	var target_actor := battle.get_character_actor(target_actor_id)
 	if target_actor != null:
 		var current_hp: float = target_actor.attribute_set.hp

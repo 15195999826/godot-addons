@@ -16,9 +16,10 @@ extends Node
 ##     battle_finished 后同样全部释放。
 ##
 ## context 对象（AbilityLifecycleContext / ExecutionContext）携带 instance 强引用，只许活在
-## 调用栈上：探针在 NoInstance 的 trigger filter、NoInstance action 与 timeline tag action 里
-## 把收到的 context 以 weakref 捕出，tick / 派发一返回就断言已释放（不等 destroy_instance）——
-## 任何一处把 context 缓存进字段，它都会当场存活。
+## 调用栈上：探针在 NoInstance 的 on_apply action、trigger filter、事件 action 与 timeline tag action
+## 里把收到的 context 以 weakref 捕出，grant / tick / 派发一返回就断言已释放（不等 destroy_instance）——
+## 这四处任一把 context 缓存进字段，它都会当场存活。on_remove / cancel / can_activate 建的 context
+## 不在探针内（前两者「拿到 owner 的 instance」由 instance_context_test 钉住）。
 ##
 ## EventProcessor / EventCollector 归 GameWorld 持有：用 GameWorld.init() 换新，
 ## 让旧实例失去唯一持有者后断言释放。
@@ -30,6 +31,7 @@ const TAG_END := "release_probe_end"
 const TAG_POST := "release_probe_post"
 
 ## 探针捕出的 context 在 refs 里的 key 前缀（后接 ":<actor_id>"）。
+const PROBE_APPLY := "apply_action_context"
 const PROBE_LIFECYCLE := "lifecycle_context"
 const PROBE_NO_INSTANCE := "no_instance_context"
 const PROBE_TIMELINE := "timeline_context"
@@ -127,6 +129,7 @@ func _build_and_destroy_instance_graph(refs: Dictionary) -> void:
 	actor.ability_set.grant_ability(ability)
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 	TestFramework.assert_near(actor.attribute_set.attack, 15.0)
+	_assert_contexts_released(refs, [_probe_key(PROBE_APPLY, actor_id)])
 
 	# tick 一个周期：tag@50 与周期末 on_timeline_end 各 fire 一次
 	actor.ability_set.tick_executions(100.0)
@@ -162,8 +165,11 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	target.probe_sink = refs
 	# 一份 config 两个 actor 共享: 与生产的 static var 声明同形, 也是最容易藏回指边的形状
 	var probe_config := _build_probe_config(timeline)
+	var applied: Array[String] = []
 	for actor: ReleaseProbeActor in [caster, target]:
 		actor.ability_set.grant_ability(Ability.new(probe_config, actor.get_id()))
+		applied.append(_probe_key(PROBE_APPLY, actor.get_id()))
+	_assert_contexts_released(refs, applied)
 
 	var finish_sink: Dictionary = {}
 	world.battle_finished.connect(func(result: Dictionary) -> void:
@@ -215,7 +221,7 @@ static func _make_loop_timeline() -> TimelineData:
 
 
 ## 四组件 ability：pre 改值 / post 打 tag / 属性加成 / GRANTED_SELF 自激活 loop timeline。
-## NoInstance 的 trigger filter、NoInstance action、timeline tag action 各挂一个 context 探针。
+## NoInstance 的 on_apply action、trigger filter、事件 action 与 timeline tag action 各挂一个 context 探针。
 static func _build_probe_config(timeline: TimelineData) -> AbilityConfig:
 	var pre_handler := func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
 		return EventPhase.modify_intent(ctx.ability.id, [Modification.add("value", 5.0)])
@@ -223,8 +229,9 @@ static func _build_probe_config(timeline: TimelineData) -> AbilityConfig:
 	var capture_lifecycle_context := func(_event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 		TestFramework.assert_true(context.instance != null, "trigger filter 收到的 lifecycle context 应携带 instance")
 		var probe_actor := GameWorld.get_actor(context.owner_actor_id) as ReleaseProbeActor
-		probe_actor.probe_sink["%s:%s" % [PROBE_LIFECYCLE, probe_actor.get_id()]] = weakref(context)
+		probe_actor.probe_sink[_probe_key(PROBE_LIFECYCLE, probe_actor.get_id())] = weakref(context)
 		return true
+	var apply_actions: Array[Action.BaseAction] = [ContextProbeAction.new(PROBE_APPLY)]
 	var tick_actions: Array[Action.BaseAction] = [
 		LooseTagAction.Apply.new(OwnerSelector.new(), TAG_TICK),
 		ContextProbeAction.new(PROBE_TIMELINE),
@@ -234,6 +241,7 @@ static func _build_probe_config(timeline: TimelineData) -> AbilityConfig:
 		.config_id("release_probe")
 		.component_config(PreEventConfig.new(PRE_KIND, pre_handler))
 		.component_config(NoInstanceConfig.builder()
+			.on_apply_actions(apply_actions)
 			.trigger(TriggerConfig.new(POST_KIND, capture_lifecycle_context))
 			.action(LooseTagAction.Apply.new(OwnerSelector.new(), TAG_POST))
 			.action(ContextProbeAction.new(PROBE_NO_INSTANCE))

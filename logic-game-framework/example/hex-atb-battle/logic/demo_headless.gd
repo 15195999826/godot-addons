@@ -29,15 +29,15 @@ func _ready() -> void:
 	GameWorld.init()
 
 	battle = GameWorld.create_instance(func() -> GameplayInstance:
-		var b := HexDemoWorldGameplayInstance.new()
-		b.start({
-			"logging": enable_logging,
-			"recording": enable_recording,
-			"console_log": enable_console_log,
-			"file_log": enable_logging,
-		})
-		return b
+		return HexDemoWorldGameplayInstance.new()
 	)
+	# 先注册再 start：start 里 grant 的 ability 按 owner id 反查所属 instance，注册前反查为 null
+	battle.start({
+		"logging": enable_logging,
+		"recording": enable_recording,
+		"console_log": enable_console_log,
+		"file_log": enable_logging,
+	})
 	
 	if DisplayServer.get_name() == "headless":
 		_run_battle_sync()
@@ -68,20 +68,3 @@ func _run_battle_sync() -> void:
 	
 	print("\n========== 战斗运行完成 ==========")
 	get_tree().quit()
-
-
-## 手动运行战斗（用于测试）
-static func run_battle() -> void:
-	print("\n========== 运行 HexAtbBattle 示例 ==========\n")
-	GameWorld.init()
-	
-	var hex_battle := HexDemoWorldGameplayInstance.new()
-	hex_battle.start()
-	
-	var dt := 100.0
-	for i in range(HexBattleProcedure.MAX_TICKS):
-		hex_battle.tick(dt)
-		if hex_battle._ended:
-			break
-	
-	print("\n========== 示例运行完成 ==========")

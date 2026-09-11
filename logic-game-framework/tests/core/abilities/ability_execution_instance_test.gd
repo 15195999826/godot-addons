@@ -24,7 +24,7 @@ class CancelExecutionAction:
 	func bind(instance: AbilityExecutionInstance) -> void:
 		_instance_ref = weakref(instance)
 
-	func execute(ctx: ExecutionContext) -> ActionResult:
+	func execute(_ctx: ExecutionContext) -> ActionResult:
 		var instance := _instance_ref.get_ref() as AbilityExecutionInstance
 		instance.cancel()
 		return ActionResult.create_success_result([])

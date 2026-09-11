@@ -17,9 +17,7 @@
 ##     必须 `ability.metadata = ability.metadata.duplicate(true)`, 不 mutate 共享 AbilityConfig.metadata。
 ##   - granted_abilities 解析失败 (resolver 返回 null) 应在 `can_add_item` 阶段就被
 ##     reject (Plan §"callback 不能承担失败回滚"); 本类 callback 阶段假定 prevalidated。
-##   - 不存 `owner_instance_id`: grant_ability 恒向 owner 的 ability_set 投递 ABILITY_GRANTED_EVENT,
-##     执行期 instance 由 owner id 反查; 装备 ability 会不会自激活只看其 config 是否声明
-##     GRANTED_SELF (现役装备 passive 都没有声明)。
+##   - grant_ability 恒投递 ABILITY_GRANTED_EVENT: 装备 ability 会不会自激活只看其 config 是否声明 GRANTED_SELF。
 ##
 ## 槽位编号约定:
 ## - 底层 slot_index: 0..5 (InventoryKit FixedSlotSpaceManager 用整数索引)

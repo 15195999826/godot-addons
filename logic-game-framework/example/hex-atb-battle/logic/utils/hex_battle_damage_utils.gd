@@ -5,7 +5,7 @@
 ##
 ## 注意：**不包含 post damage 广播**。
 ## 调用方需要在回调等后续逻辑完成后，自行调用
-## [code]process_post_event(damage_event_dict, alive_actor_ids, battle)[/code]。
+## [code]broadcast_post_damage(damage_event_dict, alive_actor_ids, battle)[/code]。
 ## 这是因为 DamageAction 需要在 post 之前执行 on_hit/on_critical/on_kill 回调。
 ##
 ## 所有函数都是静态的，不保存任何状态。

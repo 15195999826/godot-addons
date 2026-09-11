@@ -196,7 +196,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 				)
 
 	if (displaced or blocked_by != "") and action_lock_duration_ms > 0.0 and not target.is_dead():
-		_grant_displacement_action_lock(target, action_lock_duration_ms, caster_id, battle)
+		_grant_displacement_action_lock(target, action_lock_duration_ms, caster_id)
 
 	return ActionResult.create_success_result(all_events, {
 		"displaced": displaced,
@@ -209,8 +209,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 func _grant_displacement_action_lock(
 	target: HexBattleActor,
 	duration_ms: float,
-	source_caster_id: String,
-	battle: HexWorldGameplayInstance
+	source_caster_id: String
 ) -> void:
 	if not (target is CharacterActor):
 		return

@@ -13,7 +13,7 @@ ARAM 式**单中路实时自动战斗** example：一条水平中路，左右两
 - 单线程执行；不拥有前端渲染，也不拥有 DOTA2 专属的移动策略内部实现。catch-up 时钟块归第一个前端场景所有，任何 catch-up / 债务丢帧必须打 warning。
 
 ### `logic/`
-- 战斗规则与机制层，依赖 core/LGF；前端只读其状态或事件。子目录：`actors/`（`Dota2BattleActor` / `Dota2UnitActor`）、`controllers/`、`ability/`（`Dota2BasicAttackAbility` / `Dota2AttackCooldown`）、`actions/`（`Dota2DamageAction` / `Dota2AttackStartedAction`）、`ai/`（`Dota2TargetSelectors`）、`config/`（`Dota2LaneConfig` / `Dota2UnitTypeConfig`）、`systems/`（`Dota2WaveSpawner` / `Dota2TargetingSystem`）、`movement/`（`Dota2MovementAdapter`，战斗意图→移动实现的适配器，以 sim-nav-map 的 DOTA2 移动 lab 为参考）、`attributes/`、`utils/`（`Dota2GameStateUtils.world(ctx)`：把 `ctx.instance` 收窄成 `Dota2WorldGameplayInstance`）。
+- 战斗规则与机制层，依赖 core/LGF；前端只读其状态或事件。子目录：`actors/`（`Dota2BattleActor` / `Dota2UnitActor`）、`controllers/`、`ability/`（`Dota2BasicAttackAbility` / `Dota2AttackCooldown`）、`actions/`（`Dota2DamageAction` / `Dota2AttackStartedAction`）、`ai/`（`Dota2TargetSelectors`）、`config/`（`Dota2LaneConfig` / `Dota2UnitTypeConfig`）、`systems/`（`Dota2WaveSpawner` / `Dota2TargetingSystem`）、`movement/`（`Dota2MovementAdapter`，战斗意图→移动实现的适配器，以 sim-nav-map 的 DOTA2 移动 lab 为参考）、`attributes/`。
 - Systems / Abilities / Actions 是唯一的状态变更权威；M1/M2 不引入 command/order 层。
 
 ### `logic/attributes/`

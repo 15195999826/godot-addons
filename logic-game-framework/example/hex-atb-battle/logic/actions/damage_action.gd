@@ -145,7 +145,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		# 死亡 actor 留在 world 用于死亡动画 / buff 对账,但 DamageAction 不应继续对其结算。
 		# skip 后：不进 PreDamageEvent / 不 apply_damage / 不触发 on_hit/on_critical/on_kill
 		# 回调 / 不 broadcast post damage,避免 shield/expose/lifesteal/thorns/counter 误触发。
-		var target_actor: HexBattleActor = battle.get_actor(target_id) if battle != null else null
+		var target_actor: HexBattleActor = battle.get_actor(target_id)
 		if target_actor == null or target_actor.is_dead():
 			continue
 

@@ -53,7 +53,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 	battle.add_actor(
 		tile,
 		func(added: Actor) -> void:
-			_initialize_fire_tile(added, battle, caster_id),
+			_initialize_fire_tile(added, caster_id),
 	)
 
 	return ActionResult.create_success_result([], {
@@ -64,7 +64,6 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 func _initialize_fire_tile(
 	added: Actor,
-	battle: HexWorldGameplayInstance,
 	caster_id: String,
 ) -> void:
 	var tile := added as EnvironmentActor

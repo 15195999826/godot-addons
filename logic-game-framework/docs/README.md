@@ -118,9 +118,9 @@ TargetSelector.fixed([actor_ref1, actor_ref2])
 
 instance 一律按 owner 的 actor id 反查（`GameWorld.get_instance_of_actor(actor_id)`，与 `Actor.get_owner_gameplay_instance()` 同一「id 自描述归属」机制），**不经调用链递、不缓存**：AbilitySet 的派发 / grant、`Ability` 的 on_remove / 叠层 / Break 钩子、`PreEventComponent` 的重建 context、`AbilityExecutionInstance` 每次建的 ExecutionContext（含 revoke / expire 触发的取消）、`NoInstanceComponent` 的事件与 lifecycle action 都走这一条。owner 未注册进 GameWorld（孤立单测）时为 `null`。
 
-#### 推荐做法：每个项目一个 `world(ctx)` helper
+#### 推荐做法：必须有世界的读点经项目的 `world(ctx)` helper
 
-项目层的 `[ProjectName]GameStateUtils` 提供 `world(ctx) -> <具体世界类型>`：`as` 收窄，类型不符（含 `null`）视为接线错误、`Log.assert_crash` 响亮报错。hex `HexBattleGameStateUtils.world`、inkmon `InkMonBattleGameStateUtils.world`、dota2 `Dota2GameStateUtils.world` 同形：
+项目层的 `[ProjectName]GameStateUtils` 提供 `world(ctx) -> <具体世界类型>`：`as` 收窄，类型不符（含 `null`）视为接线错误、`Log.assert_crash` 响亮报错。helper 随项目第一处「必须有世界」的读点出现——hex 的 `HexBattleGameStateUtils.world` 如下；inkmon / dota2 现有读点都允许缺席、走下方的判空写法，暂无 helper：
 
 ```gdscript
 static func world(ctx: ExecutionContext) -> HexWorldGameplayInstance:

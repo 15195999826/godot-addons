@@ -46,11 +46,14 @@ static func is_valid(actor_id: String) -> bool:
 	return sep_index > 0 and sep_index < actor_id.length() - 1
 
 
-## 提取 instance_id 部分
+## 提取 instance_id 部分（语义同 parse()）
+## 两个 extract 不经 parse()：instance 按 owner id 反查，每次派发 / 建 context 都会调，不为取一段子串分配 Dictionary。
 static func extract_instance_id(actor_id: String) -> String:
-	return parse(actor_id).instance_id
+	var sep_index := actor_id.find(SEPARATOR)
+	return "" if sep_index == -1 else actor_id.substr(0, sep_index)
 
 
-## 提取 local_id 部分
+## 提取 local_id 部分（语义同 parse()）
 static func extract_local_id(actor_id: String) -> String:
-	return parse(actor_id).local_id
+	var sep_index := actor_id.find(SEPARATOR)
+	return actor_id if sep_index == -1 else actor_id.substr(sep_index + 1)
