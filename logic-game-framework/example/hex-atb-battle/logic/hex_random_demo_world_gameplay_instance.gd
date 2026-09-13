@@ -22,6 +22,9 @@ var _offensive_pool: Array[AbilityConfig] = []
 var _passive_pool: Array[AbilityConfig] = []
 var _shared_random_strategy: AIStrategy = null
 var _loadout_summary: Array[Dictionary] = []
+## 每队强制进攻位数；-1 = 默认规则 ceil(team_size * 0.67)（3v3 时全员进攻，非 enemy 技能永不进场）。
+## config 键 offensive_slots 可改，供覆盖率 golden 让治疗 / 护盾 / 结界 / 涌动 / 姿态 / 图腾 / 净化 / 换位进 loadout。
+var _offensive_slots_override: int = -1
 
 
 func _init() -> void:
@@ -38,6 +41,7 @@ func _setup_teams(config: Dictionary, _grid_config: GridMapConfig) -> void:
 		0,
 		MAX_PASSIVES_PER_ACTOR
 	)
+	_offensive_slots_override = int(config.get("offensive_slots", -1))
 	_active_pool = _build_active_skill_pool()
 	_offensive_pool = _build_offensive_skill_pool(_active_pool)
 	_passive_pool = _build_passive_skill_pool()
@@ -144,6 +148,8 @@ func _base_character_classes() -> Array[int]:
 func _assign_team_loadouts(team: Array[CharacterActor]) -> void:
 	var shuffled_team := _shuffled_actors(team)
 	var offensive_slots := mini(team.size(), maxi(1, int(ceil(float(team.size()) * 0.67))))
+	if _offensive_slots_override >= 0:
+		offensive_slots = mini(team.size(), _offensive_slots_override)
 	for i in range(shuffled_team.size()):
 		_assign_actor_loadout(shuffled_team[i], i < offensive_slots)
 

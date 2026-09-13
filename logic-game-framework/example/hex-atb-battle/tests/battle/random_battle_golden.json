@@ -1,0 +1,76 @@
+{
+	"generated_by": "smoke_random_battle_golden.gd",
+	"passives_per_actor": 1,
+	"runs": {
+		"571031": {
+			"events": 293,
+			"frames": 110,
+			"offensive_slots": -1,
+			"result": "right_win",
+			"sha256": "c3e4c17b8b6963e15216050ef23a14b7a53b0a8e1ecb1046bb38da27fd7649fa"
+		},
+		"671159": {
+			"events": 166,
+			"frames": 67,
+			"offensive_slots": -1,
+			"result": "left_win",
+			"sha256": "791419e0c05f89b988526e862cf41d6ebbdd41e8826f5b208c847463e33f294a"
+		},
+		"900083": {
+			"events": 177,
+			"frames": 74,
+			"offensive_slots": 1,
+			"result": "left_win",
+			"sha256": "68f0b5afdac3babf8d4d3da1f96d6e5259c66b7328ec1219de6acd077bd32768"
+		},
+		"900097": {
+			"events": 227,
+			"frames": 123,
+			"offensive_slots": 1,
+			"result": "left_win",
+			"sha256": "f4d96b11973f825435bccbeea997a9475695ba4a443fda22c340d360eb6885dd"
+		},
+		"900113": {
+			"events": 257,
+			"frames": 152,
+			"offensive_slots": 1,
+			"result": "left_win",
+			"sha256": "aa93eed2b71d95f8da0c9e263939f655b2c0687ce4900d0d84537aea2337c8ff"
+		},
+		"900127": {
+			"events": 202,
+			"frames": 74,
+			"offensive_slots": 1,
+			"result": "left_win",
+			"sha256": "b6baeb77f8f29a7d9b6e6d83cff862d41a787f4a5ff2a1f157bf299ae9ea7c1b"
+		},
+		"900131": {
+			"events": 162,
+			"frames": 68,
+			"offensive_slots": 1,
+			"result": "right_win",
+			"sha256": "0f9fda4ba2d5b71b35254cdfbbe307b2193cc1b95b7d4a628fb84a4eec996d83"
+		},
+		"900191": {
+			"events": 220,
+			"frames": 111,
+			"offensive_slots": 1,
+			"result": "right_win",
+			"sha256": "3a990cd07df48ffbb53d990e8b78bf92140916bac1b4314d0693d6ab2b4cfb2d"
+		},
+		"900211": {
+			"events": 310,
+			"frames": 158,
+			"offensive_slots": 1,
+			"result": "right_win",
+			"sha256": "c097da915efec6f44e1585e4e261098ea912ec152ee143e27b32cc6986468baa"
+		},
+		"900223": {
+			"events": 255,
+			"frames": 185,
+			"offensive_slots": 1,
+			"result": "left_win",
+			"sha256": "b63da91831971a869ae4fcae26c8fe9d6505c6f62e85791b74e378776addcd9e"
+		}
+	}
+}

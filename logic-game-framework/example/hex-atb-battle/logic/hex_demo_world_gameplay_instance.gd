@@ -25,6 +25,8 @@ var _final_replay_data: Dictionary = {}
 
 var _logging_enabled: bool = true
 var _recording_enabled: bool = true
+## 战斗结束后是否把录像落到 user://Replays（golden smoke 连跑多场只取内存录像，关掉免得攒文件）。
+var _save_replay_enabled: bool = true
 
 ## 本 GI 这场战斗的 HexBattleProcedure（强类型句柄）: start() 取 logger、tick() 读帧数、get_replay_data() 在战斗中停录像,
 ## _on_battle_finished 读最终结果——那时 finish() 已交还 _active_battle, 只能经这里拿。
@@ -42,6 +44,7 @@ func _init() -> void:
 ##   - recording: bool      启用录像 (默认 true)
 ##   - console_log: bool    日志同时输出到控制台 (默认 false)
 ##   - file_log: bool       日志写到文件 (默认 true)
+##   - save_replay: bool    战斗结束把录像写到 user://Replays (默认 true)
 ##   - map_config: GridMapConfig  地图配置 (默认 9x9 ROW_COLUMN FLAT)
 func start(config: Dictionary = {}) -> void:
 	super.start()
@@ -49,6 +52,7 @@ func start(config: Dictionary = {}) -> void:
 
 	_logging_enabled = config.get("logging", true)
 	_recording_enabled = config.get("recording", true)
+	_save_replay_enabled = config.get("save_replay", true)
 
 	var grid_config := config.get("map_config", null) as GridMapConfig
 	if grid_config == null:
@@ -137,7 +141,8 @@ func _on_battle_finished(timeline: Dictionary) -> void:
 	if proc_result != "":
 		print("结果: %s" % proc_result)
 	end()
-	_save_replay(_final_replay_data)
+	if _save_replay_enabled:
+		_save_replay(_final_replay_data)
 	_hex_procedure = null
 
 

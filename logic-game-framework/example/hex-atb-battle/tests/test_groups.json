@@ -47,6 +47,13 @@
         "frontend/smoke_random_frontend_20_runs.tscn"
       ]
     },
+    "random-golden": {
+      "required": true,
+      "timeout_ms": 120000,
+      "scenes": [
+        "battle/smoke_random_battle_golden.tscn"
+      ]
+    },
     "frontend": {
       "scenes": [
         "frontend/smoke_frontend_main.tscn",

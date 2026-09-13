@@ -100,6 +100,10 @@ func tick_once() -> void:
 			var h := actor as HexBattleActor
 			if seen_ids.has(h.get_id()):
 				continue
+			# 尸体不 tick（2026-09-14 拍板）：死者身上的 DOT 不再继续结算，尸体的荆棘也就不再反弹；
+			# 死者响应自己的致死一击仍由 is_event_responsive 保证。图腾 / 火焰地块等活着的 mid-spawn actor 照常 tick。
+			if h.is_dead():
+				continue
 			# CharacterActor mid-spawn: 与 production 主循环同一条 runtime tick, 但不进 ATB/AI
 			# EnvironmentActor (fire tile): 同上
 			h.ability_set.tick_runtime(_tick_interval, cur_logic_time)
