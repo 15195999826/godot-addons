@@ -78,6 +78,18 @@ class ExpireOnApplyConfig:
 		return ExpireOnApplyComponent.new()
 
 
+## post 触发的 action 里让所属 ability 过期（一次性被动的形状：触发一次即消耗）。
+class ExpireSelfAction:
+	extends Action.BaseAction
+
+	func _init() -> void:
+		super._init(TargetSelector.new())
+
+	func execute(ctx: ExecutionContext) -> ActionResult:
+		ctx.ability_ref.resolve().expire("post_dispatch_consumed")
+		return ActionResult.create_success_result([])
+
+
 func _init() -> void:
 	TestFramework.register_test("PostDispatch: same kind on two components registers once, both run", _test_one_registration_per_kind)
 	TestFramework.register_test("PostDispatch: direct delivery kinds never register, still delivered exactly once", _test_direct_delivery_kinds)
@@ -90,6 +102,7 @@ func _init() -> void:
 	TestFramework.register_test("PostDispatch: triggered listener fires once with component names", _test_triggered_listener_once)
 	TestFramework.register_test("PostDispatch: ability expired during on_apply stops applying and registers nothing", _test_expired_during_apply_stops_applying)
 	TestFramework.register_test("PostDispatch: registration owner is the ability set's owner", _test_registration_owner_follows_ability_set)
+	TestFramework.register_test("PostDispatch: ability expired inside its own handler is revoked in the same dispatch", _test_expired_in_handler_revoked_immediately)
 
 
 ## 同一 ability 两个 component 都监听 KIND：kind 去重后只注册一条，一次派发两个 component 各跑一次。
@@ -271,17 +284,48 @@ func _test_expired_during_apply_stops_applying() -> void:
 
 
 ## 注册的 owner 与 PreEventComponent 同取 context 的 owner（所在 AbilitySet 的 owner）：派发按它找回 ability，
-## remove_actor 按它注销。Ability 构造时记下的 owner 故意留空，只为把两个来源分开；两者不一致本身不受支持
-## （on_remove / 叠层 / Break 的 context 与 execution 仍按 Ability.owner_actor_id 反查）。
+## remove_actor 按它注销。Ability 自己那份 owner 由 set 在 grant 时盖章：构造时留空即填 set 的 owner（source 同步补齐，
+## 显式给的 source 保留），于是 on_remove / 叠层 / Break 的 for_ability 与 execution 的 AbilityRef 反查到同一个 owner。
 func _test_registration_owner_follows_ability_set() -> void:
 	var instance := _create_instance("post_dispatch_owner")
 	var actor := _spawn(instance)
-	actor.ability_set.grant_ability(Ability.new(_ability_config("owner_from_set", [
+	var stamped := Ability.new(_ability_config("owner_from_set", [
 		_no_instance(KIND, AppendLabelAction.new("heard")),
-	]), ""))
+	]), "")
+	actor.ability_set.grant_ability(stamped)
+	var no_components: Array[AbilityComponentConfig] = []
+	var sourced := Ability.new(_ability_config("owner_from_set_sourced", no_components), "", "post_dispatch_caster")
+	actor.ability_set.grant_ability(sourced)
 
+	TestFramework.assert_equal(actor.get_id(), stamped.owner_actor_id)
+	TestFramework.assert_equal(actor.get_id(), stamped.source_actor_id)
+	TestFramework.assert_equal(actor.get_id(), sourced.owner_actor_id)
+	TestFramework.assert_equal("post_dispatch_caster", sourced.source_actor_id)
 	TestFramework.assert_equal(["heard"], _dispatch(instance))
 	instance.remove_actor(actor.get_id())
+	TestFramework.assert_equal(0, _registration_count(instance, KIND))
+	GameWorld.destroy_instance(instance.id)
+
+
+## 一次性被动：post 触发的 action 里 expire 自己 → 本次派发内当场除名（与 tick / 定向投递经 _process_abilities 的清扫对称），
+## 不等 owner 的下一次 tick：名单里已没有它、abilityRevoked 恰一次（reason = expired、expire_reason 原样）、注册已清。
+func _test_expired_in_handler_revoked_immediately() -> void:
+	var instance := _create_instance("post_dispatch_expire_in_handler")
+	var actor := _spawn(instance)
+	var ability := Ability.new(_ability_config("expire_in_handler", [
+		_no_instance(KIND, AppendLabelAction.new("consumed")),
+		_no_instance(KIND, ExpireSelfAction.new()),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	var revoked: Array = []
+	actor.ability_set.on_ability_revoked(func(revoked_ability: Ability, reason: String, _set: AbilitySet, expire_reason: String) -> void:
+		revoked.append([revoked_ability.id, reason, expire_reason]))
+
+	TestFramework.assert_equal(["consumed"], _dispatch(instance))
+	TestFramework.assert_true(ability.is_expired())
+	TestFramework.assert_true(actor.ability_set.find_ability_by_id(ability.id) == null, "过期的 ability 应在本次派发内离开名单")
+	TestFramework.assert_equal(0, actor.ability_set.get_ability_count())
+	TestFramework.assert_equal([[ability.id, AbilitySet.REVOKE_REASON_EXPIRED, "post_dispatch_consumed"]], revoked)
 	TestFramework.assert_equal(0, _registration_count(instance, KIND))
 	GameWorld.destroy_instance(instance.id)
 

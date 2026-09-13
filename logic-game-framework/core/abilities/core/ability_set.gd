@@ -73,13 +73,33 @@ func get_loose_tag_stacks(tag: String) -> int:
 ##
 ## 投递限本人 ability_set（定向投递，EventProcessor.DIRECT_DELIVERY_KINDS），不走 post 派发 ——
 ## 跨 actor 监听由业务层另发 post 事件。
+##
+## 两条前置：
+## - owner 必须已 add_actor 进 instance（post 订阅、pre 注册、context 的 instance 都按 owner id 反查，注册前 grant 会
+##   静默缺订阅）——未登记即 assert，不 grant。
+## - ability 的 owner 由本 set 盖章：构造时留空即填本 set 的 owner（source 为空时同步补齐），非空则必须与本 set 的
+##   owner 相同——不一致时注册派发正常而 for_ability / AbilityRef 反查到别人（tag 撤不掉、execution 拿 null instance），
+##   静默半残，所以 assert 不 grant。
 func grant_ability(ability: Ability) -> void:
 	for existing in _abilities:
 		if existing.id == ability.id:
 			Log.warning("AbilitySet", "Ability already granted: %s" % ability.id)
 			return
+	var owner_instance := get_owner_instance()
+	if owner_instance == null:
+		Log.assert_crash(false, "AbilitySet",
+			"grant_ability: owner '%s' 未登记进任何 GameplayInstance，先 add_actor 再 grant（ability '%s'）" % [owner_actor_id, ability.config_id])
+		return
+	if ability.owner_actor_id == "":
+		ability.owner_actor_id = owner_actor_id
+		if ability.source_actor_id == "":
+			ability.source_actor_id = owner_actor_id
+	elif ability.owner_actor_id != owner_actor_id:
+		Log.assert_crash(false, "AbilitySet",
+			"grant_ability: ability '%s' 的 owner '%s' 与本 set 的 owner '%s' 不一致" % [ability.config_id, ability.owner_actor_id, owner_actor_id])
+		return
 	_abilities.append(ability)
-	var context: AbilityLifecycleContext = _create_lifecycle_context(ability, get_owner_instance())
+	var context: AbilityLifecycleContext = _create_lifecycle_context(ability, owner_instance)
 	ability.apply_effects(context)
 	Log.debug("AbilitySet", "获得能力")
 	_notify_granted(ability)

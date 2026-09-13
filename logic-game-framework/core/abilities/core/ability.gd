@@ -306,7 +306,8 @@ func remove_effects() -> void:
 
 ## 按 component 声明的 kind（去掉定向投递 kind）各注册一条 post handler，派发时经 receive_event 交给全部 component。
 ## owner 取 context 的（本 ability 所在 AbilitySet 的 owner）：派发按它找回本 ability，remove_actor 按它注销。
-## owner 未注册进 GameWorld（孤立单测）时 context 没有 processor：不注册，这样的 ability 只收得到 AbilitySet 的定向投递。
+## 经 grant_ability 进来时 owner 必已登记、processor 必在；context 没有 processor 只剩直接调 apply_effects 的孤立单测，
+## 不注册，这样的 ability 只收得到 AbilitySet 的定向投递。
 func _register_post_handlers(context: AbilityLifecycleContext) -> void:
 	var processor := context.event_processor
 	if processor == null:
@@ -332,12 +333,17 @@ func _register_post_handlers(context: AbilityLifecycleContext) -> void:
 
 ## post handler 在 static 上下文里建：没有 self 可捕获，lambda 只带 owner / ability 两个 id，派发时按 id 取回 ability。
 ## 捕获本 ability（或它的 component / context）就接上 ability → _post_unregisters → 注册表 → registration → handler → ability 的环。
+## 派发完收尾：ability 在自己的 handler 里 expire 了自己（一次性被动）就当场从所在 set 除名——每条运行 ability 的路径自己回收
+## 过期者（tick / tick_executions / 定向投递经 AbilitySet._process_abilities，post 派发在这里），外部移除才显式 revoke_ability。
 static func _make_post_handler(owner_id: String, ability_id: String) -> Callable:
 	return func(event_dict: Dictionary, _handler_context: HandlerContext) -> bool:
 		var context := AbilityLifecycleContext.rebuild_for_handler(owner_id, ability_id, event_dict, EventPhase.PHASE_POST)
 		if context == null:
 			return false
-		return context.ability.receive_event(event_dict, context)
+		var triggered := context.ability.receive_event(event_dict, context)
+		if context.ability.is_expired() and context.ability_set != null:
+			context.ability_set.revoke_ability(ability_id, AbilitySet.REVOKE_REASON_EXPIRED, context.ability.get_expire_reason())
+		return triggered
 
 func expire(reason: String) -> void:
 	if _state == STATE_EXPIRED:

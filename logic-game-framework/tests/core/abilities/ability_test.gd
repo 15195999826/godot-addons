@@ -40,6 +40,20 @@ class RecordingAction:
 		return ActionResult.create_success_result([])
 
 
+## grant 要求 owner 已登记进 instance（AbilitySet.grant_ability 断言）：排序用例用它承载。
+class OrderActor:
+	extends BattleActor
+
+	var ability_set: AbilitySet
+
+	func _init() -> void:
+		type = "ability_order_pin"
+		ability_set = AbilitySet.create("")
+
+	func get_ability_set() -> AbilitySet:
+		return ability_set
+
+
 func _init() -> void:
 	TestFramework.register_test("Ability applies/removes and expires", _test_lifecycle)
 	TestFramework.register_test("Ability triggers component listeners", _test_triggered_listener)
@@ -140,13 +154,14 @@ func _test_component_order_active_use_first() -> void:
 		.component_config(TagComponentConfig.builder().tag("order_pin_tag").build())
 		.active_use(ActiveUseConfig.builder().timeline(timeline).build())
 		.build())
-	var owner_id := "actor-order-pin"
-	var ability_set := AbilitySet.create(owner_id)
-	var ability := Ability.new(config, owner_id)
-	ability_set.grant_ability(ability)
+	var instance := GameWorld.create_instance(GameplayInstance.new("ability_order_pin"))
+	var actor := instance.add_actor(OrderActor.new()) as OrderActor
+	var ability := Ability.new(config, actor.get_id())
+	actor.ability_set.grant_ability(ability)
 
 	var components := ability.get_all_components()
 	TestFramework.assert_equal(2, components.size())
 	TestFramework.assert_true(components[0] is ActiveUseComponent, "active_use 组件应排在最前")
 	TestFramework.assert_true(components[1] is TagComponent, "普通 component 应排在 active_use 之后")
-	TestFramework.assert_true(ability_set.has_tag("order_pin_tag"))
+	TestFramework.assert_true(actor.ability_set.has_tag("order_pin_tag"))
+	GameWorld.destroy_instance(instance.id)
