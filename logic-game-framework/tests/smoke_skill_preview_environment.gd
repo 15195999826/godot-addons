@@ -86,7 +86,7 @@ func _run() -> void:
 		found_env = true
 		var attrs: Dictionary = init_data.get("attributes", {}) as Dictionary
 		var hp := float(attrs.get("hp", 0.0))
-		var max_hp := float(attrs.get("max_hp", attrs.get("maxHp", 0.0)))
+		var max_hp := float(attrs.get("max_hp", 0.0))
 		if hp == INF or max_hp == INF or is_nan(hp) or is_nan(max_hp):
 			_fail("StoneWall replay attributes are non-finite: %s" % str(attrs))
 			return

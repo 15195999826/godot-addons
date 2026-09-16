@@ -192,8 +192,9 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 	if _depth_exceeded(event_dict):
 		return mutable
 
-	# ── 追踪上下文：保存父级 trace_id，进入新的深度层 ──
+	# ── 追踪上下文：保存父级 trace_id，进入新的深度层（trace_level 0 时 trace 为空字典，下面不往里写）──
 	var trace := _create_trace(event_dict, EventPhase.PHASE_PRE)
+	var tracing := not trace.is_empty()
 	var parent_trace_id := _current_trace_id
 	_current_depth += 1
 	_current_trace_id = trace.get("trace_id", "")
@@ -221,7 +222,7 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 
 		var execution_time := Time.get_ticks_msec() - start_time
 
-		if _config.trace_level >= 2:
+		if tracing and _config.trace_level >= 2:
 			trace["intents"].append({
 				"handler_id": registration.id,
 				"handler_name": registration.get_display_name(),
@@ -233,9 +234,10 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 		if intent.is_cancel():
 			# cancel：标记事件取消，停止后续处理器
 			mutable.cancel(intent.handler_id, intent.reason)
-			trace["cancelled"] = true
-			trace["cancel_reason"] = intent.reason
-			trace["cancelled_by"] = intent.handler_id
+			if tracing:
+				trace["cancelled"] = true
+				trace["cancel_reason"] = intent.reason
+				trace["cancelled_by"] = intent.handler_id
 			break
 		elif intent.is_modify():
 			# modify：将修改追加到 MutableEvent，继续下一个处理器
@@ -255,7 +257,7 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 			mutable.add_modifications(modifications_with_source)
 
 	# ── 记录修改前后的值（用于 trace 日志）──
-	if _config.trace_level >= 1:
+	if tracing:
 		trace["original_values"] = mutable.get_original_values()
 		trace["final_values"] = mutable.get_final_values()
 
@@ -302,7 +304,7 @@ func process_post_event(event_dict: Dictionary) -> void:
 				"triggered": triggered,
 				"execution_time": Time.get_ticks_msec() - start_time,
 			})
-		if not records.is_empty():
+		if not records.is_empty() and not trace.is_empty():
 			trace["handlers"] = records
 
 	_current_depth -= 1
@@ -379,7 +381,11 @@ func export_trace_log() -> String:
 
 	return "\n".join(lines)
 
+## trace_level 0（默认）不建 trace：返回空字典，调用方不往空字典写键，派发期间 current trace id 为空。
+## trace_level ≥ 1 建完整 trace 并累积进 _traces。
 func _create_trace(event_dict: Dictionary, phase: String) -> Dictionary:
+	if _config.trace_level <= 0:
+		return {}
 	var trace := {
 		"trace_id": EventPhase.create_trace_id(),
 		"event_kind": event_dict.get("kind", ""),
@@ -392,11 +398,12 @@ func _create_trace(event_dict: Dictionary, phase: String) -> Dictionary:
 		"cancelled": false,
 		"start_time": Time.get_ticks_msec(),
 	}
-	if _config.trace_level > 0:
-		_traces.append(trace)
+	_traces.append(trace)
 	return trace
 
 func _finalize_trace(trace: Dictionary) -> void:
+	if trace.is_empty():
+		return
 	trace["end_time"] = Time.get_ticks_msec()
 
 ## 递归深度已到上限：报错并返回 true，调用方随即放弃本次处理。

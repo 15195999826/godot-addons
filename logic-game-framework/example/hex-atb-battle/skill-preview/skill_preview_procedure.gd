@@ -126,8 +126,11 @@ func tick_once() -> void:
 	_fire_due_keyframes(cur_logic_time)
 
 	# 跑正式 hex battle 的 ability runtime tick；preview 只负责上面的 keyframe 调度。
+	# 每个 actor 前再判 _finished：战斗 tick 内 world 被结束（end() → abort()）时不再跑余下的 actor 与函数体。
 	var any_ability_executing := false
 	for actor in _get_alive_participants():
+		if _finished:
+			return
 		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time):
 			any_ability_executing = true
 
@@ -135,6 +138,8 @@ func tick_once() -> void:
 	# 它不在 _get_alive_participants() (那是 CharacterActor 类型) 中, 单独遍历。
 	if world != null:
 		for actor in world.get_actors():
+			if _finished:
+				return
 			if not (actor is HexBattleActor) or actor is CharacterActor:
 				continue
 			var h := actor as HexBattleActor
@@ -151,6 +156,8 @@ func tick_once() -> void:
 					any_ability_executing = true
 					break
 
+	if _finished:
+		return
 	record_current_frame_events()
 
 	if _current_tick >= MAX_TICKS:

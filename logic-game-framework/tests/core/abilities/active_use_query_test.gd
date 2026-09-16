@@ -11,6 +11,7 @@ extends Node
 ##  - 多 ActiveUse 组件：首个失败门返回
 
 const QUERY_TIMELINE_ID := "t-active-use-query"
+const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
 
 ## 夹具 timeline：单实例，两个建夹具的函数共用。
@@ -35,6 +36,7 @@ func _init() -> void:
 	TestFramework.register_test("can_activate mirrors receive_event short-circuits", _test_ability_level_shortcircuits)
 	TestFramework.register_test("can_activate does not pre-pay real activation", _test_query_then_real_activation)
 	TestFramework.register_test("can_activate returns first failing gate across components", _test_multi_component_first_failure)
+	TestFramework.register_test("can_activate denies a foreign or null ability after asserting, without a dry run", _test_foreign_and_null_ability_denied)
 
 
 ## 只带 conditions / costs 的 ActiveUseConfig（无 tag action、无自定义 trigger）。
@@ -201,3 +203,33 @@ func _test_multi_component_first_failure() -> void:
 	TestFramework.assert_equal(AbilityActivationQuery.FAILED_CONDITION,
 		result[AbilityActivationQuery.KEY_FAILED_COMPONENT_TYPE])
 	TestFramework.assert_equal("已有 Tag: sealed", result[AbilityActivationQuery.KEY_REASON])
+
+
+## 断言之后不再往下干跑：别家 ability 与 null 各恰一条断言，都返回 FAILED_ABILITY 形状的 denied；
+## 别家 ability 的门不会被拿本 set 的 owner 干跑（它本来是 allowed 的，干跑就会漏成 allowed）。
+func _test_foreign_and_null_ability_denied() -> void:
+	var conditions: Array[Condition] = [Condition.HasTagCondition.new("ready")]
+	var fixture := _build_fixture(conditions, [])
+	var ability_set: AbilitySet = fixture["set"]
+	var ability: Ability = fixture["ability"]
+	ability_set.add_loose_tag("ready")
+	TestFramework.assert_true(AbilityActivationQuery.is_allowed(ability_set.can_activate(ability)), "sanity: the owner's own query is allowed")
+
+	var stranger := AbilitySet.create("stranger")
+	var log_counter := LogCounter.new("can_activate")
+	TestFramework.expect_script_errors(2)
+	OS.add_logger(log_counter)
+	var foreign_result := stranger.can_activate(ability)
+	OS.remove_logger(log_counter)
+	TestFramework.assert_false(AbilityActivationQuery.is_allowed(foreign_result), "a foreign ability is denied instead of dry-run with this set's owner")
+	TestFramework.assert_equal(AbilityActivationQuery.FAILED_ABILITY, foreign_result.get(AbilityActivationQuery.KEY_FAILED_COMPONENT_TYPE, ""))
+	TestFramework.assert_equal(1, log_counter.matched_errors)
+	TestFramework.assert_equal(1, log_counter.errors)
+
+	OS.add_logger(log_counter)
+	var null_result := ability_set.can_activate(null)
+	OS.remove_logger(log_counter)
+	TestFramework.assert_false(AbilityActivationQuery.is_allowed(null_result), "null is denied")
+	TestFramework.assert_equal(AbilityActivationQuery.FAILED_ABILITY, null_result.get(AbilityActivationQuery.KEY_FAILED_COMPONENT_TYPE, ""))
+	TestFramework.assert_equal(2, log_counter.matched_errors)
+	TestFramework.assert_equal(2, log_counter.errors)

@@ -151,7 +151,7 @@ func _initialize_actor_from_init_data(actor_init: PlaybackData.ActorInitData) ->
 	actor_state.position = hex_pos
 	actor_state.visual_hp = actor_init.attributes.get("hp", 100.0) as float
 	actor_state.target_hp = actor_state.visual_hp
-	actor_state.max_hp = actor_init.attributes.get("maxHp", actor_init.attributes.get("max_hp", 100.0)) as float
+	actor_state.max_hp = actor_init.attributes.get("max_hp", 100.0) as float
 	actor_state.is_alive = true
 	actor_state.flash_progress = 0.0
 	actor_state.tint_color = Color.WHITE
@@ -212,7 +212,7 @@ func _apply_actor_destroyed_event(event: Dictionary) -> void:
 
 func _apply_attribute_changed_event(event: Dictionary) -> void:
 	var attribute := str(event.get("attribute", ""))
-	if attribute != "max_hp" and attribute != "maxHp":
+	if attribute != "max_hp":
 		return
 	var actor_id := str(event.get("actor_id", ""))
 	if actor_id.is_empty():

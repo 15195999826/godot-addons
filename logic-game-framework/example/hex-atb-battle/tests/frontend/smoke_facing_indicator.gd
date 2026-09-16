@@ -28,7 +28,7 @@ func _ready() -> void:
 	hero_a.team = 0
 	hero_a.position = [0, 0, 0]
 	# A 队默认朝东 (DIR_EAST = 0)
-	hero_a.attributes = {"hp": 100.0, "maxHp": 100.0, "facing_direction": HexFacing.DIR_EAST}
+	hero_a.attributes = {"hp": 100.0, "max_hp": 100.0, "facing_direction": HexFacing.DIR_EAST}
 
 	var hero_b := PlaybackData.ActorInitData.new()
 	hero_b.id = "hero_b"
@@ -36,7 +36,7 @@ func _ready() -> void:
 	hero_b.team = 1
 	hero_b.position = [1, 0, 0]
 	# B 队默认朝西 (DIR_WEST = 3)
-	hero_b.attributes = {"hp": 100.0, "maxHp": 100.0, "facing_direction": HexFacing.DIR_WEST}
+	hero_b.attributes = {"hp": 100.0, "max_hp": 100.0, "facing_direction": HexFacing.DIR_WEST}
 
 	# Environment actor 不带 facing_direction 字段, RenderWorld 读到默认 0
 	var wall := PlaybackData.ActorInitData.new()
@@ -44,7 +44,7 @@ func _ready() -> void:
 	wall.type = "Environment"
 	wall.team = -1
 	wall.position = [2, 0, 0]
-	wall.attributes = {"hp": 100.0, "maxHp": 100.0}
+	wall.attributes = {"hp": 100.0, "max_hp": 100.0}
 
 	snap.actors = [hero_a, hero_b, wall]
 

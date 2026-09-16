@@ -389,9 +389,10 @@ asks for them.
 
 ### Phase 3: Repo-local skill
 
-- Done in v1: `.agents/skills/dev-agent-scene-debug-mode/SKILL.md` points to
-  this spec and the example, with raw input / scene ops / artifact / non-goal
-  checklist.
+- Done in v1: `.claude/skills/dev-agent-scene-debug-mode/SKILL.md` (repo root)
+  points to this spec and the example, with raw input / scene ops / artifact /
+  non-goal checklist. (It first lived under `.agents/skills/`; that Codex mirror
+  tree was retired in 2026-09.)
 
 ### Phase 4: First real scene adapter
 
@@ -423,5 +424,5 @@ The v1 feature is acceptable when:
   becomes noisy or unsafe?
 - Should screenshot capture support SubViewport targets in v1, or only the root
   viewport?
-- The v1 skill lives under `.agents/skills/` only. Add a Claude mirror later
-  only if a future workflow explicitly needs it.
+- The v1 skill lives under `.claude/skills/` only (the `.agents/skills/` tree it
+  started in was retired in 2026-09); no second mirror is planned.

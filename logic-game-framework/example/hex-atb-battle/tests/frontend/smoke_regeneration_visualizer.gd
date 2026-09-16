@@ -21,7 +21,7 @@ func _ready() -> void:
 	actor_init.display_name = "Hero"
 	actor_init.team = 0
 	actor_init.position = [0, 0, 0]
-	actor_init.attributes = {"hp": 50.0, "maxHp": 100.0}
+	actor_init.attributes = {"hp": 50.0, "max_hp": 100.0}
 	snap.actors = [actor_init]
 
 	var rw := FrontendRenderWorld.new()

@@ -18,13 +18,19 @@ func shutdown() -> void:
 
 ## 注册 instance 并原样返回。start() / add_actor / grant 放到本调用之后——
 ## context 的 instance 按 owner id 从注册表反查，注册前一律为 null。
+## 同一对象重复注册幂等（原样返回、不重复登记）；同 id 的另一个对象是合同违反：断言并返回 null、
+## 不登记（否则调用方拿着没注册的新实例继续跑，context 反查到的却是旧实例，静默错位）。
 func create_instance(instance: GameplayInstance) -> GameplayInstance:
 	if instance == null or instance.id == "":
 		Log.warning("GameWorld", "create_instance: instance is null or has no id")
 		return instance
-	if _instances.has(instance.id):
-		Log.warning("GameWorld", "Instance already exists: %s" % instance.id)
-		return _instances[instance.id]
+	var registered: GameplayInstance = _instances.get(instance.id, null)
+	if registered == instance:
+		return instance
+	if registered != null:
+		Log.assert_crash(false, "GameWorld",
+			"create_instance: id '%s' 已被另一个 instance (%s) 占用，同 id 异对象不能并存；先 destroy_instance 再注册" % [instance.id, registered.type])
+		return null
 	_instances[instance.id] = instance
 	Log.debug("GameWorld", "Instance registered: %s (%s)" % [instance.id, instance.type])
 	return instance

@@ -3,9 +3,9 @@ extends Node
 ## GridWorldGameplayInstance（stdlib 电池）合同：
 ## 1. configure_grid 建棋盘、configure_grid_model 采用现成棋盘，两者都只发一次 grid_configured
 ## 2. 录像快照的 map_config：未配图 {}，配图后 = 棋盘 to_config_dict()
-## 3. clear_grid_footprint：只清 occupant 就是自己的格子（String occupant / 别人的占用不动、不报错），
-##    预订按 id 扫全图；没有 hex_position 的 actor 与 null 都是 no-op；不动 registry、不动 hex_position
-## 4. remove_actor 先清足迹再出 registry；未知 id 返回 false
+## 3. clear_grid_footprint：只清 occupant 就是自己的格子（String occupant / 别人的占用不动、不报错）；
+##    预订按 id 无条件扫全图（坐标无效、没有 hex_position 的 actor 也扫）；null 是 no-op；不动 registry、不动 hex_position
+## 4. remove_actor 先清足迹再出 registry（actor_removed handler 里读到的棋盘已是清后状态）；未知 id 返回 false
 
 
 ## 站在棋盘上的最小 actor（有 hex_position 即满足 IGridOccupant）。
@@ -23,6 +23,8 @@ func _init() -> void:
 	TestFramework.register_test("GridWorld: snapshot map_config follows the board", _test_map_config)
 	TestFramework.register_test("GridWorld: clear_grid_footprint clears only the actor's own occupant and reservations", _test_clear_footprint)
 	TestFramework.register_test("GridWorld: remove_actor releases the footprint before leaving the registry", _test_remove_actor)
+	TestFramework.register_test("GridWorld: clear_grid_footprint scans reservations by id even without a valid position", _test_clear_footprint_scans_reservations_by_id)
+	TestFramework.register_test("GridWorld: the board is already clear inside the actor_removed handler", _test_remove_actor_clears_board_before_signal)
 
 
 static func _make_config() -> GridMapConfig:
@@ -127,4 +129,56 @@ func _test_remove_actor() -> void:
 	TestFramework.assert_equal("", grid.get_reservation(HexCoord.new(0, -1)))
 	TestFramework.assert_equal(1, removed_ids.size())
 	TestFramework.assert_false(world.remove_actor("grid_world_t4:nobody"), "unknown id returns false")
+	GameWorld.destroy_instance(world.id)
+
+
+## D8：预订按 actor id 无条件扫全图——坐标无效的 IGridOccupant 与没有 hex_position 的 actor 也扫；
+## 占用那一半只在坐标有效时看。
+func _test_clear_footprint_scans_reservations_by_id() -> void:
+	GameWorld.shutdown()
+	var world := GameWorld.create_instance(GridWorldGameplayInstance.new("grid_world_t5")) as GridWorldGameplayInstance
+	world.configure_grid(_make_config())
+	var grid := world.grid
+	var drifter := world.add_actor(GridProbeActor.new()) as GridProbeActor
+	var plain := world.add_actor(BattleActor.new())
+	TestFramework.assert_false(drifter.hex_position.is_valid(), "setup: the drifter has no valid position")
+	TestFramework.assert_true(grid.reserve_tile(HexCoord.new(1, 0), drifter.get_id()), "setup: reserve for drifter")
+	TestFramework.assert_true(grid.reserve_tile(HexCoord.new(-1, 1), drifter.get_id()), "setup: reserve for drifter")
+	TestFramework.assert_true(grid.reserve_tile(HexCoord.new(0, -1), plain.get_id()), "setup: reserve for plain")
+
+	world.clear_grid_footprint(drifter)
+	TestFramework.assert_equal("", grid.get_reservation(HexCoord.new(1, 0)))
+	TestFramework.assert_equal("", grid.get_reservation(HexCoord.new(-1, 1)))
+	TestFramework.assert_equal(plain.get_id(), grid.get_reservation(HexCoord.new(0, -1)))
+
+	world.clear_grid_footprint(plain)
+	TestFramework.assert_equal("", grid.get_reservation(HexCoord.new(0, -1)))
+	GameWorld.destroy_instance(world.id)
+
+
+## D8：remove_actor 先清足迹再出 registry——actor_removed 的 handler 读棋盘时占用与预订都已清掉，
+## actor 也已不在 registry。
+func _test_remove_actor_clears_board_before_signal() -> void:
+	GameWorld.shutdown()
+	var world := GameWorld.create_instance(GridWorldGameplayInstance.new("grid_world_t6")) as GridWorldGameplayInstance
+	world.configure_grid(_make_config())
+	var grid := world.grid
+	var actor := world.add_actor(GridProbeActor.new()) as GridProbeActor
+	actor.hex_position = HexCoord.new(0, 1)
+	TestFramework.assert_true(grid.place_occupant(actor.hex_position, actor), "setup: place actor")
+	TestFramework.assert_true(grid.reserve_tile(HexCoord.new(1, 1), actor.get_id()), "setup: reserve for actor")
+	var seen := { "fired": false, "occupant_gone": false, "reservation": "unset", "still_registered": true }
+	var on_removed := func(actor_id: String) -> void:
+		seen["fired"] = true
+		seen["occupant_gone"] = grid.get_occupant(HexCoord.new(0, 1)) == null
+		seen["reservation"] = grid.get_reservation(HexCoord.new(1, 1))
+		seen["still_registered"] = world.get_actor(actor_id) != null
+	# 闭包捕获 world：ONE_SHOT 派发一次即断开，不留 world → signal → 闭包 → world 的环
+	world.actor_removed.connect(on_removed, CONNECT_ONE_SHOT)
+
+	TestFramework.assert_true(world.remove_actor(actor.get_id()), "remove_actor returns true")
+	TestFramework.assert_true(seen["fired"], "actor_removed fired")
+	TestFramework.assert_true(seen["occupant_gone"], "inside actor_removed the occupant is already cleared")
+	TestFramework.assert_equal("", seen["reservation"])
+	TestFramework.assert_false(seen["still_registered"], "inside actor_removed the actor has already left the registry")
 	GameWorld.destroy_instance(world.id)

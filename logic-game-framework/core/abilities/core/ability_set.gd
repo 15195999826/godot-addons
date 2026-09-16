@@ -212,9 +212,15 @@ func can_activate(
 	ability: Ability,
 	event_dict: Dictionary = {},
 ) -> Dictionary:
-	Log.assert_crash(ability != null, "AbilitySet", "can_activate 要求非空 ability")
-	Log.assert_crash(_abilities.has(ability), "AbilitySet",
-		"can_activate: ability '%s' 不属于本 AbilitySet (owner=%s)" % [ability.id, owner_actor_id])
+	# 断言在 debug 下不阻断调用方：每条断言之后都返回 denied，不对 null / 别家 ability 继续干跑。
+	if ability == null:
+		Log.assert_crash(false, "AbilitySet", "can_activate 要求非空 ability")
+		return AbilityActivationQuery.denied("ability is null", AbilityActivationQuery.FAILED_ABILITY)
+	if not _abilities.has(ability):
+		Log.assert_crash(false, "AbilitySet",
+			"can_activate: ability '%s' 不属于本 AbilitySet (owner=%s)" % [ability.id, owner_actor_id])
+		return AbilityActivationQuery.denied(
+			"ability '%s' is not in this set" % ability.id, AbilityActivationQuery.FAILED_ABILITY)
 	var context: AbilityLifecycleContext = _create_lifecycle_context(ability, get_owner_instance())
 	return ability.can_activate(context, event_dict)
 

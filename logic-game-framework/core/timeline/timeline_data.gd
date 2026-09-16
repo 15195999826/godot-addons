@@ -17,7 +17,9 @@ var max_loops: int = -1
 func _init(p_id: String, p_total_duration: float, p_tags: Dictionary = {}) -> void:
 	id = p_id
 	total_duration = p_total_duration
-	tags = p_tags
+	# 复制一份：builder .timeline(data) 会 make_read_only 冻结 tags，冻结的必须是自己这份，
+	# 不能连带冻住调用方（如 from_dict 的 payload["tags"]）手里的字典。
+	tags = p_tags.duplicate()
 
 
 ## 创建周期性 Timeline（用于 DOT/HOT 等每 N ms 触发一次的场景）

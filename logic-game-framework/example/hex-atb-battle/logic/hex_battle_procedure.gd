@@ -76,7 +76,11 @@ func tick_once() -> void:
 		logger.tick(_current_tick, cur_logic_time)
 
 	# ATB 与技能执行互斥: 施法期间 ATB 冻结, 不继续充能(经典 ATB 模式)。
+	# 每个 actor 前再判 _finished：战斗 tick 内 world 被结束（end() → abort()）时本 world 已出注册表，
+	# 余下 actor 的 action 反查 ctx.instance 只会拿到 null，不再跑完余下函数体。
 	for actor in get_alive_characters():
+		if _finished:
+			return
 		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time):
 			continue
 		actor.accumulate_atb(_tick_interval)
@@ -92,6 +96,8 @@ func tick_once() -> void:
 		for a in get_alive_characters():
 			seen_ids[a.get_id()] = true
 		for actor in world.get_actors():
+			if _finished:
+				return
 			if not (actor is HexBattleActor):
 				continue
 			var h := actor as HexBattleActor
@@ -105,6 +111,8 @@ func tick_once() -> void:
 			# EnvironmentActor (fire tile): 同上
 			h.ability_set.tick_runtime(_tick_interval, cur_logic_time)
 
+	if _finished:
+		return
 	record_current_frame_events()
 
 	if _current_tick >= MAX_TICKS:

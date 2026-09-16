@@ -9,6 +9,7 @@ func _init() -> void:
 	TestFramework.register_test("EventProcessor unregister is idempotent; owner removal clears both tables", _test_handler_removal)
 	TestFramework.register_test("EventProcessor dispatch iterates a snapshot of the handlers", _test_dispatch_iterates_snapshot)
 	TestFramework.register_test("EventProcessor export_trace_log prints pre intents and post handlers", _test_export_trace_log)
+	TestFramework.register_test("EventProcessor trace_level 0 keeps no trace; trace_level 1 records the chain", _test_trace_level_gate)
 
 func _test_pre_modify() -> void:
 	var config := EventProcessorConfig.new(5, 2)
@@ -201,6 +202,63 @@ func _test_export_trace_log() -> void:
 	var trace_log := processor.export_trace_log()
 	TestFramework.assert_true(trace_log.contains("[config-trace-pre] -> cancel"), trace_log)
 	TestFramework.assert_true(trace_log.contains("[config-trace-post] -> triggered"), trace_log)
+
+## trace_level 0：不建 trace、派发中没有 current trace id，handler 照常执行；
+## trace_level 1：pre / post 各留一条带 cancel 结果与起止时间的 trace，派发中的 current trace id 就是这条 trace 的 id。
+func _test_trace_level_gate() -> void:
+	var seen := { "silent_id": "unset", "traced_id": "unset" }
+
+	var silent := EventProcessor.new(EventProcessorConfig.new(5, 0))
+	silent.register_pre_handler(PreHandlerRegistration.new(
+		"h-silent",  # id
+		"damage",  # event_kind
+		"actor-1",  # owner_id
+		"ability-silent",  # ability_id
+		"config-silent",  # config_id
+		func(_mutable: MutableEvent, _context: HandlerContext) -> Intent:
+			seen["silent_id"] = silent.get_current_trace_id()
+			return EventPhase.cancel_intent("h-silent", "quiet")
+	))
+	var mutable := silent.process_pre_event({ "kind": "damage", "damage": 1.0 })
+	silent.process_post_event({ "kind": "damage" })
+	TestFramework.assert_true(mutable.cancelled, "handlers still run with tracing off")
+	TestFramework.assert_equal("quiet", mutable.cancel_reason)
+	TestFramework.assert_equal(0, silent.get_traces().size())
+	TestFramework.assert_equal("", seen["silent_id"])
+	TestFramework.assert_equal("", silent.get_current_trace_id())
+	TestFramework.assert_equal(0, silent.get_current_depth())
+	TestFramework.assert_equal("(No traces recorded)", silent.export_trace_log())
+	# handler 捕获了 processor：清表断环
+	silent.remove_all_handlers()
+
+	var traced := EventProcessor.new(EventProcessorConfig.new(5, 1))
+	traced.register_pre_handler(PreHandlerRegistration.new(
+		"h-traced",  # id
+		"damage",  # event_kind
+		"actor-1",  # owner_id
+		"ability-traced",  # ability_id
+		"config-traced",  # config_id
+		func(_mutable: MutableEvent, _context: HandlerContext) -> Intent:
+			seen["traced_id"] = traced.get_current_trace_id()
+			return EventPhase.cancel_intent("h-traced", "loud")
+	))
+	traced.process_pre_event({ "kind": "damage", "damage": 1.0 })
+	traced.process_post_event({ "kind": "damage" })
+	var traces := traced.get_traces()
+	TestFramework.assert_equal(2, traces.size())
+	var pre_trace: Dictionary = traces[0]
+	TestFramework.assert_equal(EventPhase.PHASE_PRE, pre_trace["phase"])
+	TestFramework.assert_equal(pre_trace["trace_id"], seen["traced_id"])
+	TestFramework.assert_true(pre_trace["cancelled"], "level 1 records the cancel")
+	TestFramework.assert_equal("loud", pre_trace["cancel_reason"])
+	TestFramework.assert_equal("h-traced", pre_trace["cancelled_by"])
+	TestFramework.assert_true(pre_trace.has("original_values") and pre_trace.has("end_time"), "level 1 records values and end time")
+	var post_trace: Dictionary = traces[1]
+	TestFramework.assert_equal(EventPhase.PHASE_POST, post_trace["phase"])
+	TestFramework.assert_true(post_trace.has("end_time"), "post trace is finalized")
+	TestFramework.assert_equal("", traced.get_current_trace_id())
+	TestFramework.assert_equal(0, traced.get_current_depth())
+	traced.remove_all_handlers()
 
 
 ## 触发时往 dispatched 记 label、放行的 pre 注册。

@@ -34,6 +34,7 @@ func _init() -> void:
 	TestFramework.register_test("PreEventComponent - dead actor stops responding", _test_dead_actor_stops_responding)
 	TestFramework.register_test("PreEventComponent - cancels event", _test_cancel_event)
 	TestFramework.register_test("PreEventComponent - ability expired earlier in the same dispatch is skipped", _test_expired_mid_dispatch_skipped)
+	TestFramework.register_test("PreEventComponent - two same-kind components on one ability unregister independently", _test_same_kind_components_unregister_independently)
 
 
 ## 测试环境：注册到 GameWorld 的 mock instance（自带 event_processor）+ mock actor + 配套 ability_set
@@ -217,4 +218,49 @@ func _test_expired_mid_dispatch_skipped() -> void:
 	TestFramework.assert_near(
 		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
 		100.0, 0.0001, "同一次派发里已过期的 ability 不应再改事件")
+	_teardown_env(env)
+
+
+## 同一 ability 挂两个同 kind 的 PreEventComponent：注册 id 各自带组件序号，
+## 先注销后一个组件不会误删前一个的注册；两个都注销后事件才回到原值。
+func _test_same_kind_components_unregister_independently() -> void:
+	var env := _setup_env()
+
+	var halve_config := PreEventConfig.new(
+		"pre_damage",
+		func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
+			return EventPhase.modify_intent(ctx.ability.id, [
+				Modification.multiply("damage", 0.5),
+			])
+	)
+	var minus_ten_config := PreEventConfig.new(
+		"pre_damage",
+		func(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
+			return EventPhase.modify_intent(ctx.ability.id, [
+				Modification.add("damage", -10.0),
+			])
+	)
+	var ability := Ability.new(AbilityConfig.new("buff_two_pre", "", "", "", [], [halve_config, minus_ten_config]), env.owner_id)
+	env.ability_set.grant_ability(ability)
+	var components := ability.get_all_components()
+	TestFramework.assert_equal(2, components.size())
+
+	var event := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
+	# 两个都在：(100 - 10) * 0.5 = 45
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
+		45.0, 0.0001, "both components registered")
+
+	# 只注销第二个组件：第一个（减半）必须仍在
+	components[1].on_remove(null)
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
+		50.0, 0.0001, "removing the second component must not take the first component's registration with it")
+
+	components[0].on_remove(null)
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(event).get_current_value("damage")),
+		100.0, 0.0001, "after both components are removed the event is untouched")
+
+	env.ability_set.revoke_ability(ability.id)
 	_teardown_env(env)

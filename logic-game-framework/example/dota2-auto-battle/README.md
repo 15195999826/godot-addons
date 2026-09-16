@@ -2,7 +2,7 @@
 
 ARAM 式**单中路实时自动战斗** example：一条水平中路，左右两队从两端 spawn lane creep，单位推进 → 按 aggro range 获取敌人 → 追击进 attack range → 基础攻击经 LGF Ability/Timeline/Action 解析。逻辑层单线程定长 tick（30 Hz）、前端只读响应式渲染。
 
-> 状态：**M1 vertical slice 已落地**（core + logic 全层 + 可 F6 运行的 lane battle scene + 2 个 smoke）。本 README 是本 example 的唯一总览，吸收了原 `docs/design-notes/` 6 篇 + 各层 README + development-plan。变更记录见 [`CHANGELOG.md`](CHANGELOG.md)，框架级架构见 [`../../docs/README.md`](../../docs/README.md) 与 [`../../docs/reference/action-architecture.md`](../../docs/reference/action-architecture.md)。
+> 状态：**M1 vertical slice 已落地**（core + logic 全层 + 可 F6 运行的 lane battle scene + 2 个 smoke）。本 README 是本 example 的唯一总览，吸收了原 `docs/design-notes/` 6 篇 + 各层 README + development-plan；变更历史归 git log。框架级架构与设计铁律见 [`../../CLAUDE.md`](../../CLAUDE.md)。
 
 ## 分层结构
 

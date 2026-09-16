@@ -127,7 +127,7 @@ func _on_anim_done() -> void:
 	# 这里从 WorldView 当前持有的 view 里挑一个显式移除。
 	var view_ids := _world_view.get_unit_views().keys()
 	if view_ids.is_empty():
-		_pass("battle 全灭, 无 view 可移除 (算作通过, 战斗期 remove signal 已验证)")
+		_pass("bind + signal spawn + timeline 动画通过; world 无 unit view 可供 remove_actor 验证, 跳过 Step 5 (死者留 world 不 remove, 此分支只在 world 本就没有 unit 时进入)")
 		return
 
 	var victim_id: String = view_ids[0]

@@ -1,5 +1,7 @@
 extends Node
 
+const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+
 class DummyInstance:
 	extends GameplayInstance
 
@@ -43,6 +45,8 @@ class OrderProbeSystem:
 func _init() -> void:
 	TestFramework.register_test("GameWorld manages instances", _test_world_instances)
 	TestFramework.register_test("GameWorld.shutdown ends every instance and is idempotent", _test_shutdown_idempotent)
+	TestFramework.register_test("GameWorld.create_instance is idempotent for the same instance", _test_create_instance_same_object_idempotent)
+	TestFramework.register_test("GameWorld.create_instance asserts on an id clash and keeps the registered instance", _test_create_instance_id_clash_asserts)
 	TestFramework.register_test("GameplayInstance owns its EventProcessor / EventCollector", _test_instance_owns_event_infrastructure)
 	TestFramework.register_test("GameplayInstance runs systems and actors", _test_instance_lifecycle)
 	TestFramework.register_test("System order: same priority keeps registration order", _test_system_order_same_priority)
@@ -80,6 +84,39 @@ func _test_shutdown_idempotent() -> void:
 		TestFramework.assert_equal(1, instance.end_calls)
 	GameWorld.shutdown()
 	TestFramework.assert_equal(0, GameWorld.get_instance_count())
+
+## 同一对象重复注册：原样返回、注册表不变、不报警告也不报错。
+func _test_create_instance_same_object_idempotent() -> void:
+	GameWorld.shutdown()
+	var instance := DummyInstance.new("inst-idem")
+	var log_counter := LogCounter.new("inst-idem")
+	OS.add_logger(log_counter)
+	var first := GameWorld.create_instance(instance)
+	var second := GameWorld.create_instance(instance)
+	OS.remove_logger(log_counter)
+	TestFramework.assert_true(first == instance and second == instance, "both calls return the same instance")
+	TestFramework.assert_equal(1, GameWorld.get_instance_count())
+	TestFramework.assert_equal(0, log_counter.errors)
+	TestFramework.assert_equal(0, log_counter.matched_warnings)
+	GameWorld.shutdown()
+
+## 同 id 异对象：恰一条断言、什么都不注册、返回 null，注册表里仍是先注册的那个。
+func _test_create_instance_id_clash_asserts() -> void:
+	GameWorld.shutdown()
+	var first := DummyInstance.new("inst-clash")
+	var impostor := DummyInstance.new("inst-clash")
+	GameWorld.create_instance(first)
+	var log_counter := LogCounter.new("create_instance")
+	TestFramework.expect_script_errors(1)
+	OS.add_logger(log_counter)
+	var result := GameWorld.create_instance(impostor)
+	OS.remove_logger(log_counter)
+	TestFramework.assert_true(result == null, "an id clash registers nothing and returns null")
+	TestFramework.assert_true(GameWorld.get_instance_by_id("inst-clash") == first, "the registered instance stays")
+	TestFramework.assert_equal(1, GameWorld.get_instance_count())
+	TestFramework.assert_equal(1, log_counter.matched_errors)
+	TestFramework.assert_equal(1, log_counter.errors)
+	GameWorld.shutdown()
 
 ## 事件设施归 instance：各自一套 processor / collector，配置随构造传入，互不共享。
 func _test_instance_owns_event_infrastructure() -> void:

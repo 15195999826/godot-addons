@@ -159,8 +159,9 @@ func tick(dt: float) -> void:
 	var remaining := BATTLE_TICKS_PER_WORLD_FRAME
 	while remaining > 0:
 		battle.tick_once()
-		# 槽位在这次 tick_once 里被交还——world 被结束而中止了战斗（tick_once 余下的函数体照样跑完），
-		# 或 procedure 自己调了 finish()：不再推进、不收尾、不发信号。procedure 判定结束应 mark_finished()，由下面收尾。
+		# 槽位在这次 tick_once 里被交还——world 被结束而中止了战斗（procedure 的 actor 循环应在每个 actor 前判
+		# _finished 早返回，hex / skill-preview 已如此），或 procedure 自己调了 finish()：不再推进、不收尾、不发信号。
+		# procedure 判定结束应 mark_finished()，由下面收尾。
 		if _active_battle != battle:
 			return
 		if battle.should_end():

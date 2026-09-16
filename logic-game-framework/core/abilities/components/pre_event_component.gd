@@ -61,8 +61,11 @@ func on_apply(context: AbilityLifecycleContext) -> void:
 		Log.assert_crash(result is Intent, "PreEventComponent", "handler '%s' must return Intent, got: %s" % [handler_name, type_string(typeof(result))])
 		return result as Intent
 
+	# 注册 id 带上本组件在 ability 里的序号：同一 ability 挂两个同 kind 的 PreEventComponent 时，
+	# 只靠 "<ability_id>_pre_<kind>" 会同 id，按 id 注销就会误删另一条。
+	var component_index := context.ability.get_all_components().find(self)
 	var registration := PreHandlerRegistration.new(
-		"%s_pre_%s" % [ability_id, _event_kind],
+		"%s_pre_%s_%d" % [ability_id, _event_kind, component_index],
 		_event_kind,
 		owner_id,
 		ability_id,

@@ -666,7 +666,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		actor.set_team_id(team_id)
 		# 属性
 		var attrs: Dictionary = cfg.get("attributes", {})
-		var max_hp: float = attrs.get("maxHp", attrs.get("max_hp", 100.0)) as float
+		var max_hp: float = attrs.get("max_hp", 100.0) as float
 		actor.attribute_set.set_max_hp_base(max_hp)
 		actor.attribute_set.set_hp(attrs.get("hp", max_hp) as float)
 		if attrs.has("atk"):
