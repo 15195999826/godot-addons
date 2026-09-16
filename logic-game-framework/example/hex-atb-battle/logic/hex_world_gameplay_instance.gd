@@ -38,14 +38,7 @@ func _init(id_value: String = "") -> void:
 	battle_finished.connect(_emit_final_state_if_debug)
 
 
-# ========== Grid ==========
-
-## 接入 UGridMap autoload: 棋盘同时灌进 autoload (hex 的 AI / 锥形技能 / 前端指示器直接读 UGridMap.model),
-## 再经 stdlib 的 configure_grid_model 落到 self.grid 并发 grid_configured。
-func configure_grid(config: GridMapConfig) -> void:
-	UGridMap.configure(config)
-	configure_grid_model(UGridMap.model)
-
+# ========== 录像坐标格式 ==========
 
 ## 录像 world_snapshot 的坐标格式声明: hex 例子全员 hex 坐标（position = [q, r]）。
 func _get_position_formats() -> Dictionary:
@@ -136,22 +129,6 @@ func _build_actor_snapshot(actor: HexBattleActor) -> Dictionary:
 		"abilities":    actor.get_ability_snapshot(),
 		"tags":         actor.get_tag_snapshot(),
 	}
-
-
-## 把 ProjectileSystem.tick 产生的投射物事件 (HIT/MISS) 逐条 post 派发,
-## 触发订阅了它们的被动 handler。从 event_collector.collect() 只读快照,不 flush ——
-## 剩余事件由 procedure 的 record_current_frame_events 统一写录像。
-##
-## 服务 BattleProcedure 子类(HexBattleProcedure / SkillPreviewProcedure)的 tick_once,
-## 复用此方法避免各 procedure 各自内联 collect + match + process_post_event 同一段逻辑。
-func broadcast_projectile_events() -> void:
-	var events := event_collector.collect()
-	if events.is_empty():
-		return
-	for event in events:
-		var kind: String = event.get("kind", "")
-		if kind == ProjectileEvents.PROJECTILE_HIT_EVENT or kind == ProjectileEvents.PROJECTILE_MISS_EVENT:
-			event_processor.process_post_event(event)
 
 
 ## 判断 actor 能否对 target 使用 skill。

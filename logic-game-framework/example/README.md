@@ -4,7 +4,7 @@ LGF（Logic Game Framework）目前提供两个示例项目，作为框架能力
 
 | 示例 | 目录 | 节奏 | 坐标系 | 主 smoke |
 |---|---|---|---|---|
-| **hex-atb-battle** | [hex-atb-battle/](hex-atb-battle/) | 回合制 / ATB 累积 | 离散 HexCoord（UGridMap） | `tests/frontend/smoke_frontend_main.tscn`（demo + replay 链）<br>`tests/battle/smoke_skill_scenarios.tscn`（具体 skill 数值断言） |
+| **hex-atb-battle** | [hex-atb-battle/](hex-atb-battle/) | 回合制 / ATB 累积 | 离散 HexCoord（棋盘 `GridMapModel` 归 world） | `tests/frontend/smoke_frontend_main.tscn`（demo + replay 链）<br>`tests/battle/smoke_skill_scenarios.tscn`（具体 skill 数值断言） |
 | **dota2-auto-battle** | [dota2-auto-battle/](dota2-auto-battle/) | 实时固定 tick (30Hz) / ARAM lane creep auto battle | 连续 `Vector2` + DOTA2 movement adapter（sim-nav `dota2-rts-pathfinding-lab`） | `./tools/run_tests.ps1 dota2autobattle/smoke`（`tests/battle/smoke_lane_wave_engage.tscn` + `tests/frontend/smoke_frontend_main.tscn`）<br>F6: `frontend/scene/dota2_lane_battle.tscn`（M1 垂直切片） |
 
 这些示例都遵循:

@@ -187,9 +187,9 @@ func _decide_movement(
 	debug["nearest_enemy"] = "%s/%s" % [nearest.get_display_name(), nearest.get_id()]
 	debug["nearest_pos"] = _format_coord(nearest.hex_position)
 	debug["nearest_distance"] = actor.hex_position.distance_to(nearest.hex_position)
-	debug["available_neighbors"] = _count_available_neighbors(actor)
-	debug["closer_neighbors"] = _count_closer_neighbors(actor, nearest.hex_position)
-	var move_coord := _move_toward(actor, nearest.hex_position)
+	debug["available_neighbors"] = _count_available_neighbors(actor, battle)
+	debug["closer_neighbors"] = _count_closer_neighbors(actor, nearest.hex_position, battle)
+	var move_coord := _move_toward(actor, nearest.hex_position, battle)
 	if move_coord != null:
 		return _make_move_decision(actor, move_coord)
 	debug["movement_reason"] = "no_strictly_closer_available_neighbor"
@@ -203,25 +203,25 @@ func _skip_decision(reason: String) -> Dictionary:
 	}
 
 
-func _count_available_neighbors(actor: CharacterActor) -> int:
+func _count_available_neighbors(actor: CharacterActor, battle: HexWorldGameplayInstance) -> int:
 	if not actor.hex_position.is_valid():
 		return 0
 	var count := 0
 	var neighbors: Array[HexCoord] = actor.hex_position.get_neighbors()
 	for coord in neighbors:
-		if _is_tile_available(coord):
+		if _is_tile_available(coord, battle):
 			count += 1
 	return count
 
 
-func _count_closer_neighbors(actor: CharacterActor, target_pos: HexCoord) -> int:
+func _count_closer_neighbors(actor: CharacterActor, target_pos: HexCoord, battle: HexWorldGameplayInstance) -> int:
 	if not actor.hex_position.is_valid() or not target_pos.is_valid():
 		return 0
 	var current_dist := actor.hex_position.distance_to(target_pos)
 	var count := 0
 	var neighbors: Array[HexCoord] = actor.hex_position.get_neighbors()
 	for coord in neighbors:
-		if _is_tile_available(coord) and coord.distance_to(target_pos) < current_dist:
+		if _is_tile_available(coord, battle) and coord.distance_to(target_pos) < current_dist:
 			count += 1
 	return count
 

@@ -118,9 +118,6 @@ func tick_once() -> void:
 
 	var cur_logic_time := world.get_logic_time() if world != null else float(_current_tick) * _tick_interval
 
-	if world != null:
-		world.broadcast_projectile_events()
-
 	# 先 fire 已到时的 keyframe; activate event 在本帧内被 ability_set 接收, 接着的 tick_executions
 	# 也会处理刚被 grant 的 ability。这样 t=0 keyframe 不会比"显式 grant" baseline 慢一帧。
 	# 但 fire 前必须先把 tag_container 的 logic_time 同步到本帧, 否则 cooldown 到期边界会

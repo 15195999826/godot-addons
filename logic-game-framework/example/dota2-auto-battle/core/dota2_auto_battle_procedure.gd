@@ -171,7 +171,8 @@ func _advance_intents(dt_seconds: float, step_ms: float, logic_time_ms: float) -
 			unit.ability_set.tick_executions(step_ms)
 
 	# 5d. ATTACK_TARGET：在攻击距离内且基础攻击合法 → 发 ABILITY_ACTIVATE_EVENT
-	#     （cooldown/legality 由 Ability 的 condition+cost 把关，非 controller ad-hoc）。
+	#     （cooldown/legality 由 Ability 的 condition+cost 把关，非 controller ad-hoc；
+	#     _request_basic_attack 先用 can_activate 预检，冷却中不发请求）。
 	for unit in alive:
 		var ctrl3: Dota2UnitController = _controllers.get(unit.get_id(), null)
 		if ctrl3 == null or ctrl3.current_intent == null:
@@ -217,9 +218,11 @@ func _eval_step_result(unit: Dota2UnitActor, intent: Dota2Intent) -> Dota2Intent
 	return Dota2IntentStepResult.running()
 
 
-## 发起一次基础攻击：ABILITY_ACTIVATE_EVENT 携带 controller 的 intent 目标，
-## 喂 ability_set.receive_event → Ability condition(NoTag cd)+cost 把关合法性 →
-## Timeline → attack point → Dota2DamageAction。与 hex procedure 同构。
+## 发起一次基础攻击：先用零副作用的 ability_set.can_activate 预检（同一份 condition(NoTag cd)+cost 门控），
+## 冷却中不发请求——否则交战单位每 tick 空发一次 ABILITY_ACTIVATE_EVENT 被拒，一场攒上千条
+## AbilityActivateFailed 事件与日志；controller 仍不知「冷却」，攻击时机不变。通过则 ABILITY_ACTIVATE_EVENT
+## 携带 controller 的 intent 目标喂 ability_set.receive_event → Timeline → attack point → Dota2DamageAction。
+## 与 hex procedure 同构。
 func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_ms: float) -> void:
 	var ability := unit.get_basic_attack_ability()
 	if ability == null:
@@ -227,6 +230,8 @@ func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_m
 	var event := GameEvent.AbilityActivate.create(
 		ability.id, unit.get_id(), logic_time_ms, target_id
 	).to_dict()
+	if not AbilityActivationQuery.is_allowed(unit.ability_set.can_activate(ability, event)):
+		return
 	unit.ability_set.receive_event(event)
 
 

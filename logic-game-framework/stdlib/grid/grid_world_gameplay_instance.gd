@@ -26,8 +26,8 @@ var grid: GridMapModel = null
 
 # ========== 棋盘配置 ==========
 
-## 用配置建一张新棋盘。子类可覆盖以接入具体 backend（如 UGridMap autoload），
-## 最终仍须经 configure_grid_model 落到 grid 字段。
+## 用配置建一张新棋盘。子类可覆盖以接入数据驱动的棋盘来源，
+## 最终仍须经 configure_grid_model 落到 grid 字段——棋盘只归 world 持有，没有全局槽位。
 func configure_grid(config: GridMapConfig) -> void:
 	var model := GridMapModel.new()
 	model.initialize(config)

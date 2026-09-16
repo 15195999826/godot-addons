@@ -6,6 +6,7 @@
 ##   - 6 equipment slots 创建到位
 ##   - 种子 item 已写入 player bag (snapshot 检查)
 ##   - status label 默认存在
+##   - 沙盒 instance 登记进 GameWorld (actor 可反查); reset_sandbox 换沙盒旧的注销; 场景退出沙盒注销
 ##
 ## 不做: 不模拟真实拖拽 (那归 Phase D + E DevAgent 流程)
 extends Node
@@ -70,6 +71,10 @@ func _ready() -> void:
 		if not ActorId.is_valid(actor_id):
 			_finish_fail("actor_id 应是 GameplayInstance 分配的 runtime id, got: %s" % actor_id)
 			return
+		# 沙盒 instance 已登记进 GameWorld：装备 grant / context 按 owner id 反查 instance，登记不到就静默跳过。
+		if GameWorld.get_actor(actor_id) == null:
+			_finish_fail("sandbox actor 必须能经 GameWorld 反查（沙盒 instance 未登记）: %s" % actor_id)
+			return
 
 	# layout_state 含 bag_cells / equipment_slots rect
 	var layout: Dictionary = inst.get_layout_state()
@@ -78,6 +83,27 @@ func _ready() -> void:
 		return
 	if not layout.has("equipment_slots") or (layout.get("equipment_slots") as Array).size() != 6:
 		_finish_fail("layout_state.equipment_slots 缺失或大小错")
+		return
+
+	# reset_sandbox 换沙盒：旧 instance 注销、新 instance 登记；场景退出时沙盒随之注销，GameWorld 无残留。
+	var old_instance_id := ActorId.extract_instance_id(String((actors[0] as Dictionary).get("actor_id", "")))
+	inst.reset_sandbox()
+	if GameWorld.get_instance_by_id(old_instance_id) != null:
+		_finish_fail("reset_sandbox 后旧沙盒 instance 仍在 GameWorld: %s" % old_instance_id)
+		return
+	var new_actors: Array = inst.get_inventory_state().get("actors", [])
+	if new_actors.size() != 3:
+		_finish_fail("reset_sandbox 后 sandbox actors 应 = 3, 实际 %d" % new_actors.size())
+		return
+	var new_actor_id := String((new_actors[0] as Dictionary).get("actor_id", ""))
+	if GameWorld.get_actor(new_actor_id) == null:
+		_finish_fail("reset_sandbox 后新沙盒 actor 必须能经 GameWorld 反查: %s" % new_actor_id)
+		return
+	var new_instance_id := ActorId.extract_instance_id(new_actor_id)
+	inst.queue_free()
+	await get_tree().process_frame
+	if GameWorld.get_instance_by_id(new_instance_id) != null:
+		_finish_fail("场景退出后沙盒 instance 仍在 GameWorld: %s" % new_instance_id)
 		return
 
 	print("SMOKE_TEST_RESULT: PASS - item_preview.tscn boot OK (%d bag cells / %d eq slots / %d seed items)" % [

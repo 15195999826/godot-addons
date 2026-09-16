@@ -5,7 +5,10 @@ var collision_detector: CollisionDetector
 var pending_removal: Dictionary = {}
 var auto_remove: bool = true
 
-## 投射物事件推进本 system 所注册 instance 的 event_collector（发事件时经 get_instance() 取，不另存一份）。
+## 投射物事件在产出点推所注册 instance 的 event_collector 并当场 process_post_event（HIT / MISS / PIERCE），
+## 与 Action 内伤害同语义：命中当刻结算，订阅者的反应落在该事件与 despawn 之间；同 tick 多发弹体逐发结算；
+## 命中的弹体在 handler 期间仍在注册表，auto_remove 到本 tick 末才 remove。despawn 只录不派发。
+## instance 经 get_instance() 取、不另存一份；未注册即静默短路。
 func _init(detector: CollisionDetector = null, auto_remove_val: bool = true) -> void:
 	super(System.SystemPriority.NORMAL)
 	type = "ProjectileSystem"
@@ -128,8 +131,8 @@ func _process_pending_removal(_actors: Array[Actor]) -> void:
 	pending_removal.clear()
 
 func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_position: Vector3) -> void:
-	var event_collector := _get_event_collector()
-	if event_collector == null:
+	var instance := get_instance()
+	if instance == null:
 		return
 
 	var source_actor_id := _get_source_id(projectile)
@@ -154,18 +157,19 @@ func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_p
 		options
 	)
 
-	event_collector.push(event)
+	instance.event_collector.push(event)
+	instance.event_processor.process_post_event(event)
 
 	var despawn_event := ProjectileEvents.create_projectile_despawn_event(
 		projectile.id,
 		source_actor_id,
 		"hit"
 	)
-	event_collector.push(despawn_event)
+	instance.event_collector.push(despawn_event)
 
 func _emit_miss_event(projectile: ProjectileActor, reason: String) -> void:
-	var event_collector := _get_event_collector()
-	if event_collector == null:
+	var instance := get_instance()
+	if instance == null:
 		return
 
 	var source_actor_id := _get_source_id(projectile)
@@ -181,7 +185,8 @@ func _emit_miss_event(projectile: ProjectileActor, reason: String) -> void:
 		projectile.get_ability_config_id()
 	)
 
-	event_collector.push(event)
+	instance.event_collector.push(event)
+	instance.event_processor.process_post_event(event)
 
 	var despawn_event := ProjectileEvents.create_projectile_despawn_event(
 		projectile.id,
@@ -189,11 +194,11 @@ func _emit_miss_event(projectile: ProjectileActor, reason: String) -> void:
 		"miss"
 	)
 
-	event_collector.push(despawn_event)
+	instance.event_collector.push(despawn_event)
 
 func _emit_pierce_event(projectile: ProjectileActor, target_actor_id: String, pierce_position: Vector3) -> void:
-	var event_collector := _get_event_collector()
-	if event_collector == null:
+	var instance := get_instance()
+	if instance == null:
 		return
 
 	var source_actor_id := _get_source_id(projectile)
@@ -207,13 +212,8 @@ func _emit_pierce_event(projectile: ProjectileActor, target_actor_id: String, pi
 		projectile.get_ability_config_id()
 	)
 
-	event_collector.push(event)
-
-
-## 所注册 instance 的 event_collector；未注册（或已注销）时为 null，调用方短路。
-func _get_event_collector() -> EventCollector:
-	var instance := get_instance()
-	return instance.event_collector if instance != null else null
+	instance.event_collector.push(event)
+	instance.event_processor.process_post_event(event)
 
 
 func _get_source_id(projectile: ProjectileActor) -> String:

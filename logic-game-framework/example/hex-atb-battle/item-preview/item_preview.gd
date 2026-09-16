@@ -285,7 +285,8 @@ func _setup_session() -> void:
 	ItemSystem.configure_domain(HexItemDomainScript.new(), HexItemCatalogScript.new())
 	_inventory = HexPlayerInventoryScript.new()
 	_inventory.init_inventory()
-	_sandbox_world = GameplayInstance.new(IdGenerator.generate("item_preview_sandbox"))
+	# 沙盒登记进 GameWorld：装备 grant 与 context 都按 owner id 反查所属 instance，未登记的沙盒会让 grant 静默跳过。
+	_sandbox_world = GameWorld.create_instance(GameplayInstance.new(IdGenerator.generate("item_preview_sandbox")))
 	for i in range(SANDBOX_ACTOR_CLASSES.size()):
 		var char_class: HexBattleClassConfig.CharacterClass = SANDBOX_ACTOR_CLASSES[i]
 		var actor := CharacterActor.new(char_class)
@@ -300,7 +301,10 @@ func _setup_session() -> void:
 		_inventory.register_actor(added.get_id())
 
 
+## 沙盒随 reset / 场景退出一起从 GameWorld 注销（destroy_instance 结束 instance 并 despawn 全部 actor）。
 func _clear_sandbox_world() -> void:
+	if _sandbox_world != null:
+		GameWorld.destroy_instance(_sandbox_world.id)
 	_sandbox_world = null
 	_sandbox_actors.clear()
 	_sandbox_actor_ids.clear()

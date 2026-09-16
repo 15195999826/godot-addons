@@ -581,8 +581,8 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 	func start(config: Dictionary = {}) -> void:
 		_state = "running"
 
-		# 地图: 走 HexWorldGameplayInstance.configure_grid (UGridMap 桥), 同时填本 instance 的 grid 字段,
-		# 让 actions (PushAction / ApplyMoveAction 等) 通过 battle.grid.has_tile / get_occupant 走通。
+		# 地图: 走 stdlib configure_grid 建本 instance 的 grid, 让 actions (PushAction / ApplyMoveAction 等)
+		# 通过 battle.grid.has_tile / get_occupant 走通; 放人也只经这一张棋盘。
 		var grid_config: GridMapConfig = config.get("map_config")
 		if grid_config != null:
 			configure_grid(grid_config)
@@ -646,7 +646,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		add_actor(env_actor)
 		var pos: Dictionary = cfg.get("pos", {})
 		var coord := HexCoord.new(pos.get("q", 0) as int, pos.get("r", 0) as int)
-		var placed := UGridMap.model != null and UGridMap.model.place_occupant(coord, env_actor)
+		var placed := grid != null and grid.place_occupant(coord, env_actor)
 		if not placed:
 			remove_actor(env_actor.get_id())
 			push_warning("[SkillScenarioHarness] environment 放置失败: %s @ (%d, %d)" % [
@@ -674,7 +674,7 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		# 位置
 		var pos: Dictionary = cfg.get("position", {})
 		var coord := HexCoord.new(pos.get("q", 0) as int, pos.get("r", 0) as int)
-		UGridMap.model.place_occupant(coord, actor)
+		grid.place_occupant(coord, actor)
 		actor.hex_position = coord.duplicate()
 		var passives: Array = cfg.get("passives", [])
 		for passive_config in passives:
@@ -688,12 +688,6 @@ class _PreviewInstance extends HexWorldGameplayInstance:
 		var general_passive := Ability.new(HexBattleGeneralPassive.ABILITY, actor.get_id())
 		actor.ability_set.grant_ability(general_passive)
 		return actor
-
-	## projectile_hit 必须从 event_collector 广播出去, 否则 Fireball/PreciseShot
-	## 的 ActivateInstanceConfig(trigger=PROJECTILE_HIT_EVENT) 收不到事件。
-	func tick(dt: float) -> void:
-		base_tick(dt)
-		broadcast_projectile_events()
 
 
 	## Phase C0 (Summon Totem): mid-battle add_actor (例如 SpawnActorAction) 调用此入口,

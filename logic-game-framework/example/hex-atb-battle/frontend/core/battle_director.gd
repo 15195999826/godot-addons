@@ -308,6 +308,11 @@ func get_actor_world_position(actor_id: String) -> Vector3:
 	return _world.get_actor_world_position(actor_id)
 
 
+## 录像 map_config 建出的棋盘几何 (未加载录像 / 录像无地图时为 null)。
+func get_grid_layout() -> GridLayout:
+	return _world.get_grid_layout() if _world != null else null
+
+
 ## 获取震屏偏移
 func get_screen_shake_offset() -> Vector2:
 	return _world.get_screen_shake_offset()

@@ -20,7 +20,8 @@
         "battle/smoke_mid_spawn_production_replay.tscn",
         "battle/smoke_knockback_punch.tscn",
         "battle/smoke_wall_breaker.tscn",
-        "battle/smoke_targeting_protocol.tscn"
+        "battle/smoke_targeting_protocol.tscn",
+        "battle/smoke_summon_spike.tscn"
       ]
     },
     "skill-preview": {

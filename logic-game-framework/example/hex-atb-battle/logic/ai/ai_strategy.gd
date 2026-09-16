@@ -106,14 +106,14 @@ func _make_move_decision(actor: CharacterActor, coord: HexCoord) -> Dictionary:
 
 
 ## 向目标移动：从邻居格子中选出最接近 target_pos 的可用格子
-func _move_toward(actor: CharacterActor, target_pos: HexCoord) -> HexCoord:
+func _move_toward(actor: CharacterActor, target_pos: HexCoord, battle: HexWorldGameplayInstance) -> HexCoord:
 	var my_pos := actor.hex_position
 	var current_dist := my_pos.distance_to(target_pos)
 	var neighbors: Array[HexCoord] = my_pos.get_neighbors()
 	var best_coord: HexCoord = null
 	var best_dist := current_dist  # 必须比当前更近才移动
 	for n in neighbors:
-		if _is_tile_available(n):
+		if _is_tile_available(n, battle):
 			var dist := n.distance_to(target_pos)
 			if dist < best_dist:
 				best_dist = dist
@@ -122,14 +122,14 @@ func _move_toward(actor: CharacterActor, target_pos: HexCoord) -> HexCoord:
 
 
 ## 远离目标移动：从邻居格子中选出最远离 threat_pos 的可用格子
-func _move_away_from(actor: CharacterActor, threat_pos: HexCoord) -> HexCoord:
+func _move_away_from(actor: CharacterActor, threat_pos: HexCoord, battle: HexWorldGameplayInstance) -> HexCoord:
 	var my_pos := actor.hex_position
 	var current_dist := my_pos.distance_to(threat_pos)
 	var neighbors: Array[HexCoord] = my_pos.get_neighbors()
 	var best_coord: HexCoord = null
 	var best_dist := current_dist  # 必须比当前更远才移动
 	for n in neighbors:
-		if _is_tile_available(n):
+		if _is_tile_available(n, battle):
 			var dist := n.distance_to(threat_pos)
 			if dist > best_dist:
 				best_dist = dist
@@ -137,8 +137,9 @@ func _move_away_from(actor: CharacterActor, threat_pos: HexCoord) -> HexCoord:
 	return best_coord
 
 
-## 检查格子是否可用（存在、未占用、未预订）
-func _is_tile_available(coord: HexCoord) -> bool:
-	return UGridMap.model.has_tile(coord) \
-		and not UGridMap.model.is_occupied(coord) \
-		and not UGridMap.model.is_reserved(coord)
+## 检查格子是否可用（存在、未占用、未预订）。棋盘只看 battle.grid：world 由参数递入，策略对象无状态、无全局槽位。
+func _is_tile_available(coord: HexCoord, battle: HexWorldGameplayInstance) -> bool:
+	var grid := battle.grid
+	return grid.has_tile(coord) \
+		and not grid.is_occupied(coord) \
+		and not grid.is_reserved(coord)

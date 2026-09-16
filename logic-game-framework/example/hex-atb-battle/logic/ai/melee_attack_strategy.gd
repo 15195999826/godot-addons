@@ -25,7 +25,7 @@ func decide(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Dictiona
 	var enemies := _get_enemies(actor, battle)
 	if actor.hex_position.is_valid() and enemies.size() > 0:
 		var nearest := _select_nearest(actor, enemies)
-		var move_coord := _move_toward(actor, nearest.hex_position)
+		var move_coord := _move_toward(actor, nearest.hex_position, battle)
 		if move_coord != null:
 			return _make_move_decision(actor, move_coord)
 

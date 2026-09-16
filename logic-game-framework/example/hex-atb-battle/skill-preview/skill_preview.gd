@@ -385,10 +385,10 @@ func _update_hex_selection_cursor() -> void:
 	if _selected_hex == null or not _selected_hex.is_valid():
 		_hex_selection_cursor.visible = false
 		return
-	if UGridMap.model == null or not UGridMap.model.has_tile(_selected_hex):
+	if _world == null or _world.grid == null or not _world.grid.has_tile(_selected_hex):
 		_hex_selection_cursor.visible = false
 		return
-	var cfg := UGridMap.model.get_config()
+	var cfg := _world.grid.get_config()
 	var mesh := CylinderMesh.new()
 	mesh.radial_segments = 6
 	mesh.rings = 1
@@ -396,7 +396,7 @@ func _update_hex_selection_cursor() -> void:
 	mesh.top_radius = cfg.size * 0.92
 	mesh.bottom_radius = cfg.size * 0.92
 	_hex_selection_cursor.mesh = mesh
-	var pixel := UGridMap.coord_to_world(_selected_hex)
+	var pixel := _world.grid.coord_to_world(_selected_hex)
 	_hex_selection_cursor.position = Vector3(pixel.x, 0.03, pixel.y)
 	_hex_selection_cursor.rotation.y = PI / 6.0 if cfg.orientation == GridMapConfig.Orientation.FLAT else 0.0
 	_hex_selection_cursor.visible = true
@@ -1060,7 +1060,7 @@ func _nearest_free_coord_for(start_q: int, start_r: int, team: String, actor_idx
 func _can_place_actor_at_for(coord: HexCoord, actor_idx: int) -> bool:
 	if coord == null or not coord.is_valid():
 		return false
-	if UGridMap.model != null and not UGridMap.model.has_tile(coord):
+	if _world != null and _world.grid != null and not _world.grid.has_tile(coord):
 		return false
 	var occupant_idx := _find_actor_idx_at(coord.q, coord.r)
 	if occupant_idx != -1 and occupant_idx != actor_idx:
@@ -1071,7 +1071,7 @@ func _can_place_actor_at_for(coord: HexCoord, actor_idx: int) -> bool:
 func _can_place_environment_at_for(coord: HexCoord, environment_idx: int) -> bool:
 	if coord == null or not coord.is_valid():
 		return false
-	if UGridMap.model != null and not UGridMap.model.has_tile(coord):
+	if _world != null and _world.grid != null and not _world.grid.has_tile(coord):
 		return false
 	if _find_actor_idx_at(coord.q, coord.r) != -1:
 		return false
@@ -2888,7 +2888,7 @@ func _apply_actor_atk_change(idx: int, atk: float) -> void:
 
 
 ## 增量改 grid 配置 (radius / orientation / hex_size): configure_grid 重建 model
-## (UGridMap.configure 创建新 GridMapModel, 旧 occupant 数据全丢) -> emit
+## (新建 GridMapModel 替换 world.grid, 旧 occupant 数据全丢) -> emit
 ## grid_configured -> WorldView 重渲网格。然后遍历 _actor_ids 重新 place_occupant
 ## + 用同坐标 emit actor_position_changed 让 view 按新 hex_size 重算 world_position
 ## 平滑滑过去 —— actor 自身的 hex_position 不变, 只是世界投影改了。
@@ -3082,11 +3082,11 @@ func _hex_coord_under_mouse() -> HexCoord:
 	if ground_result.is_empty():
 		return null
 	var world_pos: Vector3 = ground_result["position"]
-	if UGridMap.model == null:
-		_log("[color=red]UGridMap.model null — map not configured[/color]")
+	if _world == null or _world.grid == null:
+		_log("[color=red]world grid null — map not configured[/color]")
 		return null
-	var coord := UGridMap.world_to_coord(Vector2(world_pos.x, world_pos.z))
-	if not UGridMap.model.has_tile(coord):
+	var coord := _world.grid.world_to_coord(Vector2(world_pos.x, world_pos.z))
+	if not _world.grid.has_tile(coord):
 		return null
 	return coord
 

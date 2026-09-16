@@ -12,7 +12,7 @@
 ##   5. behavior — 图腾低 HP / 不移动 / 每 3s 攻最近敌人 / 死亡或 TTL 消失 (留给正式 impl)
 ##
 ## 输出: 控制台打印每阶段 PASS / FAIL + reason; smoke runner 协议:
-##   SMOKE_SPIKE_RESULT: PASS|FAIL - <N>/<M> verified phases passed; <K> placeholders skipped
+##   SMOKE_TEST_RESULT: PASS|FAIL - <N>/<M> verified phases passed; <K> placeholders skipped
 extends Node
 
 
@@ -66,20 +66,18 @@ func _run_phase_1_spawn() -> void:
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
 	grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
 	grid_cfg.radius = 3
-	UGridMap.configure(grid_cfg)
-
-	var instance := GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p1"))
-	(instance as HexWorldGameplayInstance).grid = UGridMap.model
+	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p1")) as HexWorldGameplayInstance
+	instance.configure_grid(grid_cfg)
 
 	# 中途 spawn: 模拟战斗已经跑了若干 tick 后 add_actor
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	instance.add_actor(totem)
 	totem.set_team_id(0)
-	UGridMap.model.place_occupant(HexCoord.new(1, 0), totem)
+	instance.grid.place_occupant(HexCoord.new(1, 0), totem)
 	totem.hex_position = HexCoord.new(1, 0)
 
-	var in_actors: bool = (instance as HexWorldGameplayInstance).get_alive_actors().has(totem)
-	var grid_occupant: bool = UGridMap.model.get_occupant(HexCoord.new(1, 0)) == totem
+	var in_actors: bool = instance.get_alive_actors().has(totem)
+	var grid_occupant: bool = instance.grid.get_occupant(HexCoord.new(1, 0)) == totem
 	if in_actors and grid_occupant:
 		_record(phase, true, "actor added + grid 占位生效")
 	else:
@@ -99,15 +97,13 @@ func _run_phase_2_drive() -> void:
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
 	grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
 	grid_cfg.radius = 3
-	UGridMap.configure(grid_cfg)
-
 	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p2")) as HexWorldGameplayInstance
-	instance.grid = UGridMap.model
+	instance.configure_grid(grid_cfg)
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	instance.add_actor(totem)
 	totem.set_team_id(0)
-	UGridMap.model.place_occupant(HexCoord.new(0, 0), totem)
+	instance.grid.place_occupant(HexCoord.new(0, 0), totem)
 	totem.hex_position = HexCoord.new(0, 0)
 	# 自带 Thorn (WARRIOR default), 但不 grant DemonForm 来 trigger periodic loop
 
@@ -143,15 +139,13 @@ func _run_phase_3_replay() -> void:
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
 	grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
 	grid_cfg.radius = 3
-	UGridMap.configure(grid_cfg)
-
 	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p3")) as HexWorldGameplayInstance
-	instance.grid = UGridMap.model
+	instance.configure_grid(grid_cfg)
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	instance.add_actor(totem)
 	totem.set_team_id(0)
-	UGridMap.model.place_occupant(HexCoord.new(0, 0), totem)
+	instance.grid.place_occupant(HexCoord.new(0, 0), totem)
 	totem.hex_position = HexCoord.new(0, 0)
 
 	var recorder := BattleRecorder.new({"battle_id": "spike_p3", "tick_interval": int(TICK_INTERVAL)}, instance.event_collector)
@@ -208,15 +202,13 @@ func _run_phase_4_manual_remove() -> void:
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
 	grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
 	grid_cfg.radius = 3
-	UGridMap.configure(grid_cfg)
-
 	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p4")) as HexWorldGameplayInstance
-	instance.grid = UGridMap.model
+	instance.configure_grid(grid_cfg)
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	instance.add_actor(totem)
 	totem.set_team_id(0)
-	UGridMap.model.place_occupant(HexCoord.new(1, 0), totem)
+	instance.grid.place_occupant(HexCoord.new(1, 0), totem)
 	totem.hex_position = HexCoord.new(1, 0)
 
 	# 仿 TTL: 5s 后显式 remove_actor。HexWorldGameplayInstance.remove_actor 应同时清 grid。
@@ -232,7 +224,7 @@ func _run_phase_4_manual_remove() -> void:
 	instance.remove_actor(totem.get_id())
 
 	var still_in_actors := instance.get_actor(totem.get_id()) != null
-	var grid_still_occupied := UGridMap.model.get_occupant(HexCoord.new(1, 0)) != null
+	var grid_still_occupied := instance.grid.get_occupant(HexCoord.new(1, 0)) != null
 
 	if not still_in_actors and not grid_still_occupied:
 		_record(phase, true, "显式 remove_actor 后 actor / grid 都清理干净")
@@ -253,15 +245,13 @@ func _run_phase_4b_ttl_lifecycle() -> void:
 	grid_cfg.orientation = GridMapConfig.Orientation.FLAT
 	grid_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
 	grid_cfg.radius = 3
-	UGridMap.configure(grid_cfg)
-
 	var instance: HexWorldGameplayInstance = GameWorld.create_instance(HexWorldGameplayInstance.new("spike_p4b")) as HexWorldGameplayInstance
-	instance.grid = UGridMap.model
+	instance.configure_grid(grid_cfg)
 
 	var totem := CharacterActor.new(HexBattleClassConfig.CharacterClass.WARRIOR)
 	instance.add_actor(totem)
 	totem.set_team_id(0)
-	UGridMap.model.place_occupant(HexCoord.new(1, 0), totem)
+	instance.grid.place_occupant(HexCoord.new(1, 0), totem)
 	totem.hex_position = HexCoord.new(1, 0)
 	var totem_id := totem.get_id()
 
@@ -284,7 +274,7 @@ func _run_phase_4b_ttl_lifecycle() -> void:
 			break
 
 	var removed_by_lifecycle := instance.get_actor(totem_id) == null
-	var grid_released := UGridMap.model.get_occupant(HexCoord.new(1, 0)) == null
+	var grid_released := instance.grid.get_occupant(HexCoord.new(1, 0)) == null
 	var expired_by_duration := ttl_ability.is_expired() \
 		and ttl_ability.get_expire_reason() == TimeDurationComponent.EXPIRE_REASON_TIME_DURATION
 
@@ -338,7 +328,7 @@ func _report() -> void:
 			pass_count += 1
 	var ok := pass_count == total_verified
 	var marker := "PASS" if ok else "FAIL"
-	print("\nSMOKE_SPIKE_RESULT: %s - %d/%d verified phases passed; %d placeholders skipped" % [
+	print("\nSMOKE_TEST_RESULT: %s - %d/%d verified phases passed; %d placeholders skipped" % [
 		marker, pass_count, total_verified, skipped,
 	])
 	get_tree().quit(0 if ok else 1)

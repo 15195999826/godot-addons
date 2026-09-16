@@ -1,7 +1,8 @@
 ## smoke_lane_wave_engage - M1 端到端冒烟（headless）
 ##
 ## 验证垂直切片：两波 lane creep spawn → march（sim-nav 适配器路径）→ aggro-latch
-## → chase → 基础攻击（Ability/Timeline/Action）→ damage → death → 战斗收束。
+## → chase → 基础攻击（Ability/Timeline/Action）→ damage → death → 战斗收束；
+## 另钉：冷却期不空发激活请求（整场 AbilityActivateFailed 为零）。
 ## 输出 SMOKE_TEST_RESULT: PASS|FAIL - <reason> + 退出码 0/1。
 extends Node
 
@@ -35,11 +36,15 @@ func _ready() -> void:
 
 	# 事件词汇出现追踪（logic-view-contract canonical）。
 	var seen := {}
+	var activate_failed := 0
 	var iters := 0
 	while iters < MAX_ITERS and not procedure.should_end():
 		var frame: Dota2LogicFrame = procedure.advance_tick(LOGIC_DT_MS)
 		for evt in frame.events:
-			seen[str(evt.get("kind", ""))] = true
+			var kind := str(evt.get("kind", ""))
+			seen[kind] = true
+			if kind == GameEvent.ABILITY_ACTIVATE_FAILED_EVENT:
+				activate_failed += 1
 		iters += 1
 
 	procedure.finish()
@@ -67,6 +72,12 @@ func _ready() -> void:
 		if not seen.has(required):
 			_fail("missing event in run: %s (seen=%s)" % [required, str(seen.keys())])
 			return
+
+	# 2b) 冷却期不空发激活请求：请求前经零副作用的 can_activate 预检，整场 AbilityActivateFailed 为零
+	#     （不预检时交战单位每 tick 被 NoTagCondition 拒一次，一场上千条失败事件 + 日志）。
+	if activate_failed != 0:
+		_fail("basic attack requested while gated %d times (expected 0: pre-check with can_activate)" % activate_failed)
+		return
 
 	# 3) 至少一个单位死亡 + 战斗在 MAX_TICKS 内收束（非 timeout）。
 	var total_dead := 0

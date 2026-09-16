@@ -36,7 +36,7 @@ func decide(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Dictiona
 
 	if wounded_allies.size() > 0 and actor.hex_position.is_valid():
 		var target_ally := _select_lowest_hp_percent(wounded_allies)
-		var move_coord := _move_toward(actor, target_ally.hex_position)
+		var move_coord := _move_toward(actor, target_ally.hex_position, battle)
 		if move_coord != null:
 			return _make_move_decision(actor, move_coord)
 

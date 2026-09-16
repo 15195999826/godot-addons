@@ -14,7 +14,7 @@
 - ✅ 事件系统（tile_changed, height_changed, occupant_changed）
 - ✅ A* 寻路
 - ✅ 2D/3D 渲染器
-- ✅ Autoload 单例（GridMap）
+- ✅ 可选全局单例脚本 `u_grid_map.gd`（插件不自动注册；需要时自行加进 autoload）
 
 ## 支持的网格类型
 
@@ -122,9 +122,9 @@ renderer.fill_cell(Vector2i(2, 2), Color.BLUE)
 - `GridMapRenderer2D` - 2D 渲染器
 - `GridMapRenderer3D` - 3D 渲染器
 
-### Autoload
+### 可选 autoload
 
-- `UGridMap` - 全局单例，提供便捷访问
+- `u_grid_map.gd` - 全局单例脚本，插件**不**自动注册。棋盘通常由持有它的对象自己建、自己持（一条棋盘真相）；确实需要全局便捷访问时，自行把它加进 `project.godot` 的 autoload（下文示例中的 `UGridMap` 即按此名注册后的用法）
 
 ## 测试
 

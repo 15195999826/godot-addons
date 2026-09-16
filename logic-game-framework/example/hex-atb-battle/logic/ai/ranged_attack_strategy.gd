@@ -32,13 +32,13 @@ func decide(actor: CharacterActor, battle: HexWorldGameplayInstance) -> Dictiona
 
 	# 2. 技能就绪但射程外 → 靠近敌人进入射程
 	if skill_ready:
-		var move_coord := _move_toward(actor, nearest.hex_position)
+		var move_coord := _move_toward(actor, nearest.hex_position, battle)
 		if move_coord != null:
 			return _make_move_decision(actor, move_coord)
 
 	# 3. 技能 CD 中 + 敌人太近（距离 <= 2）→ 风筝后撤
 	if dist_to_nearest <= 2:
-		var retreat_coord := _move_away_from(actor, nearest.hex_position)
+		var retreat_coord := _move_away_from(actor, nearest.hex_position, battle)
 		if retreat_coord != null:
 			return _make_move_decision(actor, retreat_coord)
 

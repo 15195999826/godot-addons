@@ -40,6 +40,8 @@ var _buff_row_view: FrontendBuffRowView
 var _name_label_view: FrontendNameLabelView
 ## Phase F: 朝向箭头. _ready 装配, set_environment_style 中隐藏 (env 不显示 facing).
 var _facing_indicator_view: FrontendFacingIndicatorView
+## 朝向箭头用的棋盘几何, 由创建本 view 的一方注入 (WorldView / BattleAnimator); _ready 前注入也保留.
+var _grid_layout: GridLayout = null
 
 
 # ========== 状态 ==========
@@ -73,9 +75,17 @@ func _ready() -> void:
 	_name_label_view = FrontendNameLabelView.new()
 	add_child(_name_label_view)
 	_facing_indicator_view = FrontendFacingIndicatorView.new()
+	_facing_indicator_view.set_grid_layout(_grid_layout)
 	add_child(_facing_indicator_view)
 	_target_position = position
 	_smoothed_position = position
+
+
+## 注入棋盘几何给朝向箭头 (来自本 view 所渲染的 world.grid 或录像 map_config)。
+func set_grid_layout(layout: GridLayout) -> void:
+	_grid_layout = layout
+	if _facing_indicator_view != null:
+		_facing_indicator_view.set_grid_layout(layout)
 
 
 func _process(delta: float) -> void:

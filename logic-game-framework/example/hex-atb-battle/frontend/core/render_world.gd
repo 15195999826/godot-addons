@@ -665,6 +665,11 @@ func get_actors_snapshot() -> Dictionary:
 	return snapshot
 
 
+## 录像 map_config 建出的棋盘几何 (录像无地图时为 null)。
+func get_grid_layout() -> GridLayout:
+	return _layout
+
+
 ## 创建 VisualizerContext（只读视图）
 func as_context() -> FrontendVisualizerContext:
 	return FrontendVisualizerContext.new(

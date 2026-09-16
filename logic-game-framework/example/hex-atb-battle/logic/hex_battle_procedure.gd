@@ -1,6 +1,6 @@
 ## HexBattleProcedure - 六边形 ATB 战斗过程
 ##
-## BattleProcedure 的 hex 特化: ATB 累积、AI 决策、技能施放、投射物事件广播、
+## BattleProcedure 的 hex 特化: ATB 累积、AI 决策、技能施放、
 ## 胜负判定(某方全灭)、MAX_TICKS 安全上限。
 ##
 ## 由 HexWorldGameplayInstance 通过 start_battle 创建,
@@ -74,9 +74,6 @@ func tick_once() -> void:
 
 	if _logging_enabled and logger != null:
 		logger.tick(_current_tick, cur_logic_time)
-
-	if world != null:
-		world.broadcast_projectile_events()
 
 	# ATB 与技能执行互斥: 施法期间 ATB 冻结, 不继续充能(经典 ATB 模式)。
 	for actor in get_alive_characters():

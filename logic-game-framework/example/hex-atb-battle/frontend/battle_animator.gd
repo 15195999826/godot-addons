@@ -247,6 +247,7 @@ func _get_or_create_replay_unit_view(actor_id: String, state: FrontendActorRende
 	var view := FrontendUnitView.new()
 	view.name = actor_id
 	_replay_units_root.add_child(view)
+	view.set_grid_layout(_director.get_grid_layout())
 	_owned_replay_unit_views[actor_id] = view
 	return view
 

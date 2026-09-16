@@ -5,6 +5,8 @@
 ##
 ## 实现: 贴近地面的水平 mesh marker, 随 facing_direction 在 X-Z 平面旋转.
 ## 不引入 turn-speed / lerp 动画 — 每次 update_from_state 都瞬时 snap 到新方向 (per spec).
+## 棋盘几何由所属 UnitView 经 set_grid_layout 注入 (WorldView 取其渲染的 world.grid, 录像播放取 map_config 建的
+## layout); 没有布局时退化为固定 60° 方向 (单元 smoke 里裸建 UnitView 的形状).
 class_name FrontendFacingIndicatorView
 extends Node3D
 
@@ -23,6 +25,12 @@ const MARKER_HEAD_HALF_WIDTH := 0.18
 var _marker_root: Node3D
 var _fill_mesh: MeshInstance3D
 var _outline_mesh: MeshInstance3D
+var _grid_layout: GridLayout = null
+
+
+## 注入棋盘几何 (可为 null → 退化方向)。
+func set_grid_layout(layout: GridLayout) -> void:
+	_grid_layout = layout
 
 
 func _ready() -> void:
@@ -60,10 +68,10 @@ func update_from_state(state: FrontendActorRenderState) -> void:
 
 
 func _direction_vector_for_state(state: FrontendActorRenderState) -> Vector3:
-	if state.position != null and state.position.is_valid() and UGridMap.model != null:
-		var origin_2d := UGridMap.model.coord_to_world(state.position)
+	if state.position != null and state.position.is_valid() and _grid_layout != null:
+		var origin_2d := _grid_layout.coord_to_pixel(state.position.to_axial())
 		var neighbor_coord := state.position.neighbor(state.facing_direction)
-		var neighbor_2d := UGridMap.model.coord_to_world(neighbor_coord)
+		var neighbor_2d := _grid_layout.coord_to_pixel(neighbor_coord.to_axial())
 		var delta := neighbor_2d - origin_2d
 		if delta.length() > 0.001:
 			return Vector3(delta.x, 0.0, delta.y).normalized()

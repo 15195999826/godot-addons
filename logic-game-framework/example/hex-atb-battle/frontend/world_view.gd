@@ -118,6 +118,9 @@ func _on_grid_configured(_config: GridMapConfig) -> void:
 	var world := _get_world()
 	if world != null and world.grid != null:
 		_apply_grid_model(world.grid)
+		for view in _unit_views.values():
+			if is_instance_valid(view):
+				(view as FrontendUnitView).set_grid_layout(world.grid.get_layout())
 
 
 ## 地形破坏类技能的预留钩子；MVP 无实际地形变更，重渲染整幅网格即可。
@@ -148,6 +151,8 @@ func _spawn_unit_view(actor_id: String) -> void:
 	view.name = actor_id
 	_units_root.add_child(view)   # 触发 _ready, 让内部 mesh / label 建好
 	_unit_views[actor_id] = view
+	if world.grid != null:
+		view.set_grid_layout(world.grid.get_layout())
 
 	_hydrate_from_actor(view, actor)
 

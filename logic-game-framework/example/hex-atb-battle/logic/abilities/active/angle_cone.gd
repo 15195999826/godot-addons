@@ -35,19 +35,20 @@ static var _CASTER_ATK_DAMAGE: FloatResolver = HexBattleSkillHelpers.caster_atk_
 
 ## Phase E · debug 检查区域几何 (selector 与 StageCue.params overlay 共用).
 ## 同 GridCone.compute_checked_coords 语义: 返回 selector 会枚举的全部格子, 不做 actor 占位过滤.
-static func compute_checked_coords(caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
+## 几何只看传入的棋盘 (调用方传 world(ctx).grid), 静态函数不碰任何全局槽位.
+static func compute_checked_coords(grid: GridMapModel, caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
 	var coords: Array[Dictionary] = []
-	if caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
+	if grid == null or caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
 		return coords
-	var caster_world: Vector2 = UGridMap.model.coord_to_world(caster_pos)
-	var target_world: Vector2 = UGridMap.model.coord_to_world(target_coord)
+	var caster_world: Vector2 = grid.coord_to_world(caster_pos)
+	var target_world: Vector2 = grid.coord_to_world(target_coord)
 	var forward: Vector2 = target_world - caster_world
 	if forward.length_squared() == 0.0:
 		return coords
-	for cand in UGridMap.model.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE):
+	for cand in grid.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE):
 		if cand.equals(caster_pos):
 			continue
-		var cand_world: Vector2 = UGridMap.model.coord_to_world(cand)
+		var cand_world: Vector2 = grid.coord_to_world(cand)
 		var cand_vec: Vector2 = cand_world - caster_world
 		if cand_vec.length_squared() == 0.0:
 			continue
@@ -59,17 +60,17 @@ static func compute_checked_coords(caster_pos: HexCoord, target_coord: HexCoord)
 
 
 ## 返回角度锥形的两条真实边界线, 供 frontend 画 left/right guide rays.
-## point 使用 UGridMap 2D world 坐标: {"x": float, "y": float}; frontend 会映射到 X/Z 平面.
-static func compute_edge_segments(caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
+## point 使用棋盘 (GridMapModel.coord_to_world) 的 2D world 坐标: {"x": float, "y": float}; frontend 会映射到 X/Z 平面.
+static func compute_edge_segments(grid: GridMapModel, caster_pos: HexCoord, target_coord: HexCoord) -> Array[Dictionary]:
 	var segments: Array[Dictionary] = []
-	if caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
+	if grid == null or caster_pos == null or target_coord == null or caster_pos.equals(target_coord):
 		return segments
-	var caster_world: Vector2 = UGridMap.model.coord_to_world(caster_pos)
-	var target_world: Vector2 = UGridMap.model.coord_to_world(target_coord)
+	var caster_world: Vector2 = grid.coord_to_world(caster_pos)
+	var target_world: Vector2 = grid.coord_to_world(target_coord)
 	var forward := target_world - caster_world
 	if forward.length_squared() == 0.0:
 		return segments
-	var line_length := HexBattleAngleCone._cone_debug_line_length(caster_pos, caster_world)
+	var line_length := HexBattleAngleCone._cone_debug_line_length(grid, caster_pos, caster_world)
 	if line_length <= 0.0:
 		return segments
 	var forward_dir := forward.normalized()
@@ -80,12 +81,12 @@ static func compute_edge_segments(caster_pos: HexCoord, target_coord: HexCoord) 
 	return segments
 
 
-static func _cone_debug_line_length(caster_pos: HexCoord, caster_world: Vector2) -> float:
+static func _cone_debug_line_length(grid: GridMapModel, caster_pos: HexCoord, caster_world: Vector2) -> float:
 	var max_center_distance := 0.0
-	for cand in UGridMap.model.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE):
-		var cand_world: Vector2 = UGridMap.model.coord_to_world(cand)
+	for cand in grid.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE):
+		var cand_world: Vector2 = grid.coord_to_world(cand)
 		max_center_distance = maxf(max_center_distance, caster_world.distance_to(cand_world))
-	var layout := UGridMap.model.get_layout()
+	var layout := grid.get_layout()
 	if layout != null:
 		max_center_distance += layout.size
 	return max_center_distance
@@ -106,6 +107,9 @@ static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: Ex
 	var caster := HexBattleSkillHelpers.caster(ctx)
 	if caster == null:
 		return {}
+	var battle := HexBattleGameStateUtils.world(ctx)
+	if battle == null or battle.grid == null:
+		return {}
 	var caster_pos: HexCoord = caster.hex_position
 	var target_coord := HexCoord.from_dict(target_coord_dict)
 	if caster_pos.equals(target_coord):
@@ -114,8 +118,8 @@ static var _DEBUG_PARAMS_RESOLVER: DictResolver = Resolvers.dict_fn(func(ctx: Ex
 		"shape": "angle_cone",
 		"origin_coord": {"q": caster_pos.q, "r": caster_pos.r},
 		"target_coord": {"q": target_coord.q, "r": target_coord.r},
-		"checked_coords": HexBattleAngleCone.compute_checked_coords(caster_pos, target_coord),
-		"edge_segments": HexBattleAngleCone.compute_edge_segments(caster_pos, target_coord),
+		"checked_coords": HexBattleAngleCone.compute_checked_coords(battle.grid, caster_pos, target_coord),
+		"edge_segments": HexBattleAngleCone.compute_edge_segments(battle.grid, caster_pos, target_coord),
 		"range": HexBattleAngleCone.CONE_RANGE,
 		"half_angle_deg": HexBattleAngleCone.HALF_ANGLE_DEG,
 	}
@@ -146,20 +150,23 @@ class _AngleConeSelector:
 			"HexBattleAngleCone._AngleConeSelector",
 			"target_coord (%d,%d) == caster.hex_position; AI/UI must enforce distinct pos" % [target_coord.q, target_coord.r])
 
-		var caster_world: Vector2 = UGridMap.model.coord_to_world(caster_pos)
-		var target_world: Vector2 = UGridMap.model.coord_to_world(target_coord)
+		var grid: GridMapModel = battle.grid
+		if grid == null:
+			return []
+		var caster_world: Vector2 = grid.coord_to_world(caster_pos)
+		var target_world: Vector2 = grid.coord_to_world(target_coord)
 		var forward: Vector2 = target_world - caster_world
 		Log.assert_crash(forward.length_squared() > 0.0,
 			"HexBattleAngleCone._AngleConeSelector",
 			"forward vector zero; coord_to_world should never produce coincident points for distinct coords")
 
-		var candidates := UGridMap.model.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE)
+		var candidates := grid.get_range(caster_pos, HexBattleAngleCone.CONE_RANGE)
 		var caster_team := caster.get_team_id()
 		var hits: Array[Dictionary] = []
 		for cand in candidates:
 			if cand.equals(caster_pos):
 				continue
-			var occupant = battle.grid.get_occupant(cand)
+			var occupant = grid.get_occupant(cand)
 			if occupant == null:
 				continue
 			if not (occupant is CharacterActor):
@@ -169,7 +176,7 @@ class _AngleConeSelector:
 				continue
 			if c.get_team_id() == caster_team:
 				continue
-			var cand_world: Vector2 = UGridMap.model.coord_to_world(cand)
+			var cand_world: Vector2 = grid.coord_to_world(cand)
 			var cand_vec: Vector2 = cand_world - caster_world
 			if cand_vec.length_squared() == 0.0:
 				continue

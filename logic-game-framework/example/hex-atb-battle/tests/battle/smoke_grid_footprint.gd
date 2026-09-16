@@ -1,9 +1,12 @@
 ## Smoke: grid 占用与 registry 对称 —— remove_actor 后该 actor 在棋盘上既无 occupant 也无 reservation，
 ## 同格别人的占用（overlay 形状：站在别人格上但 occupant 不是自己）与别人的预订一律不动；
 ## 未知 id 的 remove_actor 返回 false 且不碰棋盘。另钉录像快照的 map_config：配图后等于棋盘的
-## to_config_dict()，未配图为 {}；hex 的 configure_grid 同时把棋盘灌进 UGridMap autoload。
+## to_config_dict()，未配图为 {}。
 ##
-## 全部是 HexWorldGameplayInstance 层的既有合同；grid 归属搬家（core → stdlib）不得改变其中任何一条。
+## 一条棋盘真相：棋盘只归 world 持有，没有全局槽位——AI 判可用格只看自己 world 的 grid，
+## 另一个 world 配自己的棋盘不影响本 world 的判定。
+##
+## 全部是 HexWorldGameplayInstance 层的合同；grid 归属搬家（core → stdlib）不得改变其中任何一条。
 extends Node
 
 
@@ -43,8 +46,6 @@ func _run() -> String:
 		return "configure_grid must populate the world's grid"
 	if configured.size() != 1 or configured[0] != grid_cfg:
 		return "configure_grid must emit grid_configured exactly once with the given config"
-	if UGridMap.model != grid:
-		return "hex world's grid must be the UGridMap autoload model"
 	if battle.capture_world_snapshot().map_config != grid.to_config_dict():
 		return "world snapshot map_config must come from the configured grid"
 
@@ -85,6 +86,24 @@ func _run() -> String:
 	if grid.get_occupant(HexCoord.new(-1, 0)) != bystander \
 			or grid.get_reservation(HexCoord.new(-2, 0)) != bystander.get_id():
 		return "unknown-id remove_actor must not touch the grid"
+
+	# 一条棋盘真相：另开一个 world 配一张 radius 1 的棋盘后，本 world（radius 3）的 AI 仍按自己的棋盘判可用格——
+	# 战士站 (3, 0)、敌人在 (-1, 0)，唯一更近的邻格 (2, 0) 只在 radius 3 棋盘上有，AI 必须选它。
+	var other := HexWorldGameplayInstance.new()
+	var small_cfg := GridMapConfig.new()
+	small_cfg.grid_type = GridMapConfig.GridType.HEX
+	small_cfg.orientation = GridMapConfig.Orientation.FLAT
+	small_cfg.draw_mode = GridMapConfig.DrawMode.RADIUS
+	small_cfg.radius = 1
+	other.configure_grid(small_cfg)
+	GameWorld.create_instance(other)
+	var attacker := _spawn_character(battle, HexCoord.new(3, 0), 0)
+	attacker.equip_abilities()
+	var decision := attacker.ai_strategy.decide(attacker, battle)
+	var moved_to := decision.get("target_coord", null) as HexCoord
+	if str(decision.get("type", "")) != "move" or moved_to == null or not moved_to.equals(HexCoord.new(2, 0)):
+		return "AI must judge tile availability on its own world's board (expected move to (2, 0), got %s)" % str(decision)
+	GameWorld.destroy_instance(other.id)
 	return ""
 
 
