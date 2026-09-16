@@ -8,7 +8,8 @@ extends Node
 var _instances: Dictionary = {}
 
 
-## 结束并注销全部 instance。幂等：场景 / 测试在开头与收尾各调一次，拿到干净的注册表。
+## 结束并注销全部 instance，拿到干净的注册表。幂等，任何要干净注册表的时刻都可以调：场景 / 测试的开头与收尾、
+## 重建世界（新游戏 / 读档）之前；已手动 end() 但仍在表里的 instance 不会被再结束一次。
 func shutdown() -> void:
 	_end_all_instances()
 	_instances.clear()
@@ -46,11 +47,6 @@ func destroy_instance(id_value: String) -> bool:
 	_instances.erase(id_value)
 	Log.debug("GameWorld", "Instance destroyed: %s" % id_value)
 	return true
-
-func destroy_all_instances() -> void:
-	_end_all_instances()
-	_instances.clear()
-	Log.debug("GameWorld", "All instances destroyed")
 
 func tick_all(dt: float) -> void:
 	for instance in _instances.values():

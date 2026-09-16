@@ -56,7 +56,7 @@ func _test_world_instances() -> void:
 	TestFramework.assert_equal(1, GameWorld.get_instance_count())
 	TestFramework.assert_true(GameWorld.get_instance_by_id("inst-1") == instance)
 	TestFramework.assert_true(GameWorld.has_running_instances() == false)
-	GameWorld.destroy_all_instances()
+	GameWorld.shutdown()
 	TestFramework.assert_equal(0, GameWorld.get_instance_count())
 	GameWorld.shutdown()
 

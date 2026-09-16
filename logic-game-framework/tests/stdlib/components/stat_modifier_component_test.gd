@@ -11,6 +11,11 @@ extends Node
 ## 6. on_stacks_changed reentrance guard: hook 内再调 add_stacks → assert_crash
 ##    (这条难以直接 test crash; 验证 _notifying_stacks_changed 标志)
 ## 7. 非 scale_by_stacks 模式: stacks 变化时 component on_stacks_changed no-op
+## 8. instance 已销毁后仍 revoke: 两个 modifier 组件的 on_remove 各响亮恰一条断言、仍清内部记录、退场照常走完
+
+const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+## 两个 modifier 组件在 owner 反查不到属性集时打的断言文本（模块名 / 钩子名之外的公共部分）。
+const ORPHAN_ASSERT_TEXT := "owner 已不在 instance / instance 已销毁，modifier 无法清理"
 
 
 class TestActor:
@@ -42,6 +47,8 @@ func _init() -> void:
 	TestFramework.register_test("StatModifier remove_stacks updates modifier value", _test_remove_stacks)
 	TestFramework.register_test("StatModifier set_stacks updates modifier value", _test_set_stacks)
 	TestFramework.register_test("StatModifier non-scale mode does not react to stacks_changed", _test_non_scale_mode_noop)
+	TestFramework.register_test("StatModifier revoke after instance destroyed asserts once and still clears its record", _test_stat_modifier_orphan_revoke_asserts_once)
+	TestFramework.register_test("DynamicStatModifier revoke after instance destroyed asserts once", _test_dynamic_modifier_orphan_revoke_asserts_once)
 
 
 func _setup() -> void:
@@ -202,3 +209,59 @@ func _test_non_scale_mode_noop() -> void:
 	TestFramework.assert_true(absf(actor.attribute_set.atk - (initial_atk + 5.0)) < 0.01,
 		"non-scale mode: stacks 变化不应改变 modifier (atk 仍为 base+5)")
 	_teardown()
+
+
+## instance 已销毁后仍 revoke：on_remove 的 context 按 owner 反查、属性集为 null。合同 = 响亮恰一条断言（不是静默返回，
+## 也不是 null 解引用的引擎错误）、组件内部记录仍清、退场照常走完（ability 过期、set 除名）。属性集上那条 modifier
+## 清不到正是这条断言存在的原因，不是合同。
+func _test_stat_modifier_orphan_revoke_asserts_once() -> void:
+	_setup()
+	var actor := _make_actor()
+	var cfg := (StatModifierConfig.builder()
+		.modifier("atk", AttributeModifier.Type.ADD_BASE, 2.0)
+		.build())
+	var ability := _build_ability_with_stacks(cfg, actor.get_id(), 1)
+	actor.ability_set.grant_ability(ability)
+	var component := ability.get_all_components()[0] as StatModifierComponent
+	TestFramework.assert_equal(1, component.get_modifiers().size())
+	GameWorld.destroy_instance(_instance.id)
+	_instance = null
+
+	var log_counter := LogCounter.new(ORPHAN_ASSERT_TEXT)
+	TestFramework.expect_script_errors(1)
+	OS.add_logger(log_counter)
+	var revoked := actor.ability_set.revoke_ability(ability.id)
+	OS.remove_logger(log_counter)
+
+	TestFramework.assert_true(revoked)
+	TestFramework.assert_true(ability.is_expired())
+	TestFramework.assert_equal(0, actor.ability_set.get_ability_count())
+	TestFramework.assert_equal(1, log_counter.matched_errors)
+	TestFramework.assert_equal(1, log_counter.errors)
+	TestFramework.assert_true(component.get_modifiers().is_empty(), "内部记录仍要清")
+
+
+func _test_dynamic_modifier_orphan_revoke_asserts_once() -> void:
+	_setup()
+	var actor := _make_actor()
+	var config := (AbilityConfig.builder()
+		.config_id("dynamic_orphan_test")
+		.component_config(DynamicStatModifierComponentConfig.new(
+			DynamicStatModifierConfig.new("max_hp", "atk", AttributeModifier.Type.ADD_BASE, 0.01)))
+		.build())
+	var ability := Ability.new(config, actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	GameWorld.destroy_instance(_instance.id)
+	_instance = null
+
+	var log_counter := LogCounter.new(ORPHAN_ASSERT_TEXT)
+	TestFramework.expect_script_errors(1)
+	OS.add_logger(log_counter)
+	var revoked := actor.ability_set.revoke_ability(ability.id)
+	OS.remove_logger(log_counter)
+
+	TestFramework.assert_true(revoked)
+	TestFramework.assert_true(ability.is_expired())
+	TestFramework.assert_equal(0, actor.ability_set.get_ability_count())
+	TestFramework.assert_equal(1, log_counter.matched_errors)
+	TestFramework.assert_equal(1, log_counter.errors)

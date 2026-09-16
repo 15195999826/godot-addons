@@ -59,9 +59,11 @@ func on_apply(context: AbilityLifecycleContext) -> void:
 	)
 
 
+## 内部记录只有 _modifier_id：它留给 on_passive_enabled 重用、下一次 on_apply 重新生成，这里不清。
 func on_remove(context: AbilityLifecycleContext) -> void:
-	var raw := context.attribute_set.get_raw()
-
+	var raw := _raw_attribute_set_or_assert(context, "on_remove")
+	if raw == null:
+		return
 	# 先取消动态依赖注册，再移除 modifier
 	raw.unregister_dynamic_dep(_modifier_id)
 	raw.remove_modifier(_modifier_id)
@@ -70,9 +72,9 @@ func on_remove(context: AbilityLifecycleContext) -> void:
 ## Phase B2 (Break): 进入 disabled 状态时撤销动态依赖 + modifier。
 ## _modifier_id 保留以便 on_passive_enabled 用同 id 重新注册 (避免依赖图重新生成 noise)。
 func on_passive_disabled(context: AbilityLifecycleContext) -> void:
-	if context == null or context.attribute_set == null:
+	var raw := _raw_attribute_set_or_assert(context, "on_passive_disabled")
+	if raw == null:
 		return
-	var raw := context.attribute_set.get_raw()
 	raw.unregister_dynamic_dep(_modifier_id)
 	raw.remove_modifier(_modifier_id)
 
@@ -81,9 +83,9 @@ func on_passive_disabled(context: AbilityLifecycleContext) -> void:
 ## 重用同一个 _modifier_id (与 on_apply 生成的一致); RawAttributeSet 求解器立即按当前
 ## source attribute 值算出正确 modifier value。
 func on_passive_enabled(context: AbilityLifecycleContext) -> void:
-	if context == null or context.attribute_set == null:
+	var raw := _raw_attribute_set_or_assert(context, "on_passive_enabled")
+	if raw == null:
 		return
-	var raw := context.attribute_set.get_raw()
 	var modifier := AttributeModifier.new(
 		_modifier_id,
 		config.target_attribute,
@@ -99,3 +101,14 @@ func on_passive_enabled(context: AbilityLifecycleContext) -> void:
 		config.modifier_type,
 		config.coefficient,
 	)
+
+
+## 清理 / 重建钩子共用的守卫。属性集为 null 只在「owner 已不在 instance / instance 已销毁后仍 revoke 或 Break」时出现
+## （context 按 owner 反查、拿不到 actor）——那是合同违反：modifier 与动态依赖留在别处的属性集上、本组件清不到，所以
+## 响亮断言（debug 只中止本帧、release 停机，与 grant 断言同口径）而不静默返回；调用方直接返回。
+func _raw_attribute_set_or_assert(context: AbilityLifecycleContext, hook: String) -> RawAttributeSet:
+	if context != null and context.attribute_set != null:
+		return context.attribute_set.get_raw()
+	Log.assert_crash(false, "DynamicStatModifierComponent",
+		"%s: owner 已不在 instance / instance 已销毁，modifier 无法清理" % hook)
+	return null

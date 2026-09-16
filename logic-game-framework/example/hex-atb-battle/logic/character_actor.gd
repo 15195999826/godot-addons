@@ -206,13 +206,3 @@ func get_attribute_snapshot() -> Dictionary:
 	var snap := get_stats()
 	snap["facing_direction"] = _facing_direction
 	return snap
-
-
-# ========== 序列化 ==========
-
-func serialize() -> Dictionary:
-	var base := super.serialize()
-	base["character_class"] = HexBattleClassConfig.class_to_string(character_class)
-	base["atb_gauge"] = _atb_gauge
-	base["facing_direction"] = _facing_direction
-	return base

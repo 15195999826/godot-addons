@@ -14,6 +14,8 @@ var _test_count := 0
 var _pass_count := 0
 var _fail_count := 0
 var _failures := []
+# 用例声明的刻意 SCRIPT ERROR 条数（见 expect_script_errors）
+var _expected_script_errors := 0
 
 # 生命周期回调
 var _before_each_callbacks: Array[Callable] = []
@@ -89,6 +91,7 @@ func run() -> int:
 	_pass_count = 0
 	_fail_count = 0
 	_failures.clear()
+	_expected_script_errors = 0
 
 	print("\n" + "=".repeat(60))
 	print("运行测试套件")
@@ -170,7 +173,19 @@ func _print_summary() -> void:
 		for failure: Dictionary in _failures:
 			print("  - %s / %s: %s" % [failure.suite, failure.test, failure.message])
 
+	if _expected_script_errors > 0:
+		print("EXPECTED_SCRIPT_ERRORS: %d" % _expected_script_errors)
 	print("=".repeat(60) + "\n")
+
+
+## 声明本用例会刻意触发 count 条 GDScript 运行期错误（典型：钉一条 Log.assert_crash 的断言路径）。
+## 引擎照样把它们打成 SCRIPT ERROR；汇总末尾打印 EXPECTED_SCRIPT_ERRORS: n，launcher 只在日志里恰好 n 条时放行——
+## 多一条（同场景别的用例出错）少一条（断言没触发）都判 FAIL；没声明的场景仍是任何一条即 FAIL。
+static func expect_script_errors(count: int = 1) -> void:
+	var instance: TestFramework = TestFramework.get_instance()
+	if not instance:
+		return
+	instance._expected_script_errors += count
 
 ## 注册断言（由 Expectation 调用）
 

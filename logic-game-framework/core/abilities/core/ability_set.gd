@@ -125,23 +125,22 @@ func revoke_ability(ability_id: String, reason: String = REVOKE_REASON_MANUAL, e
 	_notify_revoked(ability, reason, final_expire_reason)
 	return true
 
-func revoke_abilities_by_config_id(config_id: String, reason: String = REVOKE_REASON_MANUAL) -> int:
+## 按条件批量 revoke：predicate(ability) -> bool 命中的每个都走 revoke_ability 的正规退场（expire → 除名 → 广播）。
+## 条件由游戏层写（按 config_id / tag / source / 全部……），core 不为任一种条件立专用动词——「只清别人施加的」（驱散）
+## 也只是一种 predicate。返回本调用亲手 revoke 的条数。
+##
+## 先快照命中集合再逐个 revoke：某个命中者的 on_remove 里再 revoke 别的 ability 会让活数组左移、跳过下一个；
+## 被这样连带退场的命中者再遇到时 revoke_ability 返回 false，不二次退场、不计数。
+func revoke_abilities_where(predicate: Callable, reason: String = REVOKE_REASON_MANUAL) -> int:
 	var to_revoke: Array[Ability] = []
 	for ability in _abilities:
-		if ability.config_id == config_id:
+		if predicate.call(ability):
 			to_revoke.append(ability)
+	var revoked := 0
 	for ability in to_revoke:
-		revoke_ability(ability.id, reason)
-	return to_revoke.size()
-
-func revoke_abilities_by_ability_tag(tag: String, reason: String = REVOKE_REASON_MANUAL) -> int:
-	var to_revoke: Array[Ability] = []
-	for ability in _abilities:
-		if ability.has_ability_tag(tag):
-			to_revoke.append(ability)
-	for ability in to_revoke:
-		revoke_ability(ability.id, reason)
-	return to_revoke.size()
+		if revoke_ability(ability.id, reason):
+			revoked += 1
+	return revoked
 
 func tick(dt: float, logic_time: float = -1.0) -> void:
 	tag_container.tick(dt, logic_time)

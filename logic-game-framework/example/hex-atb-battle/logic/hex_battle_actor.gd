@@ -79,12 +79,3 @@ func get_attribute_snapshot() -> Dictionary:
 		"hp": attrs.hp,
 		"max_hp": attrs.max_hp,
 	}
-
-
-# ========== 序列化 ==========
-
-## 在 BattleActor 公共字段之上补 hex 位置; 子类 super.serialize() 后追加专属字段。
-func serialize() -> Dictionary:
-	var base := super.serialize()
-	base["hex_position"] = hex_position.to_dict() if hex_position.is_valid() else {}
-	return base

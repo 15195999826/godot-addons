@@ -50,11 +50,3 @@ func _get_config_id() -> String:
 ## (不能落到 BattleActor 的 -1 —— 环境物从不 set_team_id, 那会把既有回放的队伍号改掉。)
 func _get_team_int() -> int:
 	return 0
-
-
-# ========== 序列化 ==========
-
-func serialize() -> Dictionary:
-	var base := super.serialize()
-	base["environment_kind"] = environment_kind
-	return base

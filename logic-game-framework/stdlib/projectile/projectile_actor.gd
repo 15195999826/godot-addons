@@ -219,15 +219,3 @@ func should_moba_hit() -> bool:
 		return false
 	var hit_distance := config.get(CFG_HIT_DISTANCE, 50.0) as float
 	return get_distance_to_target() <= hit_distance
-
-func serialize() -> Dictionary:
-	var data := serialize_base()
-	data["config"] = config
-	data["position"] = _position
-	data["projectile_state"] = _projectile_state
-	data["launch_params"] = _launch_params
-	data["fly_time"] = _fly_time
-	data["fly_distance"] = _fly_distance
-	data["pierce_count"] = _pierce_count
-	data["hit_targets"] = _hit_targets.keys()
-	return data

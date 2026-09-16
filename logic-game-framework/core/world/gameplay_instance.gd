@@ -177,15 +177,3 @@ func get_system(system_type: String) -> System:
 
 func get_systems() -> Array[System]:
 	return _systems
-
-func serialize_base() -> Dictionary:
-	var actors: Array[Dictionary] = []
-	for actor in _actors:
-		actors.append(actor.serialize_base())
-	return {
-		"id": id,
-		"type": type,
-		"state": _state,
-		"logic_time": _logic_time,
-		"actors": actors,
-	}

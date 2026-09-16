@@ -45,16 +45,18 @@ func _create_modifiers_internal(context: AbilityLifecycleContext) -> Array[Attri
 	return result
 
 func on_remove(context: AbilityLifecycleContext) -> void:
-	context.attribute_set.get_raw().remove_modifiers_by_source(context.ability.id)
+	var raw := _raw_attribute_set_or_assert(context, "on_remove")
+	if raw != null:
+		raw.remove_modifiers_by_source(context.ability.id)
 	_clear_modifiers_internal()
 
 
 ## Phase B2 (Break): 进入 disabled 状态时撤销当前 modifiers; 不清 _components state,
 ## 等 on_passive_enabled 按当前 current_scale 重建。stacks / source metadata 全保留。
 func on_passive_disabled(context: AbilityLifecycleContext) -> void:
-	if context == null or context.attribute_set == null:
-		return
-	context.attribute_set.get_raw().remove_modifiers_by_source(context.ability.id)
+	var raw := _raw_attribute_set_or_assert(context, "on_passive_disabled")
+	if raw != null:
+		raw.remove_modifiers_by_source(context.ability.id)
 	applied_modifiers.clear()
 
 
@@ -62,12 +64,13 @@ func on_passive_disabled(context: AbilityLifecycleContext) -> void:
 ## scales_by_stacks 模式: 按 ability.stacks 当前值重算 current_scale 再 add (Break 期间
 ## stacks 可能被外部改, 这是允许行为, 按当前值重建)。
 func on_passive_enabled(context: AbilityLifecycleContext) -> void:
-	if context == null or context.attribute_set == null:
+	var raw := _raw_attribute_set_or_assert(context, "on_passive_enabled")
+	if raw == null:
+		applied_modifiers.clear()
 		return
 	if scales_by_stacks and context.ability != null:
 		current_scale = float(context.ability.get_stacks())
 	applied_modifiers = _create_modifiers_internal(context)
-	var raw: RawAttributeSet = context.attribute_set.get_raw()
 	for modifier in applied_modifiers:
 		raw.add_modifier(modifier)
 
@@ -90,6 +93,17 @@ func on_stacks_changed(context: AbilityLifecycleContext, _old_stacks: int, new_s
 
 func _clear_modifiers_internal() -> void:
 	applied_modifiers.clear()
+
+
+## 清理 / 重建钩子共用的守卫。属性集为 null 只在「owner 已不在 instance / instance 已销毁后仍 revoke 或 Break」时出现
+## （context 按 owner 反查、拿不到 actor）——那是合同违反：modifier 留在别处的属性集上、本组件清不到，所以响亮断言
+## （debug 只中止本帧、release 停机，与 grant 断言同口径）而不静默返回；调用方仍清自己的内部记录后返回。
+func _raw_attribute_set_or_assert(context: AbilityLifecycleContext, hook: String) -> RawAttributeSet:
+	if context != null and context.attribute_set != null:
+		return context.attribute_set.get_raw()
+	Log.assert_crash(false, "StatModifierComponent",
+		"%s: owner 已不在 instance / instance 已销毁，modifier 无法清理" % hook)
+	return null
 
 func get_modifiers() -> Array[AttributeModifier]:
 	return applied_modifiers.duplicate()

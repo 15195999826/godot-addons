@@ -88,14 +88,6 @@ func add_despawn_listener(callback: Callable) -> Callable:
 		if index != -1:
 			_on_despawn_callbacks.remove_at(index)
 
-func serialize_base() -> Dictionary:
-	return {
-		"id": get_id(),
-		"type": type,
-		"team": _team,
-		"display_name": _display_name,
-	}
-
 
 # ========== 录像支持（BattleRecorder 接口） ==========
 

@@ -174,17 +174,6 @@ func setup_recording(ctx: RecordingContext) -> Array[Callable]:
 	return unsubscribes
 
 
-# ========== 序列化 ==========
-
-## 公共字段（id / type / team / 属性 raw / is_dead）。位置形态是项目知识，子类追加。
-func serialize() -> Dictionary:
-	var base := serialize_base()
-	var attrs := get_attribute_set()
-	base["attribute_set"] = attrs.get_raw().serialize() if attrs != null else {}
-	base["is_dead"] = _is_dead
-	return base
-
-
 # ========== 协议查询 ==========
 
 ## 安全获取任意 Actor 的 AbilitySet：非 BattleActor（或纯数据 BattleActor）返回 null。

@@ -91,7 +91,8 @@ class RevokeByConfigAction:
 
 	func execute(ctx: ExecutionContext) -> ActionResult:
 		var owner_set := BattleActor.ability_set_of(ctx.instance.get_actor(ctx.ability_ref.owner_actor_id))
-		owner_set.revoke_abilities_by_config_id(config_id)
+		var wanted := config_id
+		owner_set.revoke_abilities_where(func(ability: Ability) -> bool: return ability.config_id == wanted)
 		return ActionResult.create_success_result([])
 
 
@@ -107,7 +108,6 @@ func _init() -> void:
 	TestFramework.register_test("AbilitySet.tick_runtime ignores non-blocking abilities", _test_tick_runtime_non_blocking)
 	TestFramework.register_test("AbilitySet tick pass survives revoking an earlier ability", _test_tick_survives_mid_pass_revoke)
 	TestFramework.register_test("BattleActor team id syncs both int and string views", _test_team_id)
-	TestFramework.register_test("BattleActor serializes attributes and death latch", _test_serialize_with_sets)
 	TestFramework.register_test("BattleActor subscribes attributes + abilities + lifecycle", _test_setup_recording_full)
 	TestFramework.register_test("GameWorld.get_instance_of_actor resolves owner instance", _test_get_instance_of_actor)
 
@@ -176,10 +176,6 @@ func _test_data_actor_null_safe() -> void:
 	var ctx := RecordingContext.new(actor.get_id(), BattleRecorder.new({}, instance.event_collector))
 	TestFramework.assert_true(_drain(actor.setup_recording(ctx)) == 1,
 		"没有两个 set 时仍应订阅 actor 生命周期这一条")
-
-	var data := actor.serialize()
-	TestFramework.assert_true((data["attribute_set"] as Dictionary).is_empty())
-	TestFramework.assert_false(data["is_dead"])
 	GameWorld.destroy_instance(instance.id)
 
 
@@ -256,10 +252,10 @@ func _test_tick_survives_mid_pass_revoke() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
-# ========== 队伍 / 序列化 / 录像 / 实例反查 ==========
+# ========== 队伍 / 录像 / 实例反查 ==========
 
 ## set_team_id 要同时写 int 与 Actor 基类的字符串 team——录像的 _get_team_int 读前者,
-## serialize_base 的 "team" 读后者, 掉一半就是回放里敌我不分。
+## get_team() 读后者, 掉一半就是两个视图各说各话。
 func _test_team_id() -> void:
 	var actor := ProbeBattleActor.new()
 	TestFramework.assert_equal(-1, actor.get_team_id())
@@ -268,19 +264,6 @@ func _test_team_id() -> void:
 	TestFramework.assert_equal(1, actor.get_team_id())
 	TestFramework.assert_equal("1", actor.get_team())
 	TestFramework.assert_equal(1, actor.team)
-
-
-func _test_serialize_with_sets() -> void:
-	var actor := ProbeBattleActor.new()
-	(actor.attribute_set as ProbeAttributeSet).set_hp(4.0)
-	actor.set_display_name("probe")
-	actor.mark_dead()
-	var data := actor.serialize()
-	TestFramework.assert_equal("probe", data["display_name"])
-	TestFramework.assert_true(data["is_dead"], "死亡闩要进序列化")
-	var attrs: Dictionary = data["attribute_set"]
-	TestFramework.assert_true(attrs.has("hp"), "属性 raw 应完整落盘: %s" % [attrs.keys()])
-	TestFramework.assert_near(float((attrs["hp"] as Dictionary)["value"]), 4.0)
 
 
 func _test_setup_recording_full() -> void:
