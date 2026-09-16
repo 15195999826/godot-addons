@@ -15,7 +15,7 @@ Logic Game Framework 的**回合制 / ATB + hex grid** 战斗示例，也是框�
 | **frontend**（表演） | `frontend/` | 响应式 view + 事件动画 | `FrontendWorldView`（观察 world 结构）、`FrontendBattleAnimator`（消费 event timeline）。见 [`frontend/README.md`](frontend/README.md) |
 
 - **World owns Battle**：`HexWorldGameplayInstance` 持有 actor / grid / systems；战斗是短命的 `HexBattleProcedure`。每个场景（demo / skill-preview）有自己的 `HexWorldGameplayInstance` 子类（`HexDemoWorldGameplayInstance` / `SkillPreviewWorldGI`），框架基类保持通用。
-- **逻辑→表演数据流**：逻辑层只产事件（Timeline tag 驱动 Action；表演提示走 `StageCueAction` + `logic/config/hex_battle_cues.gd` 的 cue 菜单），表演层由 `frontend/visualizers/` 消费；接入清单见主仓 `.claude/skills/lgf-new-logic-skill/SKILL.md` §7。
+- **逻辑→表演数据流**：逻辑层只产事件（Timeline tag 驱动 Action；表演提示走 `StageCueAction` + `logic/config/hex_battle_cues.gd` 的 cue 菜单），表演层由 `frontend/visualizers/` 消费；接入清单见 [`frontend/README.md`](frontend/README.md)「新技能表演层接入清单」节。
 
 ## 设计铁律
 

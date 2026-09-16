@@ -603,3 +603,31 @@ registry.register(MyCustomVisualizer.new())
 ```
 
 ---
+
+## 新技能表演层接入清单
+
+逻辑与表演**同步接入，不留 `# TODO 表演层`**——每落地一个技能 / buff 就把下面几项过一遍。接入面比想象小，常见技能只碰 1-2 处（Expose 整体接入 = `BUFF_REGISTRY` 加 1 行 + 复用 1 个 cue id）。scenario / headless 验证不读表演层（走 logic event collector），漏接不会红在 skill scenario 上，而是由 `hex/regression` 组的 manifest lint（`tests/battle/smoke_manifest_lint.gd`，断言 1-4）兜底。
+
+### 接入面候选清单
+
+| 接入点 | 文件 | 何时必接 |
+|---|---|---|
+| **BUFF_REGISTRY**（buff 头顶图标） | `visualizers/buff_visualizer.gd::BUFF_REGISTRY` | 任何**新 buff** ability（config_id 白名单，不接**永远不显示**；lint 断言 2 兜底——带 buff tag 未登记会红；确需豁免的写进 lint 的 `BUFF_ICON_EXEMPT` 并注明理由） |
+| **StageCue cue_id**（施法瞬间 vfx） | 先 `logic/config/hex_battle_cues.gd` 加常量 → 再 `visualizers/stage_cue_visualizer.gd` 对应注册表引用该常量 | 用 `StageCueAction` 时；**优先复用现有 cue**（菜单里挑），声明处只许写 `HexBattleCues.XXX`（frontend 对未登记 cue **静默跳过**，lint 断言 3 抓未注册 cue）；暂无视觉的 cue 进 lint 的 `CUE_NO_VISUAL_YET` 豁免名单并在菜单「暂无视觉」分组登记 |
+| **default_registry**（visualizer 注册） | `visualizers/default_registry.gd::create()` | **只有**新加 Visualizer 类时才动（普通技能 / buff 复用现有 visualizer 即够） |
+| **投射物视觉类型** | 技能侧 `ProjectileActor.CFG_VISUAL_TYPE`（现有 `"arrow"` / `"fireball"` / `"lightning"`）→ `visualizers/projectile_visualizer.gd` 的 `_parse_projectile_type` / `_get_projectile_color` 映射 | 仅当技能用了**自定义投射物形态**（先复用现有类型；新形态两边同步加分支） |
+
+### BUFF_REGISTRY 一行格式
+
+照抄 `BUFF_REGISTRY` 里任一现有条目：key 是 buff 的 `CONFIG_ID` 常量（不写裸字符串），值含 `short`（头顶 1-2 字符）/ `color` / `primary_source`（`PrimarySource.STACKS` 读 ability stacks、`SHIELD_REMAINING` 读护盾余量、`NONE` 只显 duration）。
+
+`short` / `color` 选取约定：
+- buff 取名首字母大写（P=Poison、E=Expose、S=Ward、U=Surge、T=Thorn、V=Vitality、G=Vigor、I=Inspire；护盾类双字母 PS / MS），控制类状态可用单个符号（★ 眩晕 / 🤐 沉默 / ✗ 破坏）
+- 颜色避开已用色：以 `BUFF_REGISTRY` 现有条目为准（行内注释写明各自色相与「区分谁」），新条目同样注明
+- 同性质 buff（positive / negative）颜色区分够即可，不必一致；控制类飘字（`stage_cue_visualizer.gd::CONTROL_FLOATING_TEXTS`）与对应 buff 图标同色
+
+### 复用 cue id 的判断
+
+**优先复用，不编新名**。例如 Expose 的 setup 标记直接复用 `HexBattleCues.MELEE_SLASH`（挥手特效），玩家看到「caster 朝 target 挥了一下」的视觉反馈即可。只有视觉语义与现有任何 cue 都不匹配（召唤 / 远程瞬移 / debuff glow 圈这类特殊视觉）才加新 cue，流程：`HexBattleCues` 加常量（官方菜单）→ `stage_cue_visualizer.gd` 加类别 / 配置并引用该常量（控制 / 进阶技能大多走 `CONTROL_FLOATING_TEXTS` 加一行飘字配置即可）；暂时不接视觉则进 lint 的 `CUE_NO_VISUAL_YET` 豁免名单。
+
+背景：`stage_cue_visualizer` 对未登记的 cue id 静默跳过（不报错），所以 cue 走常量菜单 + lint 断言 3 双保险——编新名 / 打错字都过不了 `hex/regression`。
