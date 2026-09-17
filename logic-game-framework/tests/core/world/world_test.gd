@@ -2,6 +2,8 @@ extends Node
 
 const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
+const MID_TICK_KIND := "world_test_mid_tick"
+
 class DummyInstance:
 	extends GameplayInstance
 
@@ -42,6 +44,24 @@ class OrderProbeSystem:
 		super._init(priority_value)
 		type = type_value
 
+## 每次 tick 把自己的 type 记进共享日志，再跑一段可选的 on_tick(instance)——测试用它在一趟 base_tick 中途改系统表。
+class TickLogSystem:
+	extends System
+
+	var _tick_log: Array[String]
+	var _on_tick: Callable
+
+	func _init(type_value: String, priority_value: int, tick_log: Array[String], on_tick: Callable = Callable()) -> void:
+		super._init(priority_value)
+		type = type_value
+		_tick_log = tick_log
+		_on_tick = on_tick
+
+	func tick(_actors: Array[Actor], _dt: float) -> void:
+		_tick_log.append(type)
+		if _on_tick.is_valid():
+			_on_tick.call(get_instance())
+
 func _init() -> void:
 	TestFramework.register_test("GameWorld manages instances", _test_world_instances)
 	TestFramework.register_test("GameWorld.shutdown ends every instance and is idempotent", _test_shutdown_idempotent)
@@ -52,6 +72,8 @@ func _init() -> void:
 	TestFramework.register_test("System order: same priority keeps registration order", _test_system_order_same_priority)
 	TestFramework.register_test("System order: mid-run insert does not disturb same-priority order", _test_system_order_mid_insert)
 	TestFramework.register_test("System order: stable after remove", _test_system_order_after_remove)
+	TestFramework.register_test("GameplayInstance.base_tick walks a snapshot: add_system from a post handler mid-trip neither re-ticks nor skips", _test_base_tick_add_system_in_post_handler)
+	TestFramework.register_test("GameplayInstance.base_tick walks a snapshot: a system removed mid-trip is not ticked, the ones after it still are", _test_base_tick_remove_system_mid_trip)
 
 func _test_world_instances() -> void:
 	GameWorld.shutdown()
@@ -188,3 +210,52 @@ func _test_system_order_after_remove() -> void:
 	# remove 后再插入：seq 不复用，新系统仍排同档末尾
 	instance.add_system(OrderProbeSystem.new("e", System.SystemPriority.NORMAL))
 	TestFramework.assert_equal(["a", "c", "d", "e"], _system_types(instance))
+
+## base_tick 的本趟名单 = 开趟时的系统表快照。system tick 里可以当场 process_post_event（stdlib ProjectileSystem 的形状），
+## handler 里 add_system 会就地重排 _systems：活数组遍历下，排到当前位置之前的新系统把正在 tick 的那个顶到下一格、
+## 让它本趟再 tick 一次，排到后面的新系统则当趟就被 tick。合同：已在表里的每个恰 tick 一次；中途加入的不论排到哪，
+## 都从下一趟开始 tick。
+func _test_base_tick_add_system_in_post_handler() -> void:
+	var instance := DummyInstance.new("inst-mid-tick-add")
+	var tick_log: Array[String] = []
+	instance.add_system(TickLogSystem.new("dispatcher", System.SystemPriority.NORMAL, tick_log,
+		func(ticking_instance: GameplayInstance) -> void:
+			ticking_instance.event_processor.process_post_event({"kind": MID_TICK_KIND})))
+	instance.add_system(TickLogSystem.new("tail", System.SystemPriority.NORMAL, tick_log))
+	instance.event_processor.register_post_handler(PostHandlerRegistration.new(
+		"world_test_mid_tick_add", MID_TICK_KIND, "", "", "",
+		func(_event_dict: Dictionary, _handler_context: HandlerContext) -> bool:
+			if instance.get_system("late_high") == null:
+				instance.add_system(TickLogSystem.new("late_high", System.SystemPriority.HIGH, tick_log))
+				instance.add_system(TickLogSystem.new("late_low", System.SystemPriority.LOW, tick_log))
+			return true))
+	instance.start()
+
+	instance.tick(1.0)
+	TestFramework.assert_equal(["dispatcher", "tail"], tick_log)
+	TestFramework.assert_equal(["late_high", "dispatcher", "tail", "late_low"], _system_types(instance))
+
+	tick_log.clear()
+	instance.tick(1.0)
+	TestFramework.assert_equal(["late_high", "dispatcher", "tail", "late_low"], tick_log)
+	# handler 捕获了 instance（instance → processor → registration → handler → instance）；end() 清注册表拆环。
+	instance.end()
+
+## 同一份快照也管 remove_system：中途被移除的 system 已 on_unregister，本趟不再 tick；排在它后面的照常 tick
+## （活数组遍历下，移除当前位置及之前的 system 会让数组左移、跳过下一个）。
+func _test_base_tick_remove_system_mid_trip() -> void:
+	var instance := DummyInstance.new("inst-mid-tick-remove")
+	var tick_log: Array[String] = []
+	instance.add_system(TickLogSystem.new("first", System.SystemPriority.NORMAL, tick_log))
+	instance.add_system(TickLogSystem.new("remover", System.SystemPriority.NORMAL, tick_log,
+		func(ticking_instance: GameplayInstance) -> void:
+			ticking_instance.remove_system("first")
+			ticking_instance.remove_system("victim")))
+	instance.add_system(TickLogSystem.new("victim", System.SystemPriority.NORMAL, tick_log))
+	instance.add_system(TickLogSystem.new("tail", System.SystemPriority.NORMAL, tick_log))
+	instance.start()
+
+	instance.tick(1.0)
+	TestFramework.assert_equal(["first", "remover", "tail"], tick_log)
+	TestFramework.assert_equal(["remover", "tail"], _system_types(instance))
+	instance.end()

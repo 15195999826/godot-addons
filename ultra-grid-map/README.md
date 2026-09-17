@@ -14,7 +14,6 @@
 - ✅ 事件系统（tile_changed, height_changed, occupant_changed）
 - ✅ A* 寻路
 - ✅ 2D/3D 渲染器
-- ✅ 可选全局单例脚本 `u_grid_map.gd`（插件不自动注册；需要时自行加进 autoload）
 
 ## 支持的网格类型
 
@@ -35,6 +34,8 @@
 
 ### 2. 配置地图
 
+插件只提供类、不注册任何 autoload：棋盘由持有它的对象自己建、自己持（如 LGF stdlib 的 `GridWorldGameplayInstance.grid`），没有全局槽位。
+
 ```gdscript
 # 创建配置
 var config := GridMapConfig.new()
@@ -44,8 +45,9 @@ config.draw_mode = GridMapConfig.DrawMode.RADIUS
 config.radius = 5
 config.size = 32.0
 
-# 配置全局 GridMap
-GridMap.configure(config)
+# 建模型，由调用方持有
+var model := GridMapModel.new()
+model.initialize(config)
 ```
 
 ### 3. 使用地图
@@ -55,18 +57,19 @@ GridMap.configure(config)
 var coord := HexCoord.new(1, 2)
 
 # 坐标转换
-var world_pos := UGridMap.coord_to_world(coord)
-var hex := UGridMap.world_to_coord(world_pos)
+var world_pos := model.coord_to_world(coord)
+var hex := model.world_to_coord(world_pos)
 
 # 邻居查询
-var neighbors := UGridMap.get_neighbors(coord)  # Array[HexCoord]
+var neighbors := model.get_neighbors(coord)  # Array[HexCoord]
 
 # 距离计算
-var distance := UGridMap.get_distance(HexCoord.new(0, 0), HexCoord.new(3, 3))
+var distance := model.get_distance(HexCoord.new(0, 0), HexCoord.new(3, 3))
 
-# 寻路
-var pathfinding := GridPathfinding.new(UGridMap.model)
-var path := pathfinding.astar_simple(HexCoord.new(0, 0), HexCoord.new(5, 5))
+# 寻路（静态函数，model 走参数）
+var result := GridPathfinding.astar_simple(model, HexCoord.new(0, 0), HexCoord.new(5, 5))
+if result.found:
+	print(result.path)  # Array[HexCoord]，含起点与终点
 ```
 
 ### 4. 渲染地图
@@ -76,14 +79,15 @@ var path := pathfinding.astar_simple(HexCoord.new(0, 0), HexCoord.new(5, 5))
 ```gdscript
 # 添加 GridMapRenderer2D 节点到场景
 var renderer := GridMapRenderer2D.new()
-renderer.model = GridMap.model
 add_child(renderer)
+renderer.set_model(model)
+renderer.render_grid()
 
 # 高亮格子
-renderer.highlight_cell(Vector2i(1, 1), Color.RED)
+renderer.highlight_tiles([HexCoord.new(1, 1)], Color.RED)
 
 # 填充格子
-renderer.fill_cell(Vector2i(2, 2), Color.BLUE)
+renderer.fill_tiles([HexCoord.new(2, 2)], Color.BLUE)
 ```
 
 #### 3D 渲染
@@ -91,15 +95,16 @@ renderer.fill_cell(Vector2i(2, 2), Color.BLUE)
 ```gdscript
 # 添加 GridMapRenderer3D 节点到场景
 var renderer := GridMapRenderer3D.new()
-renderer.model = GridMap.model
 renderer.height_scale = 1.0
 add_child(renderer)
+renderer.set_model(model)
+renderer.render_grid()
 
 # 高亮格子
-renderer.highlight_cell(Vector2i(1, 1), Color.RED)
+renderer.highlight_tiles([HexCoord.new(1, 1)], Color.RED)
 
 # 填充格子
-renderer.fill_cell(Vector2i(2, 2), Color.BLUE)
+renderer.fill_tiles([HexCoord.new(2, 2)], Color.BLUE)
 ```
 
 ## API 参考
@@ -121,10 +126,6 @@ renderer.fill_cell(Vector2i(2, 2), Color.BLUE)
 
 - `GridMapRenderer2D` - 2D 渲染器
 - `GridMapRenderer3D` - 3D 渲染器
-
-### 可选 autoload
-
-- `u_grid_map.gd` - 全局单例脚本，插件**不**自动注册。棋盘通常由持有它的对象自己建、自己持（一条棋盘真相）；确实需要全局便捷访问时，自行把它加进 `project.godot` 的 autoload（下文示例中的 `UGridMap` 即按此名注册后的用法）
 
 ## 测试
 

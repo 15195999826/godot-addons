@@ -34,12 +34,15 @@ func get_actor_count() -> int:
 func tick(_dt: float) -> void:
 	pass
 
+## 本趟名单 = 开趟时的系统表快照。system tick 里可以当场 process_post_event（stdlib ProjectileSystem），handler 或 system
+## 自己 add_system（就地重排 _systems）/ remove_system 都不让本趟漏 tick、重 tick：已在表里的每个恰 tick 一次，
+## 中途加入的不论排到哪都从下一趟开始 tick，中途移除的（已 on_unregister）本趟不再 tick。
 func base_tick(dt: float) -> void:
 	if not is_running():
 		return
 	_logic_time += dt
-	for system in _systems:
-		if system.get_enabled():
+	for system: System in _systems.duplicate():
+		if system.get_enabled() and _systems.has(system):
 			system.tick(_actors, dt)
 
 func start() -> void:

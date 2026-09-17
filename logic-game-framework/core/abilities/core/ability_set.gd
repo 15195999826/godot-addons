@@ -107,18 +107,21 @@ func grant_ability(ability: Ability) -> void:
 	var event_dict := GameEvent.AbilityGranted.create(owner_actor_id, ability.serialize()).to_dict()
 	receive_event(event_dict)
 
+## 单个退场：expire（跑 on_remove）→ 除名 → revoked 广播；不在集里返回 false。
+##
+## 除名按对象、在 expire 之后现找：on_remove 里可以再 revoke 同集的 ability，进门时的下标到这里可能已经左移
+## （指着旁观者，或越过数组尾）。on_remove 里连自己也 revoke 了（按条件批量 revoke 命中自己）时，重入的那次已经
+## 除名并广播过，这里找不到就收手，不二次广播；退场已成，仍返回 true。
 func revoke_ability(ability_id: String, reason: String = REVOKE_REASON_MANUAL, expire_reason: String = "") -> bool:
-	var index := -1
-	for i in range(_abilities.size()):
-		if _abilities[i].id == ability_id:
-			index = i
-			break
-	if index == -1:
+	var ability := find_ability_by_id(ability_id)
+	if ability == null:
 		return false
-	var ability := _abilities[index]
 	var effective_expire_reason := expire_reason if expire_reason != "" else reason
 	if not ability.is_expired():
 		ability.expire(effective_expire_reason)
+	var index := _abilities.find(ability)
+	if index == -1:
+		return true
 	_abilities.remove_at(index)
 	var final_expire_reason := ability.get_expire_reason() if ability.get_expire_reason() != "" else effective_expire_reason
 	Log.debug("AbilitySet", "失去能力 (%s)" % final_expire_reason)
