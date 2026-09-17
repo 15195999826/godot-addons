@@ -3,7 +3,8 @@
 ## V1 语义:
 ## - cant_act gate tag (component-owned) → ActiveGateway 拦 Move / Strike / 所有 active skill
 ##   的下一次主动行动入口
-## - on-apply CancelActiveExecutionsAction → 取消目标当前 in-flight active execution
+## - on-apply CancelActiveExecutionsAction → 取消目标当前 in-flight 的主动技能 execution
+##   (只认 active tag; 在飞的 Move 不打断, 已起手的那一步照常走完)
 ## - TimeDurationConfig → 到期自动 ability.expire
 ## - 独立实例: 每次 grant 一个新 Ability (ApplyBuffAction 默认行为), 不 refresh / 不合并 duration
 ## - 多个 Stun 重叠时, component-owned cant_act tag 由每个实例独立贡献 + 清理:

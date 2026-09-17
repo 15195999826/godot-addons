@@ -8,9 +8,11 @@
 ##   还没结束)
 ## - 不影响 NoInstance / PreEvent / buff tick / DOT / deathrattle / post-damage 这类被动响应
 ##   (它们的 ability 不带 "active" tag)
+## - 不打断在飞的 Move: Move 的 tag 是 action + move、不带 "active" —— 已起手的那一步 (200ms) 照常走完,
+##   cant_act 只拦下一次起手。前端凭 move_start 播整段位移, 逻辑侧中途取消移动会让表现与棋盘错位
 ## - 经 GameWorld.get_actor 取 ability_set、不读 ctx.instance; 被取消 execution 的 on_cancel 由 execution 按 owner 反查 instance
 ##
-## V1 用例: HexBattleStunBuff on_apply 取消目标当前 in-flight active skill/strike/move execution。
+## V1 用例: HexBattleStunBuff on_apply 取消目标当前 in-flight 的主动技能 (含普攻 strike) execution。
 class_name HexBattleCancelActiveExecutionsAction
 extends Action.BaseAction
 

@@ -8,8 +8,9 @@
 ##      (不接图标 = buff 永远不显示, 无报错)
 ##   3. cue 存在性: 全部静态声明的 cue ⊆ frontend 认识的 cue 集合
 ##      (stage_cue_visualizer 对未知 cue 静默跳过) + HexBattleCues 菜单登记
-##   4. tag 词表 + active 技能 RANGE / TARGETING meta 必填
-##      (tag typo 静默漏行为; RANGE 缺省被读成 1 是踩过的坑)
+##   4. tag 词表 + active 技能 RANGE / TARGETING meta 必填 + 行动载体 tag 必带
+##      (tag typo 静默漏行为; RANGE 缺省被读成 1 是踩过的坑; ATB 冻结只认 active / action tag,
+##      主动技能漏 active、Move 漏 action = 行动在飞时行动条照涨, 无报错)
 ##
 ## 覆盖边界: cue 收集 = 顶层 action + 经 Action.get_child_actions() 的通用 DFS
 ## (覆盖 FlowAction then/else 分支、DamageAction 回调链、未来任意嵌套组合器)。
@@ -40,7 +41,7 @@ const DESCRIPTIVE_TAGS: Array[String] = [
 	"stun", "silence", "cleanse", "fire_tile", "totem",
 	"dynamic", "regen", "reflect", "defensive", "offensive", "deathrattle",
 	"periodic", "equipment", "attack_effect", "critical_strike",
-	"character_rules", "auto_attack", "move", "action",
+	"character_rules", "auto_attack", "move",
 ]
 
 
@@ -163,7 +164,7 @@ func _append_component_actions(
 func _known_tags() -> Dictionary:
 	var known := {}
 	for t in [
-		HexBattleSkillTags.TAG_SKILL, HexBattleSkillTags.TAG_ACTIVE,
+		HexBattleSkillTags.TAG_SKILL, HexBattleSkillTags.TAG_ACTIVE, HexBattleSkillTags.TAG_ACTION,
 		HexBattleSkillTags.TAG_PASSIVE, HexBattleSkillTags.TAG_INTRINSIC,
 		HexBattleSkillTags.TAG_STATUS, HexBattleSkillTags.TAG_LIFETIME,
 		HexBattleSkillTags.TAG_ENEMY, HexBattleSkillTags.TAG_ALLY,
@@ -186,6 +187,9 @@ func _check_tags_and_meta(configs: Array[AbilityConfig], failures: Array[String]
 		HexBattleSkillMetaKeys.TARGETING_COORD,
 		HexBattleSkillMetaKeys.TARGETING_SELF,
 	]
+	# ATB 冻结只认行动载体 tag (BattleAbilitySet._is_blocking_execution): Move 是唯一的 action 载体
+	if not HexBattleMove.ABILITY.ability_tags.has(HexBattleSkillTags.TAG_ACTION):
+		failures.append("%s: Move 不带 action tag(移动在飞时 ATB 不冻结, 途中还能再起手)" % HexBattleMove.CONFIG_ID)
 	for cfg in configs:
 		for tag in cfg.ability_tags:
 			if not known.has(tag):
@@ -194,6 +198,8 @@ func _check_tags_and_meta(configs: Array[AbilityConfig], failures: Array[String]
 		# "RANGE 缺省被读成 1" 坑从此结构性消灭
 		if cfg.get_active_use_configs().is_empty():
 			continue
+		if not cfg.ability_tags.has(HexBattleSkillTags.TAG_ACTIVE):
+			failures.append("%s: 有 active_use 却不带 active tag(施法期间 ATB 不冻结, 还能再起手一个行动)" % cfg.config_id)
 		if not cfg.metadata.has(HexBattleSkillMetaKeys.RANGE):
 			failures.append("%s: active 技能缺 RANGE meta(缺省会被 can_use_skill_on 读成 1)" % cfg.config_id)
 		var targeting: Variant = cfg.metadata.get(HexBattleSkillMetaKeys.TARGETING, null)

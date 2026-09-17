@@ -3,11 +3,11 @@
 	"passives_per_actor": 1,
 	"runs": {
 		"571031": {
-			"events": 298,
-			"frames": 110,
+			"events": 255,
+			"frames": 88,
 			"offensive_slots": -1,
-			"result": "right_win",
-			"sha256": "e3ded245d32cd098a1e4ed98e6f8078872ea6010e1c7068b5fd432841c00a5c1"
+			"result": "left_win",
+			"sha256": "258ad325c04b0f4e2a1a4306463a96f9c5c82e9b464bfb959f3ed231ba70258e"
 		},
 		"671159": {
 			"events": 172,
@@ -17,32 +17,32 @@
 			"sha256": "cc285a2d20aea1c6aaf899e160a182df1a6e172c668ca75fed88e4bc5567fd55"
 		},
 		"900083": {
-			"events": 186,
+			"events": 181,
 			"frames": 74,
 			"offensive_slots": 1,
 			"result": "left_win",
-			"sha256": "9a4fb41c8154181ce095ba6d14ed88121c01e577616943324ad882d8d7b8196e"
+			"sha256": "bb7e6e4c201c01143723c4191c0140ba36fc2eb75b9c0abb4cf449c8a84c0af6"
 		},
 		"900097": {
-			"events": 233,
+			"events": 228,
 			"frames": 123,
 			"offensive_slots": 1,
 			"result": "left_win",
-			"sha256": "d36cef132cde43decb1aa3c714522c6578ce6fbabda13cd6a7c274c0c0e5eb3b"
+			"sha256": "86a370945fc504fdbef655b6652f0b11e7961fb02c764f6d8b1c21ad1d2a2049"
 		},
 		"900113": {
-			"events": 263,
-			"frames": 152,
+			"events": 243,
+			"frames": 113,
 			"offensive_slots": 1,
-			"result": "left_win",
-			"sha256": "8b87ba15bff373b92cc0de030183b258a98d6a4620211276d96077ff82515533"
+			"result": "right_win",
+			"sha256": "aeda683b12ad7287be869fa43321302c1f226919c7914cae6b3a2d62a55b780c"
 		},
 		"900127": {
-			"events": 208,
+			"events": 204,
 			"frames": 74,
 			"offensive_slots": 1,
 			"result": "left_win",
-			"sha256": "295ea16c52dd8d618d871b254e2703e4cf886761cb731fe4864fd6581bccc760"
+			"sha256": "ae5d8febd096c337355884687b52d43642b7793335d875c6d7dce24a7f8e81fe"
 		},
 		"900131": {
 			"events": 168,
@@ -52,25 +52,25 @@
 			"sha256": "fc96e04fa1246283670c07c1b67b6382294425cbfeec42116551b3b151b1e0d1"
 		},
 		"900191": {
-			"events": 226,
-			"frames": 111,
-			"offensive_slots": 1,
-			"result": "right_win",
-			"sha256": "b1b28ba2f7b14cbd20ec7b4fab0436efdbd29c2db0aa60c2bb80c2ea5934103d"
-		},
-		"900211": {
-			"events": 315,
-			"frames": 158,
-			"offensive_slots": 1,
-			"result": "right_win",
-			"sha256": "77209e26690bd61cf5a881ab28461c26fcff341c8ac794c564b6d8782b97028f"
-		},
-		"900223": {
-			"events": 261,
-			"frames": 185,
+			"events": 236,
+			"frames": 132,
 			"offensive_slots": 1,
 			"result": "left_win",
-			"sha256": "3726af3b43faeaefe961c098dbf84a5950a9ea4105cc8222397c55533fda90fa"
+			"sha256": "0d027487867a93e32d166096727324d8af3fa487b56c5486a3d432fccfa98dd3"
+		},
+		"900211": {
+			"events": 291,
+			"frames": 144,
+			"offensive_slots": 1,
+			"result": "right_win",
+			"sha256": "5ae69972dd419852ef3d89b61c92cdb6fc98d560b43a149765275eeb3efdbe8d"
+		},
+		"900223": {
+			"events": 229,
+			"frames": 122,
+			"offensive_slots": 1,
+			"result": "right_win",
+			"sha256": "66a7bcb7f70f7d27cc53374683fc7f5eb62e38ec769de1e0cf3dfbe23aa4911e"
 		}
 	}
 }

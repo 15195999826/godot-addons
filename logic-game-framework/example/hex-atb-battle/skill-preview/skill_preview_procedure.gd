@@ -131,8 +131,14 @@ func tick_once() -> void:
 	for actor in _get_alive_participants():
 		if _finished:
 			return
-		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time):
+		# 名单是开趟时建的：本帧稍早被打死的参战者轮到时已是尸体，当帧就不再 tick（与 HexBattleProcedure 主循环同一条合同）。
+		if actor.is_dead():
+			continue
+		# 收尾判 idle 等的是「除内建能力外还有 execution 在飞」(DOT 这类周期 buff 也等它跳完), 不是 tick_runtime 返回的
+		# ATB 冻结那张只认行动的清单。推进之前问: 本帧内跑完的 execution 也算占用了这一帧。
+		if actor.ability_set.has_pending_execution():
 			any_ability_executing = true
+		actor.ability_set.tick_runtime(_tick_interval, cur_logic_time)
 
 	# Phase C (Fire Tile): EnvironmentActor 的 ability_set 也要 tick / tick_executions。
 	# 它不在 _get_alive_participants() (那是 CharacterActor 类型) 中, 单独遍历。

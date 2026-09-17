@@ -7,10 +7,21 @@ extends AbilitySet
 
 # ========== 行动阻塞 ==========
 
-## 内建能力 (角色规则桥 / 常驻 passive) 的 execution 不冻结 ATB —— 它们全程在跑,
-## 当成阻塞会让角色永远轮不到行动。
+## ATB 冻结只认「行动」: 角色花行动条换来的那个行动 (主动技能 active / 移动 action) 在飞才停充能。
+## buff / 被动 / 内建能力的周期 timeline (中毒 DOT、涌动、恶魔形态、回血) 在身期间全程「执行中」,
+## 当成阻塞 = 持有者整段不充能不行动 (中毒即定身、恶魔形态持有者整场零行动)。
+## 白名单而非逐个豁免: 新写的周期能力默认不冻结; 主动技能必带 active tag 由 manifest lint 守。
 func _is_blocking_execution(ability: Ability) -> bool:
-	return not ability.has_ability_tag(HexBattleSkillTags.TAG_INTRINSIC)
+	return ability.has_ability_tag(HexBattleSkillTags.TAG_ACTIVE) or ability.has_ability_tag(HexBattleSkillTags.TAG_ACTION)
+
+
+## 除内建能力外是否还有 execution 在飞 —— 预览收尾判 idle 要等的那张清单 (DOT 这类周期 buff 也等它跳完),
+## 与「ATB 冻结只认行动」是两个问题。内建能力的周期 timeline 永不停, 算进来预览永远收不了尾。
+func has_pending_execution() -> bool:
+	for ability in get_abilities():
+		if ability.has_executing_instance() and not ability.has_ability_tag(HexBattleSkillTags.TAG_INTRINSIC):
+			return true
+	return false
 
 
 # ========== 冷却系统 ==========

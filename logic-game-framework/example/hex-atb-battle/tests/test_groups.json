@@ -12,6 +12,7 @@
         "battle/smoke_grid_footprint.tscn",
         "battle/smoke_world_end_mid_tick.tscn",
         "battle/smoke_tick_loop_removal.tscn",
+        "battle/smoke_action_tags.tscn",
         "frontend/smoke_item_preview_boot.tscn",
         "frontend/smoke_frontend_main.tscn"
       ]

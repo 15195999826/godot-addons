@@ -1,12 +1,14 @@
-## Smoke: 战斗 tick 循环里的 remove_actor 与尸体身上在飞的 execution。
+## Smoke: 战斗 tick 循环里的 remove_actor、尸体身上在飞的 execution 与当帧被击杀者。
 ##
-## 三幕：
+## 四幕：
 ##   1. HexBattleProcedure 的补 tick 循环（中途 spawn 的图腾 / 火焰地块走这条）遍历 registry 快照：
 ##      循环内某个 actor 到期把自己 remove_actor 掉，排在它后面的 actor 本帧照常 tick（活数组遍历会因左移跳过它）；
 ##      本趟里已被别人移出 registry 的 actor 不再 tick（与活数组遍历同一结果）。
 ##   2. SkillPreviewProcedure 的环境物循环同形，同一条合同。
 ##   3. 角色起手 Move（START 已预订目的地）后、EXECUTE 之前被击杀：尸体不 tick，Move 不落地（位置不变、预订已随
 ##      clear_grid_footprint 清掉）——而那条在飞的 execution 当帧取消，不以「执行中」残留在尸体上。
+##   4. 主循环名单是开趟时建的：排在击杀者之后、当帧稍早被打死的角色，轮到它时已是尸体——当帧就不再
+##      tick_runtime（身上在飞的 keyframe 不 fire）、不充能、不起手新行动。SkillPreviewProcedure 的参战者循环同一条合同。
 ##
 ## 退出码: 0 PASS / 1 FAIL; 标记 "SMOKE_TEST_RESULT: PASS|FAIL - <reason>"
 extends Node
@@ -59,14 +61,15 @@ class ProbeAction:
 func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 	print("=== Smoke: remove_actor inside the tick loop / in-flight executions on a corpse ===")
-	# 三幕互不依赖，全部跑完再汇总：一幕失败不遮住另外两幕。
+	# 四幕互不依赖，全部跑完再汇总：一幕失败不遮住另外几幕。
 	var failures: Array[String] = []
-	for status: String in [_phase_hex_mid_spawn_loop(), _phase_skill_preview_environment_loop(), _phase_corpse_execution()]:
+	for status: String in [_phase_hex_mid_spawn_loop(), _phase_skill_preview_environment_loop(), _phase_corpse_execution(),
+			_phase_killed_earlier_in_the_frame(), _phase_preview_killed_earlier_in_the_frame()]:
 		if status != "":
 			failures.append(status)
 	GameWorld.shutdown()
 	if failures.is_empty():
-		print("SMOKE_TEST_RESULT: PASS - tick loops walk a registry snapshot; a corpse keeps no in-flight action")
+		print("SMOKE_TEST_RESULT: PASS - tick loops walk a registry snapshot; a corpse keeps no in-flight action and stops ticking in the frame it dies")
 		get_tree().quit(0)
 	else:
 		print("SMOKE_TEST_RESULT: FAIL - %s" % " | ".join(failures))
@@ -233,6 +236,104 @@ func _phase_corpse_execution() -> String:
 		return "corpse: nobody should occupy the destination"
 	if not move.get_executing_instances().is_empty():
 		return "corpse: an in-flight execution reappeared on the corpse"
+	return ""
+
+
+# ========== 幕 4：主循环里当帧稍早被击杀者 ==========
+
+## 左队 [killer]、右队 [ticker, actor_b]：主循环名单顺序 killer → ticker → actor_b。一帧之内 killer 的探针技能先把
+## 右队两人都打死，轮到它们时已是尸体：ticker 身上在飞的探针 keyframe 当帧不 fire（尸体不 tick_runtime）；
+## actor_b 不充能、也就不起手（on_atb 里那次 Move 不发生，目的地无人预订）。
+func _phase_killed_earlier_in_the_frame() -> String:
+	GameWorld.shutdown()
+	var world := FixedTeamsHexWorld.new()
+	world.configure_grid(_make_grid_config())
+	GameWorld.create_instance(world)
+	world.start()
+	var destination := HexCoord.new(1, 1)
+	var killer := _place_character(world, HexCoord.new(-3, 0), 0)
+	var ticker := _place_character(world, HexCoord.new(3, 0), 1)
+	var actor_b := _place_character(world, HexCoord.new(0, 1), 1, HexBattleClassConfig.CharacterClass.ARCHER)
+	world.left = [killer]
+	world.right = [ticker, actor_b]
+	actor_b.equip_abilities()
+	var move := actor_b.get_move_ability()
+	if move == null:
+		return "killed-earlier: actor_b has no move ability"
+
+	var fired := {"ticker": 0}
+	_grant_probe(ticker, "ticker", fired, world.id, "")
+
+	var actor_b_id := actor_b.get_id()
+	var move_id := move.id
+	var destination_dict := destination.to_dict()
+	var observed := {"atb_turns": 0}
+	var executions: Array[AbilityExecutionInstance] = []
+	move.add_execution_activated_listener(func(instance: AbilityExecutionInstance) -> void:
+		executions.append(instance))
+	actor_b.on_atb = func() -> void:
+		observed["atb_turns"] = int(observed["atb_turns"]) + 1
+		var actor := GameWorld.get_actor(actor_b_id) as CharacterActor
+		actor.ability_set.receive_event(
+			GameEvent.AbilityActivate.create(move_id, actor_b_id, 0.0, "", destination_dict).to_dict())
+	var targets: Array[String] = [ticker.get_id(), actor_b_id]
+	var kill_actions: Array[Action.BaseAction] = [
+		HexBattleDamageAction.new(HexBattleTargetSelectors.fixed(targets), Resolvers.float_val(99999.0)),
+	]
+	killer.ability_set.grant_ability(Ability.new(_self_firing_config("probe_kill_both", kill_actions), killer.get_id()))
+
+	var participants: Array[Actor] = [killer, ticker, actor_b]
+	var procedure := world.start_battle(participants)
+	procedure.tick_once()
+
+	if not ticker.is_dead() or not actor_b.is_dead():
+		return "killed-earlier: test setup — both right-team actors should have been killed in the first tick"
+	# 三条互不遮挡：tick_runtime / 充能 / 起手各报各的。
+	var problems: Array[String] = []
+	if int(fired["ticker"]) != 0:
+		problems.append("the corpse's in-flight keyframe fired %d time(s) in the frame it was killed, expected 0 (a corpse must not tick_runtime)" % int(fired["ticker"]))
+	if int(observed["atb_turns"]) != 0:
+		problems.append("the corpse got %d ATB turn(s) in the frame it was killed, expected 0 (a corpse must not charge)" % int(observed["atb_turns"]))
+	if not executions.is_empty():
+		problems.append("the corpse started %d Move(s) after it was killed" % executions.size())
+	if world.grid.get_reservation(destination) != "":
+		problems.append("a corpse holds a reservation on the destination")
+	if not problems.is_empty():
+		return "killed-earlier: " + "; ".join(problems)
+	return ""
+
+
+## SkillPreviewProcedure 的参战者循环同形：名单顺序 killer → ticker，killer 的探针当帧打死 ticker，
+## ticker 身上在飞的探针 keyframe 当帧不 fire。
+func _phase_preview_killed_earlier_in_the_frame() -> String:
+	GameWorld.shutdown()
+	var world := SkillPreviewWorldGI.new()
+	GameWorld.create_instance(world)
+	world.start()
+	world.configure_grid(_make_grid_config())
+	var killer := _place_plain_character(world, HexCoord.new(-3, 0), 0)
+	var ticker := _place_plain_character(world, HexCoord.new(3, 0), 1)
+
+	var fired := {"ticker": 0}
+	_grant_probe(ticker, "ticker", fired, world.id, "")
+	var targets: Array[String] = [ticker.get_id()]
+	var kill_actions: Array[Action.BaseAction] = [
+		HexBattleDamageAction.new(HexBattleTargetSelectors.fixed(targets), Resolvers.float_val(99999.0)),
+	]
+	killer.ability_set.grant_ability(Ability.new(_self_firing_config("probe_preview_kill", kill_actions), killer.get_id()))
+
+	world.queue_preview([
+		{"actor_id": killer.get_id(), "passives": [] as Array[AbilityConfig], "track": []},
+		{"actor_id": ticker.get_id(), "passives": [] as Array[AbilityConfig], "track": []},
+	], true)
+	var participants: Array[Actor] = [killer, ticker]
+	var procedure := world.start_battle(participants)
+	procedure.tick_once()
+
+	if not ticker.is_dead():
+		return "preview killed-earlier: test setup — the ticker should have been killed in the first tick"
+	if int(fired["ticker"]) != 0:
+		return "preview killed-earlier: the corpse's in-flight keyframe fired %d time(s) in the frame it was killed, expected 0" % int(fired["ticker"])
 	return ""
 
 
