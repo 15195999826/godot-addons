@@ -1,7 +1,7 @@
 class_name StageCueAction
 extends Action.BaseAction
 
-const TYPE = "stageCue"
+const TYPE = "stage_cue"
 
 var _cue_id: StringResolver
 var _cue_params: DictResolver

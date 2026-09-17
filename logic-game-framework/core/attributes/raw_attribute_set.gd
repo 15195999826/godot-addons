@@ -16,7 +16,7 @@ extends RefCounted
 ## 【属性变化规范】
 ##
 ## 所有属性修改必须通过以下入口方法之一：
-##   stat：set_base / add_modifier / remove_modifier / remove_modifiers_by_source / update_modifier
+##   stat：set_base / add_modifier / remove_modifier / remove_modifiers_by_source / update_modifier / register_dynamic_dep
 ##   resource：set_resource / add_resource
 ##
 ## 每个 stat 入口方法内部统一处理所有 modifier（含动态依赖的自动求解），
@@ -410,7 +410,8 @@ func on_attribute_changed(attr_name: String, callback: Callable) -> Callable:
 
 ## 注册动态依赖：source_attribute 变化时，自动重算 modifier_id 的值
 ## modifier_value = get_current_value(source_attribute) * coefficient
-## 注册前必须已通过 add_modifier 添加对应的 modifier。
+## 注册前必须已通过 add_modifier 添加对应的 modifier。注册即求解，并与其它 stat 入口一样通知被改到的属性
+## （目标 stat，以及被它封顶的资源读值）。
 ## 源不能是资源：资源写入不跑求解，以资源为源的动态值会静默过期。
 func register_dynamic_dep(
 	modifier_id: String,
@@ -427,6 +428,7 @@ func register_dynamic_dep(
 	for dep in _dynamic_deps:
 		if dep["modifier_id"] == modifier_id:
 			return
+	var before := snapshot_current_values()
 	_dynamic_deps.append({
 		"modifier_id": modifier_id,
 		"source_attribute": source_attribute,
@@ -437,6 +439,7 @@ func register_dynamic_dep(
 	# 立即求解：否则新增的 dep 要等到下一次 add/remove/update modifier 才会生效，
 	# 典型场景（先 add_modifier 再 register_dynamic_dep 再 get_current_value）会读到未求解的 0 值。
 	_solve_dynamic_deps()
+	_notify_changes(before, _CHANGE_TYPE_MODIFIER)
 
 
 ## 取消注册动态依赖

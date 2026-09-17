@@ -25,6 +25,8 @@ func _init() -> void:
 	TestFramework.register_test("RawAttributeSet - dynamic dependency is reversible", _test_dynamic_dependency_reversible)
 	TestFramework.register_test("RawAttributeSet - resource follows max_ref down and back up", _test_resource_follows_max_ref_down_and_back_up)
 	TestFramework.register_test("RawAttributeSet - resource survives a transient cap drop via modifiers", _test_resource_survives_transient_cap_drop_via_modifiers)
+	TestFramework.register_test("RawAttributeSet - resource follows its cap through update_modifier", _test_resource_follows_cap_through_update_modifier)
+	TestFramework.register_test("RawAttributeSet - register_dynamic_dep notifies what it changes and caps the resource", _test_register_dynamic_dep_notifies_and_caps_resource)
 	TestFramework.register_test("RawAttributeSet - resource serializes its value", _test_resource_serializes_its_value)
 	TestFramework.register_test("RawAttributeSet - apply_config keeps key order across kinds", _test_apply_config_keeps_key_order_with_resource)
 	TestFramework.register_test("RawAttributeSet - set_resource / add_resource clamp to [min, max_ref]", _test_set_resource_clamps_to_min_and_cap)
@@ -346,6 +348,82 @@ func _test_resource_survives_transient_cap_drop_via_modifiers() -> void:
 	TestFramework.assert_near(attr_set.get_current_value("hp"), 90.0, 0.0001, "a write during the drop starts from the capped value")
 	attr_set.add_modifier(AttributeModifier.create_add_base("gear_max_hp", "max_hp", 50.0, "gear"))
 	TestFramework.assert_near(attr_set.get_current_value("hp"), 90.0, 0.0001, "a write during the drop sticks after the cap comes back")
+
+
+## update_modifier 入口的上限变化：压低把 hp 读值拉下来、抬回后读值恢复（存值不被暂降改写）；
+## 每次各发 hp / max_hp 两条通知，按定义顺序（hp 在前），change_type = "modifier"。
+func _test_resource_follows_cap_through_update_modifier() -> void:
+	var attr_set := _make_with_hp()
+	attr_set.add_modifier(AttributeModifier.create_add_base("gear_max_hp", "max_hp", 50.0, "gear"))
+	attr_set.set_resource("hp", 150.0)
+	var events: Array[Dictionary] = []
+	attr_set.add_change_listener(func(event: Dictionary) -> void:
+		events.append(event))
+	var hp_then_max_hp: Array[String] = ["hp", "max_hp"]
+
+	TestFramework.assert_true(attr_set.update_modifier("gear_max_hp", -30.0))
+	TestFramework.assert_near(attr_set.get_current_value("max_hp"), 70.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 70.0, 0.0001, "update_modifier lowering the cap pulls hp down")
+	TestFramework.assert_equal(hp_then_max_hp, _event_names(events))
+	TestFramework.assert_near(float(events[0].get("old_value")), 150.0)
+	TestFramework.assert_near(float(events[0].get("new_value")), 70.0)
+	TestFramework.assert_equal("modifier", events[0].get("change_type"))
+
+	events.clear()
+	TestFramework.assert_true(attr_set.update_modifier("gear_max_hp", 50.0))
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 150.0, 0.0001, "raising the cap back restores the stored value")
+	TestFramework.assert_equal(hp_then_max_hp, _event_names(events))
+	TestFramework.assert_near(float(events[0].get("old_value")), 70.0)
+	TestFramework.assert_near(float(events[0].get("new_value")), 150.0)
+
+
+## register_dynamic_dep 入口：注册即求解，被它改到的属性要发通知（Vigor / Vitality 挂上那一刻 max_hp / atk 就变了）；
+## 动态值把上限压到 hp 之下时 hp 读值跟着封顶，通知与 stat 同批、按定义顺序；注销并移除 modifier 后读值恢复。
+func _test_register_dynamic_dep_notifies_and_caps_resource() -> void:
+	var attr_set := _make_with_hp()
+	var events: Array[Dictionary] = []
+	attr_set.add_change_listener(func(event: Dictionary) -> void:
+		events.append(event))
+	var max_hp_only: Array[String] = ["max_hp"]
+	var hp_then_max_hp: Array[String] = ["hp", "max_hp"]
+
+	# Vigor 形状：max_hp += atk * 0.1。hp 存值 100 够不到新上限，读值不变、不发 hp 通知
+	attr_set.add_modifier(AttributeModifier.create_add_base("dyn_up", "max_hp", 0.0, "vigor"))
+	TestFramework.assert_equal(0, events.size())
+	attr_set.register_dynamic_dep("dyn_up", "atk", "max_hp", AttributeModifier.Type.ADD_BASE, 0.1)
+	TestFramework.assert_near(attr_set.get_current_value("max_hp"), 105.0)
+	TestFramework.assert_equal(max_hp_only, _event_names(events))
+	if events.size() == 1:
+		TestFramework.assert_near(float(events[0].get("old_value")), 100.0)
+		TestFramework.assert_near(float(events[0].get("new_value")), 105.0)
+		TestFramework.assert_equal("modifier", events[0].get("change_type"))
+
+	# 压低上限的动态依赖：max_hp += atk * -1.0 → 55，hp 读值 100 → 55
+	events.clear()
+	attr_set.add_modifier(AttributeModifier.create_add_base("dyn_down", "max_hp", 0.0, "curse"))
+	attr_set.register_dynamic_dep("dyn_down", "atk", "max_hp", AttributeModifier.Type.ADD_BASE, -1.0)
+	TestFramework.assert_near(attr_set.get_current_value("max_hp"), 55.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 55.0, 0.0001, "a dynamic dep lowering the cap pulls hp down")
+	TestFramework.assert_equal(hp_then_max_hp, _event_names(events))
+	if events.size() == 2:
+		TestFramework.assert_near(float(events[0].get("old_value")), 100.0)
+		TestFramework.assert_near(float(events[0].get("new_value")), 55.0)
+
+	# 注销动态依赖并移除它的 modifier：上限回升，hp 读值恢复
+	events.clear()
+	attr_set.unregister_dynamic_dep("dyn_down")
+	attr_set.remove_modifier("dyn_down")
+	TestFramework.assert_near(attr_set.get_current_value("max_hp"), 105.0)
+	TestFramework.assert_near(attr_set.get_current_value("hp"), 100.0, 0.0001, "the stored value survives the dynamic cap drop")
+	TestFramework.assert_equal(hp_then_max_hp, _event_names(events))
+
+
+## 通知事件的属性名序列。
+func _event_names(events: Array[Dictionary]) -> Array[String]:
+	var names: Array[String] = []
+	for event in events:
+		names.append(event.get("attribute_name", "") as String)
+	return names
 
 
 ## serialize 带资源值（无 base / modifiers），deserialize 还原成资源。

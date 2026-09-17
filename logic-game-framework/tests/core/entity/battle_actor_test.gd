@@ -108,6 +108,7 @@ func _init() -> void:
 	TestFramework.register_test("AbilitySet.tick_runtime ignores non-blocking abilities", _test_tick_runtime_non_blocking)
 	TestFramework.register_test("AbilitySet tick pass survives revoking an earlier ability", _test_tick_survives_mid_pass_revoke)
 	TestFramework.register_test("BattleActor team id syncs both int and string views", _test_team_id)
+	TestFramework.register_test("AbilityGranted payload carries the ability id under a single key", _test_ability_granted_payload_single_id_key)
 	TestFramework.register_test("BattleActor subscribes attributes + abilities + lifecycle", _test_setup_recording_full)
 	TestFramework.register_test("GameWorld.get_instance_of_actor resolves owner instance", _test_get_instance_of_actor)
 
@@ -278,6 +279,35 @@ func _test_setup_recording_full() -> void:
 	# 属性 + ability_set + 生命周期三类都要在；少任何一类都会让回放整类事件消失。
 	TestFramework.assert_equal(expected, _drain(actor.setup_recording(ctx)))
 	TestFramework.assert_true(expected > 1, "完整 actor 不能只订生命周期一条")
+	GameWorld.destroy_instance(instance.id)
+
+
+## AbilityGranted 的 payload 就是 ability.serialize()：实例 id 只在 "id" 一个键下，不再另塞一份 instance_id。
+## 两个产出点同形：中途补录已有 ability（BattleRecorder.register_actor）与订阅之后新 grant 的回调（RecordingUtils）。
+func _test_ability_granted_payload_single_id_key() -> void:
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_granted_payload"))
+	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
+	var existing := Ability.new(AbilityConfig.builder().config_id("granted_payload_existing").build(), actor.get_id())
+	actor.ability_set.grant_ability(existing)
+	var recorder := BattleRecorder.new({}, instance.event_collector)
+	var no_actors: Array[Actor] = []
+	recorder.start_recording(PlaybackData.WorldSnapshot.new(), no_actors)
+	recorder.register_actor(actor)
+	var fresh := Ability.new(AbilityConfig.builder().config_id("granted_payload_fresh").build(), actor.get_id())
+	actor.ability_set.grant_ability(fresh)
+
+	var payloads := {}
+	for event in instance.event_collector.flush():
+		if str(event.get("kind", "")) == GameEvent.ABILITY_GRANTED_EVENT:
+			var granted: Dictionary = event.get("ability", {})
+			payloads[str(granted.get("config_id", ""))] = granted
+	# 探针订阅当场退订（同 _test_setup_recording_full：不退订会活到进程结束）
+	recorder.abort_recording()
+	TestFramework.assert_equal(2, payloads.size())
+	for ability: Ability in [existing, fresh]:
+		var payload: Dictionary = payloads.get(ability.config_id, {})
+		TestFramework.assert_equal(ability.id, str(payload.get("id", "")))
+		TestFramework.assert_false(payload.has("instance_id"), "%s: payload 不该再有 instance_id 键" % ability.config_id)
 	GameWorld.destroy_instance(instance.id)
 
 

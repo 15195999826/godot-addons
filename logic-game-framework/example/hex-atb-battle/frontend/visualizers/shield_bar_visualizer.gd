@@ -70,7 +70,7 @@ func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) ->
 	var data := FrontendShieldSummary.find_shield_component_data(payload)
 	if data.is_empty():
 		return
-	var ability_id := payload.get("instance_id", payload.get("id", "")) as String
+	var ability_id := payload.get("id", "") as String
 	if ability_id.is_empty() or actor_id.is_empty():
 		return
 

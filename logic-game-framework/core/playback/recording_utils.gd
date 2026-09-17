@@ -83,14 +83,11 @@ static func record_ability_set_changes(ability_set: AbilitySet, ctx: RecordingCo
 	# 订阅 Ability 获得
 	var granted_unsub := ability_set.on_ability_granted(
 		func(ability: Ability, _ability_set: AbilitySet) -> void:
-			# 记录 Ability 获得事件:payload 用 ability.serialize() 把 stacks /
-			# display_name / ability_tags / components 等完整状态带给消费方(frontend
-			# BuffVisualizer 据此构造 BuffSummary)。serialize 里键名是 id, 消费方按
-			# instance_id 读, 所以另塞一份 instance_id。
-			var granted_payload := ability.serialize()
-			granted_payload["instance_id"] = ability.id
+			# 记录 Ability 获得事件：payload 就是 ability.serialize()，把 stacks / display_name /
+			# ability_tags / components 等完整状态带给消费方（frontend BuffVisualizer 据此构造 BuffSummary）。
+			# 实例 id 在 payload 的 id 键下，与后续 removed / stacks_changed 事件的 ability_instance_id 同值。
 			ctx.push_event(
-				GameEvent.AbilityGranted.create(ctx.actor_id, granted_payload).to_dict()
+				GameEvent.AbilityGranted.create(ctx.actor_id, ability.serialize()).to_dict()
 			)
 			# 为新 Ability 订阅事件
 			subscribe_ability_triggered.call(ability)

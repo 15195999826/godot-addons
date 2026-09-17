@@ -422,7 +422,7 @@ func _build_ability_config_by_instance(events: Array[Dictionary]) -> Dictionary:
 		if _kind(event) != GameEvent.ABILITY_GRANTED_EVENT:
 			continue
 		var ability: Dictionary = event.get("ability", {}) as Dictionary
-		var instance_id := str(ability.get("instance_id", ability.get("id", "")))
+		var instance_id := str(ability.get("id", ""))
 		if instance_id.is_empty():
 			continue
 		result[instance_id] = str(ability.get("config_id", ""))

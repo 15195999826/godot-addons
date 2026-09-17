@@ -50,16 +50,24 @@ func start() -> void:
 
 ## Recorder 启动钩子: 构造 recorder（注入 world 的 event_collector）, 问世界要快照与订阅列表
 ## 启动录像, 并连接 actor_added 让中途 spawn 的 actor 自动补录（否则其 ability_granted /
-## actor_spawned / damage 不进录像）。连接在 finish() / abort() 时释放 —— procedure 短命而
-## world 常驻, 不释会跨战斗累积旧 procedure 监听器并阻止其 GC。
+## actor_spawned / damage 不进录像）、连接 actor_removed 让中途离场的 actor 当场退订。
+## 两条连接在 finish() / abort() 时释放 —— procedure 短命而 world 常驻, 不释会跨战斗累积旧
+## procedure 监听器并阻止其 GC。
+##
+## 开录前先丢弃 collector 里的旧事件: world 的 collector 只在战斗 tick 里 flush, 常驻世界两场之间
+## 推进去的事件（战斗外跑的 action）否则会被本场第一次 flush 录进第 1 帧 —— 一场录像的内容
+## 不取决于开战之前发生过什么。
 func _start_recorder() -> void:
 	var world := _get_world()
 	if world == null:
 		return
+	world.event_collector.clear()
 	_recorder = BattleRecorder.new({"tick_interval": int(_tick_interval)}, world.event_collector)
 	_recorder.start_recording(world.capture_world_snapshot(), world.get_recordable_actors())
 	if not world.actor_added.is_connected(_on_world_actor_added):
 		world.actor_added.connect(_on_world_actor_added)
+	if not world.actor_removed.is_connected(_on_world_actor_removed):
+		world.actor_removed.connect(_on_world_actor_removed)
 
 
 ## 中途 spawn 的 actor 自动 register 进 recorder。开战已在场的全体 actor 在
@@ -76,6 +84,14 @@ func _on_world_actor_added(actor_id: String) -> void:
 	_recorder.register_actor(actor)
 
 
+## 中途离开 world 的 actor（图腾 / 火焰地块寿命到期 remove_actor）当场退掉录像订阅: 订阅闭包强持 actor,
+## 不退就把它连同 ability / execution 钉到 stop_recording。ActorDestroyed 不在这里推 ——
+## actor 自己的 despawn 订阅已在 on_despawn 里推过一条。
+func _on_world_actor_removed(actor_id: String) -> void:
+	if _recorder != null and _recorder.get_is_recording():
+		_recorder.unregister_actor(actor_id)
+
+
 ## 推进一帧。基类仅 flush event + record, 子类覆盖做 ATB / timeline 推进等具体逻辑,
 ## super.tick_once() 或手动调 record_current_frame_events() 完成录像。
 func tick_once() -> void:
@@ -88,13 +104,17 @@ func should_end() -> bool:
 	return _finished
 
 
-## 结束战斗: 与 world 解绑（断开补录连接、交还战斗槽位）, 清 in_combat tag, 停止 recorder, 返回 timeline。
-## result 传给 recorder 作为战斗结果标签("battle_complete" / "left_win" / "timeout" 等)。
+## 结束战斗: 与 world 解绑（断开补录连接、交还战斗槽位）, 清 in_combat tag, 把收尾产生的事件录进最后一帧,
+## 停止 recorder, 返回 timeline。result 传给 recorder 作为战斗结果标签("battle_complete" / "left_win" / "timeout" 等)。
+##
+## 清 in_combat 发生在本场最后一次录帧之后、订阅仍开着: 它的 TagChanged 属于本场, 停录前录进最后一帧;
+## 留在 collector 里就会漏进同一 world 下一场录像的第 1 帧。
 func finish(result: String = "battle_complete") -> Dictionary:
 	_detach_from_world()
 	for pid in _participant_ids:
 		_mark_in_combat(pid, false)
 	_finished = true
+	record_current_frame_events()
 	if _recorder != null and _recorder.get_is_recording():
 		return _recorder.stop_recording(result)
 	return {}
@@ -110,13 +130,15 @@ func abort() -> void:
 	_finished = true
 
 
-## 与 world 解绑: 断开 actor_added 补录连接, 并交还 world 的战斗槽位（仍指着本 procedure 时）。
+## 与 world 解绑: 断开 actor_added / actor_removed 两条录像连接, 并交还 world 的战斗槽位（仍指着本 procedure 时）。
 func _detach_from_world() -> void:
 	var world := _get_world()
 	if world == null:
 		return
 	if world.actor_added.is_connected(_on_world_actor_added):
 		world.actor_added.disconnect(_on_world_actor_added)
+	if world.actor_removed.is_connected(_on_world_actor_removed):
+		world.actor_removed.disconnect(_on_world_actor_removed)
 	world._release_battle(self)
 
 

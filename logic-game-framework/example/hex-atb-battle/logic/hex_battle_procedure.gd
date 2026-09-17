@@ -95,7 +95,9 @@ func tick_once() -> void:
 		var seen_ids: Dictionary = {}
 		for a in get_alive_characters():
 			seen_ids[a.get_id()] = true
-		for actor in world.get_actors():
+		# 遍历 registry 快照: 图腾 / 火焰地块寿命到期会在自己的 tick 里 remove_actor, 活数组左移会让排在它后面的
+		# actor 本帧被跳过一次; 本趟里已被移出 registry 的不再 tick。
+		for actor in world.get_actors().duplicate():
 			if _finished:
 				return
 			if not (actor is HexBattleActor):
@@ -103,9 +105,12 @@ func tick_once() -> void:
 			var h := actor as HexBattleActor
 			if seen_ids.has(h.get_id()):
 				continue
+			if world.get_actor(h.get_id()) == null:
+				continue
 			# 尸体不 tick（2026-09-14 拍板）：死者身上的 DOT 不再继续结算，尸体的荆棘也就不再反弹；
 			# 死者响应自己的致死一击仍由 is_event_responsive 保证。图腾 / 火焰地块等活着的 mid-spawn actor 照常 tick。
 			if h.is_dead():
+				_cancel_corpse_actions(h)
 				continue
 			# CharacterActor mid-spawn: 与 production 主循环同一条 runtime tick, 但不进 ATB/AI
 			# EnvironmentActor (fire tile): 同上
@@ -218,6 +223,18 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 	HexFacing.face_actor_for_active_event(actor, event, world)
 	actor.ability_set.receive_event(event)
 	actor.reset_atb()
+
+
+## 尸体不 tick: 它起手而未走完的行动（move / skill 的在飞 execution）就地取消, 不以「执行中」残留在尸体上。
+## 未触发的 keyframe 本就不会再 fire, 结果不变; on_cancel 照常走 —— Move 的目的地预订已随死亡清足迹清掉。
+## 身上的 buff / 被动 / 内建能力的周期 execution 随尸体冻结, 不在此列。
+func _cancel_corpse_actions(corpse: HexBattleActor) -> void:
+	var character := corpse as CharacterActor
+	if character == null:
+		return
+	for ability: Ability in [character.get_move_ability(), character.get_skill_ability()]:
+		if ability != null and ability.has_executing_instance():
+			ability.cancel_all_executions()
 
 
 ## AI 决策: 委托给 actor 的 AI 策略对象。

@@ -136,13 +136,17 @@ func tick_once() -> void:
 
 	# Phase C (Fire Tile): EnvironmentActor 的 ability_set 也要 tick / tick_executions。
 	# 它不在 _get_alive_participants() (那是 CharacterActor 类型) 中, 单独遍历。
+	# 遍历 registry 快照: 火焰地块寿命到期会在自己的 tick 里 remove_actor, 活数组左移会让排在它后面的环境物
+	# 本帧被跳过一次; 本趟里已被移出 registry 的不再 tick。
 	if world != null:
-		for actor in world.get_actors():
+		for actor in world.get_actors().duplicate():
 			if _finished:
 				return
 			if not (actor is HexBattleActor) or actor is CharacterActor:
 				continue
 			var h := actor as HexBattleActor
+			if world.get_actor(h.get_id()) == null:
+				continue
 			h.ability_set.tag_container.tick(0.0, cur_logic_time)
 			h.ability_set.tick(_tick_interval, cur_logic_time)
 			var triggered := h.ability_set.tick_executions(_tick_interval)

@@ -17,8 +17,9 @@ extends RefCounted
 ##   ability/attr CB ───┘    (按调用栈真实顺序入队)
 ##
 ## record_frame(events) 由外部（battle_procedure）每帧调用，传入 flush 出的事件数组写入 timeline。
-## register_actor / unregister_actor 也把 ActorSpawned/Destroyed 推到同一个 collector，
-## 等下次 record_frame 一并归档。
+## register_actor（中途补录）把 ActorSpawned 推到同一个 collector，等下次 record_frame 一并归档；
+## ActorDestroyed 由 actor 自己的 despawn 订阅推（RecordingUtils.record_actor_lifecycle），
+## unregister_actor 只释放订阅、不推事件。
 ##
 ## 【已知问题：录像文件大小】
 ##
@@ -75,17 +76,25 @@ func start_recording(world_snapshot: PlaybackData.WorldSnapshot, actors: Array[A
 	for actor in actors:
 		_subscribe_actor(actor)
 
+## 同一帧号再录一次（战斗收尾把 collector 余量录进最后一帧）就并进该帧已有的 FrameData：
+## 播放侧按帧号建索引、一帧一条，同帧号两条会互相覆盖。
 func record_frame(frame: int, events: Array[Dictionary]) -> void:
 	if not is_recording:
 		return
 
 	current_frame = frame
 
-	if not events.is_empty():
-		var frame_data := PlaybackData.FrameData.new()
-		frame_data.frame = frame
-		frame_data.events = events
-		_record.timeline.append(frame_data)
+	if events.is_empty():
+		return
+	if not _record.timeline.is_empty():
+		var last: PlaybackData.FrameData = _record.timeline[-1]
+		if last.frame == frame:
+			last.events.append_array(events)
+			return
+	var frame_data := PlaybackData.FrameData.new()
+	frame_data.frame = frame
+	frame_data.events = events
+	_record.timeline.append(frame_data)
 
 func stop_recording(result: String = "") -> Dictionary:
 	if not is_recording:
@@ -151,17 +160,17 @@ func register_actor(actor: Actor) -> void:
 	_subscribe_actor(actor)
 	_record_existing_actor_abilities(actor)
 
-func unregister_actor(actor_id: String, reason: String = "") -> void:
+## actor 离开 world 时释放它的录像订阅（BattleProcedure 接 world.actor_removed 调用）：订阅闭包强持 actor，
+## 不释放就把它连同 ability / execution 钉到 stop_recording。只退订、不推事件——ActorDestroyed 已由该 actor
+## 自己的 despawn 订阅（RecordingUtils.record_actor_lifecycle）在 on_despawn 里推过，这里再推就是两条。
+func unregister_actor(actor_id: String) -> void:
 	if not is_recording:
 		return
-
-	var event := GameEvent.ActorDestroyed.create(actor_id, reason)
-	_event_collector.push(event.to_dict())
-
 	var subscription: Dictionary = actor_subscriptions.get(actor_id, {}) as Dictionary
-	if not subscription.is_empty():
-		_release_subscription(subscription)
-		actor_subscriptions.erase(actor_id)
+	if subscription.is_empty():
+		return
+	_release_subscription(subscription)
+	actor_subscriptions.erase(actor_id)
 
 func _subscribe_actor(actor: Actor) -> void:
 	var actor_id := actor.id
@@ -187,10 +196,8 @@ func _record_existing_actor_abilities(actor: Actor) -> void:
 	for ability in ability_set.get_abilities():
 		if ability.is_expired():
 			continue
-		var granted_payload := ability.serialize()
-		granted_payload["instance_id"] = ability.id
 		_event_collector.push(
-			GameEvent.AbilityGranted.create(actor.id, granted_payload).to_dict()
+			GameEvent.AbilityGranted.create(actor.id, ability.serialize()).to_dict()
 		)
 		for instance in ability.get_executing_instances():
 			_event_collector.push(

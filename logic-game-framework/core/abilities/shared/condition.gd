@@ -31,7 +31,7 @@ class HasTagCondition:
 		tag = tag_value
 
 	func get_condition_type() -> String:
-		return "hasTag"
+		return "has_tag"
 
 	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 		return ctx.ability_set != null and ctx.ability_set.has_tag(tag)
@@ -49,7 +49,7 @@ class NoTagCondition:
 		tag = tag_value
 
 	func get_condition_type() -> String:
-		return "noTag"
+		return "no_tag"
 
 	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 		return ctx.ability_set == null or not ctx.ability_set.has_tag(tag)
@@ -69,7 +69,7 @@ class TagStacksCondition:
 		min_stacks = min_stacks_value
 
 	func get_condition_type() -> String:
-		return "tagStacks"
+		return "tag_stacks"
 
 	func check(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
 		if ctx.ability_set == null:

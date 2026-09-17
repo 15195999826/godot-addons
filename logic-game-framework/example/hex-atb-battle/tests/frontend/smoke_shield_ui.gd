@@ -47,7 +47,6 @@ func _ready() -> void:
 		"actor_id": "hero_1",
 		"ability": {
 			"id": "ward_inst_1",
-			"instance_id": "ward_inst_1",
 			"config_id": "buff_ward",
 			"display_name": "护盾术",
 			"stacks": 1,
@@ -78,7 +77,6 @@ func _ready() -> void:
 		"actor_id": "hero_1",
 		"ability": {
 			"id": "ward_inst_2",
-			"instance_id": "ward_inst_2",
 			"config_id": "buff_ward",
 			"display_name": "护盾术",
 			"stacks": 1,

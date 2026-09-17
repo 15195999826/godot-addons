@@ -15,7 +15,8 @@ extends Node
 ##     自持的 EventProcessor / EventCollector 与 ability 的 pre / post 注册全部释放。
 ##  2. start_battle + 录像：BattleProcedure / 注入 world collector 的 BattleRecorder / RecordingContext /
 ##     订阅闭包，battle_finished 后同样全部释放；world 是 stdlib GridWorldGameplayInstance，两个 actor
-##     站在棋盘上（occupant 表存 actor 引用）并留一条预订，棋盘随 world 一起释放。
+##     站在棋盘上（occupant 表存 actor 引用）并留一条预订，棋盘随 world 一起释放。战斗中途 spawn 又
+##     remove_actor 的被录 actor 不等 stop_recording：离场当刻订阅退掉、actor 当场释放。
 ##  3. procedure 子类（协变 _get_world、持有只经调用参数拿 world 的 helper）被调用方直接 finish()——
 ##     不经 world.tick 收尾，finish 自己交还战斗槽位：销毁 world 后全部释放。
 ##  4. 开着录像的战斗 tick 里 GameWorld.shutdown()（经 world.tick() 驱动；world 是覆盖 on_end 且不调 super 的子类）：
@@ -247,6 +248,10 @@ func _build_and_finish_recorded_battle(refs: Dictionary) -> void:
 	TestFramework.assert_true(recorder != null and recorder.get_is_recording(), "录像应已开启")
 	TestFramework.assert_true(recorder.get_event_collector() == world.event_collector, "recorder 应注入 world 的 collector")
 	_assert_recording_probed(refs, recorder, [caster, target])
+
+	# 战斗中途离场的被录 actor：订阅闭包强持 actor，remove_actor 不当场退订就把它钉到 stop_recording
+	var leaver_ref := _spawn_and_remove_recorded_actor(refs, world, recorder, probe_config)
+	TestFramework.assert_true(leaver_ref.get_ref() == null, "引用环: 战斗中途 remove_actor 之后录像订阅仍钉着该 actor")
 
 	# 战斗中的真实事件：execution tick 打 tag（TagChanged 进录像）、post 派发触发被动
 	caster.ability_set.tick_executions(100.0)
@@ -515,6 +520,22 @@ static func _collect_world_refs(refs: Dictionary, world: WorldGameplayInstance, 
 	refs["recorder"] = weakref(procedure.get_recorder())
 	refs["event_processor"] = weakref(world.event_processor)
 	refs["event_collector"] = weakref(world.event_collector)
+
+
+## 录像开着的战斗里 spawn 一个 actor（经 actor_added 补录）再 remove_actor，只把 weakref 带出去：
+## 局部强引用随函数返回消亡，此后还钉着它的只可能是 recorder 的订阅闭包。
+static func _spawn_and_remove_recorded_actor(refs: Dictionary, world: WorldGameplayInstance,
+		recorder: BattleRecorder, probe_config: AbilityConfig) -> WeakRef:
+	var leaver := ReleaseProbeActor.new()
+	leaver.probe_sink = refs
+	world.add_actor(leaver)
+	leaver.ability_set.grant_ability(Ability.new(probe_config, leaver.get_id()))
+	var leaver_id := leaver.get_id()
+	TestFramework.assert_true(recorder.actor_subscriptions.has(leaver_id), "中途 spawn 的 actor 应已补录")
+	TestFramework.assert_true(refs.has("recording_context:%s" % leaver_id), "探针未捕获 recording_context:%s" % leaver_id)
+	world.remove_actor(leaver_id)
+	TestFramework.assert_false(recorder.actor_subscriptions.has(leaver_id), "remove_actor 应当场退掉该 actor 的录像订阅")
+	return weakref(leaver)
 
 
 ## revoke actor 身上唯一的 ability，返回它与它的注册的 weakref（局部强引用随函数返回消亡）。

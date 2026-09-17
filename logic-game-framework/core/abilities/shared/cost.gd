@@ -29,7 +29,7 @@ class ConsumeTagCost:
 	var stacks: int
 
 	func _init(tag_value: String, stacks_value: int = 1):
-		type = "consumeTag"
+		type = "consume_tag"
 		tag = tag_value
 		stacks = stacks_value
 
@@ -53,7 +53,7 @@ class RemoveTagCost:
 	var tag: String
 
 	func _init(tag_value: String):
-		type = "removeTag"
+		type = "remove_tag"
 		tag = tag_value
 
 	func can_pay(ctx: AbilityLifecycleContext, _event_dict: Dictionary) -> bool:
@@ -74,7 +74,7 @@ class AddTagCost:
 	var options: Dictionary
 
 	func _init(tag_value: String, options_value: Dictionary = {}):
-		type = "addTag"
+		type = "add_tag"
 		tag = tag_value
 		options = options_value
 

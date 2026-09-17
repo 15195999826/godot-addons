@@ -33,7 +33,7 @@ class Apply:
 		stacks_count: IntResolver = Resolvers.int_val(1)
 	) -> void:
 		super._init(target_selector)
-		type = "looseTagApply"
+		type = "loose_tag_apply"
 		tag = tag_name
 		_stacks = stacks_count
 
@@ -60,7 +60,7 @@ class Remove:
 		stacks_count: IntResolver = Resolvers.int_val(REMOVE_ALL_STACKS)
 	) -> void:
 		super._init(target_selector)
-		type = "looseTagRemove"
+		type = "loose_tag_remove"
 		tag = tag_name
 		_stacks = stacks_count
 

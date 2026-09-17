@@ -33,7 +33,6 @@ func _ready() -> void:
 			"actor_id": "hero_1",
 			"ability": {
 				"id": "poison_inst_1",
-				"instance_id": "poison_inst_1",
 				"config_id": "buff_poison",
 				"stacks": 3,
 			},

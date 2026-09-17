@@ -3,7 +3,8 @@ extends Node
 ## 事件 dict key 与 kind 字面量只有一种拼写：snake_case（跨层契约，JS 解析器 / 录像 / 表演层都按它读）。
 ## 对 GameEvent 每个内嵌类、ProjectileEvents 每个工厂、PlaybackData 每个内部类用哑参构造，
 ## to_dict() 的全部 key（递归一层）与 kind 值都要匹配 ^[a-z0-9_]+$；kind 常量与
-## RawAttributeSet 的监听 dict 同样受约束。
+## RawAttributeSet 的监听 dict 同样受约束。action / condition / cost 的类型 id 同一种拼写：
+## 它们会出现在激活失败事件的 reason 兜底与调试输出里，两种拼写混着迟早被人按字面量写错。
 
 const SNAKE_CASE_PATTERN := "^[a-z0-9_]+$"
 
@@ -14,6 +15,7 @@ func _init() -> void:
 	TestFramework.register_test("ProjectileEvents factory dict keys and kinds are snake_case", _test_projectile_event_dicts)
 	TestFramework.register_test("PlaybackData to_dict keys are snake_case", _test_playback_dicts)
 	TestFramework.register_test("RawAttributeSet change listener dict keys are snake_case", _test_attribute_listener_dict)
+	TestFramework.register_test("Action / Condition / Cost type ids are snake_case", _test_action_condition_cost_type_ids)
 
 
 func _test_game_event_dicts() -> void:
@@ -90,6 +92,39 @@ func _test_attribute_listener_dict() -> void:
 	attribute_set.set_base("hp", 20.0)
 	TestFramework.assert_equal(1, captured.size())
 	_assert_snake_case_dict(captured[0], "RawAttributeSet listener")
+
+
+## core / stdlib 自带的每个 action、condition、cost 各造一个，读它报出的类型 id。
+func _test_action_condition_cost_type_ids() -> void:
+	var selector := TargetSelector.new()
+	var no_actions: Array[Action.BaseAction] = []
+	var no_conditions: Array[Condition] = []
+	var type_ids: Array[String] = [
+		Action.BaseAction.new(selector).type,
+		Action.NoopAction.new(selector).type,
+		Action.SkillLocalAction.new(selector, "casing_probe").type,
+		FlowAction.if_(func(_ctx: ExecutionContext) -> bool: return true, no_actions).type,
+		LooseTagAction.Apply.new(selector, "tag").type,
+		LooseTagAction.Remove.new(selector, "tag").type,
+		StageCueAction.new(selector, Resolvers.str_val("cue")).type,
+		LaunchProjectileAction.new(selector).type,
+		StageCueAction.TYPE,
+		LaunchProjectileAction.TYPE,
+		Cost.new().type,
+		Cost.ConsumeTagCost.new("tag").type,
+		Cost.RemoveTagCost.new("tag").type,
+		Cost.AddTagCost.new("tag").type,
+		Condition.new().get_condition_type(),
+		Condition.HasTagCondition.new("tag").get_condition_type(),
+		Condition.NoTagCondition.new("tag").get_condition_type(),
+		Condition.TagStacksCondition.new("tag", 1).get_condition_type(),
+		Condition.AllConditions.new(no_conditions).get_condition_type(),
+		Condition.AnyCondition.new(no_conditions).get_condition_type(),
+	]
+	TestFramework.assert_equal(20, type_ids.size())
+	var regex := _snake_case_regex()
+	for type_id in type_ids:
+		TestFramework.assert_true(regex.search(type_id) != null, "type id not snake_case: %s" % type_id)
 
 
 ## key 递归一层（嵌套 dict 的 key 也查），kind 值同查。

@@ -1,7 +1,7 @@
 class_name LaunchProjectileAction
 extends Action.BaseAction
 
-const TYPE = "launchProjectile"
+const TYPE = "launch_projectile"
 
 var _projectile_config: DictResolver
 var _start_position: Vector3Resolver

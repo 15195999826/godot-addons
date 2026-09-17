@@ -128,7 +128,7 @@ func _handle_granted(event: Dictionary, actions: Array[FrontendVisualAction]) ->
 	var rule = BUFF_REGISTRY.get(config_id)
 	if rule == null:
 		return
-	var ability_id := payload.get("instance_id", payload.get("id", "")) as String
+	var ability_id := payload.get("id", "") as String
 	if ability_id.is_empty() or actor_id.is_empty():
 		return
 

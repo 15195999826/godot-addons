@@ -159,7 +159,6 @@ func _grant_event(actor_id: String, instance_id: String, config_id: String, stac
 		"actor_id": actor_id,
 		"ability": {
 			"id": instance_id,
-			"instance_id": instance_id,
 			"config_id": config_id,
 			"display_name": "Surge",
 			"stacks": stacks,
