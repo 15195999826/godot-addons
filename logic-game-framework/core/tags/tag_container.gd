@@ -122,6 +122,40 @@ func get_auto_duration_tag_stacks(tag: String) -> int:
 	return count
 
 
+## 该 tag 计时层里最晚到期那层的剩余时间；没有活着的计时层返回 0.0。
+## 只看 Auto Duration 来源——loose / component 层没有时间概念，不参与。
+func get_auto_duration_remaining(tag: String) -> float:
+	var remaining := 0.0
+	for entry in _auto_duration_tags:
+		if entry["tag"] == tag:
+			remaining = maxf(remaining, float(entry["expires_at"]) - _current_logic_time)
+	return remaining
+
+
+## 不等到期，直接清掉该 tag 活着的计时层；返回清掉的层数。
+## 已到期但还没被 tick 清理的层不动——它们对外已不存在，到期广播归 cleanup_expired_tags 发，这里不吞。
+## 只动 Auto Duration 来源，loose / component 层不受影响；层数变了照常广播。
+func remove_auto_duration_tag(tag: String) -> int:
+	var old_count := get_tag_stacks(tag)
+	var kept: Array[Dictionary] = []
+	var removed := 0
+	for entry in _auto_duration_tags:
+		if entry["tag"] == tag and float(entry["expires_at"]) > _current_logic_time:
+			removed += 1
+		else:
+			kept.append(entry)
+	if removed == 0:
+		return 0
+	_auto_duration_tags = kept
+
+	Log.debug("TagContainer", "移除 AutoDurationTag: %s" % tag)
+
+	var new_count := get_tag_stacks(tag)
+	if old_count != new_count:
+		_notify_tag_changed(tag, old_count, new_count)
+	return removed
+
+
 ## 回收已到期的计时 tag，并为每个受影响的 tag 广播一次 TagChanged。
 ## tick 先拨钟再进这里，此时 get_tag_stacks 已经只数未到期的条目——到期前的层数不能再读出来，
 ## 只能算：old = 现在数到的 + 本次到期的条数。同一趟里同 tag 多条一起到期只广播一次（层数一次跳到位）。

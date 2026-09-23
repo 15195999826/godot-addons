@@ -36,6 +36,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/actions/flow_action_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/tag_component_config_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/no_instance_component_test.gd",
+	"res://addons/logic-game-framework/tests/core/tags/tag_container_test.gd",
 	"res://addons/logic-game-framework/tests/stdlib/components/stat_modifier_component_test.gd",
 	"res://addons/logic-game-framework/tests/stdlib/grid/grid_world_gameplay_instance_test.gd",
 	"res://addons/logic-game-framework/tests/stdlib/grid/grid_map_model_index_test.gd",
