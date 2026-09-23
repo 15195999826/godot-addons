@@ -11,7 +11,10 @@ func _init(duration_ms: float) -> void:
 	remaining = duration_ms
 	type = "TimeDurationComponent"
 
-func on_tick(dt: float) -> void:
+func get_tick_callable() -> Callable:
+	return _count_down
+
+func _count_down(dt: float) -> void:
 	if _state == "expired":
 		return
 

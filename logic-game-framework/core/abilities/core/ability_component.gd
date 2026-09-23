@@ -36,9 +36,13 @@ func get_ability() -> Ability:
 		return null
 	return _ability_ref.get_ref() as Ability
 
-## 每帧 tick（可选覆盖）
-func on_tick(_dt: float) -> void:
-	pass
+## 本 component 要随时间推进的函数，签名 (dt: float) -> void；不随时间推进就返回空 Callable（默认）。
+##
+## 交出去的就是函数本身，没有与之分开的开关：Ability 构造时收齐全部 component 的返回值，AbilitySet.tick 每帧只对
+## 「交了函数的 ability」走遍历，其余早退。基类没有按名字调用的推进钩子——只写一个叫 on_tick 的方法不会被推进。
+## 函数自己判 is_active，Ability 不替它挡（TimeDurationComponent 过期后自己返回）。
+func get_tick_callable() -> Callable:
+	return Callable()
 
 ## 响应事件（可选覆盖）
 ## @return true 表示组件被触发

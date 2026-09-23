@@ -145,13 +145,22 @@ func revoke_abilities_where(predicate: Callable, reason: String = REVOKE_REASON_
 			revoked += 1
 	return revoked
 
+## 一帧时间推进：tag 容器拨钟、清到期的计时 tag，再让每个 ability 推进自己的计时 component。
+## 没有任何 ability 交了推进函数（Ability.needs_tick）就不走那趟遍历——每帧现判、读真实 _abilities，不记计数；
+## 那趟对它们本是空转，早退不遍历也就不需要快照。
 func tick(dt: float, logic_time: float = -1.0) -> void:
 	tag_container.tick(dt, logic_time)
+	if not _has_ticking_ability():
+		return
 	_process_abilities(func(ability: Ability):
 		ability.tick(dt)
 	)
 
+## 推进在飞的 execution；没有任何 execution 在飞就不进门（那趟遍历只剩快照 / lambda / 各 ability 的 filter 分配）。
+## tick_runtime 自己先扫过一遍（顺便算 blocking）；直接调本方法的循环（dota2 / scenario harness）靠这里的判断。
 func tick_executions(dt: float) -> Array[String]:
+	if not has_executing_instances():
+		return []
 	var all_triggered: Array[String] = []
 	_process_abilities(func(ability: Ability):
 		var triggered := ability.tick_executions(dt)
@@ -184,6 +193,13 @@ func tick_runtime(dt: float, logic_time: float) -> bool:
 func has_executing_instances() -> bool:
 	for ability in _abilities:
 		if ability.has_executing_instance():
+			return true
+	return false
+
+## 是否有任一 ability 交了推进函数（每帧现判，不记计数）。
+func _has_ticking_ability() -> bool:
+	for ability in _abilities:
+		if ability.needs_tick():
 			return true
 	return false
 

@@ -123,6 +123,9 @@ func get_auto_duration_tag_stacks(tag: String) -> int:
 
 
 func cleanup_expired_tags() -> void:
+	# 没有计时 tag 就没有可到期的：直接返回，不为一趟空遍历建三个容器（每个 actor 每帧都到这里）。
+	if _auto_duration_tags.is_empty():
+		return
 	var tag_old_counts := {}
 	var removed_counts := {}
 	for entry in _auto_duration_tags:

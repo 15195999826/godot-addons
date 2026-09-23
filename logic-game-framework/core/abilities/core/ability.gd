@@ -37,6 +37,9 @@ var overflow_policy: int = OVERFLOW_CAP
 var _state: String = STATE_PENDING
 var _expire_reason: String = ""
 var _components: Array[AbilityComponent] = []
+## 各 component 交出的推进函数（AbilityComponent.get_tick_callable），构造时收齐；
+## component 列表构造后不变，这份也不变，needs_tick 据此回答、不另设标记。
+var _tickers: Array[Callable] = []
 ## remove_effects 幂等哨兵：apply_effects 后为 true，remove_effects 后 false。
 ## 原设计靠 `_lifecycle_context == null` 判定，现不缓存 context 改用独立布尔标志。
 var _effects_active: bool = false
@@ -79,6 +82,9 @@ func _init(config: AbilityConfig, owner_actor_id_value: String, source_actor_id_
 
 	for component in _components:
 		component.initialize(self)
+		var ticker := component.get_tick_callable()
+		if ticker.is_valid():
+			_tickers.append(ticker)
 
 func get_state() -> String:
 	return _state
@@ -98,9 +104,12 @@ func get_all_components() -> Array[AbilityComponent]:
 func tick(dt: float) -> void:
 	if _state == STATE_EXPIRED:
 		return
-	for component in _components:
-		if component.is_active():
-			component.on_tick(dt)
+	for ticker in _tickers:
+		ticker.call(dt)
+
+## 是否有随时间推进的 component。AbilitySet.tick 每帧据此决定要不要走那趟遍历。
+func needs_tick() -> bool:
+	return not _tickers.is_empty()
 
 func tick_executions(dt: float) -> Array[String]:
 	if _state == STATE_EXPIRED:
