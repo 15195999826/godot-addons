@@ -308,17 +308,35 @@ func remove_effects() -> void:
 ## owner 取 context 的（本 ability 所在 AbilitySet 的 owner）：派发按它找回本 ability，remove_actor 按它注销。
 ## 经 grant_ability 进来时 owner 必已登记、processor 必在；context 没有 processor 只剩直接调 apply_effects 的孤立单测，
 ## 不注册，这样的 ability 只收得到 AbilitySet 的定向投递。
+## 登记的 prechecks = 该 kind 在全部 component 里的 precheck 并集；任一 component 对该 kind 没给全（有 trigger 不带
+## precheck）就登记空列表，退回全派——预过滤只许跳过「没有任何 trigger 可能匹配」的事件。
 func _register_post_handlers(context: AbilityLifecycleContext) -> void:
 	var processor := context.event_processor
 	if processor == null:
 		return
 	var kinds: Array[String] = []
+	var prechecks_by_kind := {}  # kind → Array[Callable]；值为 null = 该 kind 不预过滤
 	for component in _components:
+		var component_prechecks := component.get_post_event_prechecks()
 		for kind in component.get_post_event_kinds():
-			if not kinds.has(kind) and not EventProcessor.DIRECT_DELIVERY_KINDS.has(kind):
+			if EventProcessor.DIRECT_DELIVERY_KINDS.has(kind):
+				continue
+			if not kinds.has(kind):
 				kinds.append(kind)
+			if prechecks_by_kind.has(kind) and prechecks_by_kind[kind] == null:
+				continue
+			var component_list: Variant = component_prechecks.get(kind, null)
+			if component_list == null or (component_list as Array).is_empty():
+				prechecks_by_kind[kind] = null
+				continue
+			if not prechecks_by_kind.has(kind):
+				prechecks_by_kind[kind] = [] as Array[Callable]
+			(prechecks_by_kind[kind] as Array[Callable]).append_array(component_list)
 	var owner_id := context.owner_actor_id
 	for kind in kinds:
+		var prechecks: Array[Callable] = []
+		if prechecks_by_kind.get(kind, null) != null:
+			prechecks.assign(prechecks_by_kind[kind])
 		var registration := PostHandlerRegistration.new(
 			"%s_post_%s" % [id, kind],
 			kind,
@@ -326,7 +344,8 @@ func _register_post_handlers(context: AbilityLifecycleContext) -> void:
 			id,
 			config_id,
 			_make_post_handler(owner_id, id),
-			display_name
+			display_name,
+			prechecks
 		)
 		_post_unregisters.append(processor.register_post_handler(registration))
 
@@ -336,8 +355,8 @@ func _register_post_handlers(context: AbilityLifecycleContext) -> void:
 ## 派发完收尾：ability 在自己的 handler 里 expire 了自己（一次性被动）就当场从所在 set 除名——每条运行 ability 的路径自己回收
 ## 过期者（tick / tick_executions / 定向投递经 AbilitySet._process_abilities，post 派发在这里），外部移除才显式 revoke_ability。
 static func _make_post_handler(owner_id: String, ability_id: String) -> Callable:
-	return func(event_dict: Dictionary, _handler_context: HandlerContext) -> bool:
-		var context := AbilityLifecycleContext.rebuild_for_handler(owner_id, ability_id, event_dict, EventPhase.PHASE_POST)
+	return func(event_dict: Dictionary, handler_context: HandlerContext) -> bool:
+		var context := AbilityLifecycleContext.rebuild_for_handler(owner_id, ability_id, event_dict, EventPhase.PHASE_POST, handler_context)
 		if context == null:
 			return false
 		var triggered := context.ability.receive_event(event_dict, context)

@@ -53,6 +53,12 @@ func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext) -> boo
 func get_post_event_kinds() -> Array[String]:
 	return []
 
+## 本 component 各 post kind 的 precheck 列表 { kind: Array[Callable] }（可选覆盖）：只列「该 kind 的每个 trigger 都带
+## precheck」的 kind。Ability.apply_effects 汇总全部 component：某 kind 在任一 component 里缺席即不预过滤（退回全派）。
+## 带 trigger 的 component 直接返回 AbilityComponent.trigger_prechecks_by_kind(_triggers)。
+func get_post_event_prechecks() -> Dictionary:
+	return {}
+
 ## 能力生效时调用（可选覆盖）
 func on_apply(_context: AbilityLifecycleContext) -> void:
 	pass
@@ -123,9 +129,12 @@ static func match_triggers(triggers: Array[Dictionary], trigger_mode: String, ev
 			return false
 	return true
 
-## 匹配单个触发器：检查 event_kind 和可选 filter
+## 匹配单个触发器：event_kind → 可选 precheck（只要三个 id）→ 可选 filter（要完整 ctx），三段都过才算匹配。
+## precheck 在这里照样求值：post 派发的预过滤只是把它提前，定向投递（激活请求 / grant 自投递）只有这一处。
 static func match_single_trigger(trigger: Dictionary, event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if event_dict.get("kind", "") != str(trigger.get("event_kind", "")):
+		return false
+	if trigger.has("precheck") and not (trigger["precheck"] as Callable).call(event_dict, context.get_handler_context()):
 		return false
 	if trigger.has("filter") and trigger["filter"] is Callable:
 		return trigger["filter"].call(event_dict, context)
@@ -136,10 +145,30 @@ static func convert_triggers(configs: Array[TriggerConfig]) -> Array[Dictionary]
 	var result: Array[Dictionary] = []
 	for trigger in configs:
 		var trigger_dict := { "event_kind": trigger.event_kind }
+		if trigger.has_precheck():
+			trigger_dict["precheck"] = trigger.get_precheck()
 		if trigger.filter.is_valid():
 			trigger_dict["filter"] = trigger.filter
 		result.append(trigger_dict)
 	return result
+
+## 按 kind 收集 precheck：{ kind: Array[Callable] }，只含「该 kind 的每个 trigger 都带 precheck」的 kind
+## （有一个 trigger 没带，该 kind 就不能预过滤——事件可能经它触发）。供 get_post_event_prechecks 覆盖使用。
+static func trigger_prechecks_by_kind(triggers: Array[Dictionary]) -> Dictionary:
+	var by_kind := {}
+	var disqualified := {}
+	for trigger in triggers:
+		var kind := str(trigger.get("event_kind", ""))
+		if kind == "" or disqualified.has(kind):
+			continue
+		if not trigger.has("precheck"):
+			disqualified[kind] = true
+			by_kind.erase(kind)
+			continue
+		if not by_kind.has(kind):
+			by_kind[kind] = [] as Array[Callable]
+		(by_kind[kind] as Array[Callable]).append(trigger["precheck"])
+	return by_kind
 
 ## 触发器列表里去重后的 event_kind（按首次出现的顺序），供 get_post_event_kinds 覆盖使用
 static func trigger_event_kinds(triggers: Array[Dictionary]) -> Array[String]:

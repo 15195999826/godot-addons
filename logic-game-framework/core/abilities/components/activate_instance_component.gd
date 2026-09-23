@@ -34,6 +34,9 @@ func _init(config: ActivateInstanceConfig):
 func get_post_event_kinds() -> Array[String]:
 	return AbilityComponent.trigger_event_kinds(_triggers)
 
+func get_post_event_prechecks() -> Dictionary:
+	return AbilityComponent.trigger_prechecks_by_kind(_triggers)
+
 func on_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if not _check_triggers(event_dict, context):
 		return false

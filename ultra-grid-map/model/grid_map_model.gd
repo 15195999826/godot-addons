@@ -78,6 +78,16 @@ var _layout: GridLayout
 ## 瓦片存储 (key: String via HexCoord.to_key(), value: GridTileData)
 var _tiles: Dictionary = {}
 
+## 占用反向索引 (key: occupant —— Object 按引用、String 按值; value: tile key)。
+## 与 tile.occupant 同步维护（place / remove / move / set_tile / 重建），回答「X 站在哪」不扫图。
+var _occupant_keys: Dictionary = {}
+
+## 预订表 (key: tile key, value: reserver_id)。预订是运行时态，存在模型自己的表里，不进 tile.metadata。
+var _reservations: Dictionary = {}
+
+## 预订反向索引 (key: reserver_id, value: Dictionary { tile key: true })。回答「X 订了哪些格」不扫图。
+var _reserver_keys: Dictionary = {}
+
 
 # ========== 初始化 ==========
 
@@ -94,9 +104,9 @@ func initialize(config: GridMapConfig) -> void:
 		config.tile_size
 	)
 	
-	# 清空现有瓦片
-	_tiles.clear()
-	
+	# 清空现有瓦片（连同占用 / 预订索引）
+	_reset_tiles()
+
 	# 根据绘制模式生成瓦片
 	match config.draw_mode:
 		GridMapConfig.DrawMode.ROW_COLUMN:
@@ -169,7 +179,7 @@ func initialize_from_tiles(config: GridMapConfig, tiles: Array) -> void:
 		config.orientation,
 		config.tile_size
 	)
-	_tiles.clear()
+	_reset_tiles()
 	for entry_value in tiles:
 		var entry := entry_value as Dictionary
 		if entry == null or not entry.has("coord"):
@@ -192,6 +202,14 @@ func initialize_from_tiles(config: GridMapConfig, tiles: Array) -> void:
 		if metadata != null:
 			data.metadata = metadata.duplicate()
 		_tiles[coord.to_key()] = data
+
+
+## 清空瓦片与两本索引（占用 / 预订）：三者只在这里一起归零。
+func _reset_tiles() -> void:
+	_tiles.clear()
+	_occupant_keys.clear()
+	_reservations.clear()
+	_reserver_keys.clear()
 
 
 ## 基于半径生成六边形地图
@@ -297,11 +315,16 @@ func get_tile(coord: HexCoord) -> GridTileData:
 	return _tiles.get(coord.to_key(), null)
 
 
-## 设置瓦片数据
+## 设置瓦片数据。整块替换：旧瓦片上的占用与预订随之作废，新数据自带的 occupant 进索引。
 func set_tile(coord: HexCoord, data: GridTileData) -> void:
 	var key: String = coord.to_key()
 	var old_data: GridTileData = _tiles.get(key, null)
+	if old_data != null and old_data.occupant != null:
+		_unindex_occupant(old_data.occupant, key)
+	_cancel_reservation_key(key)
 	_tiles[key] = data
+	if data != null and data.occupant != null:
+		_occupant_keys[data.occupant] = key
 	tile_changed.emit(coord, old_data, data)
 
 
@@ -398,16 +421,21 @@ func get_occupant(coord: HexCoord) -> Variant:
 	return null
 
 
-## 放置占用者
+## 放置占用者。一个占用者同时只站一格：已站在别处的占用者拒绝再放（报错并返回 false），先 remove / move。
 func place_occupant(coord: HexCoord, occupant: Variant) -> bool:
 	if not has_tile(coord):
 		return false
 	if is_occupied(coord):
 		return false
-	
+	if occupant != null and _occupant_keys.has(occupant):
+		push_error("[GridMapModel] place_occupant: occupant already stands at %s, remove or move it first" % str(_occupant_keys[occupant]))
+		return false
+
 	var tile := get_tile(coord)
 	var old_occupant: Variant = tile.occupant
 	tile.occupant = occupant
+	if occupant != null:
+		_occupant_keys[occupant] = coord.to_key()
 	occupant_changed.emit(coord, old_occupant, occupant)
 	return true
 
@@ -419,11 +447,25 @@ func remove_occupant(coord: HexCoord) -> bool:
 		return false
 	if tile.occupant == null:
 		return false
-	
+
 	var old_occupant: Variant = tile.occupant
 	tile.occupant = null
+	_unindex_occupant(old_occupant, coord.to_key())
 	occupant_changed.emit(coord, old_occupant, null)
 	return true
+
+
+## 把占用者从它站的格子上移走（调用方不必知道坐标）；不在棋盘上返回 false。
+func remove_occupant_of(occupant: Variant) -> bool:
+	if occupant == null or not _occupant_keys.has(occupant):
+		return false
+	return remove_occupant(HexCoord.from_key(_occupant_keys[occupant]))
+
+
+## 占用索引除名：只在索引确实指向这一格时才删，防过期映射误删。
+func _unindex_occupant(occupant: Variant, key: String) -> void:
+	if occupant != null and _occupant_keys.get(occupant, "") == key:
+		_occupant_keys.erase(occupant)
 
 
 ## 移动占用者
@@ -448,19 +490,18 @@ func move_occupant(from_coord: HexCoord, to_coord: HexCoord) -> bool:
 	# 执行移动
 	from_tile.occupant = null
 	to_tile.occupant = occupant
-	
+	_occupant_keys[occupant] = to_coord.to_key()
+
 	occupant_changed.emit(from_coord, occupant, null)
 	occupant_changed.emit(to_coord, null, occupant)
 	return true
 
 
-## 查找占用者的位置 (null if not found)
+## 查找占用者的位置 (null if not found)。走反向索引：Object 按引用、String 按值，不做跨类型 ==。
 func find_occupant_position(occupant: Variant) -> Variant:
-	for key in _tiles.keys():
-		var tile: GridTileData = _tiles[key]
-		if tile.occupant == occupant:
-			return HexCoord.from_key(key)
-	return null  # 未找到返回 null
+	if occupant == null or not _occupant_keys.has(occupant):
+		return null
+	return HexCoord.from_key(_occupant_keys[occupant])
 
 
 ## 检查坐标是否可通行 (未被占用且未阻挡)
@@ -506,36 +547,77 @@ func set_edge_pass_override(from: HexCoord, to: HexCoord, value: bool) -> void:
 		tile.edge_pass_overrides.erase(to.to_key())
 
 
-## 预订格子
-## 使用 metadata 存储预订信息
+## 预订格子：格子存在、无人占用、没被别人订走（同一 reserver 重复预订同一格幂等）；空 id 不接受。
+## 预订是运行时态，存在模型自己的两本表里（格 → 谁、谁 → 格），不进 tile.metadata。
 func reserve_tile(coord: HexCoord, reserver_id: String) -> bool:
+	if reserver_id == "":
+		return false
 	var tile := get_tile(coord)
 	if not tile:
 		return false
 	if tile.occupant != null:
 		return false
-	var existing_reservation: String = tile.metadata.get("reservation", "")
+	var key := coord.to_key()
+	var existing_reservation: String = _reservations.get(key, "")
 	if existing_reservation != "" and existing_reservation != reserver_id:
 		return false
-	tile.metadata["reservation"] = reserver_id
+	_reservations[key] = reserver_id
+	if not _reserver_keys.has(reserver_id):
+		_reserver_keys[reserver_id] = {}
+	(_reserver_keys[reserver_id] as Dictionary)[key] = true
 	return true
 
 
-## 获取格子预订信息
+## 获取格子预订信息（没有预订返回 ""）
 func get_reservation(coord: HexCoord) -> String:
-	return get_tile_metadata(coord, "reservation", "") as String
+	return _reservations.get(coord.to_key(), "")
 
 
 ## 取消格子预订
 func cancel_reservation(coord: HexCoord) -> void:
-	var tile := get_tile(coord)
-	if tile and tile.metadata.has("reservation"):
-		tile.metadata.erase("reservation")
+	_cancel_reservation_key(coord.to_key())
+
+
+## 取消某个 reserver 名下的全部预订，返回取消的格数；没订过任何格一次查找即返回 0。
+func cancel_reservations_by(reserver_id: String) -> int:
+	var keys: Variant = _reserver_keys.get(reserver_id, null)
+	if keys == null:
+		return 0
+	var count := 0
+	for key in (keys as Dictionary).keys():
+		if _reservations.get(key, "") == reserver_id:
+			_reservations.erase(key)
+			count += 1
+	_reserver_keys.erase(reserver_id)
+	return count
+
+
+## 某个 reserver 名下的全部预订格
+func get_reserved_coords(reserver_id: String) -> Array[HexCoord]:
+	var result: Array[HexCoord] = []
+	var keys: Variant = _reserver_keys.get(reserver_id, null)
+	if keys == null:
+		return result
+	for key in (keys as Dictionary).keys():
+		result.append(HexCoord.from_key(key))
+	return result
 
 
 ## 检查格子是否被预订
 func is_reserved(coord: HexCoord) -> bool:
-	return get_reservation(coord) != ""
+	return _reservations.has(coord.to_key())
+
+
+func _cancel_reservation_key(key: String) -> void:
+	var reserver_id: String = _reservations.get(key, "")
+	if reserver_id == "":
+		return
+	_reservations.erase(key)
+	var keys: Variant = _reserver_keys.get(reserver_id, null)
+	if keys != null:
+		(keys as Dictionary).erase(key)
+		if (keys as Dictionary).is_empty():
+			_reserver_keys.erase(reserver_id)
 
 
 # ========== 元数据 ==========
@@ -600,6 +682,9 @@ func serialize() -> Dictionary:
 				tile_dict["occupant_id"] = tile.occupant["id"]
 			elif "id" in tile.occupant:
 				tile_dict["occupant_id"] = tile.occupant.id
+		var reservation: String = _reservations.get(key, "")
+		if reservation != "":
+			tile_dict["reservation"] = reservation
 		if not tile.metadata.is_empty():
 			tile_dict["metadata"] = tile.metadata
 		if not tile.edge_pass_overrides.is_empty():

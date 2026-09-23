@@ -6,7 +6,9 @@ extends Node
 ## remove_effects 注销；死活由 actor 决定：派发时按 id 重建 context，先问 owner 的 is_event_responsive。
 ## 本文件钉住：同 kind 只注册一条、定向投递 kind 永不注册且照常定向投递恰一次、派发顺序（registry 顺序 → grant 顺序）、
 ## revoke / expire / remove_actor / end() 注销、响应钩子与豁免、Break 短路、嵌套派发的深度上限、triggered 监听者只回调一次、
-## on_apply 里过期即停止 apply 且不注册、注册的 owner 取所在 AbilitySet 的 owner。
+## on_apply 里过期即停止 apply 且不注册、注册的 owner 取所在 AbilitySet 的 owner；
+## precheck 两段式：带 precheck 的登记在重建 context 之前判（不问 is_event_responsive）、同 kind 混合声明退回全派但 precheck
+## 仍在 match 里生效、并集语义、通过 precheck 后死活门照旧、定向投递也按 precheck 判。
 
 const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
@@ -15,11 +17,13 @@ const DEATH_KIND := "post_dispatch_death"
 
 
 ## 可调响应策略的 BattleActor：死后只响应 exempt_when_dead 里的 post kind（亡语式豁免）。
+## responsive_queries 数 is_event_responsive 被问的次数：被 precheck 跳过的登记不会问到这里。
 class DispatchActor:
 	extends BattleActor
 
 	var ability_set: AbilitySet
 	var exempt_when_dead: Array[String] = []
+	var responsive_queries := 0
 
 	func _init() -> void:
 		type = "post_dispatch_probe"
@@ -29,6 +33,7 @@ class DispatchActor:
 		return ability_set
 
 	func is_event_responsive(event_dict: Dictionary, phase: String) -> bool:
+		responsive_queries += 1
 		if not is_dead():
 			return true
 		return phase == EventPhase.PHASE_POST and exempt_when_dead.has(str(event_dict.get("kind", "")))
@@ -103,6 +108,11 @@ func _init() -> void:
 	TestFramework.register_test("PostDispatch: ability expired during on_apply stops applying and registers nothing", _test_expired_during_apply_stops_applying)
 	TestFramework.register_test("PostDispatch: registration owner is the ability set's owner", _test_registration_owner_follows_ability_set)
 	TestFramework.register_test("PostDispatch: ability expired inside its own handler is revoked in the same dispatch", _test_expired_in_handler_revoked_immediately)
+	TestFramework.register_test("PostDispatch: precheck rejects before the context is rebuilt", _test_precheck_skips_before_context)
+	TestFramework.register_test("PostDispatch: a kind with a precheck-less trigger falls back to full dispatch, precheck still matches", _test_precheck_mixed_kind_falls_back)
+	TestFramework.register_test("PostDispatch: prechecks of one kind across components form a union", _test_precheck_union_across_components)
+	TestFramework.register_test("PostDispatch: a passed precheck still goes through the responsiveness gate", _test_precheck_then_responsive_gate)
+	TestFramework.register_test("PostDispatch: direct delivery evaluates the precheck inside the trigger match", _test_precheck_in_direct_delivery)
 
 
 ## 同一 ability 两个 component 都监听 KIND：kind 去重后只注册一条，一次派发两个 component 各跑一次。
@@ -330,6 +340,94 @@ func _test_expired_in_handler_revoked_immediately() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
+## precheck 只看事件 + 三个 id，在重建 context 之前判：不是发给我的事件连 is_event_responsive 都不问；
+## 通过的照常重建 context、跑 trigger、触发。登记条数不变——观众仍由注册决定，precheck 只是让站长叫人前先看一眼。
+func _test_precheck_skips_before_context() -> void:
+	var instance := _create_instance("post_dispatch_precheck")
+	var actor_a := _spawn(instance)
+	var actor_b := _spawn(instance)
+	_grant_prechecked(actor_a, "A", _source_is_owner)
+	_grant_prechecked(actor_b, "B", _source_is_owner)
+	TestFramework.assert_equal(2, _registration_count(instance, KIND))
+
+	TestFramework.assert_equal(["A"], _dispatch_with(instance, {"source": actor_a.get_id()}))
+	TestFramework.assert_equal(1, actor_a.responsive_queries)
+	TestFramework.assert_equal(0, actor_b.responsive_queries)
+	TestFramework.assert_equal([], _dispatch_with(instance, {"source": "nobody"}))
+	TestFramework.assert_equal(1, actor_a.responsive_queries)
+	TestFramework.assert_equal(0, actor_b.responsive_queries)
+	GameWorld.destroy_instance(instance.id)
+
+
+## 同 kind 有 trigger 没带 precheck：登记不预过滤（事件可能经那条 trigger 触发），context 照常重建；
+## 带 precheck 的 component 在 match_single_trigger 里仍按 precheck 判，不因退回全派而放宽。
+func _test_precheck_mixed_kind_falls_back() -> void:
+	var instance := _create_instance("post_dispatch_precheck_mixed")
+	var actor := _spawn(instance)
+	actor.ability_set.grant_ability(Ability.new(_ability_config("mixed", [
+		_no_instance_prechecked(KIND, _source_is_owner, AppendLabelAction.new("mine")),
+		_no_instance(KIND, AppendLabelAction.new("any")),
+	]), actor.get_id()))
+	var registration: PostHandlerRegistration = (instance.event_processor._post_handlers[KIND] as Array)[0]
+	TestFramework.assert_true(registration.prechecks.is_empty(), "a mixed kind registers without prechecks")
+
+	TestFramework.assert_equal(["any"], _dispatch_with(instance, {"source": "nobody"}))
+	TestFramework.assert_equal(1, actor.responsive_queries)
+	TestFramework.assert_equal(["mine", "any"], _dispatch_with(instance, {"source": actor.get_id()}))
+	GameWorld.destroy_instance(instance.id)
+
+
+## 同 kind 的 precheck 取并集：两个 component 各认 source / target，登记两条 precheck，任一通过才叫人；
+## 叫到之后各 component 仍只按自己的 trigger 触发。
+func _test_precheck_union_across_components() -> void:
+	var instance := _create_instance("post_dispatch_precheck_union")
+	var actor := _spawn(instance)
+	actor.ability_set.grant_ability(Ability.new(_ability_config("union", [
+		_no_instance_prechecked(KIND, _source_is_owner, AppendLabelAction.new("shot")),
+		_no_instance_prechecked(KIND, _target_is_owner, AppendLabelAction.new("hit")),
+	]), actor.get_id()))
+	var registration: PostHandlerRegistration = (instance.event_processor._post_handlers[KIND] as Array)[0]
+	TestFramework.assert_equal(2, registration.prechecks.size())
+
+	TestFramework.assert_equal(["hit"], _dispatch_with(instance, {"source": "nobody", "target": actor.get_id()}))
+	TestFramework.assert_equal(["shot"], _dispatch_with(instance, {"source": actor.get_id(), "target": "nobody"}))
+	TestFramework.assert_equal([], _dispatch_with(instance, {"source": "nobody", "target": "nobody"}))
+	TestFramework.assert_equal(2, actor.responsive_queries)
+	GameWorld.destroy_instance(instance.id)
+
+
+## precheck 通过后照旧问 is_event_responsive：死者自家的事件仍被死活门拦下（观众由注册决定、死活由 actor 决定不变）。
+func _test_precheck_then_responsive_gate() -> void:
+	var instance := _create_instance("post_dispatch_precheck_gate")
+	var actor := _spawn(instance)
+	_grant_prechecked(actor, "mine", _source_is_owner)
+	actor.mark_dead()
+	TestFramework.assert_equal([], _dispatch_with(instance, {"source": actor.get_id()}))
+	TestFramework.assert_equal(1, actor.responsive_queries)
+	GameWorld.destroy_instance(instance.id)
+
+
+## 定向投递没有 processor 预过滤，precheck 在 match_single_trigger 里照样求值：内置 ABILITY_ACTIVATE 认错实例 id
+## 或 source 都不激活，认对了恰激活一次。
+func _test_precheck_in_direct_delivery() -> void:
+	var instance := _create_instance("post_dispatch_precheck_direct")
+	var actor := _spawn(instance)
+	var timeline := TimelineData.new("t-post-dispatch-precheck-direct", 1000.0, {})
+	var active := Ability.new(AbilityConfig.builder()
+		.config_id("precheck_direct_active")
+		.active_use(ActiveUseConfig.builder().timeline(timeline).build())
+		.build(), actor.get_id())
+	actor.ability_set.grant_ability(active)
+
+	actor.ability_set.receive_event(GameEvent.AbilityActivate.create("someone_else", actor.get_id()).to_dict())
+	TestFramework.assert_equal(0, active.get_executing_instances().size())
+	actor.ability_set.receive_event(GameEvent.AbilityActivate.create(active.id, "not_the_owner").to_dict())
+	TestFramework.assert_equal(0, active.get_executing_instances().size())
+	actor.ability_set.receive_event(GameEvent.AbilityActivate.create(active.id, actor.get_id()).to_dict())
+	TestFramework.assert_equal(1, active.get_executing_instances().size())
+	GameWorld.destroy_instance(instance.id)
+
+
 # ========== 夹具 ==========
 
 static func _create_instance(instance_id: String) -> GameplayInstance:
@@ -342,6 +440,39 @@ static func _spawn(instance: GameplayInstance) -> DispatchActor:
 
 static func _no_instance(kind: String, action: Action.BaseAction) -> NoInstanceConfig:
 	return NoInstanceConfig.builder().trigger(TriggerConfig.new(kind)).action(action).build()
+
+
+static func _no_instance_prechecked(kind: String, precheck: Callable, action: Action.BaseAction) -> NoInstanceConfig:
+	return NoInstanceConfig.builder().trigger(TriggerConfig.new(kind).precheck(precheck)).action(action).build()
+
+
+## precheck：事件的 source 是本 owner（「是不是我射的」的形状）
+static func _source_is_owner(event_dict: Dictionary, h: HandlerContext) -> bool:
+	return str(event_dict.get("source", "")) == h.owner_id
+
+
+## precheck：事件的 target 是本 owner（「是不是打中我」的形状）
+static func _target_is_owner(event_dict: Dictionary, h: HandlerContext) -> bool:
+	return str(event_dict.get("target", "")) == h.owner_id
+
+
+## grant 一个监听 KIND、带 precheck、触发时记下 label 的 ability。
+static func _grant_prechecked(actor: DispatchActor, label: String, precheck: Callable) -> Ability:
+	var ability := Ability.new(_ability_config("precheck_" + label, [
+		_no_instance_prechecked(KIND, precheck, AppendLabelAction.new(label)),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	return ability
+
+
+## 派发一条带额外字段的 KIND 事件，返回 action 记下的 label。
+static func _dispatch_with(instance: GameplayInstance, fields: Dictionary) -> Array[String]:
+	var event := {"kind": KIND, "log": []}
+	event.merge(fields)
+	instance.event_processor.process_post_event(event)
+	var labels: Array[String] = []
+	labels.assign(event["log"])
+	return labels
 
 
 static func _ability_config(config_id: String, components: Array[AbilityComponentConfig]) -> AbilityConfig:

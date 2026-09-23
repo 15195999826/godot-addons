@@ -1,38 +1,28 @@
-## 各技能文件共用的 trigger filter / resolver 工具
+## 各技能文件共用的 trigger precheck / resolver 工具
 ##
-## 这些函数逻辑与具体技能无关（通用 ability activate 过滤、投射物命中过滤、
+## 这些函数逻辑与具体技能无关（通用 ability activate 匹配、投射物命中匹配、
 ## hex 坐标→Vector3 转换等），所以抽到一个独立 helper class，避免在每个技能文件里复制。
 ##
 ## 使用规约：
-##   - 以 `ability_activate_filter` / `projectile_hit_filter` 为**函数引用**传给 TriggerConfig
+##   - 以 `ability_activate_precheck` / `projectile_hit_precheck` 为**函数引用**传给 `TriggerConfig.new(kind).precheck(...)`
 ##     （不要加括号；GDScript 会把 `ClassName.static_func` 包成 Callable）
 ##   - `target_coord_from_event()` / `owner_position_resolver()` / `target_position_resolver()`
 ##     必须**调用**（加括号），每次返回一个新的 Resolver 对象
 class_name HexBattleSkillHelpers
 
 
-# ========== Trigger Filter ==========
+# ========== Trigger Precheck（只看事件 + 三个 id，不要 ctx）==========
 
 ## 匹配当前 Ability 实例的激活事件
-static func ability_activate_filter(event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
-	var ability: Ability = ctx.ability
-	if ability == null:
-		return false
-	var event := GameEvent.AbilityActivate.from_dict(event_dict)
-	return event.ability_instance_id == ability.id
+static func ability_activate_precheck(event_dict: Dictionary, h: HandlerContext) -> bool:
+	return str(event_dict.get("ability_instance_id", "")) == h.ability_id
 
 
-## 匹配投射物命中事件
-## 同时匹配 source_actor_id（发射者）和 ability_config_id（技能来源），
-## 确保只有本技能发出的投射物才触发命中响应。
-static func projectile_hit_filter(event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
-	var ability: Ability = ctx.ability
-	if ability == null:
-		Log.warning("ProjectileHitFilter", "ctx.ability is null, skipping filter")
-		return false
-	var event := GameEvent.ProjectileHit.from_dict(event_dict)
-	return event.source_actor_id == ctx.owner_actor_id \
-		and event.ability_config_id == ability.config_id
+## 匹配本技能发出的投射物命中：source_actor_id（发射者）是 owner、ability_config_id（技能来源）是本 config。
+## 走 precheck：不是自己的弹在重建 context 之前就跳过——满场几十个订阅者时这是 post 扇出的大头。
+static func projectile_hit_precheck(event_dict: Dictionary, h: HandlerContext) -> bool:
+	return str(event_dict.get("source_actor_id", "")) == h.owner_id \
+		and str(event_dict.get("ability_config_id", "")) == h.config_id
 
 
 # ========== Caster 解析 ==========

@@ -349,7 +349,25 @@ func test_grid_map_model() -> bool:
 	if model.is_occupied(target_coord):
 		print("  [FAIL] still occupied after remove")
 		return false
-	
+
+	# 反向索引: find_occupant_position / remove_occupant_of / cancel_reservations_by 不扫图
+	if not model.place_occupant(test_coord, occupant):
+		print("  [FAIL] re-place after remove failed")
+		return false
+	var found = model.find_occupant_position(occupant)
+	if found == null or not found.equals(test_coord):
+		print("  [FAIL] find_occupant_position did not follow the index")
+		return false
+	if not model.remove_occupant_of(occupant) or model.is_occupied(test_coord):
+		print("  [FAIL] remove_occupant_of failed")
+		return false
+	if not model.reserve_tile(test_coord, "mover") or not model.reserve_tile(target_coord, "mover"):
+		print("  [FAIL] reserve_tile failed")
+		return false
+	if model.cancel_reservations_by("mover") != 2 or model.is_reserved(test_coord) or model.is_reserved(target_coord):
+		print("  [FAIL] cancel_reservations_by failed")
+		return false
+
 	# 测试高度系统
 	model.set_tile_height(test_coord, 2.5)
 	var height: float = model.get_tile_height(test_coord)

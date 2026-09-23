@@ -37,6 +37,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/abilities/no_instance_component_test.gd",
 	"res://addons/logic-game-framework/tests/stdlib/components/stat_modifier_component_test.gd",
 	"res://addons/logic-game-framework/tests/stdlib/grid/grid_world_gameplay_instance_test.gd",
+	"res://addons/logic-game-framework/tests/stdlib/grid/grid_map_model_index_test.gd",
 	"res://addons/logic-game-framework/tests/stdlib/projectile/projectile_system_test.gd",
 	"res://addons/logic-game-framework/tests/core/resolvers/resolvers_test.gd",
 	"res://addons/logic-game-framework/tests/core/timeline/timeline_test.gd",

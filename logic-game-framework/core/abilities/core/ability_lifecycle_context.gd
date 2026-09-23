@@ -36,6 +36,10 @@ var event_processor: EventProcessor:
 	set(_value):
 		Log.assert_crash(false, "AbilityLifecycleContext", "event_processor 派生自 instance，不可赋值")
 
+## 本 ability 的三个 id（owner / ability / config）打包成 HandlerContext，供 TriggerConfig.precheck 使用。
+## post 派发从登记里带进来（同一对象复用）；定向投递 / 生命周期钩子按需现建。只有字符串，不成环。
+var _handler_context: HandlerContext = null
+
 
 func _init(
 	p_owner_actor_id: String,
@@ -62,6 +66,17 @@ static func get_live_count() -> int:
 	return _live_count
 
 
+## precheck 用的 id 包（见 _handler_context）。
+func get_handler_context() -> HandlerContext:
+	if _handler_context == null:
+		_handler_context = HandlerContext.new(
+			owner_actor_id,
+			ability.id if ability != null else "",
+			ability.config_id if ability != null else ""
+		)
+	return _handler_context
+
+
 ## 为 on_remove / 叠层 / Break 钩子建 context：手上有 ability、没有 AbilitySet 递来的 context。
 ##
 ## 与 handler 重建同一种找法：instance 按 owner id 反查，actor 从该 instance 取，两个 set 取自 actor。
@@ -82,7 +97,8 @@ static func for_ability(ability: Ability) -> AbilityLifecycleContext:
 ## 返回 null = 本 handler 这一次不执行：owner 未注册或已移出 instance、owner 此刻不响应这条事件
 ## （is_event_responsive 返回 false）、不是 BattleActor 或没有 AbilitySet、ability 已不在 owner 的 AbilitySet 里
 ## 或已过期（AbilitySet 被整个换掉后残留的注册、派发快照里先一步被移除或过期的 ability）。
-static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict: Dictionary, phase: String) -> AbilityLifecycleContext:
+## handler_context：登记里现成的 id 包，带进来免得 precheck 再建一份；null 则按需现建。
+static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict: Dictionary, phase: String, handler_context: HandlerContext = null) -> AbilityLifecycleContext:
 	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
 	if owner_instance == null:
 		return null
@@ -95,7 +111,9 @@ static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict
 	var ability := owner_ability_set.find_ability_by_id(ability_id)
 	if ability == null or ability.is_expired():
 		return null
-	return _from_actor(owner_id, ability, actor as BattleActor, owner_instance)
+	var context := _from_actor(owner_id, ability, actor as BattleActor, owner_instance)
+	context._handler_context = handler_context
+	return context
 
 
 ## 按 owner 反查的两个工厂共用的装配：两个 set 一律取自 actor。

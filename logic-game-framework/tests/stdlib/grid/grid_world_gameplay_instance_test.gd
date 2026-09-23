@@ -3,12 +3,13 @@ extends Node
 ## GridWorldGameplayInstance（stdlib 电池）合同：
 ## 1. configure_grid 建棋盘、configure_grid_model 采用现成棋盘，两者都只发一次 grid_configured
 ## 2. 录像快照的 map_config：未配图 {}，配图后 = 棋盘 to_config_dict()
-## 3. clear_grid_footprint：只清 occupant 就是自己的格子（String occupant / 别人的占用不动、不报错）；
-##    预订按 id 无条件扫全图（坐标无效、没有 hex_position 的 actor 也扫）；null 是 no-op；不动 registry、不动 hex_position
+## 3. clear_grid_footprint 全部问棋盘、不读 actor 的坐标字段：只清 actor 自己站的那格（String occupant / 别人的占用不动、
+##    不报错）；预订按 id 清、坐标无效或没有 hex_position 的 actor 一样清；没足迹的 actor 与 null 是 no-op；
+##    不动 registry、不动 hex_position（那是项目自己的缓存，真相在棋盘）
 ## 4. remove_actor 先清足迹再出 registry（actor_removed handler 里读到的棋盘已是清后状态）；未知 id 返回 false
 
 
-## 站在棋盘上的最小 actor（有 hex_position 即满足 IGridOccupant）。
+## 项目层 actor 的形状：自带位置缓存 hex_position。stdlib 不读它，站在哪由棋盘记。
 class GridProbeActor:
 	extends BattleActor
 
@@ -23,8 +24,9 @@ func _init() -> void:
 	TestFramework.register_test("GridWorld: snapshot map_config follows the board", _test_map_config)
 	TestFramework.register_test("GridWorld: clear_grid_footprint clears only the actor's own occupant and reservations", _test_clear_footprint)
 	TestFramework.register_test("GridWorld: remove_actor releases the footprint before leaving the registry", _test_remove_actor)
-	TestFramework.register_test("GridWorld: clear_grid_footprint scans reservations by id even without a valid position", _test_clear_footprint_scans_reservations_by_id)
+	TestFramework.register_test("GridWorld: clear_grid_footprint clears reservations by id even without a valid position", _test_clear_footprint_scans_reservations_by_id)
 	TestFramework.register_test("GridWorld: the board is already clear inside the actor_removed handler", _test_remove_actor_clears_board_before_signal)
+	TestFramework.register_test("GridWorld: clear_grid_footprint follows the board, not the actor's position cache", _test_clear_footprint_follows_board)
 
 
 static func _make_config() -> GridMapConfig:
@@ -132,8 +134,7 @@ func _test_remove_actor() -> void:
 	GameWorld.destroy_instance(world.id)
 
 
-## D8：预订按 actor id 无条件扫全图——坐标无效的 IGridOccupant 与没有 hex_position 的 actor 也扫；
-## 占用那一半只在坐标有效时看。
+## D8：预订按 actor id 清——坐标无效的 actor 与没有 hex_position 的 actor 一样清（棋盘的预订反向索引，与 actor 字段无关）。
 func _test_clear_footprint_scans_reservations_by_id() -> void:
 	GameWorld.shutdown()
 	var world := GameWorld.create_instance(GridWorldGameplayInstance.new("grid_world_t5")) as GridWorldGameplayInstance
@@ -181,4 +182,29 @@ func _test_remove_actor_clears_board_before_signal() -> void:
 	TestFramework.assert_true(seen["occupant_gone"], "inside actor_removed the occupant is already cleared")
 	TestFramework.assert_equal("", seen["reservation"])
 	TestFramework.assert_false(seen["still_registered"], "inside actor_removed the actor has already left the registry")
+	GameWorld.destroy_instance(world.id)
+
+
+## 真相在棋盘：actor 的 hex_position 缓存过期（棋盘上已被 move_occupant 挪走）时，清足迹清的是棋盘上真实的那格，
+## 不碰缓存所指的格子；没有足迹的载体 actor（从没 place / reserve）清足迹是 no-op。
+func _test_clear_footprint_follows_board() -> void:
+	GameWorld.shutdown()
+	var world := GameWorld.create_instance(GridWorldGameplayInstance.new("grid_world_t7")) as GridWorldGameplayInstance
+	world.configure_grid(_make_config())
+	var grid := world.grid
+	var walker := world.add_actor(GridProbeActor.new()) as GridProbeActor
+	var bystander := world.add_actor(GridProbeActor.new()) as GridProbeActor
+	var carrier := world.add_actor(BattleActor.new())
+	walker.hex_position = HexCoord.new(1, 0)
+	TestFramework.assert_true(grid.place_occupant(walker.hex_position, walker), "setup: place walker")
+	TestFramework.assert_true(grid.move_occupant(HexCoord.new(1, 0), HexCoord.new(0, 1)), "setup: board moves the walker, cache goes stale")
+	bystander.hex_position = HexCoord.new(1, 0)
+	TestFramework.assert_true(grid.place_occupant(bystander.hex_position, bystander), "setup: bystander takes the stale tile")
+
+	world.clear_grid_footprint(carrier)
+	TestFramework.assert_true(grid.get_occupant(HexCoord.new(0, 1)) == walker, "a carrier without footprint clears nothing")
+	world.clear_grid_footprint(walker)
+	TestFramework.assert_true(grid.get_occupant(HexCoord.new(0, 1)) == null, "the walker's real tile is cleared")
+	TestFramework.assert_true(grid.get_occupant(HexCoord.new(1, 0)) == bystander, "the tile the stale cache points at is untouched")
+	TestFramework.assert_true(walker.hex_position.equals(HexCoord.new(1, 0)), "the cache itself is not touched")
 	GameWorld.destroy_instance(world.id)

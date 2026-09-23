@@ -25,6 +25,8 @@
 ## Post 阶段（process_post_event）：
 ## - 在效果应用**之后**调用
 ## - 观众由注册决定：Ability 在 apply_effects 时按 component 的 trigger kind 订阅，remove_effects 时退订
+## - 订阅可带 precheck（TriggerConfig.precheck：只看事件 + 本 ability 的三个 id）：重建 context 之前先判，
+##   不过就跳过本条——纯加速，不改变谁会被触发
 ## - 死活由 actor 决定：handler 重建 context 前问 owner 的 is_event_responsive(event_dict, "post")
 ## - 可能触发被动技能（如反伤、吸血）产生新事件
 ##
@@ -79,6 +81,9 @@ var _post_handlers: Dictionary = {}
 ## 存储格式: { owner_id: int }，owner 进 registry 的顺序
 var _owner_seq: Dictionary = {}
 var _next_owner_seq := 0
+## 登记过 pre / post handler 的 owner：{ owner_id: true }。remove_handlers_by_owner_id 对没登记过的直接返回
+## （投射物这类载体从不登记，每次离场不必把两张表过一遍）。
+var _owners_with_handlers: Dictionary = {}
 
 
 ## 初始化事件处理器
@@ -107,6 +112,7 @@ func note_actor_removed(actor_id: String) -> void:
 ## @return 取消注册的 Callable（按 id 注销、幂等；见 _make_unregister）
 func register_pre_handler(registration: PreHandlerRegistration) -> Callable:
 	var event_kind: String = registration.event_kind
+	_owners_with_handlers[registration.owner_id] = true
 	if not _pre_handlers.has(event_kind):
 		_pre_handlers[event_kind] = [] as Array[PreHandlerRegistration]
 	(_pre_handlers[event_kind] as Array[PreHandlerRegistration]).append(registration)
@@ -123,6 +129,7 @@ func register_post_handler(registration: PostHandlerRegistration) -> Callable:
 			"'%s' 是定向投递 kind，只经 AbilitySet.receive_event 投递，不能注册 post handler" % event_kind)
 		return func() -> void: pass
 	registration.owner_seq = _owner_seq.get(registration.owner_id, _UNLISTED_OWNER_SEQ)
+	_owners_with_handlers[registration.owner_id] = true
 	if not _post_handlers.has(event_kind):
 		_post_handlers[event_kind] = [] as Array[PostHandlerRegistration]
 	var handlers: Array[PostHandlerRegistration] = _post_handlers[event_kind]
@@ -150,15 +157,20 @@ func remove_handlers_by_ability_id(ability_id: String) -> void:
 		return handler_ability_id == ability_id)
 
 
+## 没登记过任何 handler 的 owner（载体 actor）一次查找即返回，不过表。
 func remove_handlers_by_owner_id(owner_id: String) -> void:
+	if not _owners_with_handlers.has(owner_id):
+		return
 	_remove_handlers_where(func(handler_owner_id: String, _handler_ability_id: String) -> bool:
 		return handler_owner_id == owner_id)
+	_owners_with_handlers.erase(owner_id)
 
 
 ## 清空 pre / post 两张注册表（GameplayInstance.end() 调）。owner 的派发序号跟 registry 走，不在这里清。
 func remove_all_handlers() -> void:
 	_pre_handlers.clear()
 	_post_handlers.clear()
+	_owners_with_handlers.clear()
 
 
 ## 同时清 pre / post 两张表。should_remove: func(owner_id: String, ability_id: String) -> bool。
@@ -272,6 +284,8 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 ##
 ## 观众由注册决定、死活由 actor 决定：Ability 注册的 handler 按 id 重建 context，owner 此刻不响应这条事件
 ## （is_event_responsive 返回 false）或 ability 已不在 owner 的 AbilitySet 里、已过期时，本条不执行。
+## 登记带 prechecks（该 kind 的全部 trigger 都声明了 TriggerConfig.precheck）时，重建 context 之前先用登记里
+## 现成的 HandlerContext 跑一遍，全不过就跳过本条——只是把 match_single_trigger 里同一个判断提前，不改变谁会被触发。
 ## 遍历注册表快照（同 pre）：派发中注册 / 注销 handler 不改变这条事件的派发名单。
 ## 定向投递 kind 不许走这里（见 DIRECT_DELIVERY_KINDS）。
 func process_post_event(event_dict: Dictionary) -> void:
@@ -293,6 +307,16 @@ func process_post_event(event_dict: Dictionary) -> void:
 		handlers.assign(_post_handlers[event_kind])
 		var records: Array[Dictionary] = []
 		for registration in handlers:
+			if not registration.passes_prechecks(event_dict):
+				if _config.trace_level >= 2:
+					records.append({
+						"handler_id": registration.id,
+						"handler_name": registration.get_display_name(),
+						"triggered": false,
+						"skipped_by_precheck": true,
+						"execution_time": 0,
+					})
+				continue
 			if _config.trace_level < 2:
 				registration.call_handler(event_dict)
 				continue
