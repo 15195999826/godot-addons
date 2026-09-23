@@ -187,7 +187,7 @@ func _check_tags_and_meta(configs: Array[AbilityConfig], failures: Array[String]
 		HexBattleSkillMetaKeys.TARGETING_COORD,
 		HexBattleSkillMetaKeys.TARGETING_SELF,
 	]
-	# ATB 冻结只认行动载体 tag (BattleAbilitySet._is_blocking_execution): Move 是唯一的 action 载体
+	# ATB 冻结只认行动载体 tag (BattleAbilitySet._is_acting_execution): Move 是唯一的 action 载体
 	if not HexBattleMove.ABILITY.ability_tags.has(HexBattleSkillTags.TAG_ACTION):
 		failures.append("%s: Move 不带 action tag(移动在飞时 ATB 不冻结, 途中还能再起手)" % HexBattleMove.CONFIG_ID)
 	for cfg in configs:

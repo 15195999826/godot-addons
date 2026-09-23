@@ -5,13 +5,13 @@ class_name BattleAbilitySet
 extends AbilitySet
 
 
-# ========== 行动阻塞 ==========
+# ========== 哪些 execution 算行动 ==========
 
 ## ATB 冻结只认「行动」: 角色花行动条换来的那个行动 (主动技能 active / 移动 action) 在飞才停充能。
 ## buff / 被动 / 内建能力的周期 timeline (中毒 DOT、涌动、恶魔形态、回血) 在身期间全程「执行中」,
 ## 当成阻塞 = 持有者整段不充能不行动 (中毒即定身、恶魔形态持有者整场零行动)。
 ## 白名单而非逐个豁免: 新写的周期能力默认不冻结; 主动技能必带 active tag 由 manifest lint 守。
-func _is_blocking_execution(ability: Ability) -> bool:
+func _is_acting_execution(ability: Ability) -> bool:
 	return ability.has_ability_tag(HexBattleSkillTags.TAG_ACTIVE) or ability.has_ability_tag(HexBattleSkillTags.TAG_ACTION)
 
 

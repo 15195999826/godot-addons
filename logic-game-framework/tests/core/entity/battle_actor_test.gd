@@ -5,7 +5,7 @@ extends Node
 ## 覆盖三家 actor（hex / dota2 / inkmon）合并到 core 后的公共合同：
 ## 死亡锁存的一次性、纯数据 actor（两个 getter 返回 null）全程不崩、
 ## _on_id_assigned 把 id 同步进 ability_set + tag_container + attribute_set、
-## 以及 AbilitySet.tick_runtime 的 blocking 语义。
+## 以及 AbilitySet.advance_and_is_acting 的 is_acting 语义。
 
 const TAG_INTRINSIC := "intrinsic"
 const TAG_TICKED := "battle_actor_probe_ticked"
@@ -63,11 +63,11 @@ class ProbeDataActor:
 		type = "probe_data"
 
 
-## 打了 intrinsic 标的 ability 不阻塞行动（复现 hex / inkmon 的项目规则）。
+## 打了 intrinsic 标的 ability 不算行动（复现 inkmon 的豁免规则）。
 class ProbeAbilitySet:
 	extends AbilitySet
 
-	func _is_blocking_execution(ability: Ability) -> bool:
+	func _is_acting_execution(ability: Ability) -> bool:
 		return not ability.has_ability_tag(TAG_INTRINSIC)
 
 
@@ -104,8 +104,8 @@ func _init() -> void:
 	TestFramework.register_test("BattleActor with null sets survives every call", _test_data_actor_null_safe)
 	TestFramework.register_test("BattleActor _on_id_assigned syncs owner id", _test_id_assignment_syncs_owner)
 	TestFramework.register_test("BattleActor ability_set_of returns null for plain Actor", _test_ability_set_of)
-	TestFramework.register_test("AbilitySet.tick_runtime blocks on the tick an execution ends", _test_tick_runtime_blocking)
-	TestFramework.register_test("AbilitySet.tick_runtime ignores non-blocking abilities", _test_tick_runtime_non_blocking)
+	TestFramework.register_test("AbilitySet.advance_and_is_acting reports acting on the tick an execution ends", _test_advance_and_is_acting_on_ending_tick)
+	TestFramework.register_test("AbilitySet.advance_and_is_acting ignores non-acting abilities", _test_advance_and_is_acting_non_acting)
 	TestFramework.register_test("AbilitySet tick pass survives revoking an earlier ability", _test_tick_survives_mid_pass_revoke)
 	TestFramework.register_test("BattleActor team id syncs both int and string views", _test_team_id)
 	TestFramework.register_test("AbilityGranted payload carries the ability id under a single key", _test_ability_granted_payload_single_id_key)
@@ -201,34 +201,34 @@ func _test_ability_set_of() -> void:
 	TestFramework.assert_true(BattleActor.ability_set_of(null) == null)
 
 
-# ========== tick_runtime ==========
+# ========== advance_and_is_acting ==========
 
-## blocking 在 tick_executions **之前**算：本 tick 跑完的 execution 仍占这一帧，
+## is_acting 在 tick_executions **之前**算：本 tick 跑完的 execution 仍占这一帧，
 ## 否则角色会在收招那一帧既施法又充能。
-func _test_tick_runtime_blocking() -> void:
-	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_tick_runtime"))
+func _test_advance_and_is_acting_on_ending_tick() -> void:
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_advance_and_is_acting"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
 	actor.ability_set.grant_ability(Ability.new(_build_probe_config(), actor.get_id()))
 	TestFramework.assert_true(actor.ability_set.has_executing_instances(), "GRANTED_SELF 应已自激活")
 
-	TestFramework.assert_true(actor.ability_set.tick_runtime(100.0, 100.0),
-		"execution 在本 tick 内跑完，本 tick 仍算阻塞")
+	TestFramework.assert_true(actor.ability_set.advance_and_is_acting(100.0, 100.0),
+		"execution 在本 tick 内跑完，本 tick 仍算正在行动")
 	TestFramework.assert_false(actor.ability_set.has_executing_instances(), "execution 应已结束")
-	TestFramework.assert_false(actor.ability_set.tick_runtime(100.0, 200.0),
-		"下一 tick 才解除阻塞")
+	TestFramework.assert_false(actor.ability_set.advance_and_is_acting(100.0, 200.0),
+		"下一 tick 才不算行动")
 	GameWorld.destroy_instance(instance.id)
 
 
-func _test_tick_runtime_non_blocking() -> void:
-	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_tick_runtime_intrinsic"))
+func _test_advance_and_is_acting_non_acting() -> void:
+	var instance := GameWorld.create_instance(GameplayInstance.new("battle_actor_advance_and_is_acting_intrinsic"))
 	var actor := instance.add_actor(ProbeBattleActor.new()) as ProbeBattleActor
 	var tags: Array[String] = [TAG_INTRINSIC]
 	actor.ability_set.grant_ability(Ability.new(_build_probe_config(tags), actor.get_id()))
 	TestFramework.assert_true(actor.ability_set.has_executing_instances(),
 		"intrinsic ability 同样在执行中")
-	TestFramework.assert_false(actor.ability_set.tick_runtime(50.0, 50.0),
-		"_is_blocking_execution 为 false 的 ability 不冻结行动")
-	# 关键：不阻塞 ≠ 不推进。若 tick_executions 被误挂在 blocking 而不是 has_any 上,
+	TestFramework.assert_false(actor.ability_set.advance_and_is_acting(50.0, 50.0),
+		"_is_acting_execution 为 false 的 ability 不算行动、不冻结 ATB")
+	# 关键：不算行动 ≠ 不推进。若 tick_executions 被误挂在 acting 而不是 has_any 上,
 	# intrinsic ability 的 timeline 会永久冻结——而只断言「还在执行中」看不出这个。
 	TestFramework.assert_equal(1, actor.ability_set.get_loose_tag_stacks(TAG_TICKED))
 	TestFramework.assert_true(actor.ability_set.has_executing_instances(), "50ms 还没跑完")

@@ -8,7 +8,7 @@
 ##   3. 角色起手 Move（START 已预订目的地）后、EXECUTE 之前被击杀：尸体不 tick，Move 不落地（位置不变、预订已随
 ##      clear_grid_footprint 清掉）——而那条在飞的 execution 当帧取消，不以「执行中」残留在尸体上。
 ##   4. 主循环名单是开趟时建的：排在击杀者之后、当帧稍早被打死的角色，轮到它时已是尸体——当帧就不再
-##      tick_runtime（身上在飞的 keyframe 不 fire）、不充能、不起手新行动。SkillPreviewProcedure 的参战者循环同一条合同。
+##      advance_and_is_acting（身上在飞的 keyframe 不 fire）、不充能、不起手新行动。SkillPreviewProcedure 的参战者循环同一条合同。
 ##
 ## 退出码: 0 PASS / 1 FAIL; 标记 "SMOKE_TEST_RESULT: PASS|FAIL - <reason>"
 extends Node
@@ -242,7 +242,7 @@ func _phase_corpse_execution() -> String:
 # ========== 幕 4：主循环里当帧稍早被击杀者 ==========
 
 ## 左队 [killer]、右队 [ticker, actor_b]：主循环名单顺序 killer → ticker → actor_b。一帧之内 killer 的探针技能先把
-## 右队两人都打死，轮到它们时已是尸体：ticker 身上在飞的探针 keyframe 当帧不 fire（尸体不 tick_runtime）；
+## 右队两人都打死，轮到它们时已是尸体：ticker 身上在飞的探针 keyframe 当帧不 fire（尸体不 advance_and_is_acting）；
 ## actor_b 不充能、也就不起手（on_atb 里那次 Move 不发生，目的地无人预订）。
 func _phase_killed_earlier_in_the_frame() -> String:
 	GameWorld.shutdown()
@@ -288,10 +288,10 @@ func _phase_killed_earlier_in_the_frame() -> String:
 
 	if not ticker.is_dead() or not actor_b.is_dead():
 		return "killed-earlier: test setup — both right-team actors should have been killed in the first tick"
-	# 三条互不遮挡：tick_runtime / 充能 / 起手各报各的。
+	# 三条互不遮挡：advance_and_is_acting / 充能 / 起手各报各的。
 	var problems: Array[String] = []
 	if int(fired["ticker"]) != 0:
-		problems.append("the corpse's in-flight keyframe fired %d time(s) in the frame it was killed, expected 0 (a corpse must not tick_runtime)" % int(fired["ticker"]))
+		problems.append("the corpse's in-flight keyframe fired %d time(s) in the frame it was killed, expected 0 (a corpse must not advance_and_is_acting)" % int(fired["ticker"]))
 	if int(observed["atb_turns"]) != 0:
 		problems.append("the corpse got %d ATB turn(s) in the frame it was killed, expected 0 (a corpse must not charge)" % int(observed["atb_turns"]))
 	if not executions.is_empty():

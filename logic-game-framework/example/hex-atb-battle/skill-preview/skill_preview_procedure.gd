@@ -5,7 +5,7 @@
 ## (time_ms / ability_config / target_id)。tick 到达 keyframe.time_ms 时
 ## grant + activate, "所有 keyframe 已 fire 且无 executing instance 且无飞行
 ## 投射物"后 +POST_EXECUTION_TICKS 延迟关停。
-## ability runtime tick 复用 AbilitySet.tick_runtime；本类只替换
+## ability runtime 推进复用 AbilitySet.advance_and_is_acting；本类只替换
 ## 正式战斗里的"AI 决策并启动 action"阶段。
 ##
 ## 寄生在外部常驻 WorldGI 上 —— 不 GameWorld.shutdown()，actor 生命周期归
@@ -134,11 +134,11 @@ func tick_once() -> void:
 		# 名单是开趟时建的：本帧稍早被打死的参战者轮到时已是尸体，当帧就不再 tick（与 HexBattleProcedure 主循环同一条合同）。
 		if actor.is_dead():
 			continue
-		# 收尾判 idle 等的是「除内建能力外还有 execution 在飞」(DOT 这类周期 buff 也等它跳完), 不是 tick_runtime 返回的
+		# 收尾判 idle 等的是「除内建能力外还有 execution 在飞」(DOT 这类周期 buff 也等它跳完), 不是 advance_and_is_acting 返回的
 		# ATB 冻结那张只认行动的清单。推进之前问: 本帧内跑完的 execution 也算占用了这一帧。
 		if actor.ability_set.has_pending_execution():
 			any_ability_executing = true
-		actor.ability_set.tick_runtime(_tick_interval, cur_logic_time)
+		actor.ability_set.advance_and_is_acting(_tick_interval, cur_logic_time)
 
 	# Phase C (Fire Tile): EnvironmentActor 的 ability_set 也要 tick / tick_executions。
 	# 它不在 _get_alive_participants() (那是 CharacterActor 类型) 中, 单独遍历。

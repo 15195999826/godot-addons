@@ -76,7 +76,7 @@ func tick_once() -> void:
 		logger.tick(_current_tick, cur_logic_time)
 
 	# ATB 与行动互斥: 自己起手的主动技能 / 移动在飞期间 ATB 冻结, 不继续充能(经典 ATB 模式);
-	# 身上 buff / 被动的周期 timeline 不算 (判据: BattleAbilitySet._is_blocking_execution)。
+	# 身上 buff / 被动的周期 timeline 不算 (判据: BattleAbilitySet._is_acting_execution)。
 	# 每个 actor 前再判 _finished：战斗 tick 内 world 被结束（end() → abort()）时本 world 已出注册表，
 	# 余下 actor 的 action 反查 ctx.instance 只会拿到 null，不再跑完余下函数体。
 	for actor in get_alive_characters():
@@ -86,7 +86,7 @@ func tick_once() -> void:
 		# （尸体不 tick 从死亡那一帧起成立）；它在飞的行动由下面的补 tick 循环同帧 cancel。
 		if actor.is_dead():
 			continue
-		if actor.ability_set.tick_runtime(_tick_interval, cur_logic_time):
+		if actor.ability_set.advance_and_is_acting(_tick_interval, cur_logic_time):
 			continue
 		actor.accumulate_atb(_tick_interval)
 		if actor.can_act():
@@ -119,7 +119,7 @@ func tick_once() -> void:
 				continue
 			# CharacterActor mid-spawn: 与 production 主循环同一条 runtime tick, 但不进 ATB/AI
 			# EnvironmentActor (fire tile): 同上
-			h.ability_set.tick_runtime(_tick_interval, cur_logic_time)
+			h.ability_set.advance_and_is_acting(_tick_interval, cur_logic_time)
 
 	if _finished:
 		return

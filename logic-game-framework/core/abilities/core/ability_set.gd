@@ -157,7 +157,7 @@ func tick(dt: float, logic_time: float = -1.0) -> void:
 	)
 
 ## 推进在飞的 execution；没有任何 execution 在飞就不进门（那趟遍历只剩快照 / lambda / 各 ability 的 filter 分配）。
-## tick_runtime 自己先扫过一遍（顺便算 blocking）；直接调本方法的循环（dota2 / scenario harness）靠这里的判断。
+## advance_and_is_acting 自己先扫过一遍（顺便算 is_acting）；直接调本方法的循环（dota2 / scenario harness）靠这里的判断。
 func tick_executions(dt: float) -> Array[String]:
 	if not has_executing_instances():
 		return []
@@ -168,26 +168,27 @@ func tick_executions(dt: float) -> Array[String]:
 	)
 	return all_triggered
 
-## 一帧 ability runtime：tick → 算 blocking → tick_executions；返回本帧是否有阻塞执行。
+## 推进一帧 ability runtime 并回答「是否正在行动」：tick → 算 is_acting → tick_executions；
+## 返回本帧是否有算行动的 execution 在飞（哪些 execution 算行动由 _is_acting_execution 定）。
 ##
-## blocking 必须在 tick_executions **之前**算：本帧内跑完的 execution 也算占用了这一帧，
+## is_acting 必须在 tick_executions **之前**算：本帧内跑完的 execution 也算占用了这一帧，
 ## 战斗主循环据此决定「施法期间 ATB 冻结」；先推进再问，刚结束的那帧会被误判成空闲，
 ## 角色一帧内既施法又充能。
-func tick_runtime(dt: float, logic_time: float) -> bool:
+func advance_and_is_acting(dt: float, logic_time: float) -> bool:
 	tick(dt, logic_time)
 	var has_any_execution := false
-	var blocking := false
+	var acting := false
 	# 一趟同时算两个答案：本方法每 actor 每 tick 都跑，分两趟遍历纯属白走。
 	for ability in _abilities:
 		if not ability.has_executing_instance():
 			continue
 		has_any_execution = true
-		if _is_blocking_execution(ability):
-			blocking = true
+		if _is_acting_execution(ability):
+			acting = true
 			break
 	if has_any_execution:
 		tick_executions(dt)
-	return blocking
+	return acting
 
 ## 是否有任一 ability 处于执行中（不区分是否阻塞）。
 func has_executing_instances() -> bool:
@@ -203,8 +204,9 @@ func _has_ticking_ability() -> bool:
 			return true
 	return false
 
-## 执行中的 ability 是否阻塞行动。默认全部阻塞；项目子类按自己的「常驻/内建能力」规则覆盖。
-func _is_blocking_execution(_ability: Ability) -> bool:
+## 执行中的 ability 算不算「行动」（在飞期间持有者视为正在行动，战斗主循环据此冻结 ATB）。
+## 默认全算；项目子类按自己的规则覆盖（hex 只认 active / action 标签，inkmon 豁免 intrinsic）。
+func _is_acting_execution(_ability: Ability) -> bool:
 	return true
 
 ## 定向投递：把事件交给本 set 的全部 ability（激活请求、grant 自投递——EventProcessor.DIRECT_DELIVERY_KINDS）。

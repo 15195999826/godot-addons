@@ -17,7 +17,7 @@ const TAG_SKILL := "skill"
 const TAG_ACTIVE := "active"
 
 ## 非技能的主动行动载体(Move 专用)。TAG_ACTIVE / TAG_ACTION 合起来 = 角色花行动条换来的「行动」,
-## 只有它们在飞才冻结 ATB (BattleAbilitySet._is_blocking_execution)
+## 只有它们在飞才冻结 ATB (BattleAbilitySet._is_acting_execution)
 const TAG_ACTION := "action"
 
 ## 被动载体(Break 的禁用判据消费)
