@@ -122,31 +122,36 @@ func get_auto_duration_tag_stacks(tag: String) -> int:
 	return count
 
 
+## 回收已到期的计时 tag，并为每个受影响的 tag 广播一次 TagChanged。
+## tick 先拨钟再进这里，此时 get_tag_stacks 已经只数未到期的条目——到期前的层数不能再读出来，
+## 只能算：old = 现在数到的 + 本次到期的条数。同一趟里同 tag 多条一起到期只广播一次（层数一次跳到位）。
 func cleanup_expired_tags() -> void:
-	# 没有计时 tag 就没有可到期的：直接返回，不为一趟空遍历建三个容器（每个 actor 每帧都到这里）。
+	# 没有计时 tag 就没有可到期的；有但一条都没到期也直接走（每个 actor 每帧都到这里，不为此建容器）。
 	if _auto_duration_tags.is_empty():
 		return
-	var tag_old_counts := {}
-	var removed_counts := {}
+	var any_expired := false
+	for entry in _auto_duration_tags:
+		if float(entry["expires_at"]) <= _current_logic_time:
+			any_expired = true
+			break
+	if not any_expired:
+		return
+
+	var expired_counts := {}
+	var kept: Array[Dictionary] = []
 	for entry in _auto_duration_tags:
 		if float(entry["expires_at"]) <= _current_logic_time:
 			var tag := str(entry["tag"])
-			if not tag_old_counts.has(tag):
-				tag_old_counts[tag] = get_tag_stacks(tag)
-			removed_counts[tag] = int(removed_counts.get(tag, 0)) + 1
+			expired_counts[tag] = int(expired_counts.get(tag, 0)) + 1
+		else:
+			kept.append(entry)
+	_auto_duration_tags = kept
 
-	var filtered: Array[Dictionary] = []
-	for entry in _auto_duration_tags:
-		if float(entry["expires_at"]) > _current_logic_time:
-			filtered.append(entry)
-	_auto_duration_tags = filtered
-
-	for tag in tag_old_counts.keys():
-		var old_count := int(tag_old_counts[tag])
+	for tag in expired_counts.keys():
 		var new_count := get_tag_stacks(tag)
+		var old_count := new_count + int(expired_counts[tag])
 		Log.debug("TagContainer", "AutoDurationTag 层过期: %s" % tag)
-		if old_count != new_count:
-			_notify_tag_changed(tag, old_count, new_count)
+		_notify_tag_changed(tag, old_count, new_count)
 
 
 func add_component_tags(component_id: String, tags: Dictionary) -> void:

@@ -8,7 +8,9 @@ extends Node
 ## ③ 没有任何 ability 交了函数的 set，tick 不走那趟遍历；有一个就走；它退场后又不走（每帧现判，不记计数）；
 ## ④ 没有 execution 在飞时 tick_executions 不进门；
 ## ⑤ TimeDurationComponent 经交出的函数到期，由同一趟 tick 回收（expired / time_duration）；
-## ⑥ TagContainer 没有计时 tag 时 tick 只拨钟，有计时 tag 时照常到期并通知。
+## ⑥ TagContainer 没有计时 tag 时 tick 只拨钟，有计时 tag 时照常到期并通知；
+## ⑦ 计时 tag 到期那一趟 tick 广播 TagChanged，old 是到期前的层数（拨钟后数到的 + 本次到期条数），
+##    同 tag 同趟多条到期只广播一次，未到期的趟不广播。
 
 
 ## 数 _process_abilities 被叫了几次：「不走那趟遍历」只在这里可观测。
@@ -84,6 +86,7 @@ func _init() -> void:
 	TestFramework.register_test("AbilitySet.tick_executions does not enter when nothing is executing", _test_tick_executions_skips_without_executions)
 	TestFramework.register_test("TimeDurationComponent expires through the handed-over callable and is reclaimed by the same tick", _test_time_duration_expires_and_is_reclaimed)
 	TestFramework.register_test("TagContainer.tick only moves the clock without auto-duration tags and still expires them when present", _test_tag_container_tick_without_and_with_timed_tags)
+	TestFramework.register_test("TagContainer broadcasts TagChanged on expiry with the pre-expiry stack count, once per tag per tick", _test_tag_container_expiry_broadcasts_tag_changed)
 
 
 func _test_handed_over_callable_is_ticked() -> void:
@@ -190,8 +193,47 @@ func _test_tag_container_tick_without_and_with_timed_tags() -> void:
 	TestFramework.assert_equal("cooldown:0>1", ",".join(changes))
 	tags.tick(50.0, 250.0)
 	TestFramework.assert_true(tags.has_tag("cooldown"), "250 < 300 未到期")
+	TestFramework.assert_equal("cooldown:0>1", ",".join(changes))
 	tags.tick(100.0, 350.0)
 	TestFramework.assert_false(tags.has_tag("cooldown"), "350 >= 300 到期")
+	TestFramework.assert_equal("cooldown:0>1,cooldown:1>0", ",".join(changes))
+
+
+## 到期广播的 old 是到期前的层数：tick 先拨钟，此时 get_tag_stacks 已数不到到期条目，
+## old 只能由「拨钟后数到的 + 本次到期条数」算出；loose 层与未到期的计时层都留在 new 里。
+func _test_tag_container_expiry_broadcasts_tag_changed() -> void:
+	var tags := TagContainer.create("tick_fast_path_expiry")
+	var changes: Array[String] = []
+	tags.on_tag_changed(func(tag: String, old_count: int, new_count: int, _container: TagContainer) -> void:
+		changes.append("%s:%d>%d" % [tag, old_count, new_count]))
+
+	# 同 tag 三层：一层 loose + 两条计时（到期 100 / 200），逐条到期各广播一次，层数按总数算
+	tags.add_loose_tag("burning", 1)
+	tags.add_auto_duration_tag("burning", 100.0)
+	tags.add_auto_duration_tag("burning", 200.0)
+	TestFramework.assert_equal("burning:0>1,burning:1>2,burning:2>3", ",".join(changes))
+	changes.clear()
+	tags.tick(50.0, 50.0)
+	TestFramework.assert_true(changes.is_empty(), "没有到期的趟不广播")
+	tags.tick(50.0, 100.0)
+	TestFramework.assert_equal("burning:3>2", ",".join(changes))
+	tags.tick(100.0, 200.0)
+	TestFramework.assert_equal("burning:3>2,burning:2>1", ",".join(changes))
+	TestFramework.assert_equal(1, tags.get_tag_stacks("burning"))
+	TestFramework.assert_true(tags.has_tag("burning"), "loose 层不随计时层到期")
+
+	# 同 tag 两条在同一趟一起到期：只广播一次，层数一次跳到位；别的 tag 互不干扰
+	changes.clear()
+	tags.add_auto_duration_tag("chill", 10.0)
+	tags.add_auto_duration_tag("chill", 20.0)
+	tags.add_auto_duration_tag("wet", 500.0)
+	changes.clear()
+	tags.tick(100.0, 300.0)
+	TestFramework.assert_equal("chill:2>0", ",".join(changes))
+	TestFramework.assert_false(tags.has_tag("chill"), "两条一起到期后无 chill")
+	TestFramework.assert_true(tags.has_tag("wet"), "未到期的 wet 不受影响")
+	tags.tick(100.0, 400.0)
+	TestFramework.assert_equal("chill:2>0", ",".join(changes))
 
 
 # ========== 夹具 ==========
