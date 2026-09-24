@@ -6,9 +6,9 @@
 ##
 ## [b]默认触发器[/b]
 ##
-## ActiveUseConfig 专为主动技能设计，triggers 为空时 ActiveUseComponent 默认监听
-## [code]GameEvent.ABILITY_ACTIVATE_EVENT[/code]，并自动过滤匹配当前 Ability 实例的事件
-## （ability_instance_id == ability.id）。因此大多数主动技能无需显式配置 trigger，除非需要自定义触发逻辑。
+## ActiveUseConfig 专为主动技能设计，triggers 为空时 ActiveUseComponent 默认用
+## [code]TriggerConfig.ABILITY_ACTIVATE[/code]：只收寄给本 Ability 实例的 ABILITY_ACTIVATE_EVENT（定向投递，
+## 收件人由地址保证）。因此大多数主动技能无需显式配置 trigger，除非需要自定义触发逻辑。
 ##
 ## [b]推荐链式调用顺序[/b]
 ##
@@ -76,8 +76,8 @@ class ActiveUseConfigBuilder:
 
 	# ========== 1. 触发配置 ==========
 
-	## 添加触发器（可选）。不配置时 ActiveUseComponent 默认监听 GameEvent.ABILITY_ACTIVATE_EVENT
-	## 并匹配当前 Ability 实例；仅在需要自定义触发逻辑时调用。
+	## 添加触发器（可选）。不配置时 ActiveUseComponent 默认用 TriggerConfig.ABILITY_ACTIVATE
+	## （只收寄给本实例的激活请求）；仅在需要自定义触发逻辑时调用。
 	func trigger(config: TriggerConfig) -> ActiveUseConfigBuilder:
 		super.trigger(config)
 		return self

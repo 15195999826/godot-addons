@@ -1,7 +1,7 @@
 ## Dota2TargetSelectors - Action 目标选择器（项目层）
 ##
 ## 基础攻击的权威目标来自 controller 的 AttackTargetIntent —— procedure 把它放进
-## ABILITY_ACTIVATE_EVENT.target_actor_id 再喂给 ability_set.receive_event。Action 链里
+## ABILITY_ACTIVATE_EVENT.target_actor_id 再经 deliver_to_ability 寄给该 ability。Action 链里
 ## 的 on_tag DamageAction 通过本 selector 从事件链取回该目标（与 hex
 ## HexBattleTargetSelectors.CurrentTarget 同构）。execution 读"激活事件携带的 intent
 ## 目标"，不另立 actor-owned 真相。

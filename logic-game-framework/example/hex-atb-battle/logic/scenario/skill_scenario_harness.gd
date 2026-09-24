@@ -337,7 +337,7 @@ static func run_with_actions(
 	}
 
 
-## Grant ability 给 action_caster + receive ABILITY_ACTIVATE_EVENT。
+## Grant ability 给 action_caster + 把 ABILITY_ACTIVATE_EVENT 寄给它（EventProcessor.deliver_to_ability）。
 ## logic_time 写 keyframe 自身的 time_ms (deterministic intent), 与
 ## SkillPreviewProcedure._fire_due_keyframes 对齐。
 ##
@@ -363,7 +363,7 @@ static func _fire_action(
 		ability.id, action_caster.get_id(), keyframe_time_ms, target_id, target_coord
 	).to_dict()
 	HexFacing.face_actor_for_active_event(action_caster, activate_event, battle)
-	action_caster.ability_set.receive_event(activate_event)
+	battle.event_processor.deliver_to_ability(activate_event, action_caster.get_id(), ability.id)
 
 
 static func _sync_all_actor_tag_logic_time(battle: _PreviewInstance, now_ms: float) -> void:

@@ -66,13 +66,12 @@ func has_loose_tag(tag: String) -> bool:
 func get_loose_tag_stacks(tag: String) -> int:
 	return tag_container.get_loose_tag_stacks(tag)
 
-## grant 新 ability，随后恒向本 ability_set 的全部 ability 同步投递 ABILITY_GRANTED_EVENT，
-## 让 TriggerConfig.GRANTED_SELF 等 trigger 能响应（典型用途：挂上就自动 tick 的 buff 通过
+## grant 新 ability，随后恒把 ABILITY_GRANTED_EVENT 只寄给刚 grant 的这个实例（EventProcessor.deliver_to_ability），
+## 让 TriggerConfig.GRANTED_SELF 等 direct trigger 能响应（典型用途：挂上就自动 tick 的 buff 通过
 ## ActivateInstanceConfig 自激活 loop timeline）。自不自激活只由 ability 自己声明的 trigger
 ## 决定，与 grant 的调用点无关。
 ##
-## 投递限本人 ability_set（定向投递，EventProcessor.DIRECT_DELIVERY_KINDS），不走 post 派发 ——
-## 跨 actor 监听由业务层另发 post 事件。
+## 只寄给新实例、不广播：同 set 的其它 ability 与别的 actor 都收不到「有人被 grant 了」，要听得由业务层另发 post 事件。
 ##
 ## 两条前置：
 ## - owner 必须已 add_actor 进 instance（post 订阅、pre 注册、context 的 instance 都按 owner id 反查，注册前 grant 会
@@ -105,7 +104,7 @@ func grant_ability(ability: Ability) -> void:
 	_notify_granted(ability)
 
 	var event_dict := GameEvent.AbilityGranted.create(owner_actor_id, ability.serialize()).to_dict()
-	receive_event(event_dict)
+	owner_instance.event_processor.deliver_to_ability(event_dict, owner_actor_id, ability.id)
 
 ## 单个退场：expire（跑 on_remove）→ 除名 → revoked 广播；不在集里返回 false。
 ##
@@ -209,19 +208,8 @@ func _has_ticking_ability() -> bool:
 func _is_acting_execution(_ability: Ability) -> bool:
 	return true
 
-## 定向投递：把事件交给本 set 的全部 ability（激活请求、grant 自投递——EventProcessor.DIRECT_DELIVERY_KINDS）。
-## 不经 post 派发，也就不问 owner 的 is_event_responsive；跨 actor 的被动走 EventProcessor.process_post_event；
-## 寄给单个 ability 实例的回复（投射物结局）走 EventProcessor.deliver_to_ability，只有 `.direct()` 的 trigger 收。
-func receive_event(event_dict: Dictionary) -> void:
-	# owner instance 每次投递只反查一次，本轮所有 ability 的 context 共用。
-	var owner_instance := get_owner_instance()
-	_process_abilities(func(ability: Ability):
-		var context: AbilityLifecycleContext = _create_lifecycle_context(ability, owner_instance)
-		ability.receive_event(event_dict, context)
-	)
-
 ## 激活门的纯查询干跑（零副作用、可重入）：UI / AI / tooltip 三源共用的合法性
-## Query 入口。与 receive_event 派发路径共用同一份 lifecycle context 构造，
+## Query 入口。context 与真实激活（EventProcessor.deliver_to_ability 按 owner 反查重建）落在同一个 actor / instance 上，
 ## Condition/Cost 在"查询"与"真实激活"两条路径读到的是同一个世界。
 ##
 ## event_dict 是透传给 Condition.check / Cost.can_pay 的拟真输入（如带

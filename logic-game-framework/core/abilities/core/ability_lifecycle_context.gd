@@ -115,10 +115,10 @@ static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict
 	return context
 
 
-## 为定向投递按回执重建收件人的 context（回执 = owner actor id + ability 实例 id，EventProcessor.deliver_to_ability 调）。
+## 为定向投递按地址重建收件人的 context（地址 = owner actor id + ability 实例 id，EventProcessor.deliver_to_ability 调）。
 ##
-## 与 rebuild_for_handler 同一条找法，但**不问 owner 的 is_event_responsive**：定向投递是对 ability 自己发起的事的回复
-## （投射物落地），人死了这封回信还处不处理由 direct trigger 自己的 filter 定，不由 actor 的死活门定。
+## 与 rebuild_for_handler 同一条找法，但**不问 owner 的 is_event_responsive**：定向投递是寄给这个 ability 实例本人的信
+## （激活请求、grant 通知、投射物落地），人死了这封信还处不处理由 direct trigger 自己的 filter 定，不由 actor 的死活门定。
 ## 返回 null = 收件人不在了：owner 未注册或已移出 instance、不是 BattleActor 或没有 AbilitySet、ability 已 revoke 或过期。
 static func rebuild_for_recipient(owner_id: String, ability_id: String) -> AbilityLifecycleContext:
 	var owner_instance := GameWorld.get_instance_of_actor(owner_id)

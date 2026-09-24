@@ -423,7 +423,8 @@ class ProjectileHit extends Base:
 		return d.get("kind", "") == PROJECTILE_HIT_EVENT
 
 
-## 主动施放请求事件。procedure / 测试 harness 构造后喂 ability_set.receive_event。
+## 主动施放请求事件。procedure / 测试 harness 构造后经 EventProcessor.deliver_to_ability 寄给该 ability 实例
+## （地址 = source_id 的 actor + ability_instance_id；事件里这两份是游戏数据，路由不读它们）。
 ##
 ## target_coord 是坐标 dict({q, r}, HexCoord.to_dict() 形态)或空 dict —— core 不依赖
 ## 具体坐标类型, 由调用方在 example 层序列化后传入; 消费方(HexFacing / coord-based

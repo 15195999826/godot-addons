@@ -110,7 +110,7 @@ func _run_production_skill(skill_config: AbilityConfig, target_mode: String, tic
 	var activate_event := GameEvent.AbilityActivate.create(
 		ability.id, caster.get_id(), 0.0, activate_target_id
 	).to_dict()
-	caster.ability_set.receive_event(activate_event)
+	world.event_processor.deliver_to_ability(activate_event, caster.get_id(), ability.id)
 
 	for _i in range(tick_count):
 		proc.tick_once()

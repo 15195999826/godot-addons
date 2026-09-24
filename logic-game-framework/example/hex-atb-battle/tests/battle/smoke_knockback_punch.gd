@@ -550,7 +550,7 @@ func _phase_action_lock_blocks_atb_then_expires() -> bool:
 	var direct_event := GameEvent.AbilityActivate.create(
 		skill.id, caster.get_id(), 0.0, enemy.get_id()
 	).to_dict()
-	caster.ability_set.receive_event(direct_event)
+	battle.event_processor.deliver_to_ability(direct_event, caster.get_id(), skill.id)
 	if skill.get_executing_instances().size() != 0:
 		_fail("action_lock_gate: direct active skill activation should be blocked by cant_act")
 		GameWorld.shutdown()

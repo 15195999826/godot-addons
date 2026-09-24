@@ -4,7 +4,7 @@
 ## Surge 用 GRANTED_SELF + on_timeline_start,grant 同步链里立即 fire 首 tick:
 ##   1. ApplyBuffAction → grant_ability:
 ##      a. _notify_granted → recording_utils push AbilityGranted 进 pending_events
-##      b. receive_event(AbilityGranted) → fire_sync_actions(on_timeline_start)
+##      b. deliver_to_ability(AbilityGranted) → fire_sync_actions(on_timeline_start)
 ##         → SurgeTickAction → push StacksChanged 进 EventCollector
 ##
 ## 修复前:record_frame 用 [events..., pending...] 顺序,replay frame 实际是

@@ -199,10 +199,9 @@ func _phase_corpse_execution() -> String:
 	move.add_execution_activated_listener(func(instance: AbilityExecutionInstance) -> void:
 		executions.append(instance))
 	mover.on_atb = func() -> void:
-		var actor := GameWorld.get_actor(mover_id) as CharacterActor
-		actor.ability_set.receive_event(
-			GameEvent.AbilityActivate.create(move_id, mover_id, 0.0, "", destination_dict).to_dict())
 		var hex_world := GameWorld.get_instance_by_id(world_id) as HexWorldGameplayInstance
+		hex_world.event_processor.deliver_to_ability(
+			GameEvent.AbilityActivate.create(move_id, mover_id, 0.0, "", destination_dict).to_dict(), mover_id, move_id)
 		observed["reserved_by"] = hex_world.grid.get_reservation(HexCoord.from_dict(destination_dict))
 	var targets: Array[String] = [mover_id]
 	var kill_actions: Array[Action.BaseAction] = [
@@ -273,9 +272,8 @@ func _phase_killed_earlier_in_the_frame() -> String:
 		executions.append(instance))
 	actor_b.on_atb = func() -> void:
 		observed["atb_turns"] = int(observed["atb_turns"]) + 1
-		var actor := GameWorld.get_actor(actor_b_id) as CharacterActor
-		actor.ability_set.receive_event(
-			GameEvent.AbilityActivate.create(move_id, actor_b_id, 0.0, "", destination_dict).to_dict())
+		GameWorld.get_instance_of_actor(actor_b_id).event_processor.deliver_to_ability(
+			GameEvent.AbilityActivate.create(move_id, actor_b_id, 0.0, "", destination_dict).to_dict(), actor_b_id, move_id)
 	var targets: Array[String] = [ticker.get_id(), actor_b_id]
 	var kill_actions: Array[Action.BaseAction] = [
 		HexBattleDamageAction.new(HexBattleTargetSelectors.fixed(targets), Resolvers.float_val(99999.0)),

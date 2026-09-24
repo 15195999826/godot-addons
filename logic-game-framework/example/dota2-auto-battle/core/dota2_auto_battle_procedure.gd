@@ -221,7 +221,7 @@ func _eval_step_result(unit: Dota2UnitActor, intent: Dota2Intent) -> Dota2Intent
 ## 发起一次基础攻击：先用零副作用的 ability_set.can_activate 预检（同一份 condition(NoTag cd)+cost 门控），
 ## 冷却中不发请求——否则交战单位每 tick 空发一次 ABILITY_ACTIVATE_EVENT 被拒，一场攒上千条
 ## AbilityActivateFailed 事件与日志；controller 仍不知「冷却」，攻击时机不变。通过则 ABILITY_ACTIVATE_EVENT
-## 携带 controller 的 intent 目标喂 ability_set.receive_event → Timeline → attack point → Dota2DamageAction。
+## 携带 controller 的 intent 目标经 EventProcessor.deliver_to_ability 寄给该 ability → Timeline → attack point → Dota2DamageAction。
 ## 与 hex procedure 同构。
 func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_ms: float) -> void:
 	var ability := unit.get_basic_attack_ability()
@@ -232,7 +232,7 @@ func _request_basic_attack(unit: Dota2UnitActor, target_id: String, logic_time_m
 	).to_dict()
 	if not AbilityActivationQuery.is_allowed(unit.ability_set.can_activate(ability, event)):
 		return
-	unit.ability_set.receive_event(event)
+	_get_world().event_processor.deliver_to_ability(event, unit.get_id(), ability.id)
 
 
 # ========== step 7：death cleanup ==========

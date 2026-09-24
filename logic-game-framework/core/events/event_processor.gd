@@ -30,9 +30,9 @@
 ## - 死活由 actor 决定：handler 重建 context 前问 owner 的 is_event_responsive(event_dict, "post")
 ## - 可能触发被动技能（如反伤、吸血）产生新事件
 ##
-## 定向投递（DIRECT_DELIVERY_KINDS：激活请求 / grant 自投递）不走 post 派发，由 AbilitySet.receive_event 投给单个 actor。
-## 寄给单个 ability 实例的回复（投射物结局）走 deliver_to_ability：按回执重建收件人 context，只有 `.direct()` 的 trigger 收，
-## 不查注册表、不广播、不问 is_event_responsive。
+## 定向投递（deliver_to_ability）：寄给单个 ability 实例的事件——procedure 的激活请求、grant_ability 的 grant 通知、
+## 投射物系统投回发射者的结局——按地址（owner id + ability 实例 id）重建收件人 context，只有 `.direct()` 的 trigger 收，
+## 不查注册表、不广播、不问 is_event_responsive。事件进 ability 只有广播 / 定向两条路，都汇到 Ability.receive_event。
 ##
 ## ========== 使用示例 ==========
 ##
@@ -63,10 +63,6 @@
 
 class_name EventProcessor
 extends RefCounted
-
-## 定向投递的 kind：激活请求与 grant 自投递由 AbilitySet.receive_event 投给单个 actor 的全部 ability。
-## 永不注册 post handler，也不许传给 process_post_event——两条路都走就是双投递。
-const DIRECT_DELIVERY_KINDS: Array[String] = [GameEvent.ABILITY_ACTIVATE_EVENT, GameEvent.ABILITY_GRANTED_EVENT]
 
 ## 没经 note_actor_added 登记的 owner（孤立使用 processor 的测试）排在所有已登记 owner 之后。
 const _UNLISTED_OWNER_SEQ := 9223372036854775807
@@ -126,10 +122,6 @@ func register_pre_handler(registration: PreHandlerRegistration) -> Callable:
 ## @return 取消注册的 Callable（按 id 注销、幂等；见 _make_unregister）
 func register_post_handler(registration: PostHandlerRegistration) -> Callable:
 	var event_kind := registration.event_kind
-	if DIRECT_DELIVERY_KINDS.has(event_kind):
-		Log.assert_crash(false, "EventProcessor",
-			"'%s' 是定向投递 kind，只经 AbilitySet.receive_event 投递，不能注册 post handler" % event_kind)
-		return func() -> void: pass
 	registration.owner_seq = _owner_seq.get(registration.owner_id, _UNLISTED_OWNER_SEQ)
 	_owners_with_handlers[registration.owner_id] = true
 	if not _post_handlers.has(event_kind):
@@ -289,13 +281,8 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 ## 登记带 prechecks（该 kind 的全部 trigger 都声明了 TriggerConfig.precheck）时，重建 context 之前先用登记里
 ## 现成的 HandlerContext 跑一遍，全不过就跳过本条——只是把 match_single_trigger 里同一个判断提前，不改变谁会被触发。
 ## 遍历注册表快照（同 pre）：派发中注册 / 注销 handler 不改变这条事件的派发名单。
-## 定向投递 kind 不许走这里（见 DIRECT_DELIVERY_KINDS）。
 func process_post_event(event_dict: Dictionary) -> void:
 	var event_kind: String = event_dict.get("kind", "")
-	if DIRECT_DELIVERY_KINDS.has(event_kind):
-		Log.assert_crash(false, "EventProcessor",
-			"'%s' 是定向投递 kind，只经 AbilitySet.receive_event 投递，不走 process_post_event" % event_kind)
-		return
 	if _depth_exceeded(event_dict):
 		return
 
@@ -337,21 +324,17 @@ func process_post_event(event_dict: Dictionary) -> void:
 	_current_trace_id = parent_trace_id
 	_finalize_trace(trace)
 
-## 定向投递：把事件只投给一个 ability 实例。回执（owner actor id + ability 实例 id）是载体自带的事实，由产出方读出来递进来——
-## ProjectileSystem 把弹的结局投回发射它的 ability（launch 参数 source_ability_id），不是派发时临时挑的观众。
+## 定向投递：把事件只投给一个 ability 实例。地址（owner actor id + ability 实例 id）是事实、由产出方递进来，不是派发时临时挑的观众：
+## procedure 把激活请求寄给 AI 选中的技能实例（AbilityActivate 的 source_id / ability_instance_id）、AbilitySet.grant_ability
+## 把 grant 通知寄给刚 grant 的实例、ProjectileSystem 把弹的结局投回发射它的 ability（launch 参数 source_ability_id）。
 ## 不查注册表、不广播；只有该 ability 上 TriggerConfig.direct() 的 trigger 会匹配（AbilityComponent.match_single_trigger 按
 ## context.is_direct_delivery 分通道），能不能收到仍由订阅方声明。
-## 不问 owner 的 is_event_responsive（AbilityLifecycleContext.rebuild_for_recipient）：这是对 ability 自己发起的事的回复，
-## 人死了这封回信还处不处理由 direct trigger 的 filter 定。收件人不在了（owner 出 registry / ability 已 revoke 或过期）
+## 不问 owner 的 is_event_responsive（AbilityLifecycleContext.rebuild_for_recipient）：这是寄给 ability 本人的信，
+## 人死了还处不处理由 direct trigger 的 filter 定。收件人不在了（owner 出 registry / ability 已 revoke 或过期）
 ## 静默丢弃，trace ≥ 1 记 recipient_missing。收件 ability 在 handler 里 expire 了自己就当场从所在 set 除名（同 post 派发收尾）。
-## 定向投递 kind（激活请求 / grant 自投递）仍经 AbilitySet.receive_event 投给整个 set，不走这里。
 ## @return 是否有 component 被触发
 func deliver_to_ability(event_dict: Dictionary, owner_id: String, ability_id: String) -> bool:
 	var event_kind: String = event_dict.get("kind", "")
-	if DIRECT_DELIVERY_KINDS.has(event_kind):
-		Log.assert_crash(false, "EventProcessor",
-			"'%s' 经 AbilitySet.receive_event 投给整个 set，不走 deliver_to_ability" % event_kind)
-		return false
 	if _depth_exceeded(event_dict):
 		return false
 

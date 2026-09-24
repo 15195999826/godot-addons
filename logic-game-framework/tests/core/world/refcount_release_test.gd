@@ -506,7 +506,7 @@ static func _collect_actor_refs(refs: Dictionary, actor: ReleaseProbeActor, pref
 		TestFramework.assert_true(not executions.is_empty(), "GRANTED_SELF 应已自激活 execution")
 		for execution in executions:
 			refs["%sexecution:%s" % [prefix, execution.id]] = weakref(execution)
-		# PreEvent 一条 + NoInstance 的 POST_KIND 一条；GRANTED_SELF 是定向投递 kind，不注册
+		# PreEvent 一条 + NoInstance 的 POST_KIND 一条；GRANTED_SELF 是 direct trigger，不注册
 		var registrations := _registrations_where(processor, &"ability_id", ability.id)
 		TestFramework.assert_equal(2, registrations.size())
 		for registration in registrations:

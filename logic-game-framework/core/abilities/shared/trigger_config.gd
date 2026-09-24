@@ -10,42 +10,25 @@
 ##   ② filter(event_dict, ctx: AbilityLifecycleContext) -> bool —— 要完整 ctx（actor / 属性 / 世界）的条件。
 ## 只比 id 的条件写 precheck，别写 filter：写进 filter 就得先造 ctx 才能拒绝。
 ##
-## 投递通道也由 trigger 声明：`.direct()` 的 trigger 只收**寄给本 ability 实例**的事件（EventProcessor.deliver_to_ability，
-## 如投射物系统把结局投回发射它的 ability），不进广播注册表、广播来的同 kind 事件也不匹配；不声明的照旧按 kind 订阅广播。
-## 「收件人是不是我」不必再写 precheck——processor 按回执只重建收件实例的 context。定向投递不问 owner 的
-## is_event_responsive：人死了这封回信还处不处理，由 direct trigger 自己的 filter 定。
+## 投递通道也由 trigger 声明：`.direct()` 的 trigger 只收**寄给本 ability 实例**的事件（EventProcessor.deliver_to_ability：
+## procedure 寄来的激活请求、grant_ability 寄来的 grant 通知、投射物系统投回发射者的结局），不进广播注册表、广播来的
+## 同 kind 事件也不匹配；不声明的照旧按 kind 订阅广播。「收件人是不是我」不必写 precheck——processor 按地址只重建
+## 收件实例的 context。定向投递不问 owner 的 is_event_responsive：人死了这封信还处不处理，由 direct trigger 自己的 filter 定。
 class_name TriggerConfig
 extends RefCounted
 
 
-## 默认的主动技能激活触发器：匹配 ABILITY_ACTIVATE_EVENT，验证 ability_instance_id 和 source_id（纯 id，走 precheck）
-static var ABILITY_ACTIVATE := TriggerConfig.new(GameEvent.ABILITY_ACTIVATE_EVENT).precheck(
-	func(event_dict: Dictionary, h: HandlerContext) -> bool:
-		if h.ability_id == "" or h.owner_id == "":
-			return false
-		return str(event_dict.get("ability_instance_id", "")) == h.ability_id \
-			and str(event_dict.get("source_id", "")) == h.owner_id
-)
+## 默认的主动技能激活触发器：只收寄给本实例的 ABILITY_ACTIVATE_EVENT——procedure 经 EventProcessor.deliver_to_ability
+## 按地址（source_id 的 actor、ability_instance_id 的实例）投递，「是不是叫我」由地址保证，trigger 不再比 id。
+static var ABILITY_ACTIVATE := TriggerConfig.new(GameEvent.ABILITY_ACTIVATE_EVENT).direct()
 
 
 ## "自己被 grant 到 owner 身上时激活" 触发器。
 ##
 ## 典型用途：buff 挂一个 ActivateInstanceConfig + 此 trigger + loop timeline，
-## grant 瞬间 AbilitySet 广播 ABILITY_GRANTED_EVENT，本 buff 响应后启动自己的 loop（如 DOT）。
-##
-## 匹配条件：事件的 actor_id == owner_id 且 ability.id == 自己的 instance id（严格同实例）。
-## 用 instance id 而非 config_id 避免同 actor 上多个同 config 实例互相激活对方。
-static var GRANTED_SELF := TriggerConfig.new(GameEvent.ABILITY_GRANTED_EVENT).precheck(
-	func(event_dict: Dictionary, h: HandlerContext) -> bool:
-		if h.ability_id == "" or h.owner_id == "":
-			return false
-		if str(event_dict.get("actor_id", "")) != h.owner_id:
-			return false
-		var ability_dict := event_dict.get("ability", {}) as Dictionary
-		if ability_dict == null:
-			return false
-		return str(ability_dict.get("id", "")) == h.ability_id
-)
+## grant 瞬间 AbilitySet.grant_ability 把 ABILITY_GRANTED_EVENT 只寄给刚 grant 的那个实例（deliver_to_ability），
+## 本 buff 收到后启动自己的 loop（如 DOT）。只寄给新实例所以天然严格同实例：同 actor 上多个同 config 实例互不激活。
+static var GRANTED_SELF := TriggerConfig.new(GameEvent.ABILITY_GRANTED_EVENT).direct()
 
 
 ## 事件类型（如 GameEvent.ABILITY_ACTIVATE_EVENT）

@@ -245,7 +245,7 @@ func _fire_due_keyframes(now_ms: float) -> void:
 			ability.id, actor.get_id(), float(kf["time_ms"]), target_id, target_coord
 		).to_dict()
 		HexFacing.face_actor_for_active_event(actor, event, world)
-		actor.ability_set.receive_event(event)
+		world.event_processor.deliver_to_ability(event, actor.get_id(), ability.id)
 
 
 func _sync_participant_tag_logic_time(now_ms: float) -> void:

@@ -2,7 +2,7 @@
 ##
 ## README.md（LGF Skill 模型 节） / README.md（M1 契约 节） 的最终边界从 M1 就位：
 ##   AttackTargetIntent
-##     → Dota2BasicAttackAbility（AbilitySet.receive_event ABILITY_ACTIVATE_EVENT）
+##     → Dota2BasicAttackAbility（EventProcessor.deliver_to_ability 寄来的 ABILITY_ACTIVATE_EVENT）
 ##       → on_timeline_start: attack_started 事件
 ##       → attack point keyframe（TimelineTags.HIT）→ Dota2DamageAction
 ##         → attack_landed / damage_applied /（致死）unit_died

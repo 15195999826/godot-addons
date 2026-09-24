@@ -51,9 +51,9 @@ func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext) -> boo
 
 ## 本 component 要从 post 派发（EventProcessor.process_post_event）接收的事件 kind（可选覆盖）。
 ##
-## Ability.apply_effects 汇总全部 component 声明的 kind（定向投递 kind 除外），每种 kind 注册一条 post handler；
+## Ability.apply_effects 汇总全部 component 声明的 kind（direct trigger 不声明），每种 kind 注册一条 post handler；
 ## 事件到达后仍经 Ability.receive_event → on_event 按 trigger 过滤。覆盖了 on_event 却不声明 kind 的 component
-## 只收得到 AbilitySet.receive_event 的定向投递（激活请求 / grant 自投递）。
+## 只收得到定向投递（EventProcessor.deliver_to_ability 寄给本实例的事件）。
 func get_post_event_kinds() -> Array[String]:
 	return []
 

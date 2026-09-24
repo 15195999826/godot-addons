@@ -29,8 +29,7 @@ static var ABILITY := (
 	.ability_tags(["action", "move"])
 	.component_config(
 		ActivateInstanceConfig.builder()
-		.trigger(TriggerConfig.new(GameEvent.ABILITY_ACTIVATE_EVENT)
-			.precheck(HexBattleSkillHelpers.ability_activate_precheck))
+		.trigger(TriggerConfig.ABILITY_ACTIVATE)
 		.timeline(MOVE_TIMELINE)
 		.on_timeline_start([HexBattleStartMoveAction.new(
 			HexBattleTargetSelectors.ability_owner(),

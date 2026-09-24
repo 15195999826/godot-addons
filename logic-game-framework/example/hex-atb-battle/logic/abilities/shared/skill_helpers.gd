@@ -1,21 +1,14 @@
-## 各技能文件共用的 trigger precheck / resolver 工具
+## 各技能文件共用的 trigger filter / resolver 工具
 ##
-## 这些函数逻辑与具体技能无关（通用 ability activate 匹配、投射物命中匹配、
-## hex 坐标→Vector3 转换等），所以抽到一个独立 helper class，避免在每个技能文件里复制。
+## 这些函数逻辑与具体技能无关（投射物命中的死活策略、hex 坐标→Vector3 转换等），
+## 所以抽到一个独立 helper class，避免在每个技能文件里复制。
 ##
 ## 使用规约：
-##   - 以 `ability_activate_precheck` 为**函数引用**传给 `TriggerConfig.new(kind).precheck(...)`、`owner_alive_filter` 传给
-##     `TriggerConfig.new(kind, filter).direct()`（不要加括号；GDScript 会把 `ClassName.static_func` 包成 Callable）
+##   - 以 `owner_alive_filter` 为**函数引用**传给 `TriggerConfig.new(kind, filter).direct()`
+##     （不要加括号；GDScript 会把 `ClassName.static_func` 包成 Callable）
 ##   - `target_coord_from_event()` / `owner_position_resolver()` / `target_position_resolver()`
 ##     必须**调用**（加括号），每次返回一个新的 Resolver 对象
 class_name HexBattleSkillHelpers
-
-
-# ========== Trigger Precheck（只看事件 + 三个 id，不要 ctx）==========
-
-## 匹配当前 Ability 实例的激活事件
-static func ability_activate_precheck(event_dict: Dictionary, h: HandlerContext) -> bool:
-	return str(event_dict.get("ability_instance_id", "")) == h.ability_id
 
 
 # ========== Trigger Filter（要 ctx）==========

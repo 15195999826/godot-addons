@@ -226,7 +226,7 @@ func _start_actor_action(actor: CharacterActor, logic_time: float) -> void:
 	)
 
 	HexFacing.face_actor_for_active_event(actor, event, world)
-	actor.ability_set.receive_event(event)
+	world.event_processor.deliver_to_ability(event, actor.get_id(), decision["ability_instance_id"])
 	actor.reset_atb()
 
 

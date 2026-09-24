@@ -4,12 +4,13 @@ extends Node
 ##
 ## context 里的 instance 一律按 owner 的 actor id 反查（GameWorld.get_instance_of_actor），
 ## 不经调用链递、不缓存。本文件钉住的填充点都拿到 owner 所属的那个 instance：
-## AbilitySet 定向投递与 post 派发（trigger filter / NoInstance action）、AbilitySet.can_activate 查询（Condition
-## 收到的 context）、NoInstance lifecycle（on_apply 用 AbilitySet 建的 context、on_remove 用
+## 定向投递（EventProcessor.deliver_to_ability）与 post 派发（trigger filter / NoInstance action）、AbilitySet.can_activate
+## 查询（Condition 收到的 context）、NoInstance lifecycle（on_apply 用 AbilitySet 建的 context、on_remove 用
 ## AbilityLifecycleContext.for_ability 建的 context）、execution 的 start / tag / cancel action（cancel 由 revoke
-## 触发，调用方什么也不递）、PreEvent handler 的重建 context；owner 所属 instance 已销毁时老实给 null——定向投递照常
-## 送达，拿不到事件设施的几条路径降级而不报错。注册前 grant 不是合法路径（AbilitySet.grant_ability 断言 owner 已登记），
-## 不钉。叠层 / Break 钩子与 on_remove 共用 for_ability，PreEvent filter / handler 与 post 派发共用 rebuild_for_handler，不另钉。
+## 触发，调用方什么也不递）、PreEvent handler 的重建 context；owner 所属 instance 已销毁时老实给 null——set 上没有
+## processor 可寄、定向投递无从发起，在飞的 execution 照常 tick，拿不到事件设施的路径降级而不报错。注册前 grant 不是
+## 合法路径（AbilitySet.grant_ability 断言 owner 已登记），不钉。叠层 / Break 钩子与 on_remove 共用 for_ability，
+## PreEvent filter / handler 与 post 派发共用 rebuild_for_handler，不另钉。
 
 const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
@@ -83,7 +84,7 @@ func _init() -> void:
 	TestFramework.register_test("Instance: lifecycle actions see owner instance on apply and remove", _test_lifecycle_sees_owner_instance)
 	TestFramework.register_test("Instance: execution start/tag/cancel actions resolve owner instance", _test_execution_sees_owner_instance)
 	TestFramework.register_test("Instance: pre handler context sees owner instance", _test_pre_handler_sees_owner_instance)
-	TestFramework.register_test("Instance: owner whose instance was destroyed gets null, directed delivery still lands", _test_owner_instance_destroyed)
+	TestFramework.register_test("Instance: owner whose instance was destroyed gets null, in-flight executions keep ticking", _test_owner_instance_destroyed)
 	TestFramework.register_test("Instance: owner whose instance was destroyed degrades without event infrastructure", _test_owner_instance_destroyed_without_event_infrastructure)
 
 
@@ -92,21 +93,28 @@ func _test_dispatch_sees_owner_instance() -> void:
 	var config := (AbilityConfig.builder()
 		.config_id("instance_ctx_dispatch")
 		.component_config(NoInstanceConfig.builder()
+			.trigger(TriggerConfig.new(PROBE_KIND, _filter_recording_instance("filter_instance")).direct())
+			.action(RecordToEventAction.new("action_instance"))
+			.build())
+		.component_config(NoInstanceConfig.builder()
 			.trigger(TriggerConfig.new(PROBE_KIND, _filter_recording_instance("filter_instance")))
 			.action(RecordToEventAction.new("action_instance"))
 			.build())
 		.build())
-	actor.ability_set.grant_ability(Ability.new(config, actor.get_id()))
-
-	var probe := {"kind": PROBE_KIND}
-	actor.ability_set.receive_event(probe)
+	var ability := Ability.new(config, actor.get_id())
+	actor.ability_set.grant_ability(ability)
 	var expected := actor.get_gameplay_instance_id()
-	TestFramework.assert_equal(expected, probe.get("filter_instance", ""))
-	TestFramework.assert_equal(expected, probe.get("action_instance", ""))
+	var processor := GameWorld.get_instance_by_id(expected).event_processor
 
-	# post 派发按 id 重建的 context 同样带 owner 所属 instance
+	# 定向投递按地址重建的 context 带 owner 所属 instance（只有 direct 那个 component 收）
+	var delivered := {"kind": PROBE_KIND}
+	processor.deliver_to_ability(delivered, actor.get_id(), ability.id)
+	TestFramework.assert_equal(expected, delivered.get("filter_instance", ""))
+	TestFramework.assert_equal(expected, delivered.get("action_instance", ""))
+
+	# post 派发按 id 重建的 context 同样带 owner 所属 instance（只有广播那个 component 收）
 	var posted := {"kind": PROBE_KIND}
-	GameWorld.get_instance_by_id(expected).event_processor.process_post_event(posted)
+	processor.process_post_event(posted)
 	TestFramework.assert_equal(expected, posted.get("filter_instance", ""))
 	TestFramework.assert_equal(expected, posted.get("action_instance", ""))
 	GameWorld.destroy_instance(expected)
@@ -161,7 +169,7 @@ func _test_execution_sees_owner_instance() -> void:
 	var config := (AbilityConfig.builder()
 		.config_id("instance_ctx_execution")
 		.component_config(ActivateInstanceConfig.builder()
-			.trigger(TriggerConfig.new(PROBE_KIND))
+			.trigger(TriggerConfig.new(PROBE_KIND).direct())
 			.timeline(TimelineData.new("t-instance-context-execution", 100.0, {"hit": 50.0}))
 			.on_timeline_start(start_actions)
 			.on_tag("hit", tag_actions)
@@ -172,7 +180,7 @@ func _test_execution_sees_owner_instance() -> void:
 	actor.ability_set.grant_ability(ability)
 
 	var probe := {"kind": PROBE_KIND}
-	actor.ability_set.receive_event(probe)
+	GameWorld.get_instance_of_actor(actor.get_id()).event_processor.deliver_to_ability(probe, actor.get_id(), ability.id)
 	actor.ability_set.tick_executions(60.0)
 	# revoke → expire → cancel_all_executions()：调用方什么也不递，cancel action 靠 execution 自己反查
 	actor.ability_set.revoke_ability(ability.id)
@@ -198,37 +206,34 @@ func _test_pre_handler_sees_owner_instance() -> void:
 	GameWorld.destroy_instance(expected)
 
 
-## owner 所属 instance 已销毁 → 反查不到 → instance 为 null（不猜、不回退到别的 instance）；
-## 定向投递照常送达 set 里的 ability，只是 context 拿不到 instance。
+## owner 所属 instance 已销毁 → 反查不到 → instance 为 null（不猜、不回退到别的 instance）：set 上没有 processor 可寄，
+## 定向投递无从发起；grant 时 GRANTED_SELF 已起飞的 execution 照常 tick，tag action 的 context 拿不到 instance。
 func _test_owner_instance_destroyed() -> void:
 	var actor := _spawn("instance_ctx_destroyed")
+	var tag_actions: Array[Action.BaseAction] = [RecordToEventAction.new("tag_instance")]
 	var config := (AbilityConfig.builder()
 		.config_id("instance_ctx_destroyed")
-		.component_config(NoInstanceConfig.builder()
-			.trigger(TriggerConfig.new(PROBE_KIND, _filter_recording_instance("filter_instance")))
-			.action(RecordToEventAction.new("action_instance"))
-			.build())
 		.component_config(ActivateInstanceConfig.builder()
 			.trigger(TriggerConfig.GRANTED_SELF)
-			.timeline(TimelineData.new("t-instance-context-granted", 100.0, {}))
+			.timeline(TimelineData.new("t-instance-context-granted", 100.0, {"hit": 50.0}))
+			.on_tag("hit", tag_actions)
 			.build())
 		.build())
 	var ability := Ability.new(config, actor.get_id())
 	actor.ability_set.grant_ability(ability)
 	TestFramework.assert_equal(1, ability.get_executing_instances().size())
+	var execution := ability.get_executing_instances()[0]
 	GameWorld.destroy_instance(actor.get_gameplay_instance_id())
 
-	var probe := {"kind": PROBE_KIND}
-	actor.ability_set.receive_event(probe)
-	TestFramework.assert_equal(NO_INSTANCE, probe.get("filter_instance", ""))
-	TestFramework.assert_equal(NO_INSTANCE, probe.get("action_instance", ""))
+	TestFramework.assert_true(actor.ability_set.get_owner_instance() == null, "销毁后按 owner 反查不到 instance")
+	actor.ability_set.tick_executions(60.0)
+	TestFramework.assert_equal(NO_INSTANCE, execution.get_trigger_event().get("tag_instance", ""))
 
 
-## owner 所属 instance 已销毁 → context 没有事件设施，两条降级路径：激活被 Condition 拦下时失败事件无处可推、跳过——去掉 tag
-## 后同一请求能激活，证明前一次确实走到了失败分支；只发表演 cue 的 action 跳过推送、照常返回成功。守卫退化成报错时引擎只中止
+## owner 所属 instance 已销毁 → context 没有事件设施：只发表演 cue 的 action 跳过推送、照常返回成功。守卫退化成报错时引擎只中止
 ## 出错那一帧，留下的状态与正常降级相同、只有日志分得开，所以全程挂日志计数器断言零错误（cue 报错时 execute 返回 null，结果
 ## 断言也抓得到）。grant 时 instance 仍在，pre / post handler 照常注册（「EventProcessor not available」零命中），销毁时由
-## end() 清表。
+## end() 清表。激活请求要经 instance 的 processor 寄出，instance 没了就发不出——「激活失败事件无处可推」那条降级不再有入口。
 func _test_owner_instance_destroyed_without_event_infrastructure() -> void:
 	var actor := _spawn("instance_ctx_destroyed_events")
 	var owner_id := actor.get_id()
@@ -239,10 +244,6 @@ func _test_owner_instance_destroyed_without_event_infrastructure() -> void:
 			.trigger(TriggerConfig.new(PROBE_KIND))
 			.action(RecordToEventAction.new("post_instance"))
 			.build())
-		.active_use(ActiveUseConfig.builder()
-			.timeline(TimelineData.new("t-instance-context-destroyed-events", 100.0, {}))
-			.condition(Condition.NoTagCondition.new("sealed"))
-			.build())
 		.build())
 	var ability := Ability.new(config, owner_id)
 	var log_counter := LogCounter.new("EventProcessor not available")
@@ -252,11 +253,6 @@ func _test_owner_instance_destroyed_without_event_infrastructure() -> void:
 	var registered_pre := (actor.ability_set.get_owner_instance().event_processor._pre_handlers.get(PRE_KIND, []) as Array).size()
 	var registered_post := ability._post_unregisters.size()
 	GameWorld.destroy_instance(actor.get_gameplay_instance_id())
-	actor.ability_set.add_loose_tag("sealed")
-	actor.ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
-	var executions_while_sealed := ability.get_executing_instances().size()
-	actor.ability_set.remove_loose_tag("sealed")
-	actor.ability_set.receive_event(GameEvent.AbilityActivate.create(ability.id, owner_id).to_dict())
 	var cue := StageCueAction.new(TargetSelector.new(), Resolvers.str_val("instance_ctx_cue"))
 	var chain: Array[Dictionary] = [{"kind": PROBE_KIND}]
 	var result := cue.execute(ExecutionContext.create(chain, null, AbilityRef.from_ability(ability)))
@@ -266,8 +262,6 @@ func _test_owner_instance_destroyed_without_event_infrastructure() -> void:
 	TestFramework.assert_equal(0, log_counter.matched_warnings)
 	TestFramework.assert_equal(1, registered_pre)
 	TestFramework.assert_equal(1, registered_post)
-	TestFramework.assert_equal(0, executions_while_sealed)
-	TestFramework.assert_equal(1, ability.get_executing_instances().size())
 	TestFramework.assert_true(result != null and result.success, "没有 collector 时 cue action 应跳过推送并返回成功")
 
 

@@ -51,7 +51,7 @@ func get_owner_gameplay_instance() -> GameplayInstance:
 ## 观众由注册决定，死活由 actor 决定——子类借此让状态异常的 actor（如死亡、沉默、眩晕）不触发被动，
 ## 也可以按事件豁免（phase 为 EventPhase.PHASE_PRE / PHASE_POST，如死者仍响应自己的 death）。
 ##
-## tick 与 AbilitySet.receive_event 的定向投递（激活请求 / grant 自投递）不经过这里。
+## tick 与定向投递（EventProcessor.deliver_to_ability：激活请求 / grant 通知 / 投射物结局）不经过这里。
 ##
 ## 默认返回 true。子类按游戏规则覆盖。
 func is_event_responsive(_event_dict: Dictionary, _phase: String) -> bool:

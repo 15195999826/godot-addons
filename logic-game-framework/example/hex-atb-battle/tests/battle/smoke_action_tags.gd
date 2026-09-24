@@ -130,10 +130,10 @@ func _phase_actions_in_flight_freeze() -> String:
 
 	var participants: Array[Actor] = [mover, striker, target]
 	var procedure := world.start_battle(participants)
-	mover.ability_set.receive_event(GameEvent.AbilityActivate.create(
-		move.id, mover.get_id(), 0.0, "", HexCoord.new(-2, 1).to_dict()).to_dict())
-	striker.ability_set.receive_event(GameEvent.AbilityActivate.create(
-		strike.id, striker.get_id(), 0.0, target.get_id(), {}).to_dict())
+	world.event_processor.deliver_to_ability(GameEvent.AbilityActivate.create(
+		move.id, mover.get_id(), 0.0, "", HexCoord.new(-2, 1).to_dict()).to_dict(), mover.get_id(), move.id)
+	world.event_processor.deliver_to_ability(GameEvent.AbilityActivate.create(
+		strike.id, striker.get_id(), 0.0, target.get_id(), {}).to_dict(), striker.get_id(), strike.id)
 
 	var watched := {"Move": [mover, move], "Strike": [striker, strike]}
 	var frozen_frames := {"Move": 0, "Strike": 0}
@@ -193,10 +193,10 @@ func _phase_stun_cancels_skill_not_move() -> String:
 
 	var participants: Array[Actor] = [mover, striker, target]
 	var procedure := world.start_battle(participants)
-	mover.ability_set.receive_event(GameEvent.AbilityActivate.create(
-		move.id, mover.get_id(), 0.0, "", destination.to_dict()).to_dict())
-	striker.ability_set.receive_event(GameEvent.AbilityActivate.create(
-		strike.id, striker.get_id(), 0.0, target.get_id(), {}).to_dict())
+	world.event_processor.deliver_to_ability(GameEvent.AbilityActivate.create(
+		move.id, mover.get_id(), 0.0, "", destination.to_dict()).to_dict(), mover.get_id(), move.id)
+	world.event_processor.deliver_to_ability(GameEvent.AbilityActivate.create(
+		strike.id, striker.get_id(), 0.0, target.get_id(), {}).to_dict(), striker.get_id(), strike.id)
 	if not move.has_executing_instance() or not strike.has_executing_instance():
 		return "stun: test setup — both the Move and the Strike should be in flight before the stun lands"
 

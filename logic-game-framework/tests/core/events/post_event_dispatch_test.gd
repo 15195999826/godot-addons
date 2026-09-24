@@ -4,7 +4,7 @@ extends Node
 ##
 ## 观众由注册决定：Ability.apply_effects 按 component 的 trigger kind 各注册一条 PostHandlerRegistration、
 ## remove_effects 注销；死活由 actor 决定：派发时按 id 重建 context，先问 owner 的 is_event_responsive。
-## 本文件钉住：同 kind 只注册一条、定向投递 kind 永不注册且照常定向投递恰一次、派发顺序（registry 顺序 → grant 顺序）、
+## 本文件钉住：同 kind 只注册一条、内置 ABILITY_ACTIVATE / GRANTED_SELF 是 direct trigger 不注册且按地址恰送达一次、派发顺序（registry 顺序 → grant 顺序）、
 ## revoke / expire / remove_actor / end() 注销、响应钩子与豁免、Break 短路、嵌套派发的深度上限、triggered 监听者只回调一次、
 ## on_apply 里过期即停止 apply 且不注册、注册的 owner 取所在 AbilitySet 的 owner；
 ## precheck 两段式：带 precheck 的登记在重建 context 之前判（不问 is_event_responsive）、同 kind 混合声明退回全派但 precheck
@@ -114,7 +114,7 @@ class ExpireSelfAction:
 
 func _init() -> void:
 	TestFramework.register_test("PostDispatch: same kind on two components registers once, both run", _test_one_registration_per_kind)
-	TestFramework.register_test("PostDispatch: direct delivery kinds never register, still delivered exactly once", _test_direct_delivery_kinds)
+	TestFramework.register_test("PostDispatch: built-in activate / granted triggers never register, each delivered once by address", _test_direct_delivery_kinds)
 	TestFramework.register_test("PostDispatch: order follows registry order then grant order", _test_dispatch_order)
 	TestFramework.register_test("PostDispatch: revoke and expire unregister", _test_revoke_and_expire_unregister)
 	TestFramework.register_test("PostDispatch: remove_actor and end() clear registrations", _test_remove_actor_and_end_clear)
@@ -152,8 +152,8 @@ func _test_one_registration_per_kind() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
-## 定向投递 kind（AbilityGranted / AbilityActivate）永不注册：grant 自投递让 GRANTED_SELF 恰好激活一次，
-## AbilitySet.receive_event 的激活请求恰好激活一次——两条路都走就会是两次。
+## 内置 ABILITY_ACTIVATE / GRANTED_SELF 是 direct trigger，永不注册：grant 把 AbilityGranted 只寄给新实例让 GRANTED_SELF 恰好
+## 激活一次；激活请求按地址寄给 active 恰好激活一次，寄错地址（不存在的实例）返回 false、谁也不激活。
 func _test_direct_delivery_kinds() -> void:
 	var instance := _create_instance("post_dispatch_direct")
 	var actor := _spawn(instance)
@@ -168,11 +168,16 @@ func _test_direct_delivery_kinds() -> void:
 		.build(), actor.get_id())
 	actor.ability_set.grant_ability(active)
 
-	for kind in EventProcessor.DIRECT_DELIVERY_KINDS:
-		TestFramework.assert_equal(0, _registration_count(instance, kind))
+	TestFramework.assert_equal(0, _registration_count(instance, GameEvent.ABILITY_ACTIVATE_EVENT))
+	TestFramework.assert_equal(0, _registration_count(instance, GameEvent.ABILITY_GRANTED_EVENT))
 	TestFramework.assert_equal(1, granted.get_executing_instances().size())
-	actor.ability_set.receive_event(GameEvent.AbilityActivate.create(active.id, actor.get_id()).to_dict())
+	TestFramework.assert_equal(0, active.get_executing_instances().size())
+	var request := GameEvent.AbilityActivate.create(active.id, actor.get_id()).to_dict()
+	TestFramework.assert_false(instance.event_processor.deliver_to_ability(request, actor.get_id(), "nobody"))
+	TestFramework.assert_equal(0, active.get_executing_instances().size())
+	TestFramework.assert_true(instance.event_processor.deliver_to_ability(request, actor.get_id(), active.id))
 	TestFramework.assert_equal(1, active.get_executing_instances().size())
+	TestFramework.assert_equal(1, granted.get_executing_instances().size())
 	GameWorld.destroy_instance(instance.id)
 
 
@@ -430,24 +435,21 @@ func _test_precheck_then_responsive_gate() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
-## 定向投递没有 processor 预过滤，precheck 在 match_single_trigger 里照样求值：内置 ABILITY_ACTIVATE 认错实例 id
-## 或 source 都不激活，认对了恰激活一次。
+## 定向投递没有 processor 预过滤，direct trigger 带的 precheck 在 match_single_trigger 里照样求值：不过不触发、过了恰触发一次。
 func _test_precheck_in_direct_delivery() -> void:
 	var instance := _create_instance("post_dispatch_precheck_direct")
 	var actor := _spawn(instance)
-	var timeline := TimelineData.new("t-post-dispatch-precheck-direct", 1000.0, {})
-	var active := Ability.new(AbilityConfig.builder()
-		.config_id("precheck_direct_active")
-		.active_use(ActiveUseConfig.builder().timeline(timeline).build())
-		.build(), actor.get_id())
-	actor.ability_set.grant_ability(active)
+	var ability := Ability.new(_ability_config("precheck_direct", [
+		NoInstanceConfig.builder()
+			.trigger(TriggerConfig.new(KIND).precheck(_source_is_owner).direct())
+			.action(AppendLabelAction.new("mine"))
+			.build(),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	TestFramework.assert_equal(0, _registration_count(instance, KIND))
 
-	actor.ability_set.receive_event(GameEvent.AbilityActivate.create("someone_else", actor.get_id()).to_dict())
-	TestFramework.assert_equal(0, active.get_executing_instances().size())
-	actor.ability_set.receive_event(GameEvent.AbilityActivate.create(active.id, "not_the_owner").to_dict())
-	TestFramework.assert_equal(0, active.get_executing_instances().size())
-	actor.ability_set.receive_event(GameEvent.AbilityActivate.create(active.id, actor.get_id()).to_dict())
-	TestFramework.assert_equal(1, active.get_executing_instances().size())
+	TestFramework.assert_equal([], _deliver_with(instance, actor.get_id(), ability.id, {"source": "someone_else"}))
+	TestFramework.assert_equal(["mine"], _deliver_with(instance, actor.get_id(), ability.id, {"source": actor.get_id()}))
 	GameWorld.destroy_instance(instance.id)
 
 
@@ -657,6 +659,16 @@ static func _owner_alive(_event_dict: Dictionary, ctx: AbilityLifecycleContext) 
 ## 把一条 KIND 事件寄给 owner 的 ability 实例，返回 action 记下的 label。
 static func _deliver(instance: GameplayInstance, owner_id: String, ability_id: String) -> Array[String]:
 	var event := {"kind": KIND, "log": []}
+	instance.event_processor.deliver_to_ability(event, owner_id, ability_id)
+	var labels: Array[String] = []
+	labels.assign(event["log"])
+	return labels
+
+
+## 把一条带额外字段的 KIND 事件寄给 owner 的 ability 实例，返回 action 记下的 label。
+static func _deliver_with(instance: GameplayInstance, owner_id: String, ability_id: String, fields: Dictionary) -> Array[String]:
+	var event := {"kind": KIND, "log": []}
+	event.merge(fields)
 	instance.event_processor.deliver_to_ability(event, owner_id, ability_id)
 	var labels: Array[String] = []
 	labels.assign(event["log"])
