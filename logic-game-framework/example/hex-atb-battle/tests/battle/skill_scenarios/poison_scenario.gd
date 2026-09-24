@@ -48,7 +48,7 @@ func assert_replay(ctx: ScenarioAssertContext) -> void:
 		"PoisonBuff revoked after stacks exhausted")
 
 	# 集成路径:PoisonTickAction 必须把 AbilityStacksChanged push 进 replay collector,
-	# 否则 frontend BuffVisualizer 永远收不到 stacks 变化(白盒 smoke 不能覆盖此路径)。
+	# 否则 frontend BuffTranslator 永远收不到 stacks 变化(白盒 smoke 不能覆盖此路径)。
 	# 期望 3 次 tick 对应 3 个事件:3→2 / 2→1 / 1→0。
 	var stacks_events := ctx.events_of_kind(GameEvent.ABILITY_STACKS_CHANGED_EVENT)
 	ctx.assert_eq(stacks_events.size(), 3, "AbilityStacksChanged event count")

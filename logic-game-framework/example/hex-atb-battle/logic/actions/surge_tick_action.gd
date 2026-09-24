@@ -5,7 +5,7 @@
 ##
 ## 触发用 on_timeline_start(挂上立即生效) — 这是 Surge 的 game design 选择
 ## (跟 Poison 改用 on_timeline_end 不同)。挂上瞬间 fire 第一次 tick(stacks 3→2),
-## 跟 grant 进同一个 collector frame,正好用来验证 frontend BuffVisualizer
+## 跟 grant 进同一个 collector frame,正好用来验证 frontend BuffTranslator
 ## 在同帧 ADD+UPDATE 场景下能否正确显示 stacks 序列。
 class_name HexBattleSurgeTickAction
 extends Action.BaseAction

@@ -177,7 +177,7 @@ class AbilityRemoved extends Base:
 
 ## ability.stacks 变化时由业务方主动 emit(core 不在 add_stacks/remove_stacks 里耦合)。
 ## 首个消费者:PoisonTickAction 每轮 tick 减一层后 emit。
-## frontend BuffVisualizer 用它更新 BuffSummary.primary。
+## frontend BuffTranslator 用它更新 BuffSummary.primary。
 class AbilityStacksChanged extends Base:
 	var actor_id: String = ""
 	var ability_instance_id: String = ""

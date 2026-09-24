@@ -84,7 +84,7 @@ static func record_ability_set_changes(ability_set: AbilitySet, ctx: RecordingCo
 	var granted_unsub := ability_set.on_ability_granted(
 		func(ability: Ability, _ability_set: AbilitySet) -> void:
 			# 记录 Ability 获得事件：payload 就是 ability.serialize()，把 stacks / display_name /
-			# ability_tags / components 等完整状态带给消费方（frontend BuffVisualizer 据此构造 BuffSummary）。
+			# ability_tags / components 等完整状态带给消费方（frontend BuffTranslator 据此构造 BuffSummary）。
 			# 实例 id 在 payload 的 id 键下，与后续 removed / stacks_changed 事件的 ability_instance_id 同值。
 			ctx.push_event(
 				GameEvent.AbilityGranted.create(ctx.actor_id, ability.serialize()).to_dict()

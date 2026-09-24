@@ -8,7 +8,7 @@
 ##         → SurgeTickAction → push StacksChanged 进 EventCollector
 ##
 ## 修复前:record_frame 用 [events..., pending...] 顺序,replay frame 实际是
-##   [StacksChanged, AbilityGranted] —— frontend BuffVisualizer 看到 stacks 时
+##   [StacksChanged, AbilityGranted] —— frontend BuffTranslator 看到 stacks 时
 ##   buff 还没 ADD,UPDATE 静默失败 → ADD primary=3 → 显示 U3 → 下帧 U1 → 消失。
 ## 修复后:[pending..., events...],replay 顺序 [AbilityGranted, StacksChanged] →
 ##   ADD primary=3 → UPDATE primary=2(同帧合并)→ 显示 U2 → U1 → 消失。

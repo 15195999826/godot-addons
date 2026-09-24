@@ -29,10 +29,19 @@ graph TB
         Grid[Grid<br/>GridWorldGameplayInstance]
     end
 
+    subgraph "Presentation"
+        Director[VisualDirector / ReplayDirector<br/>表演实例 · tick 总负责 · 只发信号]
+        Translators[Translator + TranslatorRegistry<br/>事件 → 卡片]
+        Cards[VisualAction + Visual*Action<br/>卡片 · 纯数据]
+        Stepper[ActionStepper<br/>卡片进度 0→1]
+        State[VisualState + ActorVisualState<br/>账本 · 7 条信号]
+        Updater[VisualUpdater<br/>kind → 记账 handler]
+    end
+
     subgraph "Example"
         Core[hex-atb-battle/core<br/>Shared Events + WorldGI base]
         HexDemo[hex-atb-battle/logic<br/>Demo Game Logic + HexDemoWorldGI]
-        Frontend[hex-atb-battle/frontend<br/>Presentation Layer]
+        Frontend[hex-atb-battle/frontend<br/>翻译员 + 视图 + Animator + 投影]
     end
 
     World --> Instance
@@ -51,8 +60,19 @@ graph TB
     HexDemo --> World
     HexDemo --> Core
     HexDemo --> Playback
+    Director --> Translators
+    Director --> Stepper
+    Director --> State
+    Director --> Updater
+    Translators --> Cards
+    Stepper --> Cards
+    Updater --> State
+    State --> Playback
+    Updater --> Events
     Frontend --> Core
     Frontend --> Playback
+    Frontend --> Director
+    Frontend --> Translators
 ```
 
 ## Key Data Flows
@@ -124,6 +144,61 @@ instance.event_collector.push()
 - **录像**：`BattleProcedure` 持短命 `BattleRecorder`，事件统一汇入所属 world 的 `event_collector` 单队列；`finish()` 的返回值就是录像 dict `{meta, world_snapshot, timeline}`，无 version 字段（录像是短命数据，不做多版本共存；坏文件由 `BattleRecord.from_dict` 的必需字段检查直接 crash，不静默播空场）。`world_snapshot` 由世界侧 `capture_world_snapshot()` 产出、范围由 `should_record_actor()` 裁定（常驻世界借此排除 overworld 实体），recorder 只接收注入。存档序列化（`to_dict`）与录像快照是两套各有语义的 actor→dict，不合并：回放器没有规则引擎，需要含派生值的自足快照。播放侧两层命名：A 层 `Playback`（现役，只从录像 spawn 视觉 view）；B 层 `Replay`（deterministic 重算，未来不一定做，仅命名占位）。
 - **一场录像自洽**：录像内容只取决于本场——`_start_recorder()` 开录前丢弃 world collector 里的旧事件（常驻世界两场之间推进去的），`finish()` 停录前把收尾产生的事件（清 `in_combat` 的 `TagChanged`）录进最后一帧（`record_frame` 同帧号并进已有 FrameData：播放侧按帧号一帧一条）。中途离场的 actor 经 `actor_removed` 当场退订，此后它的变化不再进录像；`ActorDestroyed` 由 actor 自己的 despawn 订阅推一条，`BattleRecorder.unregister_actor` 只释放订阅、不推事件。`AbilityGranted` 的 payload 就是 `ability.serialize()`，实例 id 在 `id` 键下（与后续事件的 `ability_instance_id` 同值）。
 
+## Presentation layer（`presentation/`，adr/0013）
+
+三层架构的第三层物理落地：`core/` → `stdlib/` → `presentation/` → `example/`。`presentation/` 只依赖 core 的 `PlaybackData` / `GameEvent`，不依赖 `stdlib/`、`example/`、ultra-grid-map（`tests/presentation/presentation_lint_test.gd` 钉禁词与依赖方向）。框架件无前缀；项目件带项目前缀（hex `Frontend*`、inkmon `InkMon*`）——看前缀就知道是不是框架件。管线一句话：**逻辑事件 → 翻译员 → 卡片 → 步进器 → 账本（更新器记账）→ 信号 → 项目 view**。
+
+### 词表（`presentation/core/` + `presentation/actions/`）
+
+| 件 | 一行职责 |
+|---|---|
+| `VisualDirector`（抽象 Node）/ `ReplayDirector` | 表演实例，tick 总负责：持 registry / stepper / state / updater 四件（`_init(registry, animation_config = null)` 建、`_exit_tree` 断连置空），`pump(delta_ms, events)` 是共享 tick 体，只发信号不持 view。`ReplayDirector` 加帧时钟：`load_playback(record)` 摊帧表（`tick_ms` 取 `meta.tick_interval`，≤ 0 退回 100；帧 0 = 开战台面，事件从帧 1 起）+ `play / pause / toggle / reset / step / set_speed / is_playing / is_ended / get_current_frame / get_total_frames` + `playback_state_changed / frame_changed / playback_ended`；录像帧播完继续 pump 到步进器排空才 `playback_ended`。live 项目直接继承 `VisualDirector`，自己攒本帧事件调 `pump` |
+| `Translator` + `TranslatorRegistry` | 翻译员：`can_handle(event)` + `translate(event, query) -> Array[VisualAction]`，纯函数、只读 `VisualStateQuery`；注册表 collect-all（一条事件可由多个翻译员各出卡片，`register` 可链式）。事件方言（kind 名 / 字段）由项目定，框架不认识任何一种 |
+| `VisualAction` + 内置 `Visual*Action` | 卡片：一条事件翻出来的一段声明式表演（做什么，不是怎么做），纯数据、`delay` / `duration` 毫秒、位置一律逻辑平面 `Vector2`。`kind: StringName` 开放，内置 11 种常量在 `VisualAction` 上：`move` / `hp_delta` / `floating_text` / `procedural_vfx` / `death` / `attack_vfx` / `projectile` / `buff_state` / `shield_state` / `bump` / `facing_state` |
+| `ActionStepper` | 步进器：卡片入队后并行按 `delay` / `duration` 走 0→1，`tick(delta_ms) -> TickResult{active_actions, completed_this_tick, has_changes}`，完成即出表；只管「何时走到什么进度」，不管「执行什么」。live 入口 `cancel_for_actor` / `has_actor_action` |
+| `VisualState` + `ActorVisualState` + `VisualStateQuery` | 账本：每个进入过表演的逻辑 actor 一条 `ActorVisualState`（位置 / `visual_hp` · `target_hp` · `max_hp` / `is_alive` / flash · tint / `buffs` · `shields` / bump / facing）、在飞插值、一次性效果簿（`kind → {id → VisualEffectPayload.Effect}`）、程序化效果与震屏、账本时间；只持数据、出记账原语、发 7 条信号，不认识任何卡片种类。`VisualStateQuery` 是给翻译员的只读视图（`get_actor_position` 含在飞插值）。live 入口 `seed_actor` / `despawn_actor` / `set_actor_position` |
+| `VisualUpdater` | 更新器（记账规则）：`kind → Callable` handler 表（内置 11 种默认登记，项目 `register_handler(kind, callable)`；未登记的 kind `assert_crash`），三个入口 `apply_actions(state, active)`（卡片 × 进度）/ `apply_event(state, event)`（事件直改：`actor_spawned` / `actor_destroyed` / `max_hp`，必须在翻译前落账本）/ `tick_time(state, delta_ms)`（到期效果清理 + `visual_hp` 追赶）；除 handler 表外无状态。handler 签名 `static func (state: VisualState, action: VisualAction, progress: float, action_id: String) -> void` |
+
+附件：`AnimationConfig`（时长 / 缓动 / hp 追赶等参数，`create_default()`）· `BuffSummary` / `ShieldSummary`（账本上的 buff / 护盾摘要，`id` 取 ability 实例 id）· `VisualEffectPayload.*`（一次性效果 payload：`Effect` 底座 + `FloatingText` / `AttackVfx` / `Projectile` / `ProceduralEffect` / `ScreenShake`；项目私有效果种类自定义 `Effect` 子类）。
+
+### `pump(delta_ms, events)` 的 8 步（`VisualDirector`，顺序不可调）
+
+1. **事件直改** `updater.apply_event(state, event)`——每条事件先过账本 lifecycle（spawn / destroy / max_hp）
+2. **翻译** `registry.translate(event, state.as_query())`——翻译员拿到的是直改后的只读视图
+3. **入步进器** `stepper.enqueue(actions)`（1–3 逐事件按发生顺序做完再进 4）
+4. **推进账本时间** `state.advance_time(delta_ms)`
+5. **步进** `stepper.tick(delta_ms) -> TickResult`
+6. **记账** `has_changes` 时 `updater.apply_actions(state, active_actions)` 再 `apply_actions(state, completed_this_tick)`——先活跃再完成，终值最后落账
+7. **时间驱动** `updater.tick_time(state, delta_ms)`——到期效果出账 + `visual_hp` 追赶，与卡片无关、每趟都跑
+8. **flush** `state.flush_dirty_actors()`——脏 actor 各广播一次 `actor_state_changed`
+
+事件源播完后照样每趟调（空事件数组），让在飞卡片走完、hp 追赶收敛。
+
+### 7 条信号（`VisualState` 发，Director 原样转发；view 只订阅 Director）
+
+| 信号 | 何时 |
+|---|---|
+| `actor_state_changed(id, state)` | 台面重建时每个 actor 一次；之后 flush 时每个脏 actor 一次；`set_actor_position` / 销毁事件当场 |
+| `actor_spawned(id, state)` | 中途入账（录像 `actor_spawned` 事件 / live `seed_actor`），随后紧跟一条 `actor_state_changed`；同 id 再入账返回 null 不广播 |
+| `actor_died(id)` | transition-only：`is_alive` 真正 true→false 那一刻一次（`set_actor_alive` 是唯一出口） |
+| `actor_despawned(id)` | live `despawn_actor` 出账；录像里的 `actor_destroyed` 只改状态（死亡 sticky + hp 归零）不出账、不发 |
+| `effect_spawned(kind, payload)` | 一次性效果入账（内置 kind 的 payload 见 `VisualEffectPayload`） |
+| `effect_updated(kind, id, progress, payload)` | progress 驱动的效果每次记账（payload 是账本里那条记录，当前值已写入） |
+| `effect_removed(kind, id)` | handler 在完成时显式 `remove_effect`（attack_vfx / projectile）；到期静默忘记的（飘字 / overlay）不发，view 自管节点寿命 |
+
+Event vs State 边界（hex `README.md`「设计铁律」同款）：能每帧重复且幂等的（HP 条 / 闪白 / 染色 / 位置 / buff / 盾）走 `actor_state_changed` 快照；重复会建节点 / 起 tween / 播音效的（死亡动画 / 一次性效果）走 transition-only 信号。
+
+### 消费方接入清单（kards / 2e 的 inkmon）
+
+1. bump submodule 到收口 SHA。
+2. **事件源**：回放 → 继承 `ReplayDirector`，`load_playback(record)` 喂 `PlaybackData.BattleRecord`；live → 继承 `VisualDirector`，自己攒本帧事件 dict 后调 `pump(delta_ms, events)`。
+3. **翻译员**：每种事件 kind 一个 `<Proj>XxxTranslator extends Translator`，`can_handle` 认自己的 kind，`translate` 只读 `VisualStateQuery`、只出内置卡片（位置一律逻辑 `Vector2`）；用工厂函数装一个 `TranslatorRegistry` 经构造函数交给 Director。
+4. **视图**：一个 view binder（Node）监听 Director 的 7 条信号；`actor_state_changed` 首次出现即懒建单位节点，之后照 `ActorVisualState` 更新；`effect_spawned` 按 kind 建效果节点；每帧用自己的投影函数把 `get_actor_position()` 的逻辑坐标换成像素 / 3D。
+5. **私有卡片**（可选）：`<Proj>XxxAction extends VisualAction` 定义新 kind + `static apply(state, action, progress, id)`，Director 建好后 `updater.register_handler(kind, callable)`（组件在 `_init` 建，不必等入树）。
+6. **钉子**：照 hex `example/hex-atb-battle/tests/frontend/smoke_presentation_golden.tscn` 给自己录一份 golden（卡片序列 + 逐帧账本快照指纹）。
+
+活范例 = hex `example/hex-atb-battle/frontend/`：`FrontendBattleAnimator` 持一个 `ReplayDirector`、12 个 `Frontend*Translator` + `FrontendDefaultRegistry` 工厂、私有卡片 `FrontendConeDebugOverlayAction`、投影 `FrontendHexProjection`、views；接入面见其 `README.md`。框架单测 `tests/presentation/*_test.gd`（挂 `core/unit`）。
+
 ## 设计铁律
 
 框架演进中固化下来的不可违反约束（违反会重新引入已根治的 bug）：
@@ -147,6 +222,9 @@ instance.event_collector.push()
 - **Playback 不重建逻辑层**：A 层"录像播放"（`Playback`）只从录像 dict spawn 视觉 view、绝不 hydrate 真 Actor / AbilitySet / AttributeSet；B 层"回放"（`Replay`，deterministic 重算）未来不一定做，相关类名仅作命名占位。
 - **录像顺序 = 调用栈真实顺序**：所有录像事件统一走所属 world 的 `event_collector.push()` 单一队列（Action 经 `ctx.event_collector`，录像回调经注入 recorder 的同一个 collector），**禁止**按"入口类型"分两个容器再拼接 —— callback 在同步栈里穿插触发，任何固定拼接顺序都会丢失交错信息（反例：`damage1 → grant → damage2`）。
 - **Action 是共享无状态对象**：Action 执行后必须 `_verify_unchanged()`，child action 必须随父 `_freeze()`（经 `Action.execute_child` 调用），跨 tag 的临时状态放 execution-local state（`ctx.set_execution_state`，key 带 namespace）而非 Action 字段；两类 Action 的目录规则见 `enforcing-lgf/SKILL.md` §8。
+- **表演核心只讲逻辑平面 `Vector2`**：`presentation/` 里账本 / 卡片 / 信号 payload / `VisualStateQuery.get_actor_position` 的位置一律是逻辑平面坐标，含义由项目定（hex = axial `(q, r)` 浮点，连续世界 = `(x, y)`）；录像 `position` 默认取前两分量（`VisualState._parse_position` 是唯一钩子）；`Vector3` / `GridLayout` / `HexCoord` / 像素不进框架，方向 / 距离 / 多边形这类欧氏派生量在项目 view **投影后**算（hex：`FrontendHexProjection`）。依赖方向 `presentation/ → core/`（只用 `PlaybackData` / `GameEvent`），不依赖 `stdlib/` / `example/` / ultra-grid-map；`tests/presentation/presentation_lint_test.gd` 钉禁词、依赖方向与无前缀 `class_name`。
+- **框架不持 Node / view，Director 只发信号**：`VisualDirector` 是 `presentation/` 里唯一的 Node，持 registry / stepper / state / updater 四件（`_init` 建、`_exit_tree` 断连置空），`pump` 跑完只经 7 条信号（原样转发自 `VisualState`）向外说话；单位 / 飘字 / 投射物节点、投影函数、事件方言（hex `BattleEvents` 强类型 `from_dict`、inkmon raw dict）全是项目件，框架不定义事件 schema、不出任何 view。项目私有效果种类走 `effect_spawned / effect_updated / effect_removed` 的 `kind` 参数，不加框架信号。
+- **卡片纯数据、记账规则只在 Updater**：`VisualAction` 不持 Node、不改账本、没有 `apply`，`kind: StringName` 开放（内置 11 种常量在 `VisualAction` 上）；怎么改账本只由 `VisualUpdater` 按 kind 查 handler（`static func (state, action, progress, action_id)`），项目私有卡片 `register_handler(kind, callable)`，未登记的 kind `assert_crash` 不静默；`VisualState` 只持数据、出记账原语、发信号，不认识任何卡片种类；`ActionStepper` 只管进度不管执行。三件分离让「账本存了啥 / 谁改的 / 何时改」各只有一处真相。
 
 ## 已知债务
 
@@ -161,4 +239,4 @@ instance.event_collector.push()
 ## 更多文档
 
 - 编码规则与「看哪个文件」指针表 → 主仓 `.claude/skills/enforcing-lgf/SKILL.md`
-- 示例：[`example/hex-atb-battle/`](example/hex-atb-battle/)（回合制 + hex grid；示例自己的铁律见其 `README.md`）、[`example/dota2-auto-battle/`](example/dota2-auto-battle/)
+- 示例：[`example/hex-atb-battle/`](example/hex-atb-battle/)（回合制 + hex grid；示例自己的铁律见其 `README.md`，表演层消费范例见 [`frontend/README.md`](example/hex-atb-battle/frontend/README.md)）、[`example/dota2-auto-battle/`](example/dota2-auto-battle/)
