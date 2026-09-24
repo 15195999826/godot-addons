@@ -1,0 +1,50 @@
+## HealTranslator - 治疗事件翻译员
+##
+## 将 heal 事件翻译为飘字和血条更新卡片
+class_name FrontendHealTranslator
+extends Translator
+
+
+func _init() -> void:
+	translator_name = "HealTranslator"
+
+
+## 检查是否为治疗事件
+func can_handle(event: Dictionary) -> bool:
+	return get_event_kind(event) == BattleEvents.HEAL_EVENT
+
+
+## 翻译治疗事件为卡片
+func translate(event: Dictionary, query: VisualStateQuery) -> Array[VisualAction]:
+	var config := query.get_animation_config()
+
+	var e := BattleEvents.HealEvent.from_dict(event)
+	var target_id := e.target_actor_id
+	var heal_amount := e.heal_amount
+
+	var target_position := query.get_actor_position(target_id)
+
+	var actions: Array[VisualAction] = []
+
+	# 1. 治疗飘字
+	var text := "+%d" % roundi(heal_amount)
+	var color := Color(0.2, 1.0, 0.2)  # 绿色
+
+	var floating_text := VisualFloatingTextAction.new(
+		target_id,
+		text,
+		color,
+		target_position,
+		VisualFloatingTextAction.FloatingTextStyle.HEAL,
+		config.heal_floating_text_duration
+	)
+	actions.append(floating_text)
+
+	# 2. 血条 hp delta(state 路径,见 damage_translator 同段注释)
+	var apply_delta := VisualHpDeltaAction.new(
+		target_id,
+		heal_amount
+	)
+	actions.append(apply_delta)
+
+	return actions

@@ -559,7 +559,7 @@ func _play_and_assert(
 	if snapshot.is_empty():
 		_report_failure(report, "animator.get_actors_snapshot() empty after playback")
 	for actor_id: String in snapshot.keys():
-		var st: FrontendActorRenderState = snapshot[actor_id]
+		var st: ActorVisualState = snapshot[actor_id]
 		if st.visual_hp < -EPSILON or st.visual_hp > st.max_hp + EPSILON:
 			_report_failure(report, "Actor %s hp out of range: %.2f / %.2f" % [
 				actor_id, st.visual_hp, st.max_hp

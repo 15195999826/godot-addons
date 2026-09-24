@@ -10,8 +10,8 @@
 ## 进程内多场连跑的 IdGenerator 计数不进指纹。
 ## 有意的行为变化须先解释再重烤：godot --headless --path . <本场景> -- rebake
 ##
-## 改名阶段：KIND_NAMES 左边换成新 kind，右边的 golden 名不动，指纹不随改名漂；Director / 注册表 / 账本
-## 三处私有钩子（_registry / _world / _scheduler）搬家后改指向即可。
+## KIND_NAMES 左边是卡片 kind（含 hex 私有的 cone overlay），右边的 golden 名不动，指纹不随改名漂；
+## Director / 注册表 / 账本 / 步进器四处私有钩子（_registry / _state / _stepper）搬家后改指向即可。
 extends Node
 
 
@@ -31,52 +31,51 @@ const RUNS: Array[Dictionary] = [
 	{"seed": 900191, "offensive_slots": 1},
 ]
 
-## 卡片种类 → golden 名。指纹只认右边；改名阶段只换左边的键。
+## 卡片 kind → golden 名。指纹只认右边；改名阶段只换左边的键。
 const KIND_NAMES := {
-	FrontendVisualAction.ActionType.MOVE: "move",
-	FrontendVisualAction.ActionType.APPLY_HP_DELTA: "hp_delta",
-	FrontendVisualAction.ActionType.FLOATING_TEXT: "floating_text",
-	FrontendVisualAction.ActionType.MELEE_STRIKE: "melee_strike",
-	FrontendVisualAction.ActionType.PROCEDURAL_VFX: "procedural_vfx",
-	FrontendVisualAction.ActionType.DEATH: "death",
-	FrontendVisualAction.ActionType.ATTACK_VFX: "attack_vfx",
-	FrontendVisualAction.ActionType.PROJECTILE: "projectile",
-	FrontendVisualAction.ActionType.APPLY_BUFF_STATE: "buff_state",
-	FrontendVisualAction.ActionType.APPLY_SHIELD_STATE: "shield_state",
-	FrontendVisualAction.ActionType.BUMP: "bump",
-	FrontendVisualAction.ActionType.APPLY_FACING_STATE: "facing_state",
-	FrontendVisualAction.ActionType.CONE_DEBUG_OVERLAY: "cone_debug_overlay",
+	VisualAction.KIND_MOVE: "move",
+	VisualAction.KIND_HP_DELTA: "hp_delta",
+	VisualAction.KIND_FLOATING_TEXT: "floating_text",
+	VisualAction.KIND_PROCEDURAL_VFX: "procedural_vfx",
+	VisualAction.KIND_DEATH: "death",
+	VisualAction.KIND_ATTACK_VFX: "attack_vfx",
+	VisualAction.KIND_PROJECTILE: "projectile",
+	VisualAction.KIND_BUFF_STATE: "buff_state",
+	VisualAction.KIND_SHIELD_STATE: "shield_state",
+	VisualAction.KIND_BUMP: "bump",
+	VisualAction.KIND_FACING_STATE: "facing_state",
+	FrontendConeDebugOverlayAction.KIND: "cone_debug_overlay",
 }
 
 
 ## 包一层 Director 自带的注册表：翻译结果原样返回，顺手把每张卡片记下来（只在本 smoke 用）。
-class RecordingRegistry extends FrontendVisualizerRegistry:
-	var inner: FrontendVisualizerRegistry
+class RecordingRegistry extends TranslatorRegistry:
+	var inner: TranslatorRegistry
 	var frame_of: Callable
 	var cards: Array[Dictionary] = []
 
-	func _init(p_inner: FrontendVisualizerRegistry, p_frame_of: Callable) -> void:
+	func _init(p_inner: TranslatorRegistry, p_frame_of: Callable) -> void:
 		inner = p_inner
 		frame_of = p_frame_of
 
-	func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:
-		var actions := inner.translate(event, context)
+	func translate(event: Dictionary, query: VisualStateQuery) -> Array[VisualAction]:
+		var actions := inner.translate(event, query)
 		var frame: int = frame_of.call()
-		for action: FrontendVisualAction in actions:
+		for action: VisualAction in actions:
 			cards.append({
 				"frame": frame,
-				"type": action.type,
+				"kind": action.kind,
 				"actor_id": action.actor_id,
 				"delay": action.delay,
 				"duration": action.duration,
 			})
 		return actions
 
-	func has_visualizer_for(event_kind: String) -> bool:
-		return inner.has_visualizer_for(event_kind)
+	func has_translator_for(event_kind: String) -> bool:
+		return inner.has_translator_for(event_kind)
 
-	func get_visualizers_for(event_kind: String) -> Array[String]:
-		return inner.get_visualizers_for(event_kind)
+	func get_translators_for(event_kind: String) -> Array[String]:
+		return inner.get_translators_for(event_kind)
 
 
 var _director: FrontendBattleDirector
@@ -154,6 +153,8 @@ func _run_seed(seed_value: int, offensive: int, rebake: bool) -> Dictionary:
 	_director = FrontendBattleDirector.new()
 	_director.name = "Director_%d" % seed_value
 	add_child(_director)
+	# 与 FrontendBattleAnimator 同款：hex 私有卡片的记账 handler 挂进更新器
+	_director.updater.register_handler(FrontendConeDebugOverlayAction.KIND, FrontendConeDebugOverlayAction.apply)
 	_recorder = RecordingRegistry.new(_director._registry, _director.get_current_frame)
 	_director._registry = _recorder
 	_connect_observers()
@@ -172,7 +173,7 @@ func _run_seed(seed_value: int, offensive: int, rebake: bool) -> Dictionary:
 	while not _ended:
 		if steps >= limit:
 			return {"error": "director never reached playback_ended after %d steps (frame %d/%d, %d active actions)" % [
-				steps, _director.get_current_frame(), _director.get_total_frames(), _director._scheduler.get_action_count(),
+				steps, _director.get_current_frame(), _director.get_total_frames(), _director._stepper.get_action_count(),
 			]}
 		_fx.clear()
 		_died.clear()
@@ -191,7 +192,7 @@ func _run_seed(seed_value: int, offensive: int, rebake: bool) -> Dictionary:
 
 	var kinds := {}
 	for card in _recorder.cards:
-		kinds[KIND_NAMES[card["type"]]] = true
+		kinds[KIND_NAMES[card["kind"]]] = true
 	var kind_list: Array = kinds.keys()
 	kind_list.sort()
 
@@ -295,13 +296,11 @@ func _reset_observers() -> void:
 	_id_counts.clear()
 
 
+## 一次性效果统一走 effect_spawned / effect_removed，按 kind 计数（golden 名 = kind 字符串）；
+## 飘字 / cone overlay 由账本到期静默忘记、不发 removed，与旧信号面的计数口径一致。
 func _connect_observers() -> void:
-	_director.floating_text_created.connect(func(_data: Variant) -> void: _count("floating_text", 0))
-	_director.attack_vfx_created.connect(func(_data: Variant) -> void: _count("attack_vfx", 0))
-	_director.attack_vfx_removed.connect(func(_id: String) -> void: _count("attack_vfx", 1))
-	_director.projectile_created.connect(func(_data: Variant) -> void: _count("projectile", 0))
-	_director.projectile_removed.connect(func(_id: String) -> void: _count("projectile", 1))
-	_director.cone_debug_overlay_created.connect(func(_data: Variant) -> void: _count("cone_debug_overlay", 0))
+	_director.effect_spawned.connect(func(kind: StringName, _payload: Variant) -> void: _count(String(kind), 0))
+	_director.effect_removed.connect(func(kind: StringName, _effect_id: String) -> void: _count(String(kind), 1))
 	_director.actor_died.connect(func(actor_id: String) -> void: _died.append(_canon_id(actor_id)))
 	_director.actor_spawned.connect(func(actor_id: String, _state: Variant) -> void: _spawned.append(_canon_id(actor_id)))
 	_director.playback_ended.connect(func() -> void: _ended = true)
@@ -334,26 +333,27 @@ func _canon_id(id: String) -> String:
 
 func _format_card(card: Dictionary) -> String:
 	return "card f=%d %s actor=%s delay=%s dur=%s" % [
-		card["frame"], KIND_NAMES[card["type"]], _canon_id(card["actor_id"]), _num(card["delay"]), _num(card["duration"]),
+		card["frame"], KIND_NAMES[card["kind"]], _canon_id(card["actor_id"]), _num(card["delay"]), _num(card["duration"]),
 	]
 
 
 ## 每个 actor 一行；只在与上一步不同的时候写（首步全写），是全量序列的等价编码。
+## pos 是含在飞插值的逻辑坐标取整到 hex 整数，at 是账本上已落定的格子。
 func _append_state(lines: PackedStringArray, prev: Dictionary) -> void:
 	var snapshot := _director.get_actors_snapshot()
-	var context: FrontendVisualizerContext = _director._world.as_context()
+	var query: VisualStateQuery = _director._state.as_query()
 	for id_variant in snapshot.keys():
 		var actor_id := str(id_variant)
-		var state: FrontendActorRenderState = snapshot[actor_id]
-		var hex := context.get_actor_hex_position(actor_id)
+		var state: ActorVisualState = snapshot[actor_id]
+		var pos := query.get_actor_position(actor_id)
 		var buff_ids: Array[String] = []
-		for buff: FrontendBuffSummary in state.buffs:
+		for buff: BuffSummary in state.buffs:
 			buff_ids.append(_canon_id(buff.id))
 		var shield_ids: Array[String] = []
-		for shield: FrontendShieldSummary in state.shields:
+		for shield: ShieldSummary in state.shields:
 			shield_ids.append(_canon_id(shield.id))
 		var line := "actor %s pos=(%d,%d) at=(%d,%d) hp=%s vhp=%d alive=%d buffs=[%s] shields=[%s]" % [
-			_canon_id(actor_id), hex.q, hex.r, state.position.q, state.position.r,
+			_canon_id(actor_id), roundi(pos.x), roundi(pos.y), roundi(state.position.x), roundi(state.position.y),
 			_num(state.target_hp), roundi(state.visual_hp), 1 if state.is_alive else 0,
 			",".join(buff_ids), ",".join(shield_ids),
 		]

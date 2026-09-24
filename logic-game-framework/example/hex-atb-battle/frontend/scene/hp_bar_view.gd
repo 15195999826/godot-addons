@@ -25,7 +25,7 @@ func _ready() -> void:
 	add_child(_hp_bar_mesh)
 
 
-func update_from_state(state: FrontendActorRenderState) -> void:
+func update_from_state(state: ActorVisualState) -> void:
 	if _hp_bar_mesh == null:
 		return
 	var ratio := state.visual_hp / state.max_hp if state.max_hp > 0 else 0.0

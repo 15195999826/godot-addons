@@ -1,7 +1,7 @@
-## Smoke test: ShieldBarVisualizer + RenderWorld.actor.shields 数据契约
+## Smoke test: ShieldBarTranslator + VisualState.actor.shields 数据契约
 ##
 ## 白盒测试,不走完整 main.tscn 流程。直接构造 PlaybackData + 手动喂事件给
-## VisualizerRegistry,断言 actor.shields 的最终状态。
+## TranslatorRegistry,断言 actor.shields 的最终状态。
 ##
 ## 覆盖事件类型:
 ##   1. AbilityGranted (ward, current=30, capacity=30) → ADD,shields[0].current=30
@@ -35,11 +35,11 @@ func _ready() -> void:
 	actor_init.attributes = {"hp": 100.0, "max_hp": 100.0}
 	snap.actors = [actor_init]
 
-	# Step 2: 初始化 RenderWorld + Visualizer Registry
-	var render_world := FrontendRenderWorld.new()
+	# Step 2: 初始化 VisualState + TranslatorRegistry
+	var render_world := VisualState.new()
 	render_world.initialize_from_replay(record)
 	var registry := FrontendDefaultRegistry.create()
-	var ctx := render_world.as_context()
+	var ctx := render_world.as_query()
 
 	# Event 1: AbilityGranted (ward inst 1, capacity=30, current=30)
 	_apply_event(registry, ctx, render_world, {
@@ -56,7 +56,7 @@ func _ready() -> void:
 			}],
 		},
 	})
-	var actor: FrontendActorRenderState = render_world.get_actors_snapshot()["hero_1"]
+	var actor: ActorVisualState = render_world.get_actors_snapshot()["hero_1"]
 	if actor.shields.size() != 1:
 		_fail("after ward1 grant: shields.size=%d (expected 1)" % actor.shields.size())
 		return
@@ -161,20 +161,20 @@ func _ready() -> void:
 
 
 ## 把单个 event 喂给 registry,翻译出 actions,逐一 apply 到 render_world。
-## 不走 ActionScheduler(shield state action duration=0,直接应用)。
-## 同时调 buff state(buff_visualizer 也产出 action,要一起 apply 保证 dirty/snapshot 一致)。
+## 不走 ActionStepper(shield state action duration=0,直接调 VisualUpdater 的记账函数)。
+## 同时调 buff state(buff_translator 也产出 action,要一起 apply 保证 dirty/snapshot 一致)。
 func _apply_event(
-	registry: FrontendVisualizerRegistry,
-	ctx: FrontendVisualizerContext,
-	render_world: FrontendRenderWorld,
+	registry: TranslatorRegistry,
+	ctx: VisualStateQuery,
+	render_world: VisualState,
 	event: Dictionary
 ) -> void:
 	var actions := registry.translate(event, ctx)
 	for action in actions:
-		if action is FrontendApplyShieldStateAction:
-			render_world._apply_apply_shield_state_action(action)
-		elif action is FrontendApplyBuffStateAction:
-			render_world._apply_apply_buff_state_action(action)
+		if action is VisualShieldStateAction:
+			VisualUpdater.apply_shield_state(render_world, action, 1.0, "")
+		elif action is VisualBuffStateAction:
+			VisualUpdater.apply_buff_state(render_world, action, 1.0, "")
 
 
 func _pass() -> void:

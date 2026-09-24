@@ -12,7 +12,7 @@
 ##
 ## 死者特殊处理:
 ##   - 跳过 position (FrontendUnitView.play_death 修改 transform: scale 0.1 + position.y -0.5)
-##   - hp / max_hp / is_alive 照查 (logic ability_set 不主动清, view BuffVisualizer 也不主动清,
+##   - hp / max_hp / is_alive 照查 (logic ability_set 不主动清, view BuffTranslator 也不主动清,
 ##     双方对称)
 ##
 ## debug-only 协议: HexWorldGameplayInstance 仅在 OS.has_feature("debug") 下 emit
@@ -91,7 +91,7 @@ class ReconcileReport extends RefCounted:
 ##
 ## final_state: HexWorldGameplayInstance.battle_final_state_ready 给的 dict;
 ##   release build 下没人 emit, 调方传 {} 即可, 返回 SKIPPED report。
-## animator: 取 view_state (FrontendActorRenderState) 用。
+## animator: 取 view_state (ActorVisualState) 用。
 ## world_view: 取 unit_view.global_position + hex_to_world 投影用。
 ## tree: 用于 await process_frame 跑 settle loop。
 ##
@@ -239,7 +239,7 @@ static func _diff_actor(
 	position_epsilon: float,
 	hp_epsilon: float,
 ) -> void:
-	var view_state: FrontendActorRenderState = view_states.get(actor_id, null)
+	var view_state: ActorVisualState = view_states.get(actor_id, null)
 	if view_state == null:
 		report.mismatches.append(Mismatch.new(
 			actor_id, Mismatch.Field.PRESENCE,
@@ -265,7 +265,7 @@ static func _diff_actor(
 ## 两层各比一次: 账本 hex 与逻辑 hex 直接比 (不经投影); unit_view 节点位置与逻辑 hex 投影后比。
 static func _diff_position(
 	actor_id: String,
-	view_state: FrontendActorRenderState,
+	view_state: ActorVisualState,
 	world_view: FrontendWorldView,
 	expected_alive_pos: Dictionary,
 	report: ReconcileReport,
@@ -275,11 +275,11 @@ static func _diff_position(
 		return  # 未放置, 不参与 position 对账
 
 	var expected: HexCoord = expected_alive_pos[actor_id]
-	if not view_state.position.equals(expected):
+	if not view_state.position.is_equal_approx(Vector2(expected.q, expected.r)):
 		report.mismatches.append(Mismatch.new(
 			actor_id, Mismatch.Field.POSITION,
 			"render state hex=(%d,%d) logic hex=(%d,%d)" % [
-				view_state.position.q, view_state.position.r, expected.q, expected.r,
+				roundi(view_state.position.x), roundi(view_state.position.y), expected.q, expected.r,
 			]
 		))
 
@@ -304,7 +304,7 @@ static func _diff_position(
 static func _diff_hp(
 	actor_id: String,
 	logic_actor: Dictionary,
-	view_state: FrontendActorRenderState,
+	view_state: ActorVisualState,
 	report: ReconcileReport,
 	epsilon: float,
 ) -> void:

@@ -51,11 +51,12 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/ai_decision/decision_pipeline_test.gd",
 	"res://addons/logic-game-framework/tests/skill_preview_validation_test.gd",
 	"res://addons/logic-game-framework/tests/inventory_kit_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/action_scheduler_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/visualizer_registry_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/render_world_apply_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/render_world_events_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/visualizer_coordinates_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/action_stepper_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/translator_registry_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/visual_updater_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/visual_state_events_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/hex_translator_coordinates_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/presentation_lint_test.gd",
 ]
 
 # 测试框架实例

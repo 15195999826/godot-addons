@@ -4,7 +4,7 @@
 ## 遍历 HexBattleAllSkills 总花名册做四断言, 覆盖四类静默失效面:
 ##   1. timeline 合法且唯一: 每个 config 携带的 TimelineData validate() 为空、tags 已冻结,
 ##      跨 manifest 同 id 必须同一实例(抓两处各造同名 timeline 互踩 / 工厂内联 new)
-##   2. BUFF_REGISTRY 覆盖: 带 buff tag 的 config_id ∈ BuffVisualizer 白名单
+##   2. BUFF_REGISTRY 覆盖: 带 buff tag 的 config_id ∈ BuffTranslator 白名单
 ##      (不接图标 = buff 永远不显示, 无报错)
 ##   3. cue 存在性: 全部静态声明的 cue ⊆ frontend 认识的 cue 集合
 ##      (stage_cue_visualizer 对未知 cue 静默跳过) + HexBattleCues 菜单登记
@@ -84,7 +84,7 @@ func _check_buff_registry(configs: Array[AbilityConfig], failures: Array[String]
 			continue
 		if cfg.config_id in BUFF_ICON_EXEMPT:
 			continue
-		if not FrontendBuffVisualizer.BUFF_REGISTRY.has(cfg.config_id):
+		if not FrontendBuffTranslator.BUFF_REGISTRY.has(cfg.config_id):
 			failures.append("%s: 带 buff tag 但未接 BUFF_REGISTRY(头顶图标永不显示)" % cfg.config_id)
 
 
@@ -94,14 +94,14 @@ func _check_buff_registry(configs: Array[AbilityConfig], failures: Array[String]
 
 func _known_cues() -> Dictionary:
 	var known := {}
-	for c in FrontendStageCueVisualizer.MELEE_ATTACK_CUES:
+	for c in FrontendStageCueTranslator.MELEE_ATTACK_CUES:
 		known[c] = true
-	for c in FrontendStageCueVisualizer.HEAL_CUES:
+	for c in FrontendStageCueTranslator.HEAL_CUES:
 		known[c] = true
-	known[FrontendStageCueVisualizer.EXECUTE_KILL_CUE] = true
-	for c in FrontendStageCueVisualizer.CONTROL_FLOATING_TEXTS.keys():
+	known[FrontendStageCueTranslator.EXECUTE_KILL_CUE] = true
+	for c in FrontendStageCueTranslator.CONTROL_FLOATING_TEXTS.keys():
 		known[c] = true
-	for c in FrontendStageCueVisualizer.CONE_DEBUG_CUES:
+	for c in FrontendStageCueTranslator.CONE_DEBUG_CUES:
 		known[c] = true
 	for c in CUE_INTENTIONAL_NO_VFX:
 		known[c] = true

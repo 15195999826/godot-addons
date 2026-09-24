@@ -8,7 +8,7 @@
 ##     各自一条),同 config_id 的多个独立实例在该条内聚合 sum(current)/sum(capacity)。
 ##   - 条按 priority desc → config_id asc 排序(确定性;与 ShieldResolver 消耗序
 ##     一致,先被消耗的类型固定贴近 HP 条)。
-##   - 每条颜色 = 该组 summary.color(ShieldBarVisualizer 已按 config_id 分色写入)。
+##   - 每条颜色 = 该组 summary.color(ShieldBarTranslator 已按 config_id 分色写入)。
 ##   - 条竖直堆叠,bar i 在 base_offset + i*BAR_STEP;组内 current/capacity=0 或
 ##     无 shields 时对应条隐藏。
 ##
@@ -36,11 +36,11 @@ const BAR_STEP := BAR_HEIGHT + BAR_GAP
 var _bars: Array[MeshInstance3D] = []
 
 
-func update_from_state(state: FrontendActorRenderState) -> void:
+func update_from_state(state: ActorVisualState) -> void:
 	_apply(state.shields)
 
 
-## 按 config_id 分组渲染。shields 元素为 FrontendShieldSummary。
+## 按 config_id 分组渲染。shields 元素为 ShieldSummary。
 func _apply(shields: Array) -> void:
 	if shields.is_empty():
 		_hide_from(0)
@@ -49,7 +49,7 @@ func _apply(shields: Array) -> void:
 	# config_id → {current, capacity, color, priority}
 	var groups: Dictionary = {}
 	for s in shields:
-		var summary: FrontendShieldSummary = s
+		var summary: ShieldSummary = s
 		var cid := summary.config_id
 		if groups.has(cid):
 			var g: Dictionary = groups[cid]

@@ -1,7 +1,7 @@
 ## Smoke test: FrontendShieldBarView 多类型分条布局契约
 ##
 ## 白盒,不走 main.tscn。直接实例化 FrontendShieldBarView,喂构造的
-## FrontendActorRenderState,断言子条网格的数量 / 颜色 / Y 偏移堆叠,
+## ActorVisualState,断言子条网格的数量 / 颜色 / Y 偏移堆叠,
 ## 以及空护盾态全隐藏。
 ##
 ## 覆盖:
@@ -28,7 +28,7 @@ func _ready() -> void:
 	add_child(view)
 
 	# 3 个不同类型护盾:physical(pri10) / magical(pri10) / ward(pri0)
-	var state := FrontendActorRenderState.new()
+	var state := ActorVisualState.new()
 	state.shields.append(_summary("phys_1", "buff_physical_shield", 20.0, 30.0, PHYS_COLOR, 10))
 	state.shields.append(_summary("mag_1", "buff_magical_shield", 30.0, 30.0, MAG_COLOR, 10))
 	state.shields.append(_summary("ward_1", "buff_ward", 15.0, 30.0, WARD_COLOR, 0))
@@ -79,7 +79,7 @@ func _ready() -> void:
 		return
 	print("  + Step 4b OK: 填充比例正确 (magical=1.0, ward=0.5)")
 
-	var empty := FrontendActorRenderState.new()
+	var empty := ActorVisualState.new()
 	view.update_from_state(empty)
 	if _visible_bars(view).size() != 0:
 		_fail("after empty state, bars should all be hidden")
@@ -91,8 +91,8 @@ func _ready() -> void:
 
 func _summary(
 	id: String, cid: String, cur: float, cap: float, col: Color, pri: int
-) -> FrontendShieldSummary:
-	var s := FrontendShieldSummary.new()
+) -> ShieldSummary:
+	var s := ShieldSummary.new()
 	s.id = id
 	s.config_id = cid
 	s.current = cur

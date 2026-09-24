@@ -11,7 +11,7 @@ extends Node3D
 var vfx_id: String
 
 ## 特效类型
-var vfx_type: FrontendAttackVFXAction.AttackVFXType
+var vfx_type: VisualAttackVfxAction.AttackVFXType
 
 ## 特效颜色
 var vfx_color: Color
@@ -45,7 +45,7 @@ var _trail_material: StandardMaterial3D
 ## 起止位置由 animator 把卡片的逻辑平面坐标投影后传入；方向 / 距离这类欧氏量在这里算
 func initialize(
 	p_vfx_id: String,
-	p_vfx_type: FrontendAttackVFXAction.AttackVFXType,
+	p_vfx_type: VisualAttackVfxAction.AttackVFXType,
 	p_color: Color,
 	p_start_position: Vector3,
 	p_target_position: Vector3,

@@ -33,7 +33,7 @@ func _ready() -> void:
 	add_child(_buff_label)
 
 
-func update_from_state(state: FrontendActorRenderState) -> void:
+func update_from_state(state: ActorVisualState) -> void:
 	_sync_buff_row(state.buffs)
 
 

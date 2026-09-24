@@ -1,6 +1,6 @@
 ## End-to-end smoke: Surge buff (GRANTED_SELF + on_timeline_start)
 ##
-## 走完整 Director → Visualizer → RenderWorld → UnitView 链路,
+## 走完整 Director → Translator → VisualUpdater / VisualState → UnitView 链路,
 ## 在每帧推进后断言 UnitView._buff_label.text 序列。
 ##
 ## 此 smoke 现在手工构造 PlaybackData, 不依赖 headless scenario harness, 才能
@@ -118,7 +118,7 @@ func _process(delta: float) -> void:
 		_assert_and_finish()
 
 
-func _on_actor_state_changed(actor_id: String, state: FrontendActorRenderState) -> void:
+func _on_actor_state_changed(actor_id: String, state: ActorVisualState) -> void:
 	if actor_id == "hero_1":
 		_unit_view.update_state(state)
 

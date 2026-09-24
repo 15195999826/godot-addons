@@ -168,7 +168,7 @@ func _on_playback_ended() -> void:
 		_fail("animator.get_actors_snapshot() empty after playback")
 		return
 	for actor_id: String in snapshot.keys():
-		var st: FrontendActorRenderState = snapshot[actor_id]
+		var st: ActorVisualState = snapshot[actor_id]
 		if st.visual_hp < 0.0 or st.visual_hp > st.max_hp + 0.01:
 			_fail("Actor %s hp out of range: %.2f / %.2f" % [actor_id, st.visual_hp, st.max_hp])
 			return

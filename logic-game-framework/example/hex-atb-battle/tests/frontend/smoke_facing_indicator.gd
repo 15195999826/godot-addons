@@ -1,11 +1,11 @@
 ## Phase F · Facing 前端回归 smoke
 ##
 ## 验证三条契约:
-##   1. Replay 初始化时 RenderWorld 从 actor_init.attributes 读 facing_direction (snapshot 链路)
-##   2. actor_facing_changed event 翻译为 ApplyFacingStateAction → RenderWorld 更新 facing
+##   1. Replay 初始化时 VisualState 从 actor_init.attributes 读 facing_direction (snapshot 链路)
+##   2. actor_facing_changed event 翻译为 VisualFacingStateAction → VisualUpdater 更新 facing
 ##   3. EnvironmentActor 的 FacingIndicatorView 在 set_environment_style 后隐藏
 ##
-## 不验证视觉旋转角度 (单元 smoke 无相机 / 无渲染断言); 用 FrontendActorRenderState.facing_direction
+## 不验证视觉旋转角度 (单元 smoke 无相机 / 无渲染断言); 用 ActorVisualState.facing_direction
 ## 数值确认 frontend state 同步, UnitView 用 visible 标志确认 env actor 不显示.
 extends Node
 
@@ -38,7 +38,7 @@ func _ready() -> void:
 	# B 队默认朝西 (DIR_WEST = 3)
 	hero_b.attributes = {"hp": 100.0, "max_hp": 100.0, "facing_direction": HexFacing.DIR_WEST}
 
-	# Environment actor 不带 facing_direction 字段, RenderWorld 读到默认 0
+	# Environment actor 不带 facing_direction 字段, VisualState 读到默认 0
 	var wall := PlaybackData.ActorInitData.new()
 	wall.id = "wall_1"
 	wall.type = "Environment"
@@ -48,13 +48,13 @@ func _ready() -> void:
 
 	snap.actors = [hero_a, hero_b, wall]
 
-	var rw := FrontendRenderWorld.new()
+	var rw := VisualState.new()
 	rw.initialize_from_replay(record)
 
 	var snapshot: Dictionary = rw.get_actors_snapshot()
-	var state_a: FrontendActorRenderState = snapshot["hero_a"]
-	var state_b: FrontendActorRenderState = snapshot["hero_b"]
-	var state_wall: FrontendActorRenderState = snapshot["wall_1"]
+	var state_a: ActorVisualState = snapshot["hero_a"]
+	var state_b: ActorVisualState = snapshot["hero_b"]
+	var state_wall: ActorVisualState = snapshot["wall_1"]
 
 	if state_a.facing_direction != HexFacing.DIR_EAST:
 		_fail("init hero_a.facing_direction = %d (expected DIR_EAST=%d)" % [state_a.facing_direction, HexFacing.DIR_EAST])
@@ -71,7 +71,8 @@ func _ready() -> void:
 	])
 
 	# ===== Step 2: actor_facing_changed event updates state =====
-	var scheduler := FrontendActionScheduler.new()
+	var scheduler := ActionStepper.new()
+	var updater := VisualUpdater.new()
 	var registry := FrontendDefaultRegistry.create()
 
 	var facing_event: Dictionary = {
@@ -81,14 +82,14 @@ func _ready() -> void:
 		"new_direction": HexFacing.DIR_NORTHEAST,
 		"reason": "active_use",
 	}
-	_run_frame(scheduler, registry, rw, [facing_event], "facing_change")
+	_run_frame(scheduler, registry, rw, updater, [facing_event], "facing_change")
 
 	snapshot = rw.get_actors_snapshot()
 	state_a = snapshot["hero_a"]
 	if state_a.facing_direction != HexFacing.DIR_NORTHEAST:
 		_fail("after event, hero_a.facing = %d (expected DIR_NORTHEAST=%d)" % [state_a.facing_direction, HexFacing.DIR_NORTHEAST])
 		return
-	print("  Step2 PASS: actor_facing_changed event → FrontendActorRenderState.facing_direction updated")
+	print("  Step2 PASS: actor_facing_changed event → ActorVisualState.facing_direction updated")
 
 	# B 队 actor 未收到事件 → 不变
 	state_b = snapshot["hero_b"]
@@ -127,20 +128,22 @@ func _ready() -> void:
 
 
 func _run_frame(
-	scheduler: FrontendActionScheduler,
-	registry: FrontendVisualizerRegistry,
-	rw: FrontendRenderWorld,
+	scheduler: ActionStepper,
+	registry: TranslatorRegistry,
+	rw: VisualState,
+	updater: VisualUpdater,
 	events: Array[Dictionary],
 	tag: String,
 ) -> void:
-	var ctx := rw.as_context()
+	var query := rw.as_query()
 	for event in events:
-		var actions := registry.translate(event, ctx)
+		var actions := registry.translate(event, query)
 		scheduler.enqueue(actions)
+	rw.advance_time(100)
 	var result := scheduler.tick(100.0)
-	rw.apply_actions(result.active_actions)
-	rw.apply_actions(result.completed_this_tick)
-	rw.cleanup(rw.get_world_time())
+	updater.apply_actions(rw, result.active_actions)
+	updater.apply_actions(rw, result.completed_this_tick)
+	updater.tick_time(rw, 100.0)
 	rw.flush_dirty_actors()
 	print("  [frame %s] processed %d events" % [tag, events.size()])
 

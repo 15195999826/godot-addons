@@ -141,7 +141,7 @@ func initialize(
 	_update_team_color()
 
 	# 用初始 state 同步给子 view,避免每个子 view 各自 initialize 接口爆炸
-	var initial_state := FrontendActorRenderState.new()
+	var initial_state := ActorVisualState.new()
 	initial_state.id = p_actor_id
 	initial_state.type = actor_type
 	initial_state.display_name = display_name
@@ -218,7 +218,7 @@ func get_facing_indicator_view() -> FrontendFacingIndicatorView:
 
 ## 同步可覆盖 state(hp / flash / tint / buffs)。一次性动画(死亡 / 复活)走
 ## play_death / revive 公共方法,不在这里推断 transition。
-func update_state(new_state: FrontendActorRenderState) -> void:
+func update_state(new_state: ActorVisualState) -> void:
 	_hp_bar_view.update_from_state(new_state)
 	_shield_bar_view.update_from_state(new_state)
 	_buff_row_view.update_from_state(new_state)

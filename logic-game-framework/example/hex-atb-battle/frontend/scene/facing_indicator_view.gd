@@ -53,8 +53,8 @@ func _ready() -> void:
 	_marker_root.add_child(_fill_mesh)
 
 
-## 接收 FrontendActorRenderState; 仅当 type == "Character" 才可见.
-func update_from_state(state: FrontendActorRenderState) -> void:
+## 接收 ActorVisualState; 仅当 type == "Character" 才可见.
+func update_from_state(state: ActorVisualState) -> void:
 	if state == null:
 		visible = false
 		return
@@ -67,10 +67,12 @@ func update_from_state(state: FrontendActorRenderState) -> void:
 	_marker_root.rotation.y = atan2(-dir_vec.z, dir_vec.x)
 
 
-func _direction_vector_for_state(state: FrontendActorRenderState) -> Vector3:
-	if state.position != null and state.position.is_valid() and _grid_layout != null:
-		var origin_2d := _grid_layout.coord_to_pixel(state.position.to_axial())
-		var neighbor_coord := state.position.neighbor(state.facing_direction)
+## 账本位置是逻辑平面 axial（Vector2，已落定即整数格）；朝向向量 = 本格到 facing 方向邻格的像素差
+func _direction_vector_for_state(state: ActorVisualState) -> Vector3:
+	if _grid_layout != null:
+		var hex := HexCoord.new(roundi(state.position.x), roundi(state.position.y))
+		var origin_2d := _grid_layout.coord_to_pixel(hex.to_axial())
+		var neighbor_coord := hex.neighbor(state.facing_direction)
 		var neighbor_2d := _grid_layout.coord_to_pixel(neighbor_coord.to_axial())
 		var delta := neighbor_2d - origin_2d
 		if delta.length() > 0.001:

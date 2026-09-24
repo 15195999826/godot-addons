@@ -5,6 +5,8 @@
 ## 死亡动画。不拥有 unit view 生命周期 —— 战斗结束时 WorldGI 里 actor 已是
 ## 终态，animator 只负责让视觉追上该终态。
 ##
+## Director 只发信号（actor 4 条 + effect 3 条）；一次性效果按 kind 在这里分发到各 view。
+##
 ## 详见 addon 根 CLAUDE.md「World owns Battle」。
 class_name FrontendBattleAnimator
 extends Node3D
@@ -54,18 +56,15 @@ func _ready() -> void:
 	_director = FrontendBattleDirector.new()
 	_director.name = "BattleDirector"
 	add_child(_director)
+	# hex 私有卡片：cone debug overlay 的记账规则挂进更新器
+	_director.updater.register_handler(FrontendConeDebugOverlayAction.KIND, FrontendConeDebugOverlayAction.apply)
 
 	_director.actor_state_changed.connect(_on_actor_state_changed)
 	_director.actor_spawned.connect(_on_actor_spawned)
 	_director.actor_died.connect(_on_actor_died)
-	_director.floating_text_created.connect(_on_floating_text_created)
-	_director.attack_vfx_created.connect(_on_attack_vfx_created)
-	_director.attack_vfx_updated.connect(_on_attack_vfx_updated)
-	_director.attack_vfx_removed.connect(_on_attack_vfx_removed)
-	_director.projectile_created.connect(_on_projectile_created)
-	_director.projectile_updated.connect(_on_projectile_updated)
-	_director.projectile_removed.connect(_on_projectile_removed)
-	_director.cone_debug_overlay_created.connect(_on_cone_debug_overlay_created)
+	_director.effect_spawned.connect(_on_effect_spawned)
+	_director.effect_updated.connect(_on_effect_updated)
+	_director.effect_removed.connect(_on_effect_removed)
 	_director.playback_ended.connect(_on_playback_ended)
 	_director.playback_state_changed.connect(func(p: bool) -> void: playback_state_changed.emit(p))
 	_director.frame_changed.connect(func(c: int, t: int) -> void: frame_changed.emit(c, t))
@@ -78,7 +77,7 @@ func _process(_delta: float) -> void:
 	for actor_id in _unit_views:
 		var view: FrontendUnitView = _unit_views[actor_id]
 		if is_instance_valid(view):
-			view.set_world_position(_project(_director.get_actor_axial(actor_id)))
+			view.set_world_position(_project(_director.get_actor_position(actor_id)))
 
 
 # ========== 公共 API ==========
@@ -153,7 +152,7 @@ func step(delta_ms: float) -> void:
 	for actor_id in _unit_views:
 		var view: FrontendUnitView = _unit_views[actor_id]
 		if is_instance_valid(view):
-			view.snap_world_position(_project(_director.get_actor_axial(actor_id)))
+			view.snap_world_position(_project(_director.get_actor_position(actor_id)))
 
 
 func is_playing() -> bool:
@@ -185,7 +184,7 @@ func is_ended() -> bool:
 
 # ========== Director signal → 外部 unit view ==========
 
-func _on_actor_spawned(actor_id: String, state: FrontendActorRenderState) -> void:
+func _on_actor_spawned(actor_id: String, state: ActorVisualState) -> void:
 	if _unit_views.has(actor_id):
 		_on_actor_state_changed(actor_id, state)
 		return
@@ -198,7 +197,7 @@ func _on_actor_spawned(actor_id: String, state: FrontendActorRenderState) -> voi
 	view.revive()
 	view.visible = true
 	_initialize_replay_unit_view(view, actor_id, state)
-	var world_position := _project(_director.get_actor_axial(actor_id))
+	var world_position := _project(_director.get_actor_position(actor_id))
 	view.snap_world_position(world_position)
 	_owned_replay_unit_views[actor_id] = view
 	_unit_views[actor_id] = view
@@ -228,9 +227,9 @@ func _prebuild_replay_unit_views(record: PlaybackData.BattleRecord) -> void:
 			view.visible = false
 
 
-func _actor_spawn_event_to_state(event: Dictionary) -> FrontendActorRenderState:
+func _actor_spawn_event_to_state(event: Dictionary) -> ActorVisualState:
 	var actor: Dictionary = event.get("actor", {}) as Dictionary
-	var state := FrontendActorRenderState.new()
+	var state := ActorVisualState.new()
 	state.id = actor.get("id", event.get("actor_id", "")) as String
 	state.type = actor.get("type", HexBattleActor.KIND_CHARACTER) as String
 	state.config_id = actor.get("config_id", "") as String
@@ -244,7 +243,7 @@ func _actor_spawn_event_to_state(event: Dictionary) -> FrontendActorRenderState:
 	return state
 
 
-func _get_or_create_replay_unit_view(actor_id: String, state: FrontendActorRenderState) -> FrontendUnitView:
+func _get_or_create_replay_unit_view(actor_id: String, state: ActorVisualState) -> FrontendUnitView:
 	var existing_view: FrontendUnitView = _owned_replay_unit_views.get(actor_id, null)
 	if existing_view != null and is_instance_valid(existing_view):
 		return existing_view
@@ -259,7 +258,7 @@ func _get_or_create_replay_unit_view(actor_id: String, state: FrontendActorRende
 func _initialize_replay_unit_view(
 	view: FrontendUnitView,
 	actor_id: String,
-	state: FrontendActorRenderState
+	state: ActorVisualState
 ) -> void:
 	view.initialize(
 		actor_id,
@@ -275,17 +274,17 @@ func _initialize_replay_unit_view(
 		view.set_environment_style(environment_kind)
 
 
-func _on_actor_state_changed(actor_id: String, state: FrontendActorRenderState) -> void:
+func _on_actor_state_changed(actor_id: String, state: ActorVisualState) -> void:
 	if not _unit_views.has(actor_id):
 		return
 	var view: FrontendUnitView = _unit_views[actor_id]
 	if not is_instance_valid(view):
 		return
 	view.update_state(state)
-	view.set_world_position(_project(_director.get_actor_axial(actor_id)))
+	view.set_world_position(_project(_director.get_actor_position(actor_id)))
 
 
-## actor_died 是 transition-only event(RenderWorld 在 alive 真翻 false 那帧 emit
+## actor_died 是 transition-only event(账本在 alive 真翻 false 那帧 emit
 ## 一次)。view 自己负责 once 语义,这里不做幂等。
 func _on_actor_died(actor_id: String) -> void:
 	if not _unit_views.has(actor_id):
@@ -320,9 +319,49 @@ func _project(axial: Vector2) -> Vector3:
 	return FrontendHexProjection.to_world(_grid_layout, axial)
 
 
-# ========== VFX / 投射物 / 飘字（自有节点） ==========
+# ========== 一次性效果按 kind 分发到 view（自有节点） ==========
 
-func _on_floating_text_created(data: FrontendRenderData.FloatingText) -> void:
+func _on_effect_spawned(kind: StringName, payload: VisualEffectPayload.Effect) -> void:
+	match kind:
+		VisualAction.KIND_FLOATING_TEXT:
+			_spawn_floating_text(payload as VisualEffectPayload.FloatingText)
+		VisualAction.KIND_ATTACK_VFX:
+			_spawn_attack_vfx(payload as VisualEffectPayload.AttackVfx)
+		VisualAction.KIND_PROJECTILE:
+			_spawn_projectile(payload as VisualEffectPayload.Projectile)
+		FrontendConeDebugOverlayAction.KIND:
+			_spawn_cone_debug_overlay(payload as FrontendConeDebugOverlayAction.Payload)
+
+
+func _on_effect_updated(kind: StringName, effect_id: String, progress: float, payload: VisualEffectPayload.Effect) -> void:
+	match kind:
+		VisualAction.KIND_ATTACK_VFX:
+			var vfx_view: FrontendAttackVFXView = _attack_vfx_views.get(effect_id, null)
+			if vfx_view != null:
+				var vfx := payload as VisualEffectPayload.AttackVfx
+				vfx_view.update_progress(progress, vfx.scale_factor, vfx.alpha)
+		VisualAction.KIND_PROJECTILE:
+			var projectile_view: FrontendProjectileView = _projectile_views.get(effect_id, null)
+			if projectile_view != null:
+				var projectile := payload as VisualEffectPayload.Projectile
+				projectile_view.update_position(_project(projectile.position))
+
+
+func _on_effect_removed(kind: StringName, effect_id: String) -> void:
+	match kind:
+		VisualAction.KIND_ATTACK_VFX:
+			var vfx_view: FrontendAttackVFXView = _attack_vfx_views.get(effect_id, null)
+			if vfx_view != null:
+				vfx_view.cleanup()
+				_attack_vfx_views.erase(effect_id)
+		VisualAction.KIND_PROJECTILE:
+			var projectile_view: FrontendProjectileView = _projectile_views.get(effect_id, null)
+			if projectile_view != null:
+				projectile_view.cleanup()
+				_projectile_views.erase(effect_id)
+
+
+func _spawn_floating_text(data: VisualEffectPayload.FloatingText) -> void:
 	var start_usec := Time.get_ticks_usec()
 	var floating_text := FrontendFloatingTextView.new()
 	_effects_root.add_child(floating_text)
@@ -337,7 +376,7 @@ func _on_floating_text_created(data: FrontendRenderData.FloatingText) -> void:
 		])
 
 
-func _on_attack_vfx_created(data: FrontendRenderData.AttackVfx) -> void:
+func _spawn_attack_vfx(data: VisualEffectPayload.AttackVfx) -> void:
 	if data.id.is_empty():
 		return
 	var vfx_view := FrontendAttackVFXView.new()
@@ -349,20 +388,7 @@ func _on_attack_vfx_created(data: FrontendRenderData.AttackVfx) -> void:
 	vfx_view.initialize(data.id, data.vfx_type, data.vfx_color, start_world, _project(data.target_position), data.is_critical)
 
 
-func _on_attack_vfx_updated(vfx_id: String, progress: float, scale_factor: float, alpha: float) -> void:
-	var vfx_view: FrontendAttackVFXView = _attack_vfx_views.get(vfx_id, null)
-	if vfx_view != null:
-		vfx_view.update_progress(progress, scale_factor, alpha)
-
-
-func _on_attack_vfx_removed(vfx_id: String) -> void:
-	var vfx_view: FrontendAttackVFXView = _attack_vfx_views.get(vfx_id, null)
-	if vfx_view != null:
-		vfx_view.cleanup()
-		_attack_vfx_views.erase(vfx_id)
-
-
-func _on_projectile_created(data: FrontendRenderData.Projectile) -> void:
+func _spawn_projectile(data: VisualEffectPayload.Projectile) -> void:
 	if data.id.is_empty():
 		return
 	var projectile_view := FrontendProjectileView.new()
@@ -378,20 +404,7 @@ func _on_projectile_created(data: FrontendRenderData.Projectile) -> void:
 	projectile_view.initialize(data.id, data.projectile_type, data.projectile_color, data.projectile_size, direction)
 
 
-func _on_projectile_updated(projectile_id: String, pos: Vector2) -> void:
-	var projectile_view: FrontendProjectileView = _projectile_views.get(projectile_id, null)
-	if projectile_view != null:
-		projectile_view.update_position(_project(pos))
-
-
-func _on_projectile_removed(projectile_id: String) -> void:
-	var projectile_view: FrontendProjectileView = _projectile_views.get(projectile_id, null)
-	if projectile_view != null:
-		projectile_view.cleanup()
-		_projectile_views.erase(projectile_id)
-
-
-func _on_cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay) -> void:
+func _spawn_cone_debug_overlay(data: FrontendConeDebugOverlayAction.Payload) -> void:
 	var overlay_view := FrontendConeDebugOverlayView.new()
 	overlay_view.name = "ConeDebugOverlay_" + data.id
 	_effects_root.add_child(overlay_view)

@@ -105,9 +105,9 @@ func initialize(p_text: String, p_color: Color, world_position: Vector3, p_style
 
 		# 根据样式 base size,再叠抖动
 		match p_style:
-			FrontendFloatingTextAction.FloatingTextStyle.CRITICAL:
+			VisualFloatingTextAction.FloatingTextStyle.CRITICAL:
 				_base_font_size = 64
-			FrontendFloatingTextAction.FloatingTextStyle.HEAL:
+			VisualFloatingTextAction.FloatingTextStyle.HEAL:
 				_base_font_size = 48
 			_:
 				_base_font_size = 48
@@ -178,7 +178,7 @@ func _process(delta: float) -> void:
 
 	# 暴击在落点段持续轻微脉动
 	var crit_pulse := 1.0
-	if _style == FrontendFloatingTextAction.FloatingTextStyle.CRITICAL and progress >= _POP_IN_PCT:
+	if _style == VisualFloatingTextAction.FloatingTextStyle.CRITICAL and progress >= _POP_IN_PCT:
 		crit_pulse = 1.0 + 0.12 * sin(progress * PI * 2.0)
 
 	scale = Vector3.ONE * pop_scale * crit_pulse

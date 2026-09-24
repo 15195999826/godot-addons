@@ -5,7 +5,7 @@ extends Node
 
 
 func _ready() -> void:
-	print("=== Smoke: Regeneration Visualizer ===")
+	print("=== Smoke: Regeneration Translator ===")
 	Log.set_level(Log.LogLevel.WARNING)
 
 	var record := PlaybackData.BattleRecord.new()
@@ -24,20 +24,22 @@ func _ready() -> void:
 	actor_init.attributes = {"hp": 50.0, "max_hp": 100.0}
 	snap.actors = [actor_init]
 
-	var rw := FrontendRenderWorld.new()
+	var rw := VisualState.new()
 	rw.initialize_from_replay(record)
 	var registry := FrontendDefaultRegistry.create()
-	if not registry.has_visualizer_for("regeneration"):
-		_fail("default registry missing regeneration visualizer")
+	if not registry.has_translator_for("regeneration"):
+		_fail("default registry missing regeneration translator")
 		return
 
-	var scheduler := FrontendActionScheduler.new()
+	var scheduler := ActionStepper.new()
+	var updater := VisualUpdater.new()
 	var floating_texts: Array[String] = []
-	rw.floating_text_created.connect(func(data: FrontendRenderData.FloatingText) -> void:
-		floating_texts.append(data.text)
+	rw.effect_spawned.connect(func(kind: StringName, payload: VisualEffectPayload.Effect) -> void:
+		if kind == VisualAction.KIND_FLOATING_TEXT:
+			floating_texts.append((payload as VisualEffectPayload.FloatingText).text)
 	)
 
-	_run_frame(scheduler, registry, rw, [{
+	_run_frame(scheduler, registry, rw, updater, [{
 		"kind": "regeneration",
 		"target_actor_id": "hero_1",
 		"resource": "hp",
@@ -54,7 +56,7 @@ func _ready() -> void:
 		_fail("expected one +7 floating text, got %s" % str(floating_texts))
 		return
 
-	_run_frame(scheduler, registry, rw, [{
+	_run_frame(scheduler, registry, rw, updater, [{
 		"kind": "regeneration",
 		"target_actor_id": "hero_1",
 		"resource": "hp",
@@ -76,25 +78,28 @@ func _ready() -> void:
 
 
 func _run_frame(
-	scheduler: FrontendActionScheduler,
-	registry: FrontendVisualizerRegistry,
-	rw: FrontendRenderWorld,
+	scheduler: ActionStepper,
+	registry: TranslatorRegistry,
+	rw: VisualState,
+	updater: VisualUpdater,
 	events: Array[Dictionary],
 	tag: String,
 ) -> void:
-	var ctx := rw.as_context()
+	var query := rw.as_query()
 	for event in events:
-		scheduler.enqueue(registry.translate(event, ctx))
+		scheduler.enqueue(registry.translate(event, query))
+	rw.advance_time(100)
 	var result := scheduler.tick(100.0)
-	rw.apply_actions(result.active_actions)
-	rw.apply_actions(result.completed_this_tick)
+	updater.apply_actions(rw, result.active_actions)
+	updater.apply_actions(rw, result.completed_this_tick)
+	updater.tick_time(rw, 100.0)
 	rw.flush_dirty_actors()
 	print("  [frame %s] processed %d events" % [tag, events.size()])
 
 
-func _get_state(rw: FrontendRenderWorld) -> FrontendActorRenderState:
+func _get_state(rw: VisualState) -> ActorVisualState:
 	var snapshot := rw.get_actors_snapshot()
-	return snapshot["hero_1"] as FrontendActorRenderState
+	return snapshot["hero_1"] as ActorVisualState
 
 
 func _fail(reason: String) -> void:

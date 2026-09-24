@@ -1,7 +1,7 @@
-## Smoke test: BuffVisualizer + RenderWorld.actor.buffs 数据契约
+## Smoke test: BuffTranslator + VisualState.actor.buffs 数据契约
 ##
 ## 白盒测试,不走完整 main.tscn 流程。直接构造 PlaybackData + 手动喂事件给
-## VisualizerRegistry,断言 actor.buffs 的最终状态。
+## TranslatorRegistry,断言 actor.buffs 的最终状态。
 ##
 ## 覆盖事件类型:
 ##   1. AbilityGranted (poison) → ADD,buffs[0].primary == 3
@@ -35,11 +35,11 @@ func _ready() -> void:
 	actor_init.attributes = {"hp": 100.0, "max_hp": 100.0}
 	snap.actors = [actor_init]
 
-	# Step 2: 初始化 RenderWorld + Visualizer Registry
-	var render_world := FrontendRenderWorld.new()
+	# Step 2: 初始化 VisualState + TranslatorRegistry
+	var render_world := VisualState.new()
 	render_world.initialize_from_replay(record)
 	var registry := FrontendDefaultRegistry.create()
-	var ctx := render_world.as_context()
+	var ctx := render_world.as_query()
 
 	# Step 3: 喂事件并应用
 	# Event 1: AbilityGranted (poison, stacks=3)
@@ -54,7 +54,7 @@ func _ready() -> void:
 		},
 	})
 	render_world.flush_dirty_actors()
-	var actor: FrontendActorRenderState = render_world.get_actors_snapshot()["hero_1"]
+	var actor: ActorVisualState = render_world.get_actors_snapshot()["hero_1"]
 	if actor.buffs.size() != 1:
 		_fail("after poison grant: buffs.size = %d (expected 1)" % actor.buffs.size())
 		return
@@ -155,20 +155,18 @@ func _ready() -> void:
 
 
 ## 把单个 event 喂给 registry,翻译出 actions,逐一 apply 到 render_world。
-## 不走 ActionScheduler(buff state action duration=0,直接应用)。
+## 不走 ActionStepper(buff state action duration=0,直接调 VisualUpdater 的记账函数)。
 func _apply_event(
-	registry: FrontendVisualizerRegistry,
-	ctx: FrontendVisualizerContext,
-	render_world: FrontendRenderWorld,
+	registry: TranslatorRegistry,
+	ctx: VisualStateQuery,
+	render_world: VisualState,
 	event: Dictionary
 ) -> void:
 	var actions := registry.translate(event, ctx)
-	# 包装成 ActiveAction 让 _apply_action 接受
 	for action in actions:
-		if action is FrontendApplyBuffStateAction:
-			# 直接调内部 apply(_apply_action 是 private, 但 ApplyBuffStateAction
-			# 是 duration=0 的瞬时动作,我们绕过 scheduler 直接应用)
-			render_world._apply_apply_buff_state_action(action)
+		if action is VisualBuffStateAction:
+			# VisualBuffStateAction 是 duration=0 的瞬时卡片,绕过步进器直接走记账函数
+			VisualUpdater.apply_buff_state(render_world, action, 1.0, "")
 
 
 func _pass() -> void:

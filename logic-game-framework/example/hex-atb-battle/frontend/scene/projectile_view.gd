@@ -14,7 +14,7 @@ extends Node3D
 var projectile_id: String
 
 ## 投射物类型
-var projectile_type: FrontendProjectileAction.ProjectileType
+var projectile_type: VisualProjectileAction.ProjectileType
 
 ## 投射物颜色
 var projectile_color: Color
@@ -39,7 +39,7 @@ var _trail_mesh_instance: MeshInstance3D
 
 func initialize(
 	p_projectile_id: String,
-	p_projectile_type: FrontendProjectileAction.ProjectileType,
+	p_projectile_type: VisualProjectileAction.ProjectileType,
 	p_color: Color,
 	p_size: float,
 	p_direction: Vector3
@@ -63,9 +63,9 @@ func _create_mesh() -> void:
 	
 	var mesh: Mesh
 	match projectile_type:
-		FrontendProjectileAction.ProjectileType.ARROW:
+		VisualProjectileAction.ProjectileType.ARROW:
 			mesh = _create_arrow_mesh()
-		FrontendProjectileAction.ProjectileType.FIREBALL:
+		VisualProjectileAction.ProjectileType.FIREBALL:
 			mesh = _create_sphere_mesh()
 		_:
 			mesh = _create_sphere_mesh()

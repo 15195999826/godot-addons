@@ -40,7 +40,7 @@ func _ready() -> void:
 
 
 ## 没有棋盘几何就画不出格子，overlay 保持空白到期自毁
-func initialize(data: FrontendRenderData.ConeDebugOverlay, layout: GridLayout) -> void:
+func initialize(data: FrontendConeDebugOverlayAction.Payload, layout: GridLayout) -> void:
 	_duration_ms = data.duration
 	_elapsed_ms = 0.0
 	if layout == null:

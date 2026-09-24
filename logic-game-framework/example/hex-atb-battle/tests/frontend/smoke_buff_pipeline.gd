@@ -1,4 +1,4 @@
-## 集成 smoke:同帧 ADD + UPDATE + REMOVE 经过完整 ActionScheduler → RenderWorld 链路。
+## 集成 smoke:同帧 ADD + UPDATE + REMOVE 经过完整 ActionStepper → VisualUpdater / VisualState 链路。
 ## 复现"3 → 1 → 消失"bug —— 验证同帧多事件是否正确合并。
 extends Node
 
@@ -21,9 +21,10 @@ func _ready() -> void:
 	actor_init.attributes = {"hp": 100.0, "max_hp": 100.0}
 	snap.actors = [actor_init]
 
-	var rw := FrontendRenderWorld.new()
+	var rw := VisualState.new()
 	rw.initialize_from_replay(record)
-	var scheduler := FrontendActionScheduler.new()
+	var scheduler := ActionStepper.new()
+	var updater := VisualUpdater.new()
 	var registry := FrontendDefaultRegistry.create()
 
 	# ===== Frame 1: 模拟 grant 同帧多事件:AbilityGranted(3) + damage + StacksChanged(3→2) =====
@@ -55,9 +56,9 @@ func _ready() -> void:
 			"new_stacks": 2,
 		},
 	]
-	_run_frame(scheduler, registry, rw, f1_events, "F1 grant+tick1")
+	_run_frame(scheduler, registry, rw, updater, f1_events, "F1 grant+tick1")
 
-	var actor: FrontendActorRenderState = rw.get_actors_snapshot()["hero_1"]
+	var actor: ActorVisualState = rw.get_actors_snapshot()["hero_1"]
 	print("  F1 result: buffs.size=%d, buffs[0].primary=%s" % [
 		actor.buffs.size(),
 		"N/A" if actor.buffs.is_empty() else str(actor.buffs[0].primary),
@@ -86,7 +87,7 @@ func _ready() -> void:
 			"new_stacks": 1,
 		},
 	]
-	_run_frame(scheduler, registry, rw, f2_events, "F2 tick2")
+	_run_frame(scheduler, registry, rw, updater, f2_events, "F2 tick2")
 	actor = rw.get_actors_snapshot()["hero_1"]
 	print("  F2 result: buffs[0].primary=%s" % str(actor.buffs[0].primary))
 	if not is_equal_approx(actor.buffs[0].primary, 1.0):
@@ -118,7 +119,7 @@ func _ready() -> void:
 			"ability_instance_id": "poison_inst_1",
 		},
 	]
-	_run_frame(scheduler, registry, rw, f3_events, "F3 tick3+remove")
+	_run_frame(scheduler, registry, rw, updater, f3_events, "F3 tick3+remove")
 	actor = rw.get_actors_snapshot()["hero_1"]
 	print("  F3 result: buffs.size=%d" % actor.buffs.size())
 	if actor.buffs.size() != 0:
@@ -131,22 +132,24 @@ func _ready() -> void:
 
 
 func _run_frame(
-	scheduler: FrontendActionScheduler,
-	registry: FrontendVisualizerRegistry,
-	rw: FrontendRenderWorld,
+	scheduler: ActionStepper,
+	registry: TranslatorRegistry,
+	rw: VisualState,
+	updater: VisualUpdater,
 	events: Array[Dictionary],
 	tag: String
 ) -> void:
-	var ctx := rw.as_context()
+	var query := rw.as_query()
 	for event in events:
-		var actions := registry.translate(event, ctx)
+		var actions := registry.translate(event, query)
 		print("  [%s] event %s → %d actions" % [tag, event["kind"], actions.size()])
 		scheduler.enqueue(actions)
 	# 模拟 BattleDirector._tick 后半段
+	rw.advance_time(100)
 	var result := scheduler.tick(100.0)  # 100ms = LOGIC_TICK_MS
-	rw.apply_actions(result.active_actions)
-	rw.apply_actions(result.completed_this_tick)
-	rw.cleanup(rw.get_world_time())
+	updater.apply_actions(rw, result.active_actions)
+	updater.apply_actions(rw, result.completed_this_tick)
+	updater.tick_time(rw, 100.0)
 	rw.flush_dirty_actors()
 
 

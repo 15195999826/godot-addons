@@ -15,7 +15,7 @@ Logic Game Framework 的**回合制 / ATB + hex grid** 战斗示例，也是框�
 | **frontend**（表演） | `frontend/` | 响应式 view + 事件动画 | `FrontendWorldView`（观察 world 结构）、`FrontendBattleAnimator`（消费 event timeline）。见 [`frontend/README.md`](frontend/README.md) |
 
 - **World owns Battle**：`HexWorldGameplayInstance` 持有 actor / grid / systems；战斗是短命的 `HexBattleProcedure`。每个场景（demo / skill-preview）有自己的 `HexWorldGameplayInstance` 子类（`HexDemoWorldGameplayInstance` / `SkillPreviewWorldGI`），框架基类保持通用。
-- **逻辑→表演数据流**：逻辑层只产事件（Timeline tag 驱动 Action；表演提示走 `StageCueAction` + `logic/config/hex_battle_cues.gd` 的 cue 菜单），表演层由 `frontend/visualizers/` 消费；接入清单见 [`frontend/README.md`](frontend/README.md)「新技能表演层接入清单」节。
+- **逻辑→表演数据流**：逻辑层只产事件（Timeline tag 驱动 Action；表演提示走 `StageCueAction` + `logic/config/hex_battle_cues.gd` 的 cue 菜单），表演层由 `frontend/translators/` 消费；接入清单见 [`frontend/README.md`](frontend/README.md)「新技能表演层接入清单」节。
 
 ## 设计铁律
 
@@ -28,7 +28,7 @@ hex 演进中固化的不可违反约束：
 - **表演层 Event vs State 是根边界**：可每帧重复且幂等的（HP 条 / 闪白 / 染色 / 位置）走 State snapshot；重复执行会建节点 / 起 tween / 播音效 / 发粒子的（死亡动画 / 受击 / 暴击大字）走 transition-only Event —— 混用会导致一次性动画重复播放（详见下「事件 vs 状态边界」）。
 - **Cast eligibility 走 declarative metadata，不进 Condition**："能不能对环境物 / 阵营 / 范围释放"用 ability metadata（`HexBattleSkillMetaKeys.ALLOWED_TARGET_KINDS`，默认 `["Character"]`），由 `can_use_skill_on()` 事前查询 —— AI / UI / tooltip / 玩家 cast 都需要事前过滤候选；Condition 是事件到达时的 reactive 判断，承载 cast 配置会变双源真相。**施法输入协议也是 cast 配置**：`TARGETING` metadata（`actor` / `coord` / `self`）声明 activate 事件带 `target_actor_id` 还是 `target_coord`，AI / UI 按它分派（不嗅探 "cone" 描述 tag）；ACTOR/SELF 合法性走 `can_use_skill_on`，COORD 走 `can_use_skill_at`。
 - **目标选择三层分工（geometry 层强制共用）**：①合法性 = declarative metadata（上一条）；②**形状几何 = static 纯函数**——coord 型区域技能必须提供 `compute_checked_coords()`（grid_cone / angle_cone 范式），执行 selector 与前端预览 / overlay **只能调它**，不许各算各的（预览=实际覆盖区的单一真相源）；③执行期命中 = TargetSelector 专属（ATB 出手延迟决定占格 / 存活 / 阵营过滤必须在结算帧重解析）。UE/GAS 式"预览与执行公用 TargetActor"在此架构映射为只共用②层。
-- **强制位移是原子逻辑操作**：`PushAction` 在单个 HIT keyframe 内完成 raycast / 碰撞 / `grid.move_occupant` / `hex_position` / 位移事件，发过去式单事件 `actor_displaced`，**不**向 timeline scheduler 暴露中间"被推中"态；"推完不能立即行动"靠目标侧 `HexBattleActionLockStatus`（`cant_act` tag）而非 scheduler 延迟。事件元数据（`actual_distance` 等）逻辑层算一次写入，前端 visualizer 直接消费不重算。
+- **强制位移是原子逻辑操作**：`PushAction` 在单个 HIT keyframe 内完成 raycast / 碰撞 / `grid.move_occupant` / `hex_position` / 位移事件，发过去式单事件 `actor_displaced`，**不**向 timeline scheduler 暴露中间"被推中"态；"推完不能立即行动"靠目标侧 `HexBattleActionLockStatus`（`cant_act` tag）而非 scheduler 延迟。事件元数据（`actual_distance` 等）逻辑层算一次写入，前端 translator 直接消费不重算。
 - **Gateway 是入口资格规则，不是效果执行**：Stun / Silence / Break 状态控制走 `ActiveGateway` —— 它在 active 入口处消费 component-owned 的 functional gate tag：`cant_act`（`action_lock_status.gd`，挡 Move / Strike / 所有 active skill）、`cant_use_skill`（`silence_buff.gd`）、`cant_use_passive`（`break_buff.gd`，仅查询用）。语义 tag（`stun` / `silence`）放 buff `ability_tags`、功能 gate tag 放 component tag，二者分离。Gateway 只挡入口、**不**自动 cancel in-flight execution（Stun 打断须显式组合 `CancelActiveExecutionsAction`）。那个取消只认 `active` tag：在飞的主动技能（含普攻）被取消，在飞的 Move（`action` tag）**不打断**、已起手的那一步照常走完——前端凭 `move_start` 播整段位移，逻辑侧中途取消移动会让表现与棋盘错位；这张清单有意比「ATB 冻结」那张窄，别顺手统一（`smoke_action_tags` 幕 3 钉住）。target eligibility 仍走 ability metadata（`can_use_skill_on`），不进 gateway condition。
 - **hex = 技能展示 + AI 沙盒，非可平衡对战**：balance 类"设计债"按"范式一致 / 可预测 / 可 introspect"验收而非"数值公平"，多数经评审撤销 / 降级（scaling vs flat 由技能自定、expose 指数叠加是有意设计、未播种 shuffle 不破坏契约因 hex replay = 事件流回放非 seed 重模拟）。真正该守的是约定一致性——标准技能骨架由共享 helper 固化（`HexBattleCooldownSystem` / `HexBattleSkillPresets`），不靠逐文件手抄。
 - **伤害只走 `HexBattleDamageUtils.apply_damage`**：所有产生伤害的 Action（`DamageAction` / `ReflectDamageAction` / 中毒 / 反伤 / AoE）都经它，不得绕开。顺序不可妥协：护盾结算（`HexBattleShieldResolver.resolve`，纯结算、不 push 事件不扣血）在扣血之前；破裂回调 `on_break` 在死亡检测之前（死亡会锁存 `is_dead()` 并清 grid 占用，爆炸类回调要看到活的 owner 与位置）；`on_break` 只能 push 新事件、不得回写本次伤害事件（因果链是「伤害 → 护盾破 → 新事件」，否则盾爆反向放大打破它的那次伤害）；post damage 派发在死亡检测之后、由调用方触发（`DamageAction` 要先跑 on_hit / on_kill 回调）。`damage_types` 取值只有 `physical` / `magical` / `pure`，`all` 是通配；要无视护盾单独加 `bypass_shield` 类字段，不得新增 `true` 类型。
@@ -39,11 +39,11 @@ hex 演进中固化的不可违反约束：
 
 表演层更新分两条互斥路径，混用会让一次性动画重复播放（实测：单位被普攻打死后 0.3s 亡语再命中，死亡动画并行播两次）。判断标准：**能每帧重复执行且结果幂等的走 State；重复执行会创建节点 / 启动 tween / 播音效 / 发粒子的走 Event。**
 
-- **State —— 响应式 snapshot 观察（持续态）**：HP 条高度、闪白进度、染色、位置由 `RenderWorld` 发 `actor_state_changed(id, state)`，`FrontendBattleAnimator._on_actor_state_changed` 转发到 `UnitView.update_state(state)`，每帧赋值天然幂等。HP 条尤其走 state：`FrontendActorRenderState` 持 `visual_hp`（显示值）+ `target_hp`（伤害 / 治疗即时累加），伤害事件生成瞬时 `FrontendApplyHPDeltaAction`（duration=0），`RenderWorld.tick_hp_lerp` 每帧指数衰减追赶。
-- **Event —— timeline transition 消费（一次性）**：死亡动画 / 复活 / 受击 / 暴击大字由 `RenderWorld` 发 transition-only event（如 `actor_died(id)`，只在 `was_alive && now_dead` 那帧 emit 一次，统一走 `_set_actor_alive` helper）。`FrontendBattleAnimator._on_actor_died` wire 到 `UnitView.play_death()`。
+- **State —— 响应式 snapshot 观察（持续态）**：HP 条高度、闪白进度、染色、位置由 `VisualState` 发 `actor_state_changed(id, state)`，`FrontendBattleAnimator._on_actor_state_changed` 转发到 `UnitView.update_state(state)`，每帧赋值天然幂等。HP 条尤其走 state：`ActorVisualState` 持 `visual_hp`（显示值）+ `target_hp`（伤害 / 治疗即时累加），伤害事件生成瞬时 `VisualHpDeltaAction`（duration=0），`VisualUpdater.tick_time` 每帧指数衰减追赶。
+- **Event —— timeline transition 消费（一次性）**：死亡动画 / 复活 / 受击 / 暴击大字由 `VisualState` 发 transition-only event（如 `actor_died(id)`，只在 `was_alive && now_dead` 那帧 emit 一次，统一走 `set_actor_alive` 原语）。`FrontendBattleAnimator._on_actor_died` wire 到 `UnitView.play_death()`。
 - **关键约定**：transition-only 是 **emit 端契约**（prev-state 对比保证只 emit 一次），下游 wire 无需做幂等；触发策略（once / retrigger / queue）是 **view 方法本地决定**（`play_death` 用 `_death_played` flag 挡重入）。Reset / Replay 复活属 session control，走 `FrontendBattleAnimator.reset()` 遍历 `view.revive()`，不污染 event bus。
 
-> 战后还有一道 **View ↔ Logic 终态对账 oracle**（`tests/frontend/view_logic_reconciler.gd`）抓"漏 visualizer / 翻译错"漂移。它是 hex 私有设施，不进框架、别的 example 自行决定；若新增「死亡时主动 expire 某 buff」的 ability，必须同时让 `BuffVisualizer` 接住对应的 ability removed 事件，否则双方不对称、oracle 会抓出来（这是设计完整性提醒，不是要回避它）。
+> 战后还有一道 **View ↔ Logic 终态对账 oracle**（`tests/frontend/view_logic_reconciler.gd`）抓"漏 translator / 翻译错"漂移。它是 hex 私有设施，不进框架、别的 example 自行决定；若新增「死亡时主动 expire 某 buff」的 ability，必须同时让 `BuffTranslator` 接住对应的 ability removed 事件，否则双方不对称、oracle 会抓出来（这是设计完整性提醒，不是要回避它）。
 
 ## 技能模式速览
 

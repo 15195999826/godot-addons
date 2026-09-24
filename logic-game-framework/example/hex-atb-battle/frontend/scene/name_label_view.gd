@@ -27,7 +27,7 @@ func _ready() -> void:
 	add_child(_name_label)
 
 
-func update_from_state(state: FrontendActorRenderState) -> void:
+func update_from_state(state: ActorVisualState) -> void:
 	if not _override_text.is_empty():
 		return
 	if _name_label != null:
