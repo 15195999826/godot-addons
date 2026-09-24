@@ -11,10 +11,11 @@ extends Node
 ## - bump 中途按曲线叠 offset / squish（逻辑平面 Vector2），progress 1 snap 回零位 / ONE
 ## - facing 瞬时写入 facing_direction
 ## - death 立即 is_alive=false、hp 归零、death_progress 跟 progress，当场广播 actor_state_changed
-## - move 中途只改插值位置（get_actor_position 给浮点在飞坐标），progress 1 才落 actor.position 并当场广播
+## - move 中途只改插值位置（get_actor_position 给浮点在飞坐标），progress 1 才落 actor.position 并当场广播；
+##   不在账上的 actor 整张忽略，不留在飞插值幽灵项
 ## - 延迟中的卡片跳过；飘字 / 攻击特效 / 投射物按卡片 id 各入账一次；攻击特效 / 投射物每次 apply 发
 ##   effect_updated、progress 1 发 effect_removed；飘字到期由账本静默忘记（不发 removed）
-## - 程序化特效到期由 tick_time 归零
+## - 程序化特效到期由 tick_time 归零并标脏；已在零位的不标脏
 ## - 扩展缝：register_handler 登记的私有 kind 走项目自己的记账函数；未登记的 kind 是断言错误
 
 
@@ -436,6 +437,13 @@ func _test_move_interpolates_then_settles() -> void:
 	# 完成当场广播
 	TestFramework.assert_equal("u1", ",".join(changed))
 
+	# 不在账上的 actor：整张忽略，不给在飞插值表留幽灵项（否则这里会读到 (1, 0)）
+	var ghost := VisualMoveAction.new("ghost", Vector2.ZERO, Vector2(2.0, 0.0), 500.0, VisualAction.EasingType.LINEAR)
+	_apply(world, updater, ghost, 0.5)
+	TestFramework.assert_true(world.get_actor_position("ghost").is_equal_approx(Vector2.ZERO))
+	TestFramework.assert_true(world.as_query().get_actor_position("ghost").is_equal_approx(Vector2.ZERO))
+	TestFramework.assert_equal(1, changed.size())
+
 
 func _test_skips_delaying() -> void:
 	var world := _world([{"id": "u1"}])
@@ -485,9 +493,17 @@ func _test_procedural_effects_cleanup() -> void:
 	TestFramework.assert_near(_actor(world, "u1").flash_progress, 1.0, 0.0001, "闪白强度中点最亮")
 	updater.tick_time(world, 0.0)
 	TestFramework.assert_near(_actor(world, "u1").flash_progress, 1.0, 0.0001, "未到期不清")
+	world.flush_dirty_actors()
+	var changed := _record_changes(world)
 	world.advance_time(300)
 	updater.tick_time(world, 300.0)
 	TestFramework.assert_near(_actor(world, "u1").flash_progress, 0.0, 0.0001, "到期归零")
+	world.flush_dirty_actors()
+	TestFramework.assert_true(",".join(changed) == "u1", "到期真归零才标脏（live 中途撤卡的 actor 靠这条复位）")
+	changed.clear()
+	updater.tick_time(world, 100.0)
+	world.flush_dirty_actors()
+	TestFramework.assert_true(changed.is_empty(), "已在零位不再标脏")
 
 	var shake := VisualProceduralVfxAction.new(VisualProceduralVfxAction.EffectType.SHAKE, 200.0, "", 5.0)
 	_apply(world, updater, shake, 0.25, "fx2")

@@ -7,7 +7,9 @@ extends Node
 ##   账本重建到开战台面、帧归 0 并发一次 frame_changed(0, total)；未播放、未结束；反复 load = 换片（在飞卡片清空）
 ## - step(delta_ms)：攒 delta，每满一帧推进一帧并把那帧事件喂 pump；帧 0 的事件不处理（从帧 1 起）；
 ##   不满一帧只推动画不推帧；一次 step 跨多帧时按帧序全部处理、卡片在同一趟里以整段 delta 推进
-## - 录像帧播完不立即结束：步进器排空那一趟才发 playback_ended（is_ended 同口径）；结束后 step 不再推帧
+## - 录像帧播完不立即结束：步进器排空那一趟才发 playback_ended（is_ended 同口径）；结束后 step 不再推帧、
+##   也不重发 playback_ended / 停播；零帧录像加载即结束，首次 step 报一次
+## - 没有录像时 play / reset / step / toggle 无动作、不发信号
 ## - reset：停播（playback_state_changed false）、清步进器、账本回开战台面、帧归 0；幂等；重放结果一致
 ## - play / pause / toggle：翻转 + playback_state_changed；已结束时 play 自动 reset，toggle 无动作；step 不看播放态
 
@@ -39,6 +41,7 @@ func _init() -> void:
 	TestFramework.register_test("ReplayDirector reset 回开战台面且幂等，重放结果一致", _test_reset_idempotent_and_replay_same)
 	TestFramework.register_test("ReplayDirector play / pause / toggle 翻转，已结束时 play 自动 reset、toggle 无动作", _test_play_pause_toggle)
 	TestFramework.register_test("ReplayDirector tick_ms 取录像 tick_interval（≤ 0 退回 100），reload 换片", _test_tick_interval_and_reload)
+	TestFramework.register_test("ReplayDirector 没有录像时无动作，零帧录像 playback_ended 只报一次", _test_no_record_noop_and_ended_once)
 
 
 static func _director() -> ReplayDirector:
@@ -175,10 +178,11 @@ func _test_load_and_step() -> void:
 	TestFramework.assert_equal(1, ended.size())
 	TestFramework.assert_equal("0/4,1/4,2/4,3/4,4/4", ",".join(frames))
 
-	# 结束后 step 不再推帧
+	# 结束后 step 不再推帧，也不重发 playback_ended
 	director.step(100.0)
 	TestFramework.assert_equal(TOTAL_FRAMES, director.get_current_frame())
 	TestFramework.assert_equal(5, frames.size())
+	TestFramework.assert_equal(1, ended.size())
 	director.free()
 
 
@@ -269,6 +273,9 @@ func _test_play_pause_toggle() -> void:
 	TestFramework.assert_true(director.is_ended())
 	TestFramework.assert_false(director.is_playing())
 	TestFramework.assert_equal("false", _bools(states))
+	# 结束后再 step：不重报停播
+	director.step(100.0)
+	TestFramework.assert_equal("false", _bools(states))
 
 	# 结束态 toggle 无动作
 	states.clear()
@@ -318,4 +325,37 @@ func _test_tick_interval_and_reload() -> void:
 	TestFramework.assert_equal(0, director.get_current_frame())
 	director.step(50.0)
 	TestFramework.assert_equal(1, director.get_current_frame())
+	director.free()
+
+
+func _test_no_record_noop_and_ended_once() -> void:
+	var director := _director()
+	var states := _record_states(director)
+	var ended := _record_ended(director)
+	var frames := _record_frames(director)
+
+	# 没有录像：play / reset / step / toggle 都无动作，不发任何信号
+	director.play()
+	director.reset()
+	director.step(100.0)
+	director.toggle()
+	TestFramework.assert_false(director.is_playing())
+	TestFramework.assert_equal(0, states.size())
+	TestFramework.assert_equal(0, ended.size())
+	TestFramework.assert_equal(0, frames.size())
+
+	# 零帧录像：加载即结束，首次 step 报一次 playback_ended + 停播，之后不重发
+	var actors: Array[PlaybackData.ActorInitData] = [_init_data("u1", 0, 0, 100.0, 100.0)]
+	var none: Array[PlaybackData.FrameData] = []
+	director.load_playback(_record(actors, none, 0))
+	TestFramework.assert_true(director.is_ended())
+	director.step(100.0)
+	director.step(100.0)
+	TestFramework.assert_equal(1, ended.size())
+	TestFramework.assert_equal("false", _bools(states))
+
+	# reset 归零后再 step 再报一次
+	director.reset()
+	director.step(100.0)
+	TestFramework.assert_equal(2, ended.size())
 	director.free()

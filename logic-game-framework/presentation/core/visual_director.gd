@@ -78,9 +78,10 @@ func _exit_tree() -> void:
 ## 生命周期事件（actor_spawned / actor_destroyed / max_hp）由更新器先直改账本，翻译员才能用最新的只读视图；
 ## 事件源播完后照样每趟调（空事件），让在飞卡片走完、hp 追赶收敛。
 func pump(delta_ms: float, events: Array[Dictionary]) -> void:
+	# 只读视图直接看账本（不是快照），一趟建一次；事件直改先落账本，翻译员看到的就是最新值
+	var query := _state.as_query()
 	for event: Dictionary in events:
 		updater.apply_event(_state, event)
-		var query := _state.as_query()
 		_stepper.enqueue(_registry.translate(event, query))
 
 	_state.advance_time(int(delta_ms))

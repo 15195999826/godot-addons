@@ -119,8 +119,8 @@ static func _apply_attribute_changed_event(state: VisualState, event: Dictionary
 
 # ========== 时间驱动 ==========
 
-## 每 tick 调用：到期的一次性 / 程序化效果出账，没有活跃程序化效果的 actor 闪白 / 染色归零、震屏归零，
-## 再把所有 actor 的 visual_hp 朝 target_hp 收敛
+## 每 tick 调用：到期的一次性 / 程序化效果出账，没有活跃程序化效果的 actor 闪白 / 染色归零（真归零才标脏）、
+## 震屏归零，再把所有 actor 的 visual_hp 朝 target_hp 收敛
 func tick_time(state: VisualState, delta_ms: float) -> void:
 	_expire(state)
 	_lerp_hp(state, delta_ms)
@@ -131,26 +131,34 @@ static func _expire(state: VisualState) -> void:
 	state.expire_effects(now_ms)
 	state.expire_procedural_effects(now_ms)
 
-	var effects := state.get_procedural_effects()
-	var has_active_shake := effects.any(func(e: VisualEffectPayload.ProceduralEffect) -> bool:
-		return e.effect == VisualProceduralVfxAction.EffectType.SHAKE
-	)
+	# 一趟扫寿命簿分出「谁还在闪白 / 染色」与震屏是否还活着，再逐 actor 归零。
+	# 已在零位的不动也不标脏；真归零了才标脏——正常完成的卡片最后一次 apply 已写零位，
+	# 这里只兜 live 中途撤卡（cancel_for_actor）没走到最后一次 apply 的 actor
+	var has_active_shake := false
+	var flashing: Dictionary = {}
+	var tinted: Dictionary = {}
+	for effect: VisualEffectPayload.ProceduralEffect in state.get_procedural_effects():
+		match effect.effect:
+			VisualProceduralVfxAction.EffectType.SHAKE:
+				has_active_shake = true
+			VisualProceduralVfxAction.EffectType.HIT_FLASH:
+				flashing[effect.actor_id] = true
+			VisualProceduralVfxAction.EffectType.COLOR_TINT:
+				tinted[effect.actor_id] = true
 	if not has_active_shake:
 		state.set_screen_shake(Vector2.ZERO)
 
 	for actor_id: String in state.get_actor_ids():
 		var actor := state.get_actor(actor_id)
-		var has_active_flash := effects.any(func(e: VisualEffectPayload.ProceduralEffect) -> bool:
-			return e.effect == VisualProceduralVfxAction.EffectType.HIT_FLASH and e.actor_id == actor_id
-		)
-		if not has_active_flash:
+		var changed := false
+		if not flashing.has(actor_id) and actor.flash_progress != 0.0:
 			actor.flash_progress = 0.0
-
-		var has_active_tint := effects.any(func(e: VisualEffectPayload.ProceduralEffect) -> bool:
-			return e.effect == VisualProceduralVfxAction.EffectType.COLOR_TINT and e.actor_id == actor_id
-		)
-		if not has_active_tint:
+			changed = true
+		if not tinted.has(actor_id) and actor.tint_color != Color.WHITE:
 			actor.tint_color = Color.WHITE
+			changed = true
+		if changed:
+			state.mark_dirty(actor_id)
 
 
 ## 指数衰减模型:进度 = 1 - exp(-rate * dt),rate 见 AnimationConfig.hp_lerp_rate(单位 1/秒)。
@@ -173,15 +181,17 @@ static func _lerp_hp(state: VisualState, delta_ms: float) -> void:
 
 # ========== 内置 handler ==========
 
-## 移动：中途只改在飞插值；progress 1 才落 actor.position 并当场广播
+## 移动：中途只改在飞插值；progress 1 才落 actor.position 并当场广播。
+## 不在账上的 actor（live 已 despawn / 未知 id）整张忽略，不给在飞插值表留幽灵项
 static func apply_move(state: VisualState, action: VisualAction, progress: float, _action_id: String) -> void:
 	var move := action as VisualMoveAction
+	var actor := state.get_actor(move.actor_id)
+	if actor == null:
+		return
 	state.set_interpolated_position(move.actor_id, move.get_interpolated_position(progress))
 	if progress >= 1.0:
-		var actor := state.get_actor(move.actor_id)
-		if actor != null:
-			actor.position = move.to_position
-			state.emit_actor_state_changed(move.actor_id)
+		actor.position = move.to_position
+		state.emit_actor_state_changed(move.actor_id)
 
 
 ## hp delta(瞬时):把伤害 / 治疗的 delta 立刻累到 target_hp,visual_hp 由 tick_time 每帧朝它收敛。

@@ -8,7 +8,7 @@
 ##   - main.tscn 能在 headless 下实例化（无 Viewport 也不炸）
 ##   - _on_start_battle_button_pressed() 同步跑完 logic battle 并触发 animator.play
 ##   - WorldView 响应式 spawn unit views
-##   - BattleAnimator + Director tick + ActionScheduler 把所有动作播到排空
+##   - BattleAnimator + ReplayDirector tick + ActionStepper 把所有动作播到排空
 ##
 ## 不覆盖：像素渲染正确性、粒子视觉、相机跟随、音效
 ##
