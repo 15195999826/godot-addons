@@ -11,12 +11,19 @@ class MockActor:
 
 	## rebuild_for_handler 走 BattleActor.ability_set_of() → get_ability_set()
 	var ability_set: AbilitySet
+	## is_event_responsive 被问的次数：只有重建 context 时才问到（filter_lambda 与 handler_lambda 各问一次），
+	## 被 event_filter 拒掉的登记一次都不问。
+	var responsive_queries := 0
 
 	func _init() -> void:
 		type = "MockActor"
 
 	func get_ability_set() -> AbilitySet:
 		return ability_set
+
+	func is_event_responsive(event_dict: Dictionary, phase: String) -> bool:
+		responsive_queries += 1
+		return super.is_event_responsive(event_dict, phase)
 
 
 class MockInstance:
@@ -35,6 +42,8 @@ func _init() -> void:
 	TestFramework.register_test("PreEventComponent - cancels event", _test_cancel_event)
 	TestFramework.register_test("PreEventComponent - ability expired earlier in the same dispatch is skipped", _test_expired_mid_dispatch_skipped)
 	TestFramework.register_test("PreEventComponent - two same-kind components on one ability unregister independently", _test_same_kind_components_unregister_independently)
+	TestFramework.register_test("PreEventComponent - event_filter rejects before the context is rebuilt", _test_event_filter_rejects_before_context)
+	TestFramework.register_test("PreEventComponent - context_filter runs after the rebuild and can refuse", _test_context_filter_refuses_with_context)
 
 
 ## 测试环境：注册到 GameWorld 的 mock instance（自带 event_processor）+ mock actor + 配套 ability_set
@@ -264,3 +273,68 @@ func _test_same_kind_components_unregister_independently() -> void:
 
 	env.ability_set.revoke_ability(ability.id)
 	_teardown_env(env)
+
+
+## event_filter 在重建 context 之前判：不是打在我身上的事件，连 is_event_responsive 都不问、context_filter 也不跑；
+## 通过的照常重建 context（filter_lambda 与 handler_lambda 各一次）、跑 context_filter、跑 handler。
+## 两个 actor 共用同一份 config：链式方法是 copy-with，同一份 config 建出的两个组件各按自己的 owner 判。
+func _test_event_filter_rejects_before_context() -> void:
+	var env := _setup_env()
+	var other := MockActor.new()
+	env.instance.add_actor(other)
+	other.ability_set = AbilitySet.new(other.get_id(), null)
+
+	var context_filter_owners: Array[String] = []
+	var target_is_me := func(event: Dictionary, me: HandlerContext) -> bool:
+		return str(event.get("target_id", "")) == me.owner_id
+	var note_owner := func(_event: Dictionary, ctx: AbilityLifecycleContext) -> bool:
+		context_filter_owners.append(ctx.owner_actor_id)
+		return true
+	var config := PreEventConfig.new("pre_damage", _halve).event_filter(target_is_me).context_filter(note_owner)
+	TestFramework.assert_true(config.has_event_filter())
+	env.ability_set.grant_ability(Ability.new(AbilityConfig.new("buff_halve_mine", "", "", "", [], [config]), env.owner_id))
+	other.ability_set.grant_ability(Ability.new(AbilityConfig.new("buff_halve_mine", "", "", "", [], [config]), other.get_id()))
+
+	var mine := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(mine).get_current_value("damage")),
+		50.0, 0.0001, "通过 event_filter 的登记照常改事件")
+	TestFramework.assert_equal(2, env.actor.responsive_queries)  # 通过 event_filter 的登记才重建 context（context_filter 与 handler 各一次）
+	TestFramework.assert_equal(0, other.responsive_queries)  # 被 event_filter 拒掉的登记不重建 context
+	TestFramework.assert_equal([env.owner_id], context_filter_owners)  # context_filter 只对通过 event_filter 的登记跑
+
+	var nobody := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": "nobody", "damage": 100}
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(nobody).get_current_value("damage")),
+		100.0, 0.0001, "谁都不是的事件没人改")
+	TestFramework.assert_equal(2, env.actor.responsive_queries)  # 两条登记都被 event_filter 拒掉，谁都不重建
+	TestFramework.assert_equal(0, other.responsive_queries)
+	TestFramework.assert_equal(1, context_filter_owners.size())
+	_teardown_env(env)
+
+
+## context_filter 拿完整 ctx、在重建之后跑：拒掉就不跑 handler。它和构造函数第三个位置参数写的是同一个字段。
+func _test_context_filter_refuses_with_context() -> void:
+	var env := _setup_env()
+	var from_boss := func(event: Dictionary, ctx: AbilityLifecycleContext) -> bool:
+		return ctx.ability != null and ctx.owner_actor_id == env.owner_id and str(event.get("source_id", "")) == "boss"
+	env.ability_set.grant_ability(Ability.new(
+		AbilityConfig.new("buff_halve_boss", "", "", "", [], [PreEventConfig.new("pre_damage", _halve).context_filter(from_boss)]),
+		env.owner_id))
+
+	var from_minion := {"kind": "pre_damage", "source_id": "enemy-1", "target_id": env.owner_id, "damage": 100}
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(from_minion).get_current_value("damage")),
+		100.0, 0.0001, "context_filter 拒掉的不改事件")
+	TestFramework.assert_equal(1, env.actor.responsive_queries)  # context_filter 之前已经重建过 context（问过一次死活门）
+
+	var from_boss_event := {"kind": "pre_damage", "source_id": "boss", "target_id": env.owner_id, "damage": 100}
+	TestFramework.assert_near(
+		float(env.instance.event_processor.process_pre_event(from_boss_event).get_current_value("damage")),
+		50.0, 0.0001, "context_filter 放行的照常改事件")
+	TestFramework.assert_equal(3, env.actor.responsive_queries)
+	_teardown_env(env)
+
+
+static func _halve(_mutable: MutableEvent, ctx: AbilityLifecycleContext) -> Intent:
+	return EventPhase.modify_intent(ctx.ability.id, [Modification.multiply("damage", 0.5)])

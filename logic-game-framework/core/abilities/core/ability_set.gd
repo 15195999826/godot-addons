@@ -6,7 +6,15 @@ const REVOKE_REASON_DISPELLED := "dispelled"
 const REVOKE_REASON_REPLACED := "replaced"
 const REVOKE_REASON_MANUAL := "manual"
 
+## 持有者一侧的订阅策略（grant 时查）：
+## - BROADCAST_ALLOWED：默认，ability 想订阅什么广播都行。
+## - DIRECT_ONLY：本 set 的 ability 只许收定向投递（`.direct()` 的 trigger）——任一广播订阅（非 direct 的 post trigger、
+##   PreEvent）在 grant 时断言且不 grant。给「一个持有者成十上百份」的 actor 用（单位 / 成员 / 子弹），保证广播的
+##   登记数不随持有者数涨；条件是回调、处理器不能索引，登记数就是每条事件的派发成本。
+enum SubscriptionPolicy { BROADCAST_ALLOWED, DIRECT_ONLY }
+
 var owner_actor_id: String
+var subscription_policy := SubscriptionPolicy.BROADCAST_ALLOWED
 var _attribute_set: BaseGeneratedAttributeSet = null
 var _abilities: Array[Ability] = []
 var tag_container: TagContainer
@@ -73,12 +81,14 @@ func get_loose_tag_stacks(tag: String) -> int:
 ##
 ## 只寄给新实例、不广播：同 set 的其它 ability 与别的 actor 都收不到「有人被 grant 了」，要听得由业务层另发 post 事件。
 ##
-## 两条前置：
+## 三条前置：
 ## - owner 必须已 add_actor 进 instance（post 订阅、pre 注册、context 的 instance 都按 owner id 反查，注册前 grant 会
 ##   静默缺订阅）——未登记即 assert，不 grant。
 ## - ability 的 owner 由本 set 盖章：构造时留空即填本 set 的 owner（source 为空时同步补齐），非空则必须与本 set 的
 ##   owner 相同——不一致时注册派发正常而 for_ability / AbilityRef 反查到别人（tag 撤不掉、execution 拿 null instance），
 ##   静默半残，所以 assert 不 grant。
+## - subscription_policy 为 DIRECT_ONLY 时 ability 不得有任何广播订阅（Ability.broadcast_subscription_kinds 非空即 assert，
+##   不 grant）：这是持有者的性质，从哪条路 grant 进来都一样，所以查在这里而不是各调用点。
 func grant_ability(ability: Ability) -> void:
 	for existing in _abilities:
 		if existing.id == ability.id:
@@ -97,6 +107,12 @@ func grant_ability(ability: Ability) -> void:
 		Log.assert_crash(false, "AbilitySet",
 			"grant_ability: ability '%s' 的 owner '%s' 与本 set 的 owner '%s' 不一致" % [ability.config_id, ability.owner_actor_id, owner_actor_id])
 		return
+	if subscription_policy == SubscriptionPolicy.DIRECT_ONLY:
+		var broadcast_kinds := ability.broadcast_subscription_kinds()
+		if not broadcast_kinds.is_empty():
+			Log.assert_crash(false, "AbilitySet",
+				"grant_ability: owner '%s' 的技能集只收定向投递（DIRECT_ONLY），ability '%s' 订阅了广播 %s——命中 / 激活走 TriggerConfig.direct()，旁观反应归别的持有者" % [owner_actor_id, ability.config_id, broadcast_kinds])
+			return
 	_abilities.append(ability)
 	var context: AbilityLifecycleContext = _create_lifecycle_context(ability, owner_instance)
 	ability.apply_effects(context)

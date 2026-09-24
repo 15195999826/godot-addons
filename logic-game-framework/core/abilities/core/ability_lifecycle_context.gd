@@ -36,7 +36,7 @@ var event_processor: EventProcessor:
 	set(_value):
 		Log.assert_crash(false, "AbilityLifecycleContext", "event_processor 派生自 instance，不可赋值")
 
-## 本 ability 的三个 id（owner / ability / config）打包成 HandlerContext，供 TriggerConfig.precheck 使用。
+## 本 ability 的三个 id（owner / ability / config）打包成 HandlerContext，供 trigger 的 event_filter 使用。
 ## post 派发从登记里带进来（同一对象复用）；定向投递 / 生命周期钩子按需现建。只有字符串，不成环。
 var _handler_context: HandlerContext = null
 
@@ -70,7 +70,7 @@ static func get_live_count() -> int:
 	return _live_count
 
 
-## precheck 用的 id 包（见 _handler_context）。
+## event_filter 用的 id 包（见 _handler_context）。
 func get_handler_context() -> HandlerContext:
 	if _handler_context == null:
 		_handler_context = HandlerContext.new(
@@ -101,7 +101,7 @@ static func for_ability(ability: Ability) -> AbilityLifecycleContext:
 ## 返回 null = 本 handler 这一次不执行：owner 未注册或已移出 instance、owner 此刻不响应这条事件
 ## （is_event_responsive 返回 false）、不是 BattleActor 或没有 AbilitySet、ability 已不在 owner 的 AbilitySet 里
 ## 或已过期（AbilitySet 被整个换掉后残留的注册、派发快照里先一步被移除或过期的 ability）。
-## handler_context：登记里现成的 id 包，带进来免得 precheck 再建一份；null 则按需现建。
+## handler_context：登记里现成的 id 包，带进来免得 event_filter 再建一份；null 则按需现建。
 static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict: Dictionary, phase: String, handler_context: HandlerContext = null) -> AbilityLifecycleContext:
 	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
 	if owner_instance == null:

@@ -5,6 +5,7 @@ const TYPE := "PreEventComponent"
 
 var _event_kind: String
 var _filter: Callable = Callable()
+var _event_filter: Callable = Callable()
 var _handler: Callable
 var _handler_name: String = ""
 var _unregister: Callable = Callable()
@@ -13,6 +14,7 @@ func _init(config: PreEventConfig):
 	type = TYPE
 	_event_kind = config.event_kind
 	_filter = config.filter
+	_event_filter = config.get_event_filter()
 	_handler = config.handler
 	_handler_name = config.name
 
@@ -23,8 +25,9 @@ func get_event_kind() -> String:
 ##
 ## 关键设计：handler/filter lambda 只捕获 String ID + 用户传入的 Callable，
 ## 绝不捕获 self（PreEventComponent 实例），也不捕获本方法收到的 context（它带 instance 强引用）。
-## 触发时经 AbilityLifecycleContext.rebuild_for_handler 按 id 重建 context 传给用户 filter / handler；
+## 触发时经 AbilityLifecycleContext.rebuild_for_handler 按 id 重建 context 传给用户 context_filter / handler；
 ## 重建返回 null（owner 此刻不响应这条事件、ability 已被移除等）时 filter 不通过、handler 放行。
+## 用户的 event_filter 原样交给登记：processor 用登记里现成的 HandlerContext 在重建之前调它，不经这里的闭包。
 ##
 ## 这样 event_processor._pre_handlers 不会形成回指 Ability / PreEventComponent 的强引用链，
 ## Ability 从 AbilitySet._abilities 移除后即可被 GC。
@@ -72,7 +75,8 @@ func on_apply(context: AbilityLifecycleContext) -> void:
 		config_id,
 		handler_lambda,
 		filter_lambda,
-		display_name
+		display_name,
+		_event_filter
 	)
 	_unregister = proc.register_pre_handler(registration)
 

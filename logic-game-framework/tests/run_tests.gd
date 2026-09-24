@@ -27,6 +27,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/core/events/event_key_casing_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_set_revoke_test.gd",
+	"res://addons/logic-game-framework/tests/core/abilities/ability_set_subscription_policy_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_tick_fast_path_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/ability_execution_instance_test.gd",
 	"res://addons/logic-game-framework/tests/core/abilities/activate_instance_component_test.gd",

@@ -37,8 +37,8 @@ func get_post_event_kinds() -> Array[String]:
 	return AbilityComponent.trigger_event_kinds(_triggers)
 
 
-func get_post_event_prechecks() -> Dictionary:
-	return AbilityComponent.trigger_prechecks_by_kind(_triggers)
+func get_post_event_filters() -> Dictionary:
+	return AbilityComponent.trigger_event_filters_by_kind(_triggers)
 
 
 func matches_event(event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:

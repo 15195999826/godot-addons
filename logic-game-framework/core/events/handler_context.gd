@@ -4,6 +4,9 @@
 ## 由注册（PreHandlerRegistration / PostHandlerRegistration）构造时建好、每次派发复用，handler 不要改它。
 ## 只携带 id、不携带 instance：PreEventConfig 的用户 handler 与 Ability 注册的 post handler 都按 owner
 ## 重建 AbilityLifecycleContext（含 instance）；直接注册底层 handler 需要世界状态时按 owner_id 反查。
+## 它也是 trigger / PreEventConfig 的 event_filter 的第二个参数（`me`）：登记方的身份就这三个 id，
+## 「事件的 source / target 是不是我」拿 owner_id 比就够，不必重建 context。只放 id：对象引用会成环，
+## grant 时刻的属性快照会陈旧；需要世界状态的条件写 context_filter。
 ##
 ## ========== 使用示例 ==========
 ##

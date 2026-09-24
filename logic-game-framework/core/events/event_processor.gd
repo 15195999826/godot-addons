@@ -25,9 +25,11 @@
 ## Post 阶段（process_post_event）：
 ## - 在效果应用**之后**调用
 ## - 观众由注册决定：Ability 在 apply_effects 时按 component 的 trigger kind 订阅，remove_effects 时退订
-## - 订阅可带 precheck（TriggerConfig.precheck：只看事件 + 本 ability 的三个 id）：重建 context 之前先判，
-##   不过就跳过本条——纯加速，不改变谁会被触发
 ## - 死活由 actor 决定：handler 重建 context 前问 owner 的 is_event_responsive(event_dict, "post")
+##
+## 两个阶段的订阅都可带 event_filter（只看事件 + 本 ability 的三个 id）：派发时用登记里现成的 HandlerContext 在重建
+## context 之前先判，不过就跳过本条——纯加速，不改变谁会被触发。要 context 的条件是 context_filter，重建之后才跑。
+## 处理器读不懂回调，两个阶段都仍是遍历该 kind 的全部登记（要不遍历得能索引，见 CLAUDE.md「未来考量」）。
 ## - 可能触发被动技能（如反伤、吸血）产生新事件
 ##
 ## 定向投递（deliver_to_ability）：寄给单个 ability 实例的事件——procedure 的激活请求、grant_ability 的 grant 通知、
@@ -217,7 +219,10 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 	var handlers: Array[PreHandlerRegistration] = []
 	handlers.assign(_pre_handlers[event_kind])
 	for registration in handlers:
-		# 过滤：handler 可指定只处理特定条件的事件（如只处理对自己的伤害）
+		# 第一段过滤：只看事件 + 三个 id，不建 context（「是不是打在我身上的」在这里就拒掉）
+		if not registration.passes_event_filter(event_dict):
+			continue
+		# 第二段过滤：重建 context 后跑用户的 context_filter
 		if not registration.passes_filter(event_dict):
 			continue
 
@@ -278,7 +283,7 @@ func process_pre_event(event_dict: Dictionary) -> MutableEvent:
 ##
 ## 观众由注册决定、死活由 actor 决定：Ability 注册的 handler 按 id 重建 context，owner 此刻不响应这条事件
 ## （is_event_responsive 返回 false）或 ability 已不在 owner 的 AbilitySet 里、已过期时，本条不执行。
-## 登记带 prechecks（该 kind 的全部 trigger 都声明了 TriggerConfig.precheck）时，重建 context 之前先用登记里
+## 登记带 event_filters（该 kind 的全部 trigger 都声明了 event_filter）时，重建 context 之前先用登记里
 ## 现成的 HandlerContext 跑一遍，全不过就跳过本条——只是把 match_single_trigger 里同一个判断提前，不改变谁会被触发。
 ## 遍历注册表快照（同 pre）：派发中注册 / 注销 handler 不改变这条事件的派发名单。
 func process_post_event(event_dict: Dictionary) -> void:
@@ -296,13 +301,13 @@ func process_post_event(event_dict: Dictionary) -> void:
 		handlers.assign(_post_handlers[event_kind])
 		var records: Array[Dictionary] = []
 		for registration in handlers:
-			if not registration.passes_prechecks(event_dict):
+			if not registration.passes_event_filters(event_dict):
 				if _config.trace_level >= 2:
 					records.append({
 						"handler_id": registration.id,
 						"handler_name": registration.get_display_name(),
 						"triggered": false,
-						"skipped_by_precheck": true,
+						"skipped_by_event_filter": true,
 						"execution_time": 0,
 					})
 				continue

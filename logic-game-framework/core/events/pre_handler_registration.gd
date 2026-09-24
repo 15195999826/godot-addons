@@ -41,8 +41,13 @@ var config_id: String
 ## 处理函数：func(mutable: MutableEvent, ctx: HandlerContext) -> Intent
 var handler: Callable
 
-## 过滤函数：func(event_dict: Dictionary) -> bool（可选）
+## 第二段过滤：func(event_dict: Dictionary) -> bool（可选）。PreEventComponent 包出来的闭包，里面先按 id 重建
+## AbilityLifecycleContext 再调用户的 context_filter——所以它贵，派发时排在 event_filter 之后。
 var filter: Callable
+
+## 第一段过滤：func(event_dict: Dictionary, me: HandlerContext) -> bool（可选）。只看事件 + 三个 id、不建 context，
+## 派发时最先跑，不过就整条跳过。
+var event_filter: Callable
 
 ## 处理器显示名称（用于日志/调试）
 var handler_name: String
@@ -59,7 +64,8 @@ func _init(
 	p_config_id: String = "",
 	p_handler: Callable = Callable(),
 	p_filter: Callable = Callable(),
-	p_handler_name: String = ""
+	p_handler_name: String = "",
+	p_event_filter: Callable = Callable()
 ) -> void:
 	id = p_id
 	event_kind = p_event_kind
@@ -69,6 +75,7 @@ func _init(
 	handler = p_handler
 	filter = p_filter
 	handler_name = p_handler_name
+	event_filter = p_event_filter
 	handler_context = HandlerContext.new(owner_id, ability_id, config_id)
 
 
@@ -81,7 +88,14 @@ func get_display_name() -> String:
 	return id
 
 
-## 检查过滤条件是否通过
+## 第一段：event_filter 用登记里现成的 HandlerContext 判，不建 context；没声明直接放行。
+func passes_event_filter(event_dict: Dictionary) -> bool:
+	if not event_filter.is_valid():
+		return true
+	return event_filter.call(event_dict, handler_context)
+
+
+## 第二段：filter（重建 context 后的 context_filter）；没声明直接放行。
 func passes_filter(event_dict: Dictionary) -> bool:
 	if not filter.is_valid():
 		return true

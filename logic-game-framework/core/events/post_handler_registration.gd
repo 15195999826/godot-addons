@@ -2,8 +2,8 @@
 ##
 ## Ability 对它关心的每种 post event kind 各注册一条：Ability.apply_effects 按 component 声明的 kind
 ## 注册、remove_effects 用 EventProcessor.register_post_handler 返回的闭包注销。
-## TriggerConfig.filter（要完整 ctx）在 AbilityComponent.match_triggers 里评估；TriggerConfig.precheck（只要三个 id）
-## 由 Ability 按 kind 汇总进 prechecks，processor 派发前先跑，跳过不可能触发的登记。
+## TriggerConfig 的 context_filter（要完整 ctx）在 AbilityComponent.match_triggers 里评估；event_filter（只要三个 id）
+## 由 Ability 按 kind 汇总进 event_filters，processor 派发前先跑，跳过不可能触发的登记。
 ##
 ## handler 只许捕获 id：registration 被 processor 的注册表强持，捕获 Ability / Component / context 就接上
 ## ability → 注销闭包 → 注册表 → registration → handler → ability 的环（见 Ability._make_post_handler）。
@@ -30,10 +30,10 @@ var owner_seq: int = 0
 ## 派发时交给 handler 的上下文：构造时按本条注册的 id 建好，每次派发复用（id 构造后不再改）
 var handler_context: HandlerContext
 
-## 本 ability 该 kind 的全部 trigger 的 precheck（func(event_dict: Dictionary, h: HandlerContext) -> bool）。
+## 本 ability 该 kind 的全部 trigger 的 event_filter（func(event_dict: Dictionary, me: HandlerContext) -> bool）。
 ## 非空时派发前任一返回 true 才调 handler（并集 = 「有 trigger 可能匹配」的必要条件）；
-## 空 = 该 kind 有 trigger 没声明 precheck，不预过滤。
-var prechecks: Array[Callable] = []
+## 空 = 该 kind 有 trigger 没声明 event_filter，不预筛。
+var event_filters: Array[Callable] = []
 
 
 func _init(
@@ -44,7 +44,7 @@ func _init(
 	p_config_id: String,
 	p_handler: Callable,
 	p_handler_name: String = "",
-	p_prechecks: Array[Callable] = []
+	p_event_filters: Array[Callable] = []
 ) -> void:
 	id = p_id
 	event_kind = p_event_kind
@@ -54,15 +54,15 @@ func _init(
 	handler = p_handler
 	handler_name = p_handler_name
 	handler_context = HandlerContext.new(owner_id, ability_id, config_id)
-	prechecks = p_prechecks
+	event_filters = p_event_filters
 
 
-## 派发前的第一段：没有 prechecks 直接放行；有则任一通过即放行。
-func passes_prechecks(event_dict: Dictionary) -> bool:
-	if prechecks.is_empty():
+## 派发前的第一段：没有 event_filters 直接放行；有则任一通过即放行。只用登记里现成的 HandlerContext，不建 context。
+func passes_event_filters(event_dict: Dictionary) -> bool:
+	if event_filters.is_empty():
 		return true
-	for precheck in prechecks:
-		if precheck.is_valid() and precheck.call(event_dict, handler_context):
+	for event_filter in event_filters:
+		if event_filter.is_valid() and event_filter.call(event_dict, handler_context):
 			return true
 	return false
 

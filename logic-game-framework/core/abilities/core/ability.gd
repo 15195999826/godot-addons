@@ -101,6 +101,21 @@ func get_expire_reason() -> String:
 func get_all_components() -> Array[AbilityComponent]:
 	return _components
 
+## 本 ability 会登记进广播注册表的事件 kind（去重，按 component 顺序）：component 声明的 post kind（`.direct()` 的
+## trigger 不声明）+ PreEventComponent 的 kind。空 = 只收定向投递、订阅者数量不随持有者数涨。
+## AbilitySet.grant_ability 按 subscription_policy 拿它拦广播订阅；项目层的静态检查复用同一谓词。
+func broadcast_subscription_kinds() -> Array[String]:
+	var kinds: Array[String] = []
+	for component in _components:
+		for kind in component.get_post_event_kinds():
+			if not kinds.has(kind):
+				kinds.append(kind)
+		if component is PreEventComponent:
+			var pre_kind := (component as PreEventComponent).get_event_kind()
+			if not kinds.has(pre_kind):
+				kinds.append(pre_kind)
+	return kinds
+
 func tick(dt: float) -> void:
 	if _state == STATE_EXPIRED:
 		return
@@ -318,33 +333,33 @@ func remove_effects() -> void:
 ## owner 取 context 的（本 ability 所在 AbilitySet 的 owner）：派发按它找回本 ability，remove_actor 按它注销。
 ## 经 grant_ability 进来时 owner 必已登记、processor 必在；context 没有 processor 只剩直接调 apply_effects 的孤立单测，
 ## 不注册，这样的 ability 收不到任何事件（定向投递同样经 processor 寄达）。
-## 登记的 prechecks = 该 kind 在全部 component 里的 precheck 并集；任一 component 对该 kind 没给全（有 trigger 不带
-## precheck）就登记空列表，退回全派——预过滤只许跳过「没有任何 trigger 可能匹配」的事件。
+## 登记的 event_filters = 该 kind 在全部 component 里的 event_filter 并集；任一 component 对该 kind 没给全（有 trigger 不带
+## event_filter）就登记空列表，退回全派——预筛只许跳过「没有任何 trigger 可能匹配」的事件。
 func _register_post_handlers(context: AbilityLifecycleContext) -> void:
 	var processor := context.event_processor
 	if processor == null:
 		return
 	var kinds: Array[String] = []
-	var prechecks_by_kind := {}  # kind → Array[Callable]；值为 null = 该 kind 不预过滤
+	var filters_by_kind := {}  # kind → Array[Callable]；值为 null = 该 kind 不预筛
 	for component in _components:
-		var component_prechecks := component.get_post_event_prechecks()
+		var component_filters := component.get_post_event_filters()
 		for kind in component.get_post_event_kinds():
 			if not kinds.has(kind):
 				kinds.append(kind)
-			if prechecks_by_kind.has(kind) and prechecks_by_kind[kind] == null:
+			if filters_by_kind.has(kind) and filters_by_kind[kind] == null:
 				continue
-			var component_list: Variant = component_prechecks.get(kind, null)
+			var component_list: Variant = component_filters.get(kind, null)
 			if component_list == null or (component_list as Array).is_empty():
-				prechecks_by_kind[kind] = null
+				filters_by_kind[kind] = null
 				continue
-			if not prechecks_by_kind.has(kind):
-				prechecks_by_kind[kind] = [] as Array[Callable]
-			(prechecks_by_kind[kind] as Array[Callable]).append_array(component_list)
+			if not filters_by_kind.has(kind):
+				filters_by_kind[kind] = [] as Array[Callable]
+			(filters_by_kind[kind] as Array[Callable]).append_array(component_list)
 	var owner_id := context.owner_actor_id
 	for kind in kinds:
-		var prechecks: Array[Callable] = []
-		if prechecks_by_kind.get(kind, null) != null:
-			prechecks.assign(prechecks_by_kind[kind])
+		var event_filters: Array[Callable] = []
+		if filters_by_kind.get(kind, null) != null:
+			event_filters.assign(filters_by_kind[kind])
 		var registration := PostHandlerRegistration.new(
 			"%s_post_%s" % [id, kind],
 			kind,
@@ -353,7 +368,7 @@ func _register_post_handlers(context: AbilityLifecycleContext) -> void:
 			config_id,
 			_make_post_handler(owner_id, id),
 			display_name,
-			prechecks
+			event_filters
 		)
 		_post_unregisters.append(processor.register_post_handler(registration))
 

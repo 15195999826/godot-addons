@@ -57,10 +57,10 @@ func on_event(_event_dict: Dictionary, _context: AbilityLifecycleContext) -> boo
 func get_post_event_kinds() -> Array[String]:
 	return []
 
-## 本 component 各 post kind 的 precheck 列表 { kind: Array[Callable] }（可选覆盖）：只列「该 kind 的每个 trigger 都带
-## precheck」的 kind。Ability.apply_effects 汇总全部 component：某 kind 在任一 component 里缺席即不预过滤（退回全派）。
-## 带 trigger 的 component 直接返回 AbilityComponent.trigger_prechecks_by_kind(_triggers)。
-func get_post_event_prechecks() -> Dictionary:
+## 本 component 各 post kind 的 event_filter 列表 { kind: Array[Callable] }（可选覆盖）：只列「该 kind 的每个 trigger 都带
+## event_filter」的 kind。Ability.apply_effects 汇总全部 component：某 kind 在任一 component 里缺席即不预筛（退回全派）。
+## 带 trigger 的 component 直接返回 AbilityComponent.trigger_event_filters_by_kind(_triggers)。
+func get_post_event_filters() -> Dictionary:
 	return {}
 
 ## 能力生效时调用（可选覆盖）
@@ -133,28 +133,28 @@ static func match_triggers(triggers: Array[Dictionary], trigger_mode: String, ev
 			return false
 	return true
 
-## 匹配单个触发器：event_kind → 通道 → 可选 precheck（只要三个 id）→ 可选 filter（要完整 ctx），都过才算匹配。
+## 匹配单个触发器：event_kind → 通道 → 可选 event_filter（只要三个 id）→ 可选 context_filter（要完整 ctx），都过才算匹配。
 ## 通道：direct trigger 只认寄给本 ability 的定向投递（context.is_direct_delivery），普通 trigger 只认广播 / 集内投递；
 ## 同一 ability 对同 kind 两种 trigger 并存也不会一事二触。
-## precheck 在这里照样求值：post 派发的预过滤只是把它提前，定向投递与集内投递（激活请求 / grant 自投递）只有这一处。
+## event_filter 在这里照样求值：post 派发的预筛只是把它提前，定向投递与集内投递（激活请求 / grant 自投递）只有这一处。
 static func match_single_trigger(trigger: Dictionary, event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if event_dict.get("kind", "") != str(trigger.get("event_kind", "")):
 		return false
 	if bool(trigger.get("direct", false)) != context.is_direct_delivery:
 		return false
-	if trigger.has("precheck") and not (trigger["precheck"] as Callable).call(event_dict, context.get_handler_context()):
+	if trigger.has("event_filter") and not (trigger["event_filter"] as Callable).call(event_dict, context.get_handler_context()):
 		return false
 	if trigger.has("filter") and trigger["filter"] is Callable:
 		return trigger["filter"].call(event_dict, context)
 	return true
 
-## 将 TriggerConfig 列表转换为内部字典格式
+## 将 TriggerConfig 列表转换为内部字典格式（"filter" 键 = context_filter）
 static func convert_triggers(configs: Array[TriggerConfig]) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for trigger in configs:
 		var trigger_dict := { "event_kind": trigger.event_kind }
-		if trigger.has_precheck():
-			trigger_dict["precheck"] = trigger.get_precheck()
+		if trigger.has_event_filter():
+			trigger_dict["event_filter"] = trigger.get_event_filter()
 		if trigger.filter.is_valid():
 			trigger_dict["filter"] = trigger.filter
 		if trigger.is_direct():
@@ -162,10 +162,10 @@ static func convert_triggers(configs: Array[TriggerConfig]) -> Array[Dictionary]
 		result.append(trigger_dict)
 	return result
 
-## 按 kind 收集 precheck：{ kind: Array[Callable] }，只含「该 kind 的每个（广播）trigger 都带 precheck」的 kind
-## （有一个 trigger 没带，该 kind 就不能预过滤——事件可能经它触发）。direct trigger 不进广播注册表，不算在内。
-## 供 get_post_event_prechecks 覆盖使用。
-static func trigger_prechecks_by_kind(triggers: Array[Dictionary]) -> Dictionary:
+## 按 kind 收集 event_filter：{ kind: Array[Callable] }，只含「该 kind 的每个（广播）trigger 都带 event_filter」的 kind
+## （有一个 trigger 没带，该 kind 就不能预筛——事件可能经它触发）。direct trigger 不进广播注册表，不算在内。
+## 供 get_post_event_filters 覆盖使用。
+static func trigger_event_filters_by_kind(triggers: Array[Dictionary]) -> Dictionary:
 	var by_kind := {}
 	var disqualified := {}
 	for trigger in triggers:
@@ -174,13 +174,13 @@ static func trigger_prechecks_by_kind(triggers: Array[Dictionary]) -> Dictionary
 		var kind := str(trigger.get("event_kind", ""))
 		if kind == "" or disqualified.has(kind):
 			continue
-		if not trigger.has("precheck"):
+		if not trigger.has("event_filter"):
 			disqualified[kind] = true
 			by_kind.erase(kind)
 			continue
 		if not by_kind.has(kind):
 			by_kind[kind] = [] as Array[Callable]
-		(by_kind[kind] as Array[Callable]).append(trigger["precheck"])
+		(by_kind[kind] as Array[Callable]).append(trigger["event_filter"])
 	return by_kind
 
 ## 触发器列表里去重后的 event_kind（按首次出现的顺序），供 get_post_event_kinds 覆盖使用。

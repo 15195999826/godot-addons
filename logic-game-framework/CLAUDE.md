@@ -108,15 +108,18 @@ Return AttributeBreakdown
 Action pushes event
     ↓
 EventProcessor.process_pre_event()
-    ↓ Iterate Pre Handlers
+    ↓ Iterate Pre Handlers of that kind
+    ↓   event_filter (event + 3 ids, no context) → rebuild context → context_filter → handler
     ↓ Collect Intent (PASS/MODIFY/CANCEL)
     ↓ Apply modifications
 MutableEvent returned
     ↓ Action checks if cancelled
 EventProcessor.process_post_event()
-    ↓ Dispatch to registered ability handlers, gated by Actor.is_event_responsive
+    ↓ Iterate registrations of that kind
+    ↓   event_filters (event + 3 ids, no context) → rebuild context, gated by Actor.is_event_responsive → context_filter → actions
     ↓ Trigger passive abilities
 instance.event_collector.push()
+(deliver_to_ability: by address, only .direct() triggers, no registry lookup — see 设计铁律)
 ```
 
 ---
@@ -203,7 +206,7 @@ Event vs State 边界（hex `README.md`「设计铁律」同款）：能每帧�
 
 框架演进中固化下来的不可违反约束（违反会重新引入已根治的 bug）：
 
-- **事件响应钩子：观众由注册决定，死活由 actor 决定**：post 事件只送达订阅了它的 ability——`Ability.apply_effects` 按 component 的 trigger kind 注册、`remove_effects` 注销，`process_post_event(event_dict)` 没有观众参数；pre / post handler 按 owner 重建 context 之前都先问 `is_event_responsive(event_dict, phase)`。trigger 条件分两段：`TriggerConfig.new(kind, filter).precheck(fn)`——precheck 只看事件 + 本 ability 的三个 id（`HandlerContext`：owner / ability / config），filter 要完整 ctx；同 kind 的全部 trigger 都带 precheck 的登记，processor 在重建 context 之前先跑 precheck、不过就跳过（纯加速、不改结果：`match_single_trigger` 照样再判，定向投递也走同一段；有一个 trigger 没带就退回全派）。只比 id 的条件（「是不是我射的弹」「是不是打中我」「是不是我杀的」）写 precheck 不写 filter——写进 filter 就得先造 ctx 才能拒绝，满场几十个订阅者时这是 post 扇出的大头。`TriggerConfig` 是共享配置，`precheck()` 返回新对象不原地改。这个钩子是中性的，`Actor` 恒 `true`、不含任何领域语义；`BattleActor` 作为 **opt-in** 的战斗基类只提供一个默认答案（`not is_dead()`），项目层 override 说了算 —— hex 让死者仍响应自己的 death（亡语）与自己作为 target 的 damage（致死一击的荆棘）。**寄给单个 ability 实例的事件走 `EventProcessor.deliver_to_ability(event, owner_id, ability_id)`**——procedure 的激活请求（地址 = `AbilityActivate` 的 `source_id` / `ability_instance_id`）、`AbilitySet.grant_ability` 的 grant 通知（只寄给刚 grant 的实例，不投给整个 set）、投射物系统投回发射者的结局（回执 = 载体上的 owner + ability 实例 id）；地址是事实不是调用方挑的观众。事件进 ability 只有广播与定向两条路、都汇到 `Ability.receive_event`，`AbilitySet` 没有收事件的方法：不查注册表、不广播，只有该 ability 上 `TriggerConfig.direct()` 的 trigger 收得到（`match_single_trigger` 按 `context.is_direct_delivery` 分通道；direct trigger 不进广播注册表，同 kind 两种 trigger 并存不会一事二触）；**不问 `is_event_responsive`——人死了这封回信还处不处理由 direct trigger 的 filter 定**（hex `owner_alive_filter` 人死弹灭、kards 人死弹照落，各游戏在技能上表达），收件人不在了静默丢弃。「是不是我的弹」「是不是叫我」不再写 precheck（内置 `ABILITY_ACTIVATE` / `GRANTED_SELF` 就是裸 `.direct()`）；precheck 只剩广播旁观者的廉价拒绝（「打中我的」「我杀的」）。`check_death` 只按 hp 锁存一次，"留尸体还是 tick 末移除"是项目层决定。
+- **事件响应钩子：观众由注册决定，死活由 actor 决定**：post 事件只送达订阅了它的 ability——`Ability.apply_effects` 按 component 的 trigger kind 注册、`remove_effects` 注销，`process_post_event(event_dict)` 没有观众参数；pre / post handler 按 owner 重建 context 之前都先问 `is_event_responsive(event_dict, phase)`。trigger 条件分两段、都可选（`TriggerConfig` 与 `PreEventConfig` 同形）：`.event_filter(fn)`——`fn(event_dict, me: HandlerContext)` 只看事件 + 本 ability 的三个 id（owner / ability / config），纯函数、不查世界；`.context_filter(fn)`——`fn(event_dict, ctx)` 要完整 ctx（构造函数的位置参数 `filter` 是同一个字段，旧写法）。派发顺序固定：event_filter → 重建 context → context_filter → handler。同 kind 的全部 trigger 都带 event_filter 的登记，processor 在重建 context 之前先跑、不过就跳过（纯加速、不改结果：`match_single_trigger` 照样再判，定向投递也走同一段；有一个 trigger 没带就退回全派）；pre 侧同款（`PreHandlerRegistration.passes_event_filter` 先于包着重建的 `passes_filter`）。只比 id 的条件（「是不是我射的弹」「是不是打中我」「是不是我杀的」）写 event_filter 不写 context_filter——写进 context_filter 就得先造 ctx 才能拒绝，满场几十个订阅者时这是扇出的大头。条件是回调、处理器读不懂：派发仍遍历该 kind 的全部登记，只是每条被拒便宜（成百上千条登记才需要索引，见「未来考量」）。`TriggerConfig` / `PreEventConfig` 是共享配置，链式方法返回新对象不原地改。**持有者一侧的策略**：`AbilitySet.subscription_policy`（默认 `BROADCAST_ALLOWED`）设为 `DIRECT_ONLY` 的技能集在 `grant_ability` 时拒绝任何广播订阅（`Ability.broadcast_subscription_kinds` 非空即 assert、不 grant）——给「一个持有者成十上百份」的 actor 用，从哪条路 grant 都拦，这是持有者的性质、不在各调用点查。这个钩子是中性的，`Actor` 恒 `true`、不含任何领域语义；`BattleActor` 作为 **opt-in** 的战斗基类只提供一个默认答案（`not is_dead()`），项目层 override 说了算 —— hex 让死者仍响应自己的 death（亡语）与自己作为 target 的 damage（致死一击的荆棘）。**寄给单个 ability 实例的事件走 `EventProcessor.deliver_to_ability(event, owner_id, ability_id)`**——procedure 的激活请求（地址 = `AbilityActivate` 的 `source_id` / `ability_instance_id`）、`AbilitySet.grant_ability` 的 grant 通知（只寄给刚 grant 的实例，不投给整个 set）、投射物系统投回发射者的结局（回执 = 载体上的 owner + ability 实例 id）；地址是事实不是调用方挑的观众。事件进 ability 只有广播与定向两条路、都汇到 `Ability.receive_event`，`AbilitySet` 没有收事件的方法：不查注册表、不广播，只有该 ability 上 `TriggerConfig.direct()` 的 trigger 收得到（`match_single_trigger` 按 `context.is_direct_delivery` 分通道；direct trigger 不进广播注册表，同 kind 两种 trigger 并存不会一事二触）；**不问 `is_event_responsive`——人死了这封回信还处不处理由 direct trigger 的 filter 定**（hex `owner_alive_filter` 人死弹灭、kards 人死弹照落，各游戏在技能上表达），收件人不在了静默丢弃。「是不是我的弹」「是不是叫我」不写 event_filter（内置 `ABILITY_ACTIVATE` / `GRANTED_SELF` 就是裸 `.direct()`）；event_filter 只剩广播旁观者的廉价拒绝（「打中我的」「我杀的」）。`check_death` 只按 hp 锁存一次，"留尸体还是 tick 末移除"是项目层决定。
 - **Ability 状态不随死亡清除**：死亡时绝不 `revoke_ability`（那会清掉冷却 / execution / modifier，破坏复活语义）。三层分离 —— Ability 本体跟 actor 永存、pre / post handler 注册跟 ability 效果与 registry 走（`remove_effects` / `remove_actor` 注销，`end()` 时 `remove_all_handlers` 清空）、运行时响应跟 `is_event_responsive` 走。
 - **grant 前先登记、owner 由 set 盖章、过期者由运行它的路径回收**：`AbilitySet.grant_ability` 断言 owner 已 `add_actor` 进 instance（post 订阅 / pre 注册 / context 的 instance 都按 owner id 反查，注册前 grant 会静默缺订阅），未登记不 grant；ability 的 `owner_actor_id` 由所在 AbilitySet 在 grant 时盖章——构造时留空即填 set 的 owner，非空必须与 set 的 owner 相同（不一致即断言），`source_actor_id` 才是允许不同的那份（buff 的施加者）。ability 在被运行的路径里 `expire()` 了自己——`tick` / `tick_executions` 经 `_process_abilities`，post 派发在 handler 收尾，定向投递在 `deliver_to_ability` 收尾——就由那条路径在同一趟里 `revoke_ability`；业务代码只在**外部移除**（净化、卸装备、换技能、护盾被伤害打碎）时显式 `revoke_ability`，死亡不 revoke（上一条）。`expire` = ability 自己宣布结束并撤效果，`revoke` = set 除名并广播，两步是无反向引用下的必然，不合并。
 - **会回调用户代码的遍历走快照，回调之后按对象重新定位**：遍历途中会跑 action / handler / system tick 的循环一律遍历开趟时的快照——`EventProcessor` 的 pre / post 注册表、`AbilitySet._process_abilities` / `revoke_abilities_where` 的 ability 列表、`GameplayInstance.base_tick` 的系统表；example 层 procedure 里逐 actor 跑 `advance_and_is_acting` 的循环同理（hex `HexBattleProcedure` / `SkillPreviewProcedure` 遍历 registry 快照，寿命到期在自己 tick 里 `remove_actor` 的 actor 不让后一个被跳过）。回调里 grant / revoke / 注册 / 注销 / `add_system`（就地重排）/ `remove_system` 都合法，活数组遍历会因此漏掉、重复或跳过成员；快照下本趟名单不变，中途加入的从下一趟起算，中途退场的由各循环自己的有效性检查跳过（ability 查 `is_expired()`、system 查是否仍在表里、handler 重建 context 时查 ability 是否还在 set 里）。同理，回调之前取的下标回调之后不可信：`revoke_ability` 在 `expire()`（跑 on_remove）之后按对象现找再除名，找不到即已被重入的 revoke 除名并广播过，不二次处理。
@@ -229,6 +232,12 @@ Event vs State 边界（hex `README.md`「设计铁律」同款）：能每帧�
 ## 已知债务
 
 - 暂无。
+
+## 未来考量
+
+不是债务、也不是计划，是**有意不做**并已想清楚升级路径的事；触发条件到了再做，别提前做。
+
+- **订阅条件的索引（2026-09-25 记）**：trigger 的条件是回调，processor 读不懂、只能逐条调，pre / post 派发都是 O(该 kind 的登记数)——每条被拒 <1 µs，十几条登记无所谓，几百条（比如让每个单位各挂一条广播订阅）时每 tick 到毫秒级。**有意不做**：能索引的条件只有「`event[key] == 我的 owner id`」这一种等值形状，做成框架原生词表（`caused_by_owner()` 之类的无参方法）就得由框架拥有事件字段名、每加一种关系改一次框架；条件的所有权留在项目侧更重要，回调是开放词表。届时的升级路径（纯增量，不推翻回调）：① 先看需求能不能从源头消掉——一个 owner 一条订阅、内部扇给自己的成员，或产出方知道地址走 `deliver_to_ability`；② 消不掉再给 `EventProcessor` 加可选的 `IndexPolicy`：项目给 `bucket_of(registration)`（null = 全局桶）与 `bucket_of_event(kind, event_dict)` 两个函数，键怎么算、用哪个字段全在项目；框架维护 `{kind: {bucket: [登记]}}` + 全局桶，派发时查桶 + 全局桶按登记序归并，快照语义与派发顺序不变；只给带项目自定标记（trigger 上一个 `index_tag`）的登记分桶，不按 kind 猜条件——猜错会把真正的全局听众静默漏派。不走的路：项目层继承 `EventProcessor` 覆写派发循环（复制不变量，框架一改就断）；用复合 kind 当地址（kind 兼职地址，配置期还不知道 owner）。
 
 ## 源代码注释边界
 
