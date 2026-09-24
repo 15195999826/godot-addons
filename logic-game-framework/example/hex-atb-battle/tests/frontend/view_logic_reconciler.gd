@@ -2,8 +2,10 @@
 ##
 ## 在 playback 结束后跑一次, 比对两端是否一致:
 ##   logic 终态 = HexWorldGameplayInstance.battle_final_state_ready 给的 final_state
-##   view 终态  = FrontendBattleAnimator.get_actors_snapshot 给的 RenderState 集合 +
-##                FrontendWorldView 上各 unit_view 的 global_position (经 settle loop 收敛)
+##   view 终态  = FrontendBattleAnimator.get_actors_snapshot 给的 RenderState 集合 (账本 hex 直接比,
+##                表演核心只讲 axial 不经投影) +
+##                FrontendWorldView 上各 unit_view 的 global_position (经 settle loop 收敛, 与逻辑 hex 经
+##                world_view.hex_to_world 投影后比 —— 投影只在 view 层这一处)
 ##
 ## 任一字段漂 → 收集进 mismatches (不 short-circuit) → 返回 ReconcileReport。
 ## 调方决定是否硬 fail (smoke) / push_warning (skill-preview 交互场景)。
@@ -119,8 +121,8 @@ static func reconcile(
 	var logic_actors: Dictionary = final_state[Keys.ACTORS]
 	report.actor_count = logic_actors.size()
 
-	# 预计算 alive 投影坐标, 避免 settle loop 每帧 + diff 时重复 HexCoord.from_dict 分配。
-	var expected_alive_pos := _precompute_alive_positions(logic_actors, world_view)
+	# 预计算 alive 的逻辑 hex, 避免 settle loop 每帧 + diff 时重复 HexCoord.from_dict 分配。
+	var expected_alive_pos := _precompute_alive_positions(logic_actors)
 
 	var settle_result := await _settle_view_positions(
 		expected_alive_pos, world_view, tree, settle_timeout_sec, position_epsilon
@@ -168,10 +170,8 @@ static func reconcile_and_report(
 
 # ========== 内部 ==========
 
-static func _precompute_alive_positions(
-	logic_actors: Dictionary,
-	world_view: FrontendWorldView,
-) -> Dictionary:
+## actor_id -> 逻辑 HexCoord (只收 alive 且已放置的)
+static func _precompute_alive_positions(logic_actors: Dictionary) -> Dictionary:
 	var result := {}
 	for actor_id: String in logic_actors:
 		var logic_actor: Dictionary = logic_actors[actor_id]
@@ -180,7 +180,7 @@ static func _precompute_alive_positions(
 		var pos_dict: Dictionary = logic_actor.get(Keys.HEX_POSITION, {})
 		if pos_dict.is_empty():
 			continue
-		result[actor_id] = world_view.hex_to_world(HexCoord.from_dict(pos_dict))
+		result[actor_id] = HexCoord.from_dict(pos_dict)
 	return result
 
 
@@ -222,7 +222,8 @@ static func _max_alive_drift(
 		var unit_view := world_view.get_unit_view(actor_id)
 		if unit_view == null:
 			continue
-		var drift: float = (unit_view.global_position - expected_alive_pos[actor_id]).length()
+		var expected_world := world_view.hex_to_world(expected_alive_pos[actor_id])
+		var drift: float = (unit_view.global_position - expected_world).length()
 		if drift > max_drift:
 			max_drift = drift
 	return max_drift
@@ -256,13 +257,15 @@ static func _diff_actor(
 
 	# position: 死者跳过 (play_death tween 改 transform); alive 才比
 	if logic_alive:
-		_diff_position(actor_id, world_view, expected_alive_pos, report, position_epsilon)
+		_diff_position(actor_id, view_state, world_view, expected_alive_pos, report, position_epsilon)
 
 	_diff_hp(actor_id, logic_actor, view_state, report, hp_epsilon)
 
 
+## 两层各比一次: 账本 hex 与逻辑 hex 直接比 (不经投影); unit_view 节点位置与逻辑 hex 投影后比。
 static func _diff_position(
 	actor_id: String,
+	view_state: FrontendActorRenderState,
 	world_view: FrontendWorldView,
 	expected_alive_pos: Dictionary,
 	report: ReconcileReport,
@@ -270,6 +273,15 @@ static func _diff_position(
 ) -> void:
 	if not expected_alive_pos.has(actor_id):
 		return  # 未放置, 不参与 position 对账
+
+	var expected: HexCoord = expected_alive_pos[actor_id]
+	if not view_state.position.equals(expected):
+		report.mismatches.append(Mismatch.new(
+			actor_id, Mismatch.Field.POSITION,
+			"render state hex=(%d,%d) logic hex=(%d,%d)" % [
+				view_state.position.q, view_state.position.r, expected.q, expected.r,
+			]
+		))
 
 	var unit_view := world_view.get_unit_view(actor_id)
 	if unit_view == null:
@@ -279,13 +291,13 @@ static func _diff_position(
 		))
 		return
 
-	var expected: Vector3 = expected_alive_pos[actor_id]
+	var expected_world := world_view.hex_to_world(expected)
 	var actual := unit_view.global_position
-	var drift := (actual - expected).length()
+	var drift := (actual - expected_world).length()
 	if drift >= epsilon:
 		report.mismatches.append(Mismatch.new(
 			actor_id, Mismatch.Field.POSITION,
-			"drift=%.4f (>= eps %.4f)  expected=%v actual=%v" % [drift, epsilon, expected, actual]
+			"drift=%.4f (>= eps %.4f)  expected=%v actual=%v" % [drift, epsilon, expected_world, actual]
 		))
 
 

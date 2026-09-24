@@ -4,6 +4,8 @@
 ## - 只读查询，不允许修改状态
 ## - Visualizer 是纯函数，只返回声明式的 VisualAction
 ## - 状态修改由 RenderWorld 统一执行
+## - 位置只讲逻辑平面坐标（axial 浮点 Vector2）；像素 / 3D 投影是 view 层的事，
+##   翻译员拿不到棋盘几何，欧氏派生量（方向 / 距离）也留给 view 投影后再算
 class_name FrontendVisualizerContext
 extends RefCounted
 
@@ -18,31 +20,34 @@ var _interpolated_positions: Dictionary = {}
 ## 动画配置
 var _animation_config: FrontendAnimationConfig
 
-## 六边形网格布局
-var _layout: GridLayout
-
 
 # ========== 构造函数 ==========
 
 func _init(
 	actors: Dictionary,
 	interpolated_positions: Dictionary,
-	animation_config: FrontendAnimationConfig,
-	layout: GridLayout
+	animation_config: FrontendAnimationConfig
 ) -> void:
 	_actors = actors
 	_interpolated_positions = interpolated_positions
 	_animation_config = animation_config
-	_layout = layout
 
 
 # ========== 角色查询 ==========
 
-## 获取角色当前位置（世界坐标）
-func get_actor_position(actor_id: String) -> Vector3:
-	var hex_pos := get_actor_hex_position(actor_id)
-	var pixel := _layout.coord_to_pixel(hex_pos.to_axial())
-	return Vector3(pixel.x, 0.0, pixel.y)
+## 获取角色当前逻辑平面坐标（axial 浮点，含移动中的在飞插值）；未知 actor 返回 ZERO
+func get_actor_position(actor_id: String) -> Vector2:
+	if _interpolated_positions.has(actor_id):
+		return _interpolated_positions[actor_id]
+	var actor: FrontendActorRenderState = _actors.get(actor_id)
+	if actor == null:
+		return Vector2.ZERO
+	return Vector2(actor.position.q, actor.position.r)
+
+
+## actor 是否在账本上（用来区分「站在 (0,0)」和「不认识」）
+func has_actor(actor_id: String) -> bool:
+	return _actors.has(actor_id)
 
 
 ## 获取角色当前 HP
@@ -69,7 +74,7 @@ func is_actor_alive(actor_id: String) -> bool:
 	return actor.is_alive
 
 
-## 获取角色六边形坐标
+## 获取角色六边形坐标（在飞插值取整；hex 翻译员解析事件用的整数格）
 func get_actor_hex_position(actor_id: String) -> HexCoord:
 	# 优先使用插值位置（取整）
 	if _interpolated_positions.has(actor_id):
@@ -111,16 +116,3 @@ func get_actor_display_name(actor_id: String) -> String:
 ## 获取动画配置
 func get_animation_config() -> FrontendAnimationConfig:
 	return _animation_config
-
-
-## 获取六边形网格布局
-func get_layout() -> GridLayout:
-	return _layout
-
-
-# ========== 坐标转换 ==========
-
-## 将六边形坐标转换为世界坐标
-func hex_to_world(hex: HexCoord) -> Vector3:
-	var pixel := _layout.coord_to_pixel(hex.to_axial())
-	return Vector3(pixel.x, 0.0, pixel.y)

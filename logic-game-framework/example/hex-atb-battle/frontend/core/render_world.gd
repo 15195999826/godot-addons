@@ -5,6 +5,9 @@
 ## 职责分离：
 ## - ActionScheduler 管理"时序"（什么时候执行）
 ## - RenderWorld 管理"状态"（当前值是什么）
+##
+## 位置只讲逻辑平面坐标（axial 浮点 Vector2）：账本 / 卡片 / 信号 payload 里没有像素与 3D，
+## 棋盘几何与投影归 view 层（FrontendBattleAnimator._project）。
 class_name FrontendRenderWorld
 extends RefCounted
 
@@ -35,8 +38,8 @@ signal attack_vfx_removed(vfx_id: String)
 ## 投射物创建信号
 signal projectile_created(data: FrontendRenderData.Projectile)
 
-## 投射物更新信号
-signal projectile_updated(projectile_id: String, position: Vector3, direction: Vector3)
+## 投射物更新信号（position 是逻辑平面坐标；飞行方向由 view 从起止位置投影后算，直线飞行不变）
+signal projectile_updated(projectile_id: String, position: Vector2)
 
 ## 投射物移除信号
 signal projectile_removed(projectile_id: String)
@@ -71,14 +74,8 @@ var _cone_debug_overlays: Dictionary = {}  # action_id -> FrontendRenderData.Con
 ## 震屏状态
 var _screen_shake: FrontendRenderData.ScreenShake = FrontendRenderData.ScreenShake.new()
 
-## 六边形网格布局
-var _layout: GridLayout
-
 ## 动画配置
 var _animation_config: FrontendAnimationConfig
-
-## 位置格式配置（type -> format）
-var _position_formats: Dictionary = {}
 
 ## 实例 ID 计数器
 var _next_instance_id: int = 0
@@ -113,18 +110,6 @@ func initialize_from_replay(record: PlaybackData.BattleRecord) -> void:
 	
 	Log.assert_crash(record.world_snapshot != null, "FrontendRenderWorld",
 		"录像缺 world_snapshot —— 无法重建开战台面")
-	_position_formats = record.world_snapshot.position_formats
-
-	# 从 map_config 创建 GridLayout
-	if not record.world_snapshot.map_config.is_empty():
-		var grid_config := GridMapConfig.from_dict(record.world_snapshot.map_config)
-		_layout = GridLayout.new(
-			grid_config.grid_type,
-			grid_config.size,
-			Vector2.ZERO,
-			grid_config.orientation,
-			Vector2.ONE
-		)
 
 	for actor_init: PlaybackData.ActorInitData in record.world_snapshot.actors:
 		_initialize_actor_from_init_data(actor_init)
@@ -140,7 +125,7 @@ func _initialize_actor_from_init_data(actor_init: PlaybackData.ActorInitData) ->
 		return
 	
 	var position_arr: Array = actor_init.position  # 元素可能是 int/float，保持无类型
-	var hex_pos := _extract_hex_position(position_arr, actor_init.type)
+	var hex_pos := _extract_hex_position(position_arr)
 	
 	var actor_state := FrontendActorRenderState.new()
 	actor_state.id = actor_init.id
@@ -227,29 +212,14 @@ func _apply_attribute_changed_event(event: Dictionary) -> void:
 	_dirty_actors[actor_id] = true
 
 
-## 从位置数组提取六边形坐标
-## 根据 position_formats 配置解释 position 数组的含义
-func _extract_hex_position(position_arr: Array, actor_type: String) -> HexCoord:
+## 从位置数组提取六边形坐标：录像 position 是 [q, r, z?]，前两分量就是逻辑坐标
+## （hex 录像 position_formats 全员 "hex"；账本没有棋盘几何，不认世界坐标）
+func _extract_hex_position(position_arr: Array) -> HexCoord:
 	if position_arr.is_empty():
 		return HexCoord.zero()
-	
-	# 查找该类型的位置格式，默认为 "world"
-	var format: String = _position_formats.get(actor_type, "world")
-	
-	if format == "hex":
-		# position 是 [q, r, z]，直接取 q, r
-		var q := int(position_arr[0]) if position_arr.size() > 0 else 0
-		var r := int(position_arr[1]) if position_arr.size() > 1 else 0
-		return HexCoord.new(q, r)
-	else:
-		# position 是 [x, y, z] 世界坐标，需要转换为 hex
-		var world_pos := Vector3(
-			position_arr[0] if position_arr.size() > 0 else 0.0,
-			position_arr[1] if position_arr.size() > 1 else 0.0,
-			position_arr[2] if position_arr.size() > 2 else 0.0
-		)
-		var axial: Vector2i = _layout.pixel_to_coord(Vector2(world_pos.x, world_pos.z))
-		return HexCoord.from_axial(axial)
+	var q := int(position_arr[0]) if position_arr.size() > 0 else 0
+	var r := int(position_arr[1]) if position_arr.size() > 1 else 0
+	return HexCoord.new(q, r)
 
 
 # ========== 动作应用 ==========
@@ -505,15 +475,15 @@ func _apply_procedural_vfx_action(action: FrontendProceduralVFXAction, action_id
 
 
 ## 应用 bump(撞墙 / 撞单位临时位移弹回)。view 层从 actor.bump_offset / bump_squish
-## 读取并叠加在世界坐标 / mesh scale 上,逻辑位置不变。progress=1 时 snap 回零位,
+## 读取,偏移投影后叠加在世界坐标上、挤压落到 mesh scale,逻辑位置不变。progress=1 时 snap 回零位,
 ## 避免下一段动画继承残留偏移。
 func _apply_bump_action(action: FrontendBumpAction, progress: float) -> void:
 	var actor: FrontendActorRenderState = _actors.get(action.actor_id)
 	if actor == null:
 		return
 	if progress >= 1.0:
-		actor.bump_offset = Vector3.ZERO
-		actor.bump_squish = Vector3.ONE
+		actor.bump_offset = Vector2.ZERO
+		actor.bump_squish = Vector2.ONE
 	else:
 		actor.bump_offset = action.get_offset(progress)
 		actor.bump_squish = action.get_squish(progress)
@@ -551,8 +521,6 @@ func _apply_attack_vfx_action(action: FrontendAttackVFXAction, action_id: String
 		vfx_data.vfx_type = action.vfx_type
 		vfx_data.vfx_color = action.vfx_color
 		vfx_data.is_critical = action.is_critical
-		vfx_data.direction = action.get_direction()
-		vfx_data.distance = action.get_distance()
 		vfx_data.start_time = _world_time_ms
 		vfx_data.duration = action.duration
 		_attack_vfx[action_id] = vfx_data
@@ -583,16 +551,13 @@ func _apply_projectile_action(action: FrontendProjectileAction, action_id: Strin
 		projectile_data.projectile_type = action.projectile_type
 		projectile_data.projectile_color = action.projectile_color
 		projectile_data.projectile_size = action.projectile_size
-		projectile_data.direction = action.get_direction()
 		projectile_data.start_time = _world_time_ms
 		projectile_data.duration = action.duration
 		_projectiles[action_id] = projectile_data
 		projectile_created.emit(projectile_data)
-	
+
 	# 更新位置
-	var current_position := action.get_current_position(progress)
-	var direction := action.get_direction()
-	projectile_updated.emit(action_id, current_position, direction)
+	projectile_updated.emit(action_id, action.get_current_position(progress))
 	
 	# 完成时移除
 	if progress >= 1.0:
@@ -606,8 +571,9 @@ func _apply_cone_debug_overlay_action(action: FrontendConeDebugOverlayAction, ac
 	var overlay_data := FrontendRenderData.ConeDebugOverlay.new()
 	overlay_data.id = action_id
 	overlay_data.cue_id = action.cue_id
-	overlay_data.cell_polygons = action.cell_polygons
+	overlay_data.cells = action.cells
 	overlay_data.boundary_segments = action.boundary_segments
+	overlay_data.guide_segments = action.guide_segments
 	overlay_data.fill_color = action.fill_color
 	overlay_data.boundary_color = action.boundary_color
 	overlay_data.start_time = _world_time_ms
@@ -665,43 +631,24 @@ func get_actors_snapshot() -> Dictionary:
 	return snapshot
 
 
-## 录像 map_config 建出的棋盘几何 (录像无地图时为 null)。
-func get_grid_layout() -> GridLayout:
-	return _layout
-
-
 ## 创建 VisualizerContext（只读视图）
 func as_context() -> FrontendVisualizerContext:
 	return FrontendVisualizerContext.new(
 		_actors,
 		_interpolated_positions,
-		_animation_config,
-		_layout
+		_animation_config
 	)
 
 
-## 获取角色世界坐标
-func get_actor_world_position(actor_id: String) -> Vector3:
+## 获取角色当前逻辑平面坐标（axial 浮点，含移动中的在飞插值）；view 层投影后定位节点。
+## 未知 actor 返回 ZERO。
+func get_actor_axial(actor_id: String) -> Vector2:
 	if _interpolated_positions.has(actor_id):
-		var pos: Vector2 = _interpolated_positions[actor_id]
-		# hex→pixel 是线性变换，对浮点坐标直接用两端 lerp 即可精确插值
-		var q0 := floori(pos.x)
-		var r0 := floori(pos.y)
-		var frac_q := pos.x - q0
-		var frac_r := pos.y - r0
-		# 沿 q 轴插值，再沿 r 轴插值（双线性，对线性函数精确）
-		var p00 := _layout.coord_to_pixel(Vector2i(q0, r0))
-		var p10 := _layout.coord_to_pixel(Vector2i(q0 + 1, r0))
-		var p01 := _layout.coord_to_pixel(Vector2i(q0, r0 + 1))
-		var pixel := p00 + (p10 - p00) * frac_q + (p01 - p00) * frac_r
-		return Vector3(pixel.x, 0.0, pixel.y)
-	
+		return _interpolated_positions[actor_id]
 	var actor: FrontendActorRenderState = _actors.get(actor_id)
 	if actor == null:
-		return Vector3.ZERO
-	
-	var pixel := _layout.coord_to_pixel(actor.position.to_axial())
-	return Vector3(pixel.x, 0.0, pixel.y)
+		return Vector2.ZERO
+	return Vector2(actor.position.q, actor.position.r)
 
 
 ## 获取震屏偏移

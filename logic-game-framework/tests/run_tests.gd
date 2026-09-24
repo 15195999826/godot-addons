@@ -55,6 +55,7 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/presentation/visualizer_registry_test.gd",
 	"res://addons/logic-game-framework/tests/presentation/render_world_apply_test.gd",
 	"res://addons/logic-game-framework/tests/presentation/render_world_events_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/visualizer_coordinates_test.gd",
 ]
 
 # 测试框架实例

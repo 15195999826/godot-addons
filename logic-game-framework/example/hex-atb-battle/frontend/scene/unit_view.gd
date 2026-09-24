@@ -52,7 +52,8 @@ var _team: int = 0
 var _target_position: Vector3 = Vector3.ZERO
 ## 朝 _target_position 收敛的平滑位置(每 tick lerp);bump 不走这条,避免被平滑掉
 var _smoothed_position: Vector3 = Vector3.ZERO
-## bump 临时偏移(撞墙 / 撞单位时叠在 _smoothed_position 之上,逻辑位置不变)
+## bump 临时偏移(撞墙 / 撞单位时叠在 _smoothed_position 之上,逻辑位置不变)。
+## 账本给的是逻辑平面 axial 位移,update_state 时用棋盘几何投影成世界位移。
 var _bump_offset: Vector3 = Vector3.ZERO
 var _death_tween: Tween
 var _environment_kind: String = ""
@@ -225,7 +226,7 @@ func update_state(new_state: FrontendActorRenderState) -> void:
 	_facing_indicator_view.update_from_state(new_state)
 	_update_flash_effect(new_state.flash_progress)
 	_update_tint_color(new_state.tint_color)
-	_bump_offset = new_state.bump_offset
+	_bump_offset = FrontendHexProjection.delta_to_world(_grid_layout, new_state.bump_offset)
 	_apply_bump_squish(new_state.bump_squish)
 
 
@@ -272,10 +273,11 @@ func _update_tint_color(tint_color: Color) -> void:
 
 ## 把 bump squish 应用到 mesh(只压 mesh,不压 unit_view 整体 — HP 条 / buff 行 / 名字
 ## 留在原位,只有身体被撞凹下去)。死亡动画走 self.scale,不与本 squish 冲突。
-func _apply_bump_squish(squish: Vector3) -> void:
+## 账本的 squish 是 (水平, 竖直);3D 里水平同时作用于 X / Z。
+func _apply_bump_squish(squish: Vector2) -> void:
 	if _mesh_instance == null:
 		return
-	_mesh_instance.scale = squish
+	_mesh_instance.scale = Vector3(squish.x, squish.y, squish.x)
 
 
 func _should_log_position_gap(gap: float, delta: float) -> bool:

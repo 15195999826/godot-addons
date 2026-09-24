@@ -269,7 +269,7 @@ FrontendBattleDirector._process(delta)
       |
       |    PROJECTILE:
       |      首次: emit projectile_created(data)
-      |      每帧: emit projectile_updated(pos, dir)
+      |      每帧: emit projectile_updated(pos)   # pos 是逻辑平面 axial
       |      完成: emit projectile_removed(id)
       |
       |  _world.cleanup(world_time)
@@ -328,14 +328,14 @@ FrontendBattleAnimator (wire 到 view)
   |
   +-- projectile_created / updated / removed
   |     +-- created: ProjectileView.new() -> effects_root
-  |     +-- updated: view.update_position(pos) + direction
+  |     +-- updated: view.update_position(_project(pos))
   |     +-- removed: view.cleanup() + erase
   |
   +-- _process(delta)
         +-- _update_all_unit_positions()
         |     +-- 每个 unit_view: set_world_position(
-        |          director.get_actor_world_position(id))
-        |          -> hex 插值坐标 -> GridLayout.coord_to_pixel -> Vector3
+        |          _project(director.get_actor_axial(id)))
+        |          -> axial 浮点(含在飞插值) -> FrontendHexProjection(录像 map_config 的 GridLayout) -> Vector3
         +-- 震屏: camera_rig.position += shake_offset * 0.1
 ```
 

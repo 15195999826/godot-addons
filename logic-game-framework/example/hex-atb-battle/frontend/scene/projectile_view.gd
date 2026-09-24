@@ -22,7 +22,7 @@ var projectile_color: Color
 ## 投射物大小
 var projectile_size: float
 
-## 飞行方向
+## 飞行方向（世界坐标；直线飞行，创建时由 animator 用投影后的起止位置算一次）
 var direction: Vector3
 
 
@@ -178,12 +178,6 @@ func _render_trail() -> void:
 		_trail_mesh.surface_add_vertex(local_pos)
 	
 	_trail_mesh.surface_end()
-
-
-## 设置飞行方向
-func set_direction(new_direction: Vector3) -> void:
-	direction = new_direction
-	_update_rotation()
 
 
 ## 清理

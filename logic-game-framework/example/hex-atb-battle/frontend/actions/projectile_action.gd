@@ -26,11 +26,11 @@ var source_actor_id: String
 ## 目标 ID（可选，用于追踪）
 var target_actor_id: String
 
-## 起始位置（世界坐标）
-var start_position: Vector3
+## 起始位置（逻辑平面坐标）
+var start_position: Vector2
 
-## 目标位置（世界坐标，如果无追踪目标则使用此位置）
-var target_position: Vector3
+## 目标位置（逻辑平面坐标；飞行方向由 view 投影后算）
+var target_position: Vector2
 
 ## 投射物类型
 var projectile_type: ProjectileType
@@ -41,7 +41,7 @@ var projectile_color: Color
 ## 投射物大小
 var projectile_size: float
 
-## 飞行速度（单位/秒，用于计算持续时间）
+## 飞行速度（逻辑平面单位/秒，用于计算持续时间）
 var speed: float
 
 
@@ -50,8 +50,8 @@ var speed: float
 func _init(
 	p_projectile_id: String,
 	p_source_actor_id: String,
-	p_start_position: Vector3,
-	p_target_position: Vector3,
+	p_start_position: Vector2,
+	p_target_position: Vector2,
 	p_duration: float,
 	p_target_actor_id: String = "",
 	p_projectile_type: ProjectileType = ProjectileType.ENERGY,
@@ -73,24 +73,13 @@ func _init(
 	actor_id = p_projectile_id  # 关联到投射物自身
 
 
-## 获取当前位置（基于进度插值）
-func get_current_position(progress: float) -> Vector3:
-	return FrontendVisualAction.lerp_vector3(start_position, target_position, progress)
+## 获取当前位置（基于进度插值，逻辑平面坐标）
+func get_current_position(progress: float) -> Vector2:
+	return FrontendVisualAction.lerp_vector2(start_position, target_position, progress)
 
 
-## 获取飞行方向（单位向量）
-func get_direction() -> Vector3:
-	var dir := target_position - start_position
-	return dir.normalized() if dir.length_squared() > 0.001 else Vector3.FORWARD
-
-
-## 获取飞行距离
-func get_distance() -> float:
-	return (target_position - start_position).length()
-
-
-## 根据速度计算持续时间（毫秒）
-static func calculate_duration(start_pos: Vector3, target_pos: Vector3, fly_speed: float) -> float:
+## 根据速度计算持续时间（毫秒）= 逻辑平面距离 / 速度
+static func calculate_duration(start_pos: Vector2, target_pos: Vector2, fly_speed: float) -> float:
 	var distance := (target_pos - start_pos).length()
 	if fly_speed <= 0.0:
 		return 500.0  # 默认 500ms

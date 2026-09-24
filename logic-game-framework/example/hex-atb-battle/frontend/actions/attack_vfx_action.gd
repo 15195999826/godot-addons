@@ -23,11 +23,11 @@ var source_actor_id: String
 ## 目标 ID
 var target_actor_id: String
 
-## 攻击者位置（世界坐标）
-var source_position: Vector3
+## 攻击者位置（逻辑平面坐标）
+var source_position: Vector2
 
-## 目标位置（世界坐标）
-var target_position: Vector3
+## 目标位置（逻辑平面坐标；方向 / 距离由 view 投影后算）
+var target_position: Vector2
 
 ## 特效类型
 var vfx_type: AttackVFXType
@@ -44,8 +44,8 @@ var is_critical: bool
 func _init(
 	p_source_actor_id: String,
 	p_target_actor_id: String,
-	p_source_position: Vector3,
-	p_target_position: Vector3,
+	p_source_position: Vector2,
+	p_target_position: Vector2,
 	p_duration: float,
 	p_vfx_type: AttackVFXType = AttackVFXType.SLASH,
 	p_vfx_color: Color = Color.WHITE,
@@ -61,20 +61,6 @@ func _init(
 	vfx_color = p_vfx_color
 	is_critical = p_is_critical
 	actor_id = p_source_actor_id  # 关联到攻击者
-
-
-## 获取攻击方向（从攻击者指向目标的单位向量）
-func get_direction() -> Vector3:
-	var dir := target_position - source_position
-	dir.y = 0.0  # 忽略高度差
-	return dir.normalized() if dir.length_squared() > 0.001 else Vector3.FORWARD
-
-
-## 获取攻击距离
-func get_distance() -> float:
-	var dir := target_position - source_position
-	dir.y = 0.0
-	return dir.length()
 
 
 ## 获取特效缩放（基于进度的淡入淡出）

@@ -46,8 +46,8 @@ signal attack_vfx_removed(vfx_id: String)
 ## 投射物创建（转发自 RenderWorld）
 signal projectile_created(data: FrontendRenderData.Projectile)
 
-## 投射物更新（转发自 RenderWorld）
-signal projectile_updated(projectile_id: String, position: Vector3, direction: Vector3)
+## 投射物更新（转发自 RenderWorld；position 是逻辑平面坐标）
+signal projectile_updated(projectile_id: String, position: Vector2)
 
 ## 投射物移除（转发自 RenderWorld）
 signal projectile_removed(projectile_id: String)
@@ -303,14 +303,9 @@ func get_actors_snapshot() -> Dictionary:
 	return _world.get_actors_snapshot()
 
 
-## 获取角色世界坐标
-func get_actor_world_position(actor_id: String) -> Vector3:
-	return _world.get_actor_world_position(actor_id)
-
-
-## 录像 map_config 建出的棋盘几何 (未加载录像 / 录像无地图时为 null)。
-func get_grid_layout() -> GridLayout:
-	return _world.get_grid_layout() if _world != null else null
+## 获取角色逻辑平面坐标（axial 浮点，含在飞插值）；像素 / 3D 投影由持有棋盘几何的 view 层做
+func get_actor_axial(actor_id: String) -> Vector2:
+	return _world.get_actor_axial(actor_id)
 
 
 ## 获取震屏偏移
@@ -479,8 +474,8 @@ func _on_projectile_created(data: FrontendRenderData.Projectile) -> void:
 	projectile_created.emit(data)
 
 
-func _on_projectile_updated(projectile_id: String, pos: Vector3, dir: Vector3) -> void:
-	projectile_updated.emit(projectile_id, pos, dir)
+func _on_projectile_updated(projectile_id: String, pos: Vector2) -> void:
+	projectile_updated.emit(projectile_id, pos)
 
 
 func _on_projectile_removed(projectile_id: String) -> void:

@@ -46,21 +46,12 @@ func _translate_launched(event: Dictionary, context: FrontendVisualizerContext) 
 	if visual_type_str.is_empty():
 		visual_type_str = get_string_field(event, "projectile_type", "energy")
 	
-	# 获取起始位置（优先使用 actor 位置，因为事件中的位置可能是 hex 坐标）
-	var start_position := Vector3.ZERO
-	if source_actor_id != "":
-		start_position = context.get_actor_position(source_actor_id)
-	if start_position == Vector3.ZERO:
-		start_position = _get_position_from_event(event, "start_position", context)
-	
-	# 获取目标位置（优先使用 actor 位置）
-	var target_position := Vector3.ZERO
-	if target_actor_id != "":
-		target_position = context.get_actor_position(target_actor_id)
-	if target_position == Vector3.ZERO:
-		target_position = _get_position_from_event(event, "target_position", context)
-	
-	# 计算飞行时间（最小 300ms，确保投射物可见）
+	# 起止位置:账本上有这个 actor 就取它的逻辑坐标(含在飞插值),否则用事件里逻辑层给的位置
+	var start_position := _resolve_position(event, "start_position", source_actor_id, context)
+	var target_position := _resolve_position(event, "target_position", target_actor_id, context)
+
+	# 飞行时间 = 逻辑平面距离 / 速度(hex 逻辑层的投射物本来就在 (q, r) 平面上飞,speed 也是这个平面的);
+	# 最小 300ms,确保投射物可见
 	var raw_duration := FrontendProjectileAction.calculate_duration(start_position, target_position, speed)
 	var duration := maxf(raw_duration, 300.0)  # 最小 300ms
 	
@@ -91,14 +82,11 @@ func _translate_launched(event: Dictionary, context: FrontendVisualizerContext) 
 ## 翻译投射物命中事件
 func _translate_hit(event: Dictionary, context: FrontendVisualizerContext) -> Array[FrontendVisualAction]:
 	var config := context.get_animation_config()
-	
+
 	var target_actor_id := get_string_field(event, "target_actor_id")
-	var hit_position := _get_position_from_event(event, "hit_position", context)
-	if hit_position == Vector3.ZERO and target_actor_id != "":
-		hit_position = context.get_actor_position(target_actor_id)
-	
+
 	var actions: Array[FrontendVisualAction] = []
-	
+
 	# 命中闪白特效
 	if target_actor_id != "":
 		var hit_flash := FrontendProceduralVFXAction.new(
@@ -117,35 +105,39 @@ func _translate_miss(event: Dictionary, context: FrontendVisualizerContext) -> A
 	return []
 
 
-## 从事件中获取 Vector3 位置
-func _get_position_from_event(event: Dictionary, field: String, _context: FrontendVisualizerContext) -> Vector3:
+## 位置优先取账本(actor 的在飞插值),账本没有这个 actor 再读事件字段(逻辑层给的逻辑平面坐标)
+func _resolve_position(event: Dictionary, field: String, actor_id: String, context: FrontendVisualizerContext) -> Vector2:
+	if actor_id != "" and context.has_actor(actor_id):
+		return context.get_actor_position(actor_id)
+	return _get_position_from_event(event, field)
+
+
+## 从事件字段读逻辑平面坐标:{"x", "y"} / [x, y, ...] / 二维或三维向量都只取前两分量
+## (hex 逻辑层把投射物位置打包成三维向量 (q, r, 0))
+func _get_position_from_event(event: Dictionary, field: String) -> Vector2:
 	var pos_data: Variant = event.get(field, null)
 	if pos_data == null:
-		return Vector3.ZERO
-	
-	# 支持 Vector3 格式 {"x": float, "y": float, "z": float}
+		return Vector2.ZERO
+
 	if pos_data is Dictionary:
 		var pos_dict := pos_data as Dictionary
-		return Vector3(
+		return Vector2(
 			pos_dict.get("x", 0.0) as float,
-			pos_dict.get("y", 0.0) as float,
-			pos_dict.get("z", 0.0) as float
+			pos_dict.get("y", 0.0) as float
 		)
-	
-	# 支持 Array 格式 [x, y, z]
+
 	if pos_data is Array:
 		var pos_arr := pos_data as Array
-		return Vector3(
+		return Vector2(
 			pos_arr[0] if pos_arr.size() > 0 else 0.0,
-			pos_arr[1] if pos_arr.size() > 1 else 0.0,
-			pos_arr[2] if pos_arr.size() > 2 else 0.0
+			pos_arr[1] if pos_arr.size() > 1 else 0.0
 		)
-	
-	# 直接是 Vector3
-	if pos_data is Vector3:
-		return pos_data as Vector3
-	
-	return Vector3.ZERO
+
+	var value_type := typeof(pos_data)
+	if value_type == TYPE_VECTOR2 or value_type == TYPE_VECTOR3:
+		return Vector2(pos_data.x, pos_data.y)
+
+	return Vector2.ZERO
 
 
 ## 解析投射物类型字符串

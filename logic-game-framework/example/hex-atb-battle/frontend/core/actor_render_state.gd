@@ -57,11 +57,11 @@ var tint_color: Color = Color.WHITE
 ## 死亡动画进度（0.0 = 开始，1.0 = 完成）
 var death_progress: float = 0.0
 
-## bump 临时世界偏移(撞墙 / 撞单位时叠在世界坐标上,不动 hex 逻辑位置)
-var bump_offset: Vector3 = Vector3.ZERO
+## bump 临时偏移(撞墙 / 撞单位时叠在位置上的逻辑平面位移,不动 hex 逻辑位置;view 投影后叠加)
+var bump_offset: Vector2 = Vector2.ZERO
 
-## bump 临时 mesh 挤压(Vector3 scale;Vector3.ONE = 无形变)
-var bump_squish: Vector3 = Vector3.ONE
+## bump 临时挤压(x = 水平缩放, y = 竖直缩放;Vector2.ONE = 无形变)
+var bump_squish: Vector2 = Vector2.ONE
 
 ## §0.3 Phase F: 角色逻辑朝向 (HexFacing.DIR_* 0..5)
 ##   - Replay 初始化时由 RenderWorld 读 actor_init.attributes["facing_direction"] 填入.

@@ -1,12 +1,16 @@
 ## BumpAction - 临时位移弹回动作
 ##
 ## 用于撞墙 / 撞单位时的"冲出 → 卡住 → 弹回"表演。actor 不真的离开当前格,
-## 只是 view 层在世界坐标上叠一段瞬时偏移 + 挤压压扁,逻辑层 hex_position
+## 只是 view 层在位置上叠一段瞬时偏移 + 挤压压扁,逻辑层 hex_position
 ## 完全不动。push_blocked 事件的视觉表现入口。
+##
+## 偏移在逻辑平面里描述:direction 是一段逻辑位移(hex 里 = 从停住格指向撞向格的一步 axial 位移,
+## 不归一化——axial 平面没有度规,归一化会让不同方向的一步投影后长短不一),max_offset 是这段位移
+## 的比例(0.30 = 冲出三成格距)。view 投影是线性映射、保比例,视觉上就是 hex 间距 × 0.30。
 ##
 ## 时间曲线 (progress 0~1):
 ##   [0,    0.30]: 冲出阶段 — offset 从 0 → max_offset (ease_out),squish 还没起
-##   [0.30, 0.50]: 撞击峰值 — offset 维持峰值附近,squish 达最大(Y 压扁、XZ 略胀)
+##   [0.30, 0.50]: 撞击峰值 — offset 维持峰值附近,squish 达最大(竖直压扁、水平略胀)
 ##   [0.50, 1.00]: 弹回阶段 — offset 朝 0 收 (ease_out_back 略带回弹),squish 缓慢恢复
 class_name FrontendBumpAction
 extends FrontendVisualAction
@@ -14,10 +18,10 @@ extends FrontendVisualAction
 
 # ========== 属性 ==========
 
-## bump 方向(单位向量,XZ 平面;Y 通常为 0)
-var direction: Vector3
+## bump 方向 = 逻辑平面位移向量(不归一化,见文件头)
+var direction: Vector2
 
-## 峰值偏移幅度(世界坐标,常用 hex_size * 0.30 左右)
+## 峰值偏移 = direction × max_offset
 var max_offset: float
 
 ## 是否做挤压压扁(撞硬物时打开;空气墙之类不打开可只做位移)
@@ -28,7 +32,7 @@ var squish_enabled: bool
 
 func _init(
 	p_actor_id: String,
-	p_direction: Vector3,
+	p_direction: Vector2,
 	p_max_offset: float,
 	p_duration: float,
 	p_squish_enabled: bool = true,
@@ -36,17 +40,17 @@ func _init(
 ) -> void:
 	super._init(ActionType.BUMP, p_duration, p_delay)
 	actor_id = p_actor_id
-	direction = p_direction.normalized() if p_direction.length() > 0.0 else Vector3.ZERO
+	direction = p_direction
 	max_offset = p_max_offset
 	squish_enabled = p_squish_enabled
 
 
 # ========== 工具方法 ==========
 
-## 根据 progress 算当前应叠加的世界偏移
-func get_offset(progress: float) -> Vector3:
-	if direction == Vector3.ZERO or max_offset <= 0.0:
-		return Vector3.ZERO
+## 根据 progress 算当前应叠加的逻辑平面偏移
+func get_offset(progress: float) -> Vector2:
+	if direction == Vector2.ZERO or max_offset <= 0.0:
+		return Vector2.ZERO
 
 	var t := clampf(progress, 0.0, 1.0)
 	var amplitude: float
@@ -70,11 +74,11 @@ func get_offset(progress: float) -> Vector3:
 	return direction * max_offset * amplitude
 
 
-## 根据 progress 算当前 mesh 挤压(Vector3 scale,1.0 = 无形变)
-## 仅在 squish_enabled = true 时使用;否则返回 Vector3.ONE
-func get_squish(progress: float) -> Vector3:
+## 根据 progress 算当前挤压(x = 水平缩放, y = 竖直缩放;Vector2.ONE = 无形变)
+## 仅在 squish_enabled = true 时使用;否则返回 Vector2.ONE
+func get_squish(progress: float) -> Vector2:
 	if not squish_enabled:
-		return Vector3.ONE
+		return Vector2.ONE
 
 	var t := clampf(progress, 0.0, 1.0)
 
@@ -89,7 +93,7 @@ func get_squish(progress: float) -> Vector3:
 
 	intensity = clampf(intensity, 0.0, 1.0)
 
-	# Y 压扁 (max -0.18) + XZ 略胀 (max +0.12)
+	# 竖直压扁 (max -0.18) + 水平略胀 (max +0.12)
 	var sy := 1.0 - 0.18 * intensity
-	var sxz := 1.0 + 0.12 * intensity
-	return Vector3(sxz, sy, sxz)
+	var sx := 1.0 + 0.12 * intensity
+	return Vector2(sx, sy)

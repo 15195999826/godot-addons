@@ -16,19 +16,19 @@ var vfx_type: FrontendAttackVFXAction.AttackVFXType
 ## 特效颜色
 var vfx_color: Color
 
-## 攻击方向
+## 攻击方向（世界坐标，由投影后的起止位置算出，忽略高度差）
 var direction: Vector3
 
-## 攻击距离
+## 攻击距离（世界坐标）
 var distance: float
 
 ## 是否暴击
 var is_critical: bool
 
-## 起始位置
+## 起始位置（世界坐标）
 var start_position: Vector3
 
-## 目标位置
+## 目标位置（世界坐标）
 var target_position: Vector3
 
 
@@ -42,25 +42,28 @@ var _trail_material: StandardMaterial3D
 
 # ========== 初始化 ==========
 
+## 起止位置由 animator 把卡片的逻辑平面坐标投影后传入；方向 / 距离这类欧氏量在这里算
 func initialize(
 	p_vfx_id: String,
 	p_vfx_type: FrontendAttackVFXAction.AttackVFXType,
 	p_color: Color,
-	p_direction: Vector3,
-	p_distance: float,
+	p_start_position: Vector3,
+	p_target_position: Vector3,
 	p_is_critical: bool
 ) -> void:
 	vfx_id = p_vfx_id
 	vfx_type = p_vfx_type
 	vfx_color = p_color
-	direction = p_direction.normalized() if p_direction.length_squared() > 0.001 else Vector3.FORWARD
-	distance = p_distance
 	is_critical = p_is_critical
-	
-	# 计算起始和目标位置
-	start_position = global_position
-	target_position = start_position + direction * distance
-	
+	start_position = p_start_position
+	target_position = p_target_position
+
+	# 忽略高度差；零距离退化为 FORWARD
+	var offset := target_position - start_position
+	offset.y = 0.0
+	direction = offset.normalized() if offset.length_squared() > 0.001 else Vector3.FORWARD
+	distance = offset.length()
+
 	_create_arrow()
 	_create_trail()
 

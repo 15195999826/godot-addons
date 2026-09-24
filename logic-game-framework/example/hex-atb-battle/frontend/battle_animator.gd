@@ -32,6 +32,9 @@ var _excluded_base_unit_views: Dictionary = {} # actor_id -> FrontendUnitView, l
 var _owned_replay_unit_views: Dictionary = {} # actor_id -> FrontendUnitView, owned by animator
 var _attack_vfx_views: Dictionary = {}      # vfx_id -> FrontendAttackVFXView
 var _projectile_views: Dictionary = {}      # projectile_id -> FrontendProjectileView
+## 录像 map_config 建出的棋盘几何：Director / 账本只讲逻辑平面 axial，axial → 3D 投影在本层做；
+## 每次 load 随录像重建，录像无地图时为 null（投影退化成恒等）
+var _grid_layout: GridLayout = null
 
 const SPAWN_VIEW_COST_WARN_MS: float = 3.0
 const FLOATING_TEXT_COST_WARN_MS: float = 2.0
@@ -75,7 +78,7 @@ func _process(_delta: float) -> void:
 	for actor_id in _unit_views:
 		var view: FrontendUnitView = _unit_views[actor_id]
 		if is_instance_valid(view):
-			view.set_world_position(_director.get_actor_world_position(actor_id))
+			view.set_world_position(_project(_director.get_actor_axial(actor_id)))
 
 
 # ========== 公共 API ==========
@@ -86,6 +89,7 @@ func _process(_delta: float) -> void:
 ## 反复调用 = 重新加载(老 timeline 被替换,VFX/飘字/投射物清空)。
 func load(record_data: Dictionary, unit_views: Dictionary) -> void:
 	var record := PlaybackData.BattleRecord.from_dict(record_data)
+	_grid_layout = _build_grid_layout(record)
 	_clear_replay_unit_views()
 	_base_unit_views = _filter_initial_base_unit_views(record, unit_views)
 	_unit_views = _base_unit_views.duplicate()
@@ -149,7 +153,7 @@ func step(delta_ms: float) -> void:
 	for actor_id in _unit_views:
 		var view: FrontendUnitView = _unit_views[actor_id]
 		if is_instance_valid(view):
-			view.snap_world_position(_director.get_actor_world_position(actor_id))
+			view.snap_world_position(_project(_director.get_actor_axial(actor_id)))
 
 
 func is_playing() -> bool:
@@ -194,7 +198,7 @@ func _on_actor_spawned(actor_id: String, state: FrontendActorRenderState) -> voi
 	view.revive()
 	view.visible = true
 	_initialize_replay_unit_view(view, actor_id, state)
-	var world_position := _director.get_actor_world_position(actor_id)
+	var world_position := _project(_director.get_actor_axial(actor_id))
 	view.snap_world_position(world_position)
 	_owned_replay_unit_views[actor_id] = view
 	_unit_views[actor_id] = view
@@ -247,7 +251,7 @@ func _get_or_create_replay_unit_view(actor_id: String, state: FrontendActorRende
 	var view := FrontendUnitView.new()
 	view.name = actor_id
 	_replay_units_root.add_child(view)
-	view.set_grid_layout(_director.get_grid_layout())
+	view.set_grid_layout(_grid_layout)
 	_owned_replay_unit_views[actor_id] = view
 	return view
 
@@ -278,7 +282,7 @@ func _on_actor_state_changed(actor_id: String, state: FrontendActorRenderState) 
 	if not is_instance_valid(view):
 		return
 	view.update_state(state)
-	view.set_world_position(_director.get_actor_world_position(actor_id))
+	view.set_world_position(_project(_director.get_actor_axial(actor_id)))
 
 
 ## actor_died 是 transition-only event(RenderWorld 在 alive 真翻 false 那帧 emit
@@ -295,13 +299,34 @@ func _on_playback_ended() -> void:
 	playback_ended.emit()
 
 
+# ========== 投影（axial → 3D，只在这一层） ==========
+
+## 录像 map_config 建出的棋盘几何；无地图时 null，投影退化成恒等
+func _build_grid_layout(record: PlaybackData.BattleRecord) -> GridLayout:
+	if record.world_snapshot == null or record.world_snapshot.map_config.is_empty():
+		return null
+	var grid_config := GridMapConfig.from_dict(record.world_snapshot.map_config)
+	return GridLayout.new(
+		grid_config.grid_type,
+		grid_config.size,
+		Vector2.ZERO,
+		grid_config.orientation,
+		Vector2.ONE
+	)
+
+
+## 逻辑平面 axial（含在飞插值）→ 3D 世界坐标
+func _project(axial: Vector2) -> Vector3:
+	return FrontendHexProjection.to_world(_grid_layout, axial)
+
+
 # ========== VFX / 投射物 / 飘字（自有节点） ==========
 
 func _on_floating_text_created(data: FrontendRenderData.FloatingText) -> void:
 	var start_usec := Time.get_ticks_usec()
 	var floating_text := FrontendFloatingTextView.new()
 	_effects_root.add_child(floating_text)
-	floating_text.initialize(data.text, data.color, data.position, data.style, data.duration)
+	floating_text.initialize(data.text, data.color, _project(data.position), data.style, data.duration)
 	var cost_ms := float(Time.get_ticks_usec() - start_usec) / 1000.0
 	if cost_ms >= FLOATING_TEXT_COST_WARN_MS:
 		print("[Frontend:FrameDiag] floating_text text='%s' pos=%s duration=%.2f cost_ms=%.2f" % [
@@ -319,8 +344,9 @@ func _on_attack_vfx_created(data: FrontendRenderData.AttackVfx) -> void:
 	vfx_view.name = "AttackVFX_" + data.id
 	_effects_root.add_child(vfx_view)
 	_attack_vfx_views[data.id] = vfx_view
-	vfx_view.global_position = data.source_position
-	vfx_view.initialize(data.id, data.vfx_type, data.vfx_color, data.direction, data.distance, data.is_critical)
+	var start_world := _project(data.source_position)
+	vfx_view.global_position = start_world
+	vfx_view.initialize(data.id, data.vfx_type, data.vfx_color, start_world, _project(data.target_position), data.is_critical)
 
 
 func _on_attack_vfx_updated(vfx_id: String, progress: float, scale_factor: float, alpha: float) -> void:
@@ -343,15 +369,19 @@ func _on_projectile_created(data: FrontendRenderData.Projectile) -> void:
 	projectile_view.name = "Projectile_" + data.id
 	_effects_root.add_child(projectile_view)
 	_projectile_views[data.id] = projectile_view
-	projectile_view.global_position = data.start_position
-	projectile_view.initialize(data.id, data.projectile_type, data.projectile_color, data.projectile_size, data.direction)
+	var start_world := _project(data.start_position)
+	projectile_view.global_position = start_world
+	# 直线飞行，方向在投影后的世界坐标里算一次即可；零距离退化为 FORWARD
+	var direction := _project(data.target_position) - start_world
+	if direction.length_squared() <= 0.001:
+		direction = Vector3.FORWARD
+	projectile_view.initialize(data.id, data.projectile_type, data.projectile_color, data.projectile_size, direction)
 
 
-func _on_projectile_updated(projectile_id: String, pos: Vector3, dir: Vector3) -> void:
+func _on_projectile_updated(projectile_id: String, pos: Vector2) -> void:
 	var projectile_view: FrontendProjectileView = _projectile_views.get(projectile_id, null)
 	if projectile_view != null:
-		projectile_view.update_position(pos)
-		projectile_view.set_direction(dir)
+		projectile_view.update_position(_project(pos))
 
 
 func _on_projectile_removed(projectile_id: String) -> void:
@@ -365,7 +395,7 @@ func _on_cone_debug_overlay_created(data: FrontendRenderData.ConeDebugOverlay) -
 	var overlay_view := FrontendConeDebugOverlayView.new()
 	overlay_view.name = "ConeDebugOverlay_" + data.id
 	_effects_root.add_child(overlay_view)
-	overlay_view.initialize(data)
+	overlay_view.initialize(data, _grid_layout)
 
 
 func _filter_initial_base_unit_views(record: PlaybackData.BattleRecord, unit_views: Dictionary) -> Dictionary:

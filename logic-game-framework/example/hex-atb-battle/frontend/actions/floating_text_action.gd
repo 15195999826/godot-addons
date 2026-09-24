@@ -23,8 +23,8 @@ var text: String
 ## 文字颜色
 var color: Color
 
-## 显示位置（世界坐标）
-var position: Vector3
+## 显示位置（逻辑平面坐标）
+var position: Vector2
 
 ## 飘字样式
 var style: FloatingTextStyle
@@ -36,7 +36,7 @@ func _init(
 	p_actor_id: String,
 	p_text: String,
 	p_color: Color,
-	p_position: Vector3,
+	p_position: Vector2,
 	p_style: FloatingTextStyle,
 	p_duration: float,
 	p_delay: float = 0.0

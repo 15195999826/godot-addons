@@ -92,8 +92,6 @@ const CONTROL_FLOATING_TEXTS := {
 const CONE_DEBUG_CUES := [HexBattleCues.GRID_CONE_CAST, HexBattleCues.ANGLE_CONE_CAST]
 
 const CONE_DEBUG_DURATION_MS := 1500.0
-const CONE_DEBUG_FILL_Y := 0.06
-const CONE_DEBUG_BOUNDARY_Y := 0.12
 const CONE_DEBUG_FILL_COLOR_GRID := Color(0.18, 0.78, 1.0, 0.24)
 const CONE_DEBUG_BOUNDARY_COLOR_GRID := Color(0.55, 0.95, 1.0, 0.95)
 const CONE_DEBUG_FILL_COLOR_ANGLE := Color(1.0, 0.52, 0.08, 0.24)
@@ -145,17 +143,15 @@ func translate(event: Dictionary, context: FrontendVisualizerContext) -> Array[F
 ## 这是 contract debug overlay,不是 VFX polish: 让玩家 / 测试者看到本次 cone 检查的全部
 ## 格子 (包括没有 enemy 占位的). angle_cone 使用逻辑层给出的两条 edge_segments
 ## 画真实角度边界线; frontend 只消费 params, 不反推 selector 逻辑.
+## 卡片只带 axial(格子 + 外沿端点),多边形与投影由 view 端用棋盘几何建。
 func _create_cone_overlay(
 	cue_id: String,
 	params: Dictionary,
-	context: FrontendVisualizerContext,
+	_context: FrontendVisualizerContext,
 ) -> Array[FrontendVisualAction]:
 	var actions: Array[FrontendVisualAction] = []
 	var checked_coords: Array = params.get("checked_coords", []) as Array
 	if checked_coords.is_empty():
-		return actions
-	var layout := context.get_layout()
-	if layout == null:
 		return actions
 
 	var coords: Array[HexCoord] = []
@@ -173,37 +169,36 @@ func _create_cone_overlay(
 	if coords.is_empty():
 		return actions
 
-	var cell_polygons: Array[PackedVector3Array] = []
-	var boundary_segments: Array[PackedVector3Array] = []
+	var cells: Array[Vector2] = []
+	var boundary_segments: Array[PackedVector2Array] = []
 	for coord in coords:
-		var corners_2d := layout.hex_corners(coord.to_axial())
-		var fill_polygon := PackedVector3Array()
-		for corner in corners_2d:
-			fill_polygon.append(Vector3(corner.x, CONE_DEBUG_FILL_Y, corner.y))
-		cell_polygons.append(fill_polygon)
+		cells.append(Vector2(coord.q, coord.r))
 
 		if cue_id != "angle_cone_cast":
+			# 区域外沿 = 邻格不在区域内的那条边。边的两端是本格与 neighbor(side) 及其左右邻格三家共用的
+			# 角点;角点在 axial 平面里就是三格中心的质心(hex→pixel 是仿射映射,质心投影后正是共用顶点),
+			# 所以不需要棋盘几何。
 			for side in range(6):
 				var neighbor := coord.neighbor(side)
 				if coord_keys.has(neighbor.to_key()):
 					continue
-				var segment := PackedVector3Array()
-				var start_2d := corners_2d[side]
-				var end_2d := corners_2d[(side + 1) % corners_2d.size()]
-				segment.append(Vector3(start_2d.x, CONE_DEBUG_BOUNDARY_Y, start_2d.y))
-				segment.append(Vector3(end_2d.x, CONE_DEBUG_BOUNDARY_Y, end_2d.y))
+				var segment := PackedVector2Array()
+				segment.append(_corner_axial(coord, neighbor, coord.neighbor((side + 5) % 6)))
+				segment.append(_corner_axial(coord, neighbor, coord.neighbor((side + 1) % 6)))
 				boundary_segments.append(segment)
 
 	var fill_color := CONE_DEBUG_FILL_COLOR_GRID
 	var boundary_color := CONE_DEBUG_BOUNDARY_COLOR_GRID
+	var guide_segments: Array[PackedVector2Array] = []
 	if cue_id == "angle_cone_cast":
 		fill_color = CONE_DEBUG_FILL_COLOR_ANGLE
 		boundary_color = CONE_DEBUG_BOUNDARY_COLOR_ANGLE
-		boundary_segments.append_array(_parse_angle_edge_segments(params))
+		guide_segments = _parse_angle_edge_segments(params)
 	actions.append(FrontendConeDebugOverlayAction.new(
 		cue_id,
-		cell_polygons,
+		cells,
 		boundary_segments,
+		guide_segments,
 		fill_color,
 		boundary_color,
 		CONE_DEBUG_DURATION_MS
@@ -211,8 +206,15 @@ func _create_cone_overlay(
 	return actions
 
 
-func _parse_angle_edge_segments(params: Dictionary) -> Array[PackedVector3Array]:
-	var result: Array[PackedVector3Array] = []
+## 三个两两相邻格子共用的角点(axial 浮点)= 三格中心的质心
+static func _corner_axial(a: HexCoord, b: HexCoord, c: HexCoord) -> Vector2:
+	return Vector2(float(a.q + b.q + c.q) / 3.0, float(a.r + b.r + c.r) / 3.0)
+
+
+## 逻辑层 angle cone 的两条真实边界线。点是逻辑层棋盘的 2D 平面坐标 {"x", "y"}(不是 axial),
+## 原样透传给卡片的 guide_segments,view 端把 y 落到 Z 轴;翻译员没有棋盘几何,换算不了 axial。
+func _parse_angle_edge_segments(params: Dictionary) -> Array[PackedVector2Array]:
+	var result: Array[PackedVector2Array] = []
 	var edge_segments: Array = params.get("edge_segments", []) as Array
 	for edge_variant in edge_segments:
 		if not (edge_variant is Dictionary):
@@ -226,19 +228,11 @@ func _parse_angle_edge_segments(params: Dictionary) -> Array[PackedVector3Array]
 		var end_dict := end_variant as Dictionary
 		if start_dict.is_empty() or end_dict.is_empty():
 			continue
-		var start_pos := Vector3(
-			float(start_dict.get("x", 0.0)),
-			CONE_DEBUG_BOUNDARY_Y,
-			float(start_dict.get("y", 0.0))
-		)
-		var end_pos := Vector3(
-			float(end_dict.get("x", 0.0)),
-			CONE_DEBUG_BOUNDARY_Y,
-			float(end_dict.get("y", 0.0))
-		)
+		var start_pos := Vector2(float(start_dict.get("x", 0.0)), float(start_dict.get("y", 0.0)))
+		var end_pos := Vector2(float(end_dict.get("x", 0.0)), float(end_dict.get("y", 0.0)))
 		if start_pos.distance_to(end_pos) < 0.001:
 			continue
-		var segment := PackedVector3Array()
+		var segment := PackedVector2Array()
 		segment.append(start_pos)
 		segment.append(end_pos)
 		result.append(segment)

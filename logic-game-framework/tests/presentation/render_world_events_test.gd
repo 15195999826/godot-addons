@@ -289,6 +289,10 @@ func _test_context_queries() -> void:
 	var hex := context.get_actor_hex_position("u1")
 	TestFramework.assert_equal(2, hex.q)
 	TestFramework.assert_equal(-1, hex.r)
+	# 逻辑平面坐标 = axial 浮点，账本与只读视图同一口径
+	TestFramework.assert_true(context.get_actor_position("u1").is_equal_approx(Vector2(2.0, -1.0)))
+	TestFramework.assert_true(world.get_actor_axial("u1").is_equal_approx(Vector2(2.0, -1.0)))
+	TestFramework.assert_true(context.has_actor("u1"))
 	TestFramework.assert_true(context.get_animation_config() != null)
 
 	# 未知 actor 默认值
@@ -300,6 +304,9 @@ func _test_context_queries() -> void:
 	var ghost_hex := context.get_actor_hex_position("ghost")
 	TestFramework.assert_equal(0, ghost_hex.q)
 	TestFramework.assert_equal(0, ghost_hex.r)
+	TestFramework.assert_false(context.has_actor("ghost"))
+	TestFramework.assert_true(context.get_actor_position("ghost").is_equal_approx(Vector2.ZERO))
+	TestFramework.assert_true(world.get_actor_axial("ghost").is_equal_approx(Vector2.ZERO))
 
 	# 视图跟着账本走：直改后同一个 context 读到新值
 	world.set_actor_hp("u1", 7.0)

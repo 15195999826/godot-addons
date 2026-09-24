@@ -7,6 +7,7 @@
 ## - 纯数据对象，不持有 Node 引用
 ## - 声明式描述，由 RenderWorld 应用
 ## - 支持 delay 延迟执行
+## - 位置字段一律是逻辑平面坐标（axial 浮点 Vector2）；像素 / 3D 与方向、距离这类欧氏量归 view 层
 class_name FrontendVisualAction
 extends RefCounted
 
@@ -111,6 +112,6 @@ static func lerp_value(a: float, b: float, t: float) -> float:
 	return a + (b - a) * t
 
 
-## Vector3 线性插值
-static func lerp_vector3(a: Vector3, b: Vector3, t: float) -> Vector3:
+## Vector2 线性插值（逻辑平面坐标）
+static func lerp_vector2(a: Vector2, b: Vector2, t: float) -> Vector2:
 	return a + (b - a) * t

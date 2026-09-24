@@ -8,10 +8,11 @@ extends Node
 ## - tick_hp_lerp 指数收敛，贴近（< 0.5）即 snap，收敛后不再标脏
 ## - buff / shield ADD 追加到尾（首次 ADD 顺序稳定），同 id ADD 原位覆盖；UPDATE 只改 primary / current 且
 ##   同值 noop 不标脏、未知 id 忽略；REMOVE 找到即删、找不到 noop；缺 summary 的 ADD / UPDATE 忽略
-## - bump 中途按曲线叠 offset / squish，progress 1 snap 回零位 / ONE
+## - bump 中途按曲线叠 offset / squish（逻辑平面 Vector2），progress 1 snap 回零位 / ONE
 ## - facing 瞬时写入 facing_direction
 ## - death 立即 is_alive=false、hp 归零、death_progress 跟 progress，当场广播 actor_state_changed
-## - move 中途只改插值位置（context 取整可见），progress 1 才落 actor.position 并当场广播
+## - move 中途只改插值位置（context 取整可见；get_actor_axial / get_actor_position 给浮点在飞坐标），
+##   progress 1 才落 actor.position 并当场广播
 ## - 延迟中的卡片跳过；飘字 / 攻击特效 / 投射物按 action id 各建一次，progress 1 移除；
 ##   程序化特效到期由 cleanup 归零
 
@@ -311,26 +312,26 @@ func _test_shield_state_contract() -> void:
 
 func _test_bump_snaps_back() -> void:
 	var world := _world([{"id": "u1"}])
-	var bump := FrontendBumpAction.new("u1", Vector3(1.0, 0.0, 0.0), 0.3, 280.0, true)
+	var bump := FrontendBumpAction.new("u1", Vector2(1.0, 0.0), 0.3, 280.0, true)
 
 	_apply(world, bump, 0.4)
 	var u1 := _actor(world, "u1")
 	TestFramework.assert_true(u1.bump_offset.length() > 0.0, "中途有位移")
 	TestFramework.assert_true(u1.bump_offset.is_equal_approx(bump.get_offset(0.4)))
 	TestFramework.assert_true(u1.bump_squish.is_equal_approx(bump.get_squish(0.4)))
-	TestFramework.assert_false(u1.bump_squish.is_equal_approx(Vector3.ONE), "撞击峰值段有挤压")
+	TestFramework.assert_false(u1.bump_squish.is_equal_approx(Vector2.ONE), "撞击峰值段有挤压")
 
 	_apply(world, bump, 1.0)
 	u1 = _actor(world, "u1")
-	TestFramework.assert_true(u1.bump_offset.is_equal_approx(Vector3.ZERO), "完成 snap 回零位")
-	TestFramework.assert_true(u1.bump_squish.is_equal_approx(Vector3.ONE), "完成 squish 回 ONE")
+	TestFramework.assert_true(u1.bump_offset.is_equal_approx(Vector2.ZERO), "完成 snap 回零位")
+	TestFramework.assert_true(u1.bump_squish.is_equal_approx(Vector2.ONE), "完成 squish 回 ONE")
 
 	# 不挤压的 bump 只位移
-	var flat := FrontendBumpAction.new("u1", Vector3(0.0, 0.0, 1.0), 0.3, 280.0, false)
+	var flat := FrontendBumpAction.new("u1", Vector2(0.0, 1.0), 0.3, 280.0, false)
 	_apply(world, flat, 0.4)
 	u1 = _actor(world, "u1")
 	TestFramework.assert_true(u1.bump_offset.length() > 0.0)
-	TestFramework.assert_true(u1.bump_squish.is_equal_approx(Vector3.ONE))
+	TestFramework.assert_true(u1.bump_squish.is_equal_approx(Vector2.ONE))
 
 
 func _test_facing_instant() -> void:
@@ -379,18 +380,23 @@ func _test_move_interpolates_then_settles() -> void:
 	var hex := world.as_context().get_actor_hex_position("u1")
 	TestFramework.assert_equal(1, hex.q)
 	TestFramework.assert_equal(0, hex.r)
+	# 在飞浮点坐标：账本与只读视图同一口径
+	TestFramework.assert_true(world.get_actor_axial("u1").is_equal_approx(Vector2(1.0, 0.0)))
+	TestFramework.assert_true(world.as_context().get_actor_position("u1").is_equal_approx(Vector2(1.0, 0.0)))
 	# 中途 actor.position 不动
 	TestFramework.assert_equal(0, _actor(world, "u1").position.q)
 	# 中途不广播
 	TestFramework.assert_equal(0, changed.size())
 
 	_apply(world, move, 0.2)
-	# 0.4 取整回 0
+	# 0.4 取整回 0，浮点照旧
 	TestFramework.assert_equal(0, world.as_context().get_actor_hex_position("u1").q)
+	TestFramework.assert_true(world.get_actor_axial("u1").is_equal_approx(Vector2(0.4, 0.0)))
 
 	_apply(world, move, 1.0)
 	TestFramework.assert_equal(2, _actor(world, "u1").position.q)
 	TestFramework.assert_equal(2, world.as_context().get_actor_hex_position("u1").q)
+	TestFramework.assert_true(world.get_actor_axial("u1").is_equal_approx(Vector2(2.0, 0.0)))
 	# 完成当场广播
 	TestFramework.assert_equal("u1", ",".join(changed))
 
@@ -410,7 +416,7 @@ func _test_floating_text_once_per_action_id() -> void:
 	var world := _world([{"id": "u1"}])
 	var created: Array[String] = []
 	world.floating_text_created.connect(func(data: FrontendRenderData.FloatingText) -> void: created.append(data.id))
-	var text := FrontendFloatingTextAction.new("u1", "-5", Color.WHITE, Vector3.ZERO, FrontendFloatingTextAction.FloatingTextStyle.NORMAL, 1000.0)
+	var text := FrontendFloatingTextAction.new("u1", "-5", Color.WHITE, Vector2.ZERO, FrontendFloatingTextAction.FloatingTextStyle.NORMAL, 1000.0)
 
 	_apply(world, text, 0.1, "ft1")
 	_apply(world, text, 0.5, "ft1")
@@ -455,7 +461,7 @@ func _test_attack_vfx_and_projectile_lifecycle() -> void:
 	world.attack_vfx_updated.connect(func(vfx_id: String, progress: float, _scale: float, _alpha: float) -> void:
 		vfx_log.append("update:%s@%.1f" % [vfx_id, progress]))
 	world.attack_vfx_removed.connect(func(vfx_id: String) -> void: vfx_log.append("remove:" + vfx_id))
-	var vfx := FrontendAttackVFXAction.new("u1", "u2", Vector3.ZERO, Vector3(1.0, 0.0, 0.0), 300.0)
+	var vfx := FrontendAttackVFXAction.new("u1", "u2", Vector2.ZERO, Vector2(1.0, 0.0), 300.0)
 	_apply(world, vfx, 0.0, "v1")
 	_apply(world, vfx, 0.5, "v1")
 	_apply(world, vfx, 1.0, "v1")
@@ -463,10 +469,15 @@ func _test_attack_vfx_and_projectile_lifecycle() -> void:
 
 	var proj_log: Array[String] = []
 	world.projectile_created.connect(func(data: FrontendRenderData.Projectile) -> void: proj_log.append("create:" + data.id))
-	world.projectile_updated.connect(func(projectile_id: String, _pos: Vector3, _dir: Vector3) -> void: proj_log.append("update:" + projectile_id))
+	# lambda 按值捕获局部变量，位置用数组收
+	var positions: Array[Vector2] = []
+	world.projectile_updated.connect(func(projectile_id: String, pos: Vector2) -> void:
+		proj_log.append("update:" + projectile_id)
+		positions.append(pos))
 	world.projectile_removed.connect(func(projectile_id: String) -> void: proj_log.append("remove:" + projectile_id))
-	var projectile := FrontendProjectileAction.new("p_logic", "u1", Vector3.ZERO, Vector3(2.0, 0.0, 0.0), 400.0, "u2")
+	var projectile := FrontendProjectileAction.new("p_logic", "u1", Vector2.ZERO, Vector2(2.0, 0.0), 400.0, "u2")
 	_apply(world, projectile, 0.0, "p1")
 	_apply(world, projectile, 0.5, "p1")
+	TestFramework.assert_true(positions[1].is_equal_approx(Vector2(1.0, 0.0)), "更新信号带逻辑平面插值位置")
 	_apply(world, projectile, 1.0, "p1")
 	TestFramework.assert_equal("create:p1,update:p1,update:p1,update:p1,remove:p1", ",".join(proj_log))
