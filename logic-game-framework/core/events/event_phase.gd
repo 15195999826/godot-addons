@@ -3,6 +3,9 @@ class_name EventPhase
 
 const PHASE_PRE := "pre"
 const PHASE_POST := "post"
+## 定向投递（EventProcessor.deliver_to_ability）在 trace 里的相位标注。只用于 trace：定向投递不问 is_event_responsive，
+## 这个字符串不会传给任何死活钩子。
+const PHASE_DIRECT := "direct"
 
 # 保留字符串常量用于兼容（Trace 等仍使用字符串）
 const INTENT_PASS := "pass"

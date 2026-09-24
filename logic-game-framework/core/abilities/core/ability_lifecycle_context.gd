@@ -40,6 +40,10 @@ var event_processor: EventProcessor:
 ## post 派发从登记里带进来（同一对象复用）；定向投递 / 生命周期钩子按需现建。只有字符串，不成环。
 var _handler_context: HandlerContext = null
 
+## 本次事件是寄给本 ability 实例的定向投递（EventProcessor.deliver_to_ability，经 rebuild_for_recipient 建出）还是
+## 广播派发 / 集内投递。AbilityComponent.match_single_trigger 据此分通道：`.direct()` 的 trigger 只认前者。
+var is_direct_delivery := false
+
 
 func _init(
 	p_owner_actor_id: String,
@@ -105,15 +109,38 @@ static func rebuild_for_handler(owner_id: String, ability_id: String, event_dict
 	var actor := owner_instance.get_actor(owner_id)
 	if actor == null or not actor.is_event_responsive(event_dict, phase):
 		return null
+	var context := _rebuild_for_ability(owner_id, ability_id, actor, owner_instance)
+	if context != null:
+		context._handler_context = handler_context
+	return context
+
+
+## 为定向投递按回执重建收件人的 context（回执 = owner actor id + ability 实例 id，EventProcessor.deliver_to_ability 调）。
+##
+## 与 rebuild_for_handler 同一条找法，但**不问 owner 的 is_event_responsive**：定向投递是对 ability 自己发起的事的回复
+## （投射物落地），人死了这封回信还处不处理由 direct trigger 自己的 filter 定，不由 actor 的死活门定。
+## 返回 null = 收件人不在了：owner 未注册或已移出 instance、不是 BattleActor 或没有 AbilitySet、ability 已 revoke 或过期。
+static func rebuild_for_recipient(owner_id: String, ability_id: String) -> AbilityLifecycleContext:
+	var owner_instance := GameWorld.get_instance_of_actor(owner_id)
+	if owner_instance == null:
+		return null
+	var context := _rebuild_for_ability(owner_id, ability_id, owner_instance.get_actor(owner_id), owner_instance)
+	if context != null:
+		context.is_direct_delivery = true
+	return context
+
+
+## 两条按 id 重建共用的后半段：从 actor 取 AbilitySet、按实例 id 找 ability，找不到或已过期返回 null。
+static func _rebuild_for_ability(owner_id: String, ability_id: String, actor: Actor, owner_instance: GameplayInstance) -> AbilityLifecycleContext:
+	if actor == null:
+		return null
 	var owner_ability_set := BattleActor.ability_set_of(actor)
 	if owner_ability_set == null:
 		return null
 	var ability := owner_ability_set.find_ability_by_id(ability_id)
 	if ability == null or ability.is_expired():
 		return null
-	var context := _from_actor(owner_id, ability, actor as BattleActor, owner_instance)
-	context._handler_context = handler_context
-	return context
+	return _from_actor(owner_id, ability, actor as BattleActor, owner_instance)
 
 
 ## 按 owner 反查的两个工厂共用的装配：两个 set 一律取自 actor。

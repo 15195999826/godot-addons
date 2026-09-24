@@ -5,9 +5,11 @@ var collision_detector: CollisionDetector
 var pending_removal: Dictionary = {}
 var auto_remove: bool = true
 
-## 投射物事件在产出点推所注册 instance 的 event_collector 并当场 process_post_event（HIT / MISS / PIERCE），
-## 与 Action 内伤害同语义：命中当刻结算，订阅者的反应落在该事件与 despawn 之间；同 tick 多发弹体逐发结算；
-## 命中的弹体在 handler 期间仍在注册表，auto_remove 到本 tick 末才 remove。despawn 只录不派发。
+## 投射物结局（HIT / MISS / PIERCE）在产出点推所注册 instance 的 event_collector（录像，一次）并当场**定向投递回发射它的
+## ability**（EventProcessor.deliver_to_ability，回执 = 载体上的 source_actor_id + source_ability_id），不按 kind 广播：
+## 原始命中不是可靠的游戏事实（发射定结果的游戏对没掷中的弹也发 HIT），公开事实由发射技能的命中链结算后自己产出，旁观者听结算事件。
+## 与 Action 内伤害同语义：命中当刻结算，发射技能的反应落在该事件与 despawn 之间；同 tick 多发弹体逐发结算；
+## 命中的弹体在 handler 期间仍在注册表，auto_remove 到本 tick 末才 remove。despawn 只录不投。
 ## instance 经 get_instance() 取、不另存一份；未注册即静默短路。
 func _init(detector: CollisionDetector = null, auto_remove_val: bool = true) -> void:
 	super(System.SystemPriority.NORMAL)
@@ -158,7 +160,7 @@ func _emit_hit_event(projectile: ProjectileActor, target_actor_id: String, hit_p
 	)
 
 	instance.event_collector.push(event)
-	instance.event_processor.process_post_event(event)
+	_deliver_outcome(instance, projectile, event)
 
 	var despawn_event := ProjectileEvents.create_projectile_despawn_event(
 		projectile.id,
@@ -186,7 +188,7 @@ func _emit_miss_event(projectile: ProjectileActor, reason: String) -> void:
 	)
 
 	instance.event_collector.push(event)
-	instance.event_processor.process_post_event(event)
+	_deliver_outcome(instance, projectile, event)
 
 	var despawn_event := ProjectileEvents.create_projectile_despawn_event(
 		projectile.id,
@@ -213,7 +215,7 @@ func _emit_pierce_event(projectile: ProjectileActor, target_actor_id: String, pi
 	)
 
 	instance.event_collector.push(event)
-	instance.event_processor.process_post_event(event)
+	_deliver_outcome(instance, projectile, event)
 
 
 func _get_source_id(projectile: ProjectileActor) -> String:
@@ -221,6 +223,17 @@ func _get_source_id(projectile: ProjectileActor) -> String:
 	if source_actor_id == "":
 		return "unknown"
 	return source_actor_id
+
+
+## 结局只投给发射它的 ability 实例。没回执的弹是编程错误（载体铁律：行为全挂施法者 ability 上，LaunchProjectileAction 自动填，
+## 项目自己 launch 的照填）：已录进 collector，不投、断言。
+func _deliver_outcome(instance: GameplayInstance, projectile: ProjectileActor, event: Dictionary) -> void:
+	var source_ability_id := projectile.get_source_ability_id()
+	if source_ability_id == "":
+		Log.assert_crash(false, "ProjectileSystem",
+			"projectile '%s' 没有回执（launch 参数缺 source_ability_id），'%s' 无处投递" % [projectile.id, str(event.get("kind", ""))])
+		return
+	instance.event_processor.deliver_to_ability(event, projectile.get_source_actor_id(), source_ability_id)
 
 
 ## Phase 01 Chain Lightning helper: 从 projectile.launch_params 提取 custom_data。

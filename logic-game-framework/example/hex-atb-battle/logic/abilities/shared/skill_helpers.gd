@@ -4,8 +4,8 @@
 ## hex 坐标→Vector3 转换等），所以抽到一个独立 helper class，避免在每个技能文件里复制。
 ##
 ## 使用规约：
-##   - 以 `ability_activate_precheck` / `projectile_hit_precheck` 为**函数引用**传给 `TriggerConfig.new(kind).precheck(...)`
-##     （不要加括号；GDScript 会把 `ClassName.static_func` 包成 Callable）
+##   - 以 `ability_activate_precheck` 为**函数引用**传给 `TriggerConfig.new(kind).precheck(...)`、`owner_alive_filter` 传给
+##     `TriggerConfig.new(kind, filter).direct()`（不要加括号；GDScript 会把 `ClassName.static_func` 包成 Callable）
 ##   - `target_coord_from_event()` / `owner_position_resolver()` / `target_position_resolver()`
 ##     必须**调用**（加括号），每次返回一个新的 Resolver 对象
 class_name HexBattleSkillHelpers
@@ -18,11 +18,16 @@ static func ability_activate_precheck(event_dict: Dictionary, h: HandlerContext)
 	return str(event_dict.get("ability_instance_id", "")) == h.ability_id
 
 
-## 匹配本技能发出的投射物命中：source_actor_id（发射者）是 owner、ability_config_id（技能来源）是本 config。
-## 走 precheck：不是自己的弹在重建 context 之前就跳过——满场几十个订阅者时这是 post 扇出的大头。
-static func projectile_hit_precheck(event_dict: Dictionary, h: HandlerContext) -> bool:
-	return str(event_dict.get("source_actor_id", "")) == h.owner_id \
-		and str(event_dict.get("ability_config_id", "")) == h.config_id
+# ========== Trigger Filter（要 ctx）==========
+
+## 投射物命中 direct trigger 的死活策略：**人死弹灭**——发射者已死或本 ability 已过期，寄回来的结局不处理。
+## 命中经 EventProcessor.deliver_to_ability 只投回发射它的 ability 实例，不问 actor 的 is_event_responsive，这条规则由技能
+## 自己声明（hex 规则；kards 这类「人死弹照落」的游戏不挂它）。「是不是我的弹」不必判：寄错人的到不了这里。
+static func owner_alive_filter(_event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
+	if ctx.ability == null or ctx.ability.is_expired():
+		return false
+	var owner := GameWorld.get_actor(ctx.owner_actor_id) as HexBattleActor
+	return owner != null and not owner.is_dead()
 
 
 # ========== Caster 解析 ==========

@@ -9,6 +9,9 @@ extends Node
 ## on_apply 里过期即停止 apply 且不注册、注册的 owner 取所在 AbilitySet 的 owner；
 ## precheck 两段式：带 precheck 的登记在重建 context 之前判（不问 is_event_responsive）、同 kind 混合声明退回全派但 precheck
 ## 仍在 match 里生效、并集语义、通过 precheck 后死活门照旧、定向投递也按 precheck 判。
+## 寄给单个 ability 实例的回复（EventProcessor.deliver_to_ability + TriggerConfig.direct()）：direct trigger 不进广播注册表、
+## 只在定向通道触发、同 kind 广播 trigger 只在广播通道触发；不问死活门（filter 自己拒）；收件人不在了静默丢弃；
+## 投递内 expire 当场 revoke；嵌套投递受深度上限。
 
 const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
 
@@ -68,6 +71,20 @@ class RedispatchAction:
 		return ActionResult.create_success_result([])
 
 
+## 记一笔后把同一个事件再寄回本 ability 实例一次（定向投递的嵌套深度探针）。
+class RedeliverAction:
+	extends Action.BaseAction
+
+	func _init() -> void:
+		super._init(TargetSelector.new())
+
+	func execute(ctx: ExecutionContext) -> ActionResult:
+		var event := ctx.get_original_event()
+		(event["log"] as Array).append("depth")
+		ctx.instance.event_processor.deliver_to_ability(event, ctx.ability_ref.owner_actor_id, ctx.ability_ref.id)
+		return ActionResult.create_success_result([])
+
+
 ## on_apply 里让所属 ability 过期的 component（一次性 on_apply 效果的形状）。
 class ExpireOnApplyComponent:
 	extends AbilityComponent
@@ -113,6 +130,12 @@ func _init() -> void:
 	TestFramework.register_test("PostDispatch: prechecks of one kind across components form a union", _test_precheck_union_across_components)
 	TestFramework.register_test("PostDispatch: a passed precheck still goes through the responsiveness gate", _test_precheck_then_responsive_gate)
 	TestFramework.register_test("PostDispatch: direct delivery evaluates the precheck inside the trigger match", _test_precheck_in_direct_delivery)
+	TestFramework.register_test("DeliverToAbility: a direct trigger never registers, hears its own delivery, ignores the broadcast", _test_direct_trigger_channel)
+	TestFramework.register_test("DeliverToAbility: a broadcast trigger of the same kind hears the broadcast, ignores the delivery", _test_broadcast_trigger_ignores_delivery)
+	TestFramework.register_test("DeliverToAbility: a dead owner is still delivered to, the gate is never asked, a filter can refuse", _test_direct_delivery_skips_responsiveness_gate)
+	TestFramework.register_test("DeliverToAbility: a missing recipient is dropped silently", _test_direct_delivery_missing_recipient)
+	TestFramework.register_test("DeliverToAbility: an ability expired inside its delivery is revoked in the same delivery", _test_direct_delivery_expire_revokes)
+	TestFramework.register_test("DeliverToAbility: nested delivery stops at max_depth", _test_direct_delivery_depth)
 
 
 ## 同一 ability 两个 component 都监听 KIND：kind 去重后只注册一条，一次派发两个 component 各跑一次。
@@ -428,6 +451,113 @@ func _test_precheck_in_direct_delivery() -> void:
 	GameWorld.destroy_instance(instance.id)
 
 
+## direct trigger 不进广播注册表：同 kind 的广播到不了它；deliver_to_ability 寄给谁谁触发，同 owner 的另一个 ability 不沾边。
+func _test_direct_trigger_channel() -> void:
+	var instance := _create_instance("deliver_channel")
+	var actor := _spawn(instance)
+	var receiver := _grant_direct(actor, "mine")
+	var neighbour := _grant_direct(actor, "theirs")
+	TestFramework.assert_equal(0, _registration_count(instance, KIND))
+
+	TestFramework.assert_equal([], _dispatch(instance))
+	TestFramework.assert_equal(["mine"], _deliver(instance, actor.get_id(), receiver.id))
+	TestFramework.assert_equal(["theirs"], _deliver(instance, actor.get_id(), neighbour.id))
+	GameWorld.destroy_instance(instance.id)
+
+
+## 同一 ability 对同 kind 既有 direct 又有广播 trigger：kind 只因广播那条注册一次；广播只触发广播那条、定向只触发 direct 那条。
+func _test_broadcast_trigger_ignores_delivery() -> void:
+	var instance := _create_instance("deliver_mixed_channels")
+	var actor := _spawn(instance)
+	var ability := Ability.new(_ability_config("mixed_channels", [
+		_no_instance_direct(KIND, AppendLabelAction.new("direct")),
+		_no_instance(KIND, AppendLabelAction.new("broadcast")),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	TestFramework.assert_equal(1, _registration_count(instance, KIND))
+
+	TestFramework.assert_equal(["broadcast"], _dispatch(instance))
+	TestFramework.assert_equal(["direct"], _deliver(instance, actor.get_id(), ability.id))
+	GameWorld.destroy_instance(instance.id)
+
+
+## 定向投递不问死活门：owner 死了照样送达、is_event_responsive 一次都没被问；「人死弹灭」由 direct trigger 的 filter 自己拒。
+func _test_direct_delivery_skips_responsiveness_gate() -> void:
+	var instance := _create_instance("deliver_dead_owner")
+	var actor := _spawn(instance)
+	var always := _grant_direct(actor, "always")
+	var alive_only := Ability.new(_ability_config("direct_alive_only", [
+		_no_instance_direct(KIND, AppendLabelAction.new("alive_only"), _owner_alive),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(alive_only)
+
+	actor.mark_dead()
+	TestFramework.assert_equal(["always"], _deliver(instance, actor.get_id(), always.id))
+	TestFramework.assert_equal([], _deliver(instance, actor.get_id(), alive_only.id))
+	TestFramework.assert_equal(0, actor.responsive_queries)
+	actor.set_death_latch(false)
+	TestFramework.assert_equal(["alive_only"], _deliver(instance, actor.get_id(), alive_only.id))
+	GameWorld.destroy_instance(instance.id)
+
+
+## 收件人不在了：错的实例 id、已 revoke 的 ability、已 remove 的 owner——都返回 false、不报错、深度归零。
+func _test_direct_delivery_missing_recipient() -> void:
+	var instance := _create_instance("deliver_missing_recipient")
+	var actor := _spawn(instance)
+	var ability := _grant_direct(actor, "gone")
+	var log_counter := LogCounter.new()
+	OS.add_logger(log_counter)
+
+	TestFramework.assert_false(instance.event_processor.deliver_to_ability({"kind": KIND, "log": []}, actor.get_id(), "nobody"))
+	actor.ability_set.revoke_ability(ability.id)
+	TestFramework.assert_false(instance.event_processor.deliver_to_ability({"kind": KIND, "log": []}, actor.get_id(), ability.id))
+	instance.remove_actor(actor.get_id())
+	TestFramework.assert_false(instance.event_processor.deliver_to_ability({"kind": KIND, "log": []}, actor.get_id(), ability.id))
+	OS.remove_logger(log_counter)
+	TestFramework.assert_equal(0, log_counter.errors)
+	TestFramework.assert_equal(0, instance.event_processor.get_current_depth())
+	GameWorld.destroy_instance(instance.id)
+
+
+## 一次性回复：收件 ability 在 action 里 expire 自己 → 本次投递内当场除名、abilityRevoked 恰一次，再寄就没人收。
+func _test_direct_delivery_expire_revokes() -> void:
+	var instance := _create_instance("deliver_expire")
+	var actor := _spawn(instance)
+	var ability := Ability.new(_ability_config("direct_expire", [
+		_no_instance_direct(KIND, AppendLabelAction.new("consumed")),
+		_no_instance_direct(KIND, ExpireSelfAction.new()),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	var revoked: Array = []
+	actor.ability_set.on_ability_revoked(func(revoked_ability: Ability, reason: String, _set: AbilitySet, expire_reason: String) -> void:
+		revoked.append([revoked_ability.id, reason, expire_reason]))
+
+	TestFramework.assert_equal(["consumed"], _deliver(instance, actor.get_id(), ability.id))
+	TestFramework.assert_true(actor.ability_set.find_ability_by_id(ability.id) == null, "过期的 ability 应在本次投递内离开名单")
+	TestFramework.assert_equal([[ability.id, AbilitySet.REVOKE_REASON_EXPIRED, "post_dispatch_consumed"]], revoked)
+	TestFramework.assert_equal([], _deliver(instance, actor.get_id(), ability.id))
+	GameWorld.destroy_instance(instance.id)
+
+
+## action 里再把同一事件寄回自己：到 max_depth 停下、报一条深度超限错误、深度计数归零。
+func _test_direct_delivery_depth() -> void:
+	var instance := GameWorld.create_instance(GameplayInstance.new("deliver_depth", EventProcessorConfig.new(3)))
+	var actor := _spawn(instance)
+	var ability := Ability.new(_ability_config("direct_redeliver", [
+		_no_instance_direct(KIND, RedeliverAction.new()),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+
+	var log_counter := LogCounter.new()
+	OS.add_logger(log_counter)
+	var labels := _deliver(instance, actor.get_id(), ability.id)
+	OS.remove_logger(log_counter)
+	TestFramework.assert_equal(3, labels.size())
+	TestFramework.assert_equal(1, log_counter.errors)
+	TestFramework.assert_equal(0, instance.event_processor.get_current_depth())
+	GameWorld.destroy_instance(instance.id)
+
+
 # ========== 夹具 ==========
 
 static func _create_instance(instance_id: String) -> GameplayInstance:
@@ -499,6 +629,35 @@ static func _registration_count(instance: GameplayInstance, kind: String) -> int
 static func _dispatch(instance: GameplayInstance, kind: String = KIND) -> Array[String]:
 	var event := {"kind": kind, "log": []}
 	instance.event_processor.process_post_event(event)
+	var labels: Array[String] = []
+	labels.assign(event["log"])
+	return labels
+
+
+## 只收定向投递的 NoInstance 组件；filter 可选（Callable() = 不挂）。
+static func _no_instance_direct(kind: String, action: Action.BaseAction, filter: Callable = Callable()) -> NoInstanceConfig:
+	return NoInstanceConfig.builder().trigger(TriggerConfig.new(kind, filter).direct()).action(action).build()
+
+
+## grant 一个只收定向投递的 KIND、触发时记下 label 的 ability。
+static func _grant_direct(actor: DispatchActor, label: String) -> Ability:
+	var ability := Ability.new(_ability_config("direct_" + label, [
+		_no_instance_direct(KIND, AppendLabelAction.new(label)),
+	]), actor.get_id())
+	actor.ability_set.grant_ability(ability)
+	return ability
+
+
+## filter：owner 活着才收（「人死弹灭」的形状；定向投递不问死活门，这条由 trigger 自己声明）
+static func _owner_alive(_event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
+	var owner := GameWorld.get_actor(ctx.owner_actor_id) as BattleActor
+	return owner != null and not owner.is_dead()
+
+
+## 把一条 KIND 事件寄给 owner 的 ability 实例，返回 action 记下的 label。
+static func _deliver(instance: GameplayInstance, owner_id: String, ability_id: String) -> Array[String]:
+	var event := {"kind": KIND, "log": []}
+	instance.event_processor.deliver_to_ability(event, owner_id, ability_id)
 	var labels: Array[String] = []
 	labels.assign(event["log"])
 	return labels

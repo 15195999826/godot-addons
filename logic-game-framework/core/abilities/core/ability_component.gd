@@ -133,10 +133,14 @@ static func match_triggers(triggers: Array[Dictionary], trigger_mode: String, ev
 			return false
 	return true
 
-## 匹配单个触发器：event_kind → 可选 precheck（只要三个 id）→ 可选 filter（要完整 ctx），三段都过才算匹配。
-## precheck 在这里照样求值：post 派发的预过滤只是把它提前，定向投递（激活请求 / grant 自投递）只有这一处。
+## 匹配单个触发器：event_kind → 通道 → 可选 precheck（只要三个 id）→ 可选 filter（要完整 ctx），都过才算匹配。
+## 通道：direct trigger 只认寄给本 ability 的定向投递（context.is_direct_delivery），普通 trigger 只认广播 / 集内投递；
+## 同一 ability 对同 kind 两种 trigger 并存也不会一事二触。
+## precheck 在这里照样求值：post 派发的预过滤只是把它提前，定向投递与集内投递（激活请求 / grant 自投递）只有这一处。
 static func match_single_trigger(trigger: Dictionary, event_dict: Dictionary, context: AbilityLifecycleContext) -> bool:
 	if event_dict.get("kind", "") != str(trigger.get("event_kind", "")):
+		return false
+	if bool(trigger.get("direct", false)) != context.is_direct_delivery:
 		return false
 	if trigger.has("precheck") and not (trigger["precheck"] as Callable).call(event_dict, context.get_handler_context()):
 		return false
@@ -153,15 +157,20 @@ static func convert_triggers(configs: Array[TriggerConfig]) -> Array[Dictionary]
 			trigger_dict["precheck"] = trigger.get_precheck()
 		if trigger.filter.is_valid():
 			trigger_dict["filter"] = trigger.filter
+		if trigger.is_direct():
+			trigger_dict["direct"] = true
 		result.append(trigger_dict)
 	return result
 
-## 按 kind 收集 precheck：{ kind: Array[Callable] }，只含「该 kind 的每个 trigger 都带 precheck」的 kind
-## （有一个 trigger 没带，该 kind 就不能预过滤——事件可能经它触发）。供 get_post_event_prechecks 覆盖使用。
+## 按 kind 收集 precheck：{ kind: Array[Callable] }，只含「该 kind 的每个（广播）trigger 都带 precheck」的 kind
+## （有一个 trigger 没带，该 kind 就不能预过滤——事件可能经它触发）。direct trigger 不进广播注册表，不算在内。
+## 供 get_post_event_prechecks 覆盖使用。
 static func trigger_prechecks_by_kind(triggers: Array[Dictionary]) -> Dictionary:
 	var by_kind := {}
 	var disqualified := {}
 	for trigger in triggers:
+		if bool(trigger.get("direct", false)):
+			continue
 		var kind := str(trigger.get("event_kind", ""))
 		if kind == "" or disqualified.has(kind):
 			continue
@@ -174,10 +183,13 @@ static func trigger_prechecks_by_kind(triggers: Array[Dictionary]) -> Dictionary
 		(by_kind[kind] as Array[Callable]).append(trigger["precheck"])
 	return by_kind
 
-## 触发器列表里去重后的 event_kind（按首次出现的顺序），供 get_post_event_kinds 覆盖使用
+## 触发器列表里去重后的 event_kind（按首次出现的顺序），供 get_post_event_kinds 覆盖使用。
+## direct trigger 不进广播注册表，跳过：一个 kind 只有 direct trigger 时不注册 post handler。
 static func trigger_event_kinds(triggers: Array[Dictionary]) -> Array[String]:
 	var kinds: Array[String] = []
 	for trigger in triggers:
+		if bool(trigger.get("direct", false)):
+			continue
 		var kind := str(trigger.get("event_kind", ""))
 		if kind != "" and not kinds.has(kind):
 			kinds.append(kind)

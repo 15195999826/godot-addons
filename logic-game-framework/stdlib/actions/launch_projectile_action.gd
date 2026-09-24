@@ -56,8 +56,14 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 		direction_value = _direction.resolve(ctx)
 	var custom_data_value := _custom_data.resolve(ctx)
 
-	var source_actor_id := ctx.ability_ref.source_actor_id if ctx.ability_ref != null else "unknown"
-	var ability_config_id := ctx.ability_ref.config_id if ctx.ability_ref != null else ""
+	# 投射物必须由 ability 发射：结局要按回执投回它（ProjectileSystem → EventProcessor.deliver_to_ability）。
+	Log.assert_crash(ctx.ability_ref != null, "LaunchProjectileAction", "没有 ability_ref，投射物的结局无处投递")
+	if ctx.ability_ref == null:
+		return ActionResult.create_failure_result("ability_ref is required")
+	# 发射者 = 持有本 ability 的 actor（回执的 owner 半边）；ability 的 source_actor_id 是 buff 的施加者，不是开火的人。
+	var source_actor_id := ctx.ability_ref.owner_actor_id
+	var ability_config_id := ctx.ability_ref.config_id
+	var source_ability_id := ctx.ability_ref.id
 
 	var projectile := ProjectileActor.new(projectile_config)
 
@@ -70,6 +76,7 @@ func execute(ctx: ExecutionContext) -> ActionResult:
 
 	var launch_params := {
 		"source_actor_id": source_actor_id,
+		"source_ability_id": source_ability_id,
 		"ability_config_id": ability_config_id,
 		"target_actor_id": target_actor_id,
 		"start_position": start_position,

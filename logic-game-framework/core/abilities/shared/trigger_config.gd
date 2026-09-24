@@ -9,6 +9,11 @@
 ##      不过就整条跳过（纯加速，不改结果；match_single_trigger 里照样再判一次，定向投递也走同一段）。
 ##   ② filter(event_dict, ctx: AbilityLifecycleContext) -> bool —— 要完整 ctx（actor / 属性 / 世界）的条件。
 ## 只比 id 的条件写 precheck，别写 filter：写进 filter 就得先造 ctx 才能拒绝。
+##
+## 投递通道也由 trigger 声明：`.direct()` 的 trigger 只收**寄给本 ability 实例**的事件（EventProcessor.deliver_to_ability，
+## 如投射物系统把结局投回发射它的 ability），不进广播注册表、广播来的同 kind 事件也不匹配；不声明的照旧按 kind 订阅广播。
+## 「收件人是不是我」不必再写 precheck——processor 按回执只重建收件实例的 context。定向投递不问 owner 的
+## is_event_responsive：人死了这封回信还处不处理，由 direct trigger 自己的 filter 定。
 class_name TriggerConfig
 extends RefCounted
 
@@ -52,6 +57,9 @@ var filter: Callable
 ## 第一段：func(event: Dictionary, h: HandlerContext) -> bool，只看事件 + 三个 id。经 precheck() 设置。
 var _precheck: Callable
 
+## 只收定向投递（寄给本 ability 实例的事件）。经 direct() 设置。
+var _direct := false
+
 
 func _init(
 	event_kind: String = "",
@@ -66,6 +74,15 @@ func _init(
 func precheck(fn: Callable) -> TriggerConfig:
 	var copy := TriggerConfig.new(event_kind, filter)
 	copy._precheck = fn
+	copy._direct = _direct
+	return copy
+
+
+## 返回只收定向投递的新 TriggerConfig（copy-with，同 precheck）。
+func direct() -> TriggerConfig:
+	var copy := TriggerConfig.new(event_kind, filter)
+	copy._precheck = _precheck
+	copy._direct = true
 	return copy
 
 
@@ -75,3 +92,7 @@ func get_precheck() -> Callable:
 
 func has_precheck() -> bool:
 	return _precheck.is_valid()
+
+
+func is_direct() -> bool:
+	return _direct

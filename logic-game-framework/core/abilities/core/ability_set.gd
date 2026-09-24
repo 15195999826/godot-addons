@@ -210,7 +210,8 @@ func _is_acting_execution(_ability: Ability) -> bool:
 	return true
 
 ## 定向投递：把事件交给本 set 的全部 ability（激活请求、grant 自投递——EventProcessor.DIRECT_DELIVERY_KINDS）。
-## 不经 post 派发，也就不问 owner 的 is_event_responsive；跨 actor 的被动走 EventProcessor.process_post_event。
+## 不经 post 派发，也就不问 owner 的 is_event_responsive；跨 actor 的被动走 EventProcessor.process_post_event；
+## 寄给单个 ability 实例的回复（投射物结局）走 EventProcessor.deliver_to_ability，只有 `.direct()` 的 trigger 收。
 func receive_event(event_dict: Dictionary) -> void:
 	# owner instance 每次投递只反查一次，本轮所有 ability 的 context 共用。
 	var owner_instance := get_owner_instance()

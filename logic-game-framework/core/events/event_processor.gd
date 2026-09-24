@@ -31,6 +31,8 @@
 ## - 可能触发被动技能（如反伤、吸血）产生新事件
 ##
 ## 定向投递（DIRECT_DELIVERY_KINDS：激活请求 / grant 自投递）不走 post 派发，由 AbilitySet.receive_event 投给单个 actor。
+## 寄给单个 ability 实例的回复（投射物结局）走 deliver_to_ability：按回执重建收件人 context，只有 `.direct()` 的 trigger 收，
+## 不查注册表、不广播、不问 is_event_responsive。
 ##
 ## ========== 使用示例 ==========
 ##
@@ -334,6 +336,52 @@ func process_post_event(event_dict: Dictionary) -> void:
 	_current_depth -= 1
 	_current_trace_id = parent_trace_id
 	_finalize_trace(trace)
+
+## 定向投递：把事件只投给一个 ability 实例。回执（owner actor id + ability 实例 id）是载体自带的事实，由产出方读出来递进来——
+## ProjectileSystem 把弹的结局投回发射它的 ability（launch 参数 source_ability_id），不是派发时临时挑的观众。
+## 不查注册表、不广播；只有该 ability 上 TriggerConfig.direct() 的 trigger 会匹配（AbilityComponent.match_single_trigger 按
+## context.is_direct_delivery 分通道），能不能收到仍由订阅方声明。
+## 不问 owner 的 is_event_responsive（AbilityLifecycleContext.rebuild_for_recipient）：这是对 ability 自己发起的事的回复，
+## 人死了这封回信还处不处理由 direct trigger 的 filter 定。收件人不在了（owner 出 registry / ability 已 revoke 或过期）
+## 静默丢弃，trace ≥ 1 记 recipient_missing。收件 ability 在 handler 里 expire 了自己就当场从所在 set 除名（同 post 派发收尾）。
+## 定向投递 kind（激活请求 / grant 自投递）仍经 AbilitySet.receive_event 投给整个 set，不走这里。
+## @return 是否有 component 被触发
+func deliver_to_ability(event_dict: Dictionary, owner_id: String, ability_id: String) -> bool:
+	var event_kind: String = event_dict.get("kind", "")
+	if DIRECT_DELIVERY_KINDS.has(event_kind):
+		Log.assert_crash(false, "EventProcessor",
+			"'%s' 经 AbilitySet.receive_event 投给整个 set，不走 deliver_to_ability" % event_kind)
+		return false
+	if _depth_exceeded(event_dict):
+		return false
+
+	var trace := _create_trace(event_dict, EventPhase.PHASE_DIRECT)
+	var parent_trace_id := _current_trace_id
+	_current_depth += 1
+	_current_trace_id = trace.get("trace_id", "")
+
+	var triggered := false
+	var context := AbilityLifecycleContext.rebuild_for_recipient(owner_id, ability_id)
+	if context == null:
+		if not trace.is_empty():
+			trace["recipient_missing"] = true
+	else:
+		var start_time := Time.get_ticks_msec()
+		triggered = context.ability.receive_event(event_dict, context)
+		if context.ability.is_expired() and context.ability_set != null:
+			context.ability_set.revoke_ability(ability_id, AbilitySet.REVOKE_REASON_EXPIRED, context.ability.get_expire_reason())
+		if _config.trace_level >= 2:
+			trace["handlers"] = [{
+				"handler_id": "%s_direct_%s" % [ability_id, event_kind],
+				"handler_name": context.ability.config_id,
+				"triggered": triggered,
+				"execution_time": Time.get_ticks_msec() - start_time,
+			}]
+
+	_current_depth -= 1
+	_current_trace_id = parent_trace_id
+	_finalize_trace(trace)
+	return triggered
 
 func get_traces() -> Array[Dictionary]:
 	return _traces

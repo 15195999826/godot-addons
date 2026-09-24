@@ -66,6 +66,11 @@ func get_source_actor_id() -> String:
 func get_ability_config_id() -> String:
 	return _launch_params.get("ability_config_id", "") as String
 
+## 回执：发射它的 Ability 实例 id（launch 参数 source_ability_id）。ProjectileSystem 把结局（hit / miss / pierce）只投回
+## 这个实例（EventProcessor.deliver_to_ability，owner = source_actor_id），不广播；没有回执的弹结局无处投递。
+func get_source_ability_id() -> String:
+	return _launch_params.get("source_ability_id", "") as String
+
 func get_target_actor_id() -> String:
 	return _launch_params.get("target_actor_id", "") as String
 

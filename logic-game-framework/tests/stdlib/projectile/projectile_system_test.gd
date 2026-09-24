@@ -1,11 +1,13 @@
 extends Node
 
-## ProjectileSystem 事件派发合同（stdlib）：
-## 1. HIT / MISS / PIERCE 在产出点推所属 instance 的 event_collector 后当场 process_post_event——与 Action 内伤害同语义：
-##    订阅者的反应落在该事件与 despawn 之间、同一 tick 内，不等任何人回扫 collector
-## 2. handler 跑的时候弹体仍在注册表；auto_remove 到本 tick 末才 remove
-## 3. despawn 只录不派发
-## 4. system 未注册进 instance 时静默短路：弹体状态照常推进，不派发、不推录像、不报错
+## ProjectileSystem 结局投递合同（stdlib）：
+## 1. HIT / MISS / PIERCE 在产出点推所属 instance 的 event_collector（一次）后当场按回执定向投递回发射它的 ability
+##    （deliver_to_ability，只有 .direct() 的 trigger 收）——与 Action 内伤害同语义：发射技能的反应落在该事件与 despawn 之间、
+##    同一 tick 内，不等任何人回扫 collector
+## 2. 不广播：订阅同 kind 广播的旁观者一条都听不到
+## 3. handler 跑的时候弹体仍在注册表；auto_remove 到本 tick 末才 remove
+## 4. despawn 只录不投
+## 5. system 未注册进 instance 时静默短路：弹体状态照常推进，不投递、不推录像、不报错
 
 const ECHO_KIND := "projectile_probe_echo"
 
@@ -52,6 +54,7 @@ func _init() -> void:
 	TestFramework.register_test("ProjectileSystem: miss (timeout) dispatches at emission the same way", _test_miss_dispatch)
 	TestFramework.register_test("ProjectileSystem: pierce dispatches per target, the final hit dispatches then despawns", _test_pierce_dispatch)
 	TestFramework.register_test("ProjectileSystem: unregistered system short-circuits without dispatching", _test_unregistered_short_circuit)
+	TestFramework.register_test("ProjectileSystem: the outcome reaches only the launching ability, a broadcast subscriber hears nothing", _test_outcome_not_broadcast)
 
 
 func _test_hit_dispatch() -> void:
@@ -131,6 +134,29 @@ func _test_unregistered_short_circuit() -> void:
 	TestFramework.assert_equal(1, system.get_pending_removal_ids().size())
 
 
+## 旁观者按 kind 订阅 projectile_hit 广播（注册在表里），弹落地时一条都听不到：结局只按回执投给发射技能。
+func _test_outcome_not_broadcast() -> void:
+	var instance := _create_instance("projectile_system_not_broadcast")
+	var shooter := _spawn_shooter(instance, [ProjectileEvents.PROJECTILE_HIT_EVENT])
+	var bystander := instance.add_actor(ProbeActor.new()) as ProbeActor
+	bystander.probe_position = Vector3(100.0, 0.0, 0.0)
+	bystander.ability_set.grant_ability(Ability.new(AbilityConfig.builder().config_id("projectile_probe_bystander")
+		.component_config(NoInstanceConfig.builder()
+			.trigger(TriggerConfig.new(ProjectileEvents.PROJECTILE_HIT_EVENT)).action(EchoAction.new()).build())
+		.build(), bystander.get_id()))
+	var target := instance.add_actor(ProbeActor.new()) as ProbeActor
+	instance.add_system(ProjectileSystem.new(DistanceCollisionDetector.new(1.0), true))
+	_launch(instance, shooter, {}, target.get_id())
+
+	instance.base_tick(100.0)
+
+	var events := instance.event_collector.collect()
+	TestFramework.assert_equal(
+		[ProjectileEvents.PROJECTILE_HIT_EVENT, ECHO_KIND, ProjectileEvents.PROJECTILE_DESPAWN_EVENT], _kinds(events))
+	TestFramework.assert_equal(1, (instance.event_processor._post_handlers.get(ProjectileEvents.PROJECTILE_HIT_EVENT, []) as Array).size())
+	GameWorld.destroy_instance(instance.id)
+
+
 # ========== 夹具 ==========
 
 static func _create_instance(instance_id: String) -> GameplayInstance:
@@ -140,21 +166,22 @@ static func _create_instance(instance_id: String) -> GameplayInstance:
 	return instance
 
 
-## 射手：监听给定 kind 的投射物事件，触发时推回声。
+## 射手：一个 ability 只收寄给自己的给定 kind 投射物结局（.direct()），触发时推回声。
 static func _spawn_shooter(instance: GameplayInstance, kinds: Array[String]) -> ProbeActor:
 	var shooter := instance.add_actor(ProbeActor.new()) as ProbeActor
 	var builder := AbilityConfig.builder().config_id("projectile_probe_listener")
 	for kind in kinds:
-		builder.component_config(NoInstanceConfig.builder().trigger(TriggerConfig.new(kind)).action(EchoAction.new()).build())
+		builder.component_config(NoInstanceConfig.builder().trigger(TriggerConfig.new(kind).direct()).action(EchoAction.new()).build())
 	shooter.ability_set.grant_ability(Ability.new(builder.build(), shooter.get_id()))
 	return shooter
 
 
-## 原地发射（起点 = 目标点 = 原点）：目标站在原点即命中，无目标则到期 miss。
+## 原地发射（起点 = 目标点 = 原点）：目标站在原点即命中，无目标则到期 miss。回执 = 射手 + 它的那个 ability。
 static func _launch(instance: GameplayInstance, shooter: ProbeActor, config: Dictionary, target_id: String = "") -> ProjectileActor:
 	var projectile := instance.add_actor(ProjectileActor.new(config)) as ProjectileActor
 	projectile.launch({
 		"source_actor_id": shooter.get_id(),
+		"source_ability_id": shooter.ability_set.get_abilities()[0].id,
 		"target_actor_id": target_id,
 		"start_position": Vector3.ZERO,
 		"target_position": Vector3.ZERO,

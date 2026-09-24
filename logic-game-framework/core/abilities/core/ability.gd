@@ -313,7 +313,8 @@ func remove_effects() -> void:
 	_on_execution_callbacks.clear()
 
 
-## 按 component 声明的 kind（去掉定向投递 kind）各注册一条 post handler，派发时经 receive_event 交给全部 component。
+## 按 component 声明的 kind（去掉定向投递 kind；`.direct()` 的 trigger 不声明 kind，见 AbilityComponent.trigger_event_kinds）
+## 各注册一条 post handler，派发时经 receive_event 交给全部 component。
 ## owner 取 context 的（本 ability 所在 AbilitySet 的 owner）：派发按它找回本 ability，remove_actor 按它注销。
 ## 经 grant_ability 进来时 owner 必已登记、processor 必在；context 没有 processor 只剩直接调 apply_effects 的孤立单测，
 ## 不注册，这样的 ability 只收得到 AbilitySet 的定向投递。

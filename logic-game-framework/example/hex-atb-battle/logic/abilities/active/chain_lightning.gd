@@ -19,15 +19,14 @@
 ##   伤害序列: 60 / 48 / 38.4
 ##
 ## 安全合同:
-##   - hit filter 匹配 source + config_id + ability_instance_id, 不会被同 caster
-##     的其它 chain 释放污染。
-##   - caster 死亡 / ability 过期 / 不在 alive → 不再链发下一段。
+##   - 命中经 ProjectileSystem 按回执只投回发射它的这个 ability 实例 (TriggerConfig.direct()), 不会被同 caster
+##     的其它 chain 释放污染; custom_data.ability_instance_id 仍随弹记录, 供 _next_chain_data 核对与录像关联。
+##   - caster 死亡 / ability 过期 (owner_alive_filter) / 不在 alive → 不再链发下一段。
 ##   - visited_actor_ids 防同一敌方重复命中。
 ##
 ## 投射物伤害四件套 (弹体 0 HP 伤害, 伤害只在 hit-timeline DamageAction; 为何不抽 factory)
 ## 见 fireball.gd 头注释的"投射物模板"段。本技能 hit damage 读 projectile_hit custom_data.damage
-## (跳跃衰减), 非 CFG_DAMAGE; 命中 trigger 分两段: _projectile_hit_precheck 比三个 id (context 重建前就能拒),
-## _projectile_hit_guard 查 expired/dead (要 ctx)。
+## (跳跃衰减), 非 CFG_DAMAGE。
 class_name HexBattleChainLightning
 
 
@@ -38,31 +37,6 @@ const FALLOFF := 0.2
 const COOLDOWN_MS := 5000.0
 ## execution_state 便签 key: _ComputeNextChainAction 写, 下游只读。
 const NEXT_CHAIN_STATE_KEY := "chain_lightning.next"
-
-
-# ============================================================
-# Hit trigger 第一段 precheck: source + config_id + ability_instance_id 三重 id 过滤 (不要 ctx)
-# ============================================================
-static func _projectile_hit_precheck(event_dict: Dictionary, h: HandlerContext) -> bool:
-	if str(event_dict.get("ability_config_id", "")) != h.config_id:
-		return false
-	if str(event_dict.get("source_actor_id", "")) != h.owner_id:
-		return false
-	var custom := event_dict.get("custom_data", {}) as Dictionary
-	if custom == null:
-		return false
-	return str(custom.get("ability_instance_id", "")) == h.ability_id
-
-
-# ============================================================
-# Hit trigger 第二段 guard: caster 死亡 / ability 过期 → 不响应 (避免反死后仍结算; 要 ctx)
-# ============================================================
-static func _projectile_hit_guard(_event_dict: Dictionary, ctx: AbilityLifecycleContext) -> bool:
-	var ability: Ability = ctx.ability
-	if ability == null or ability.is_expired():
-		return false
-	var caster := GameWorld.get_actor(ctx.owner_actor_id)
-	return caster is CharacterActor and not (caster as CharacterActor).is_dead()
 
 
 # ============================================================
@@ -292,8 +266,7 @@ static var ABILITY := (AbilityConfig.builder()
 		)])
 		.build())
 	.component_config(ActivateInstanceConfig.builder()
-		.trigger(TriggerConfig.new(ProjectileEvents.PROJECTILE_HIT_EVENT, _projectile_hit_guard)
-			.precheck(_projectile_hit_precheck))
+		.trigger(TriggerConfig.new(ProjectileEvents.PROJECTILE_HIT_EVENT, HexBattleSkillHelpers.owner_alive_filter).direct())
 		.timeline(HexBattleStdTimelines.HIT_RESPONSE_100)
 		.on_timeline_start([_build_hit_damage_action()])
 		.build())

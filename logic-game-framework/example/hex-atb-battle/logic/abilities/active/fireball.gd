@@ -11,7 +11,9 @@
 ## 【投射物伤害技能 = 四件套手装, 投射物模板】(precise_shot / chain_lightning 同构):
 ##   ① active_use on_tag(LAUNCH, [LaunchProjectileAction]) 发射弹体
 ##   ② 独立 *_HIT timeline
-##   ③ component_config(ActivateInstanceConfig).trigger(TriggerConfig.new(PROJECTILE_HIT_EVENT).precheck(projectile_hit_precheck))
+##   ③ component_config(ActivateInstanceConfig).trigger(TriggerConfig.new(PROJECTILE_HIT_EVENT, owner_alive_filter).direct())
+##      —— 命中由 ProjectileSystem 按回执只投回发射它的这个 ability 实例（不广播、不问 is_event_responsive），
+##      「是不是我的弹」不必判；人死弹灭由 owner_alive_filter 声明
 ##   ④ 该 component 的 on_timeline_start([HexBattleDamageAction]) —— 真正结算伤害
 ##   关键: 弹体本身【0 HP 伤害】—— ProjectileSystem 只把 CFG_DAMAGE 拷进 projectile_hit
 ##   事件 payload (表演/replay metadata), 不 apply_damage。漏掉第④步 = 飞出去不掉血,
@@ -62,8 +64,7 @@ static var ABILITY := (
 	)
 	.component_config(
 		ActivateInstanceConfig.builder()
-		.trigger(TriggerConfig.new(ProjectileEvents.PROJECTILE_HIT_EVENT)
-			.precheck(HexBattleSkillHelpers.projectile_hit_precheck))
+		.trigger(TriggerConfig.new(ProjectileEvents.PROJECTILE_HIT_EVENT, HexBattleSkillHelpers.owner_alive_filter).direct())
 		.timeline(HexBattleStdTimelines.HIT_RESPONSE_100)
 		.on_timeline_start([HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),

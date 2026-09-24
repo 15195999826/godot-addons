@@ -64,8 +64,7 @@ static var ABILITY := (
 	# 投射物命中响应组件：造成伤害
 	.component_config(
 		ActivateInstanceConfig.builder()
-		.trigger(TriggerConfig.new(ProjectileEvents.PROJECTILE_HIT_EVENT)
-			.precheck(HexBattleSkillHelpers.projectile_hit_precheck))
+		.trigger(TriggerConfig.new(ProjectileEvents.PROJECTILE_HIT_EVENT, HexBattleSkillHelpers.owner_alive_filter).direct())
 		.timeline(HexBattleStdTimelines.HIT_RESPONSE_100)
 		.on_timeline_start([HexBattleDamageAction.new(
 			HexBattleTargetSelectors.current_target(),
