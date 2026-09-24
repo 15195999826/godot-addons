@@ -1,0 +1,76 @@
+{
+	"generated_by": "smoke_presentation_golden.gd",
+	"passives_per_actor": 1,
+	"runs": {
+		"651143": {
+			"actors": 7,
+			"cards": 50,
+			"fingerprint": 466926191,
+			"kinds": [
+				"attack_vfx",
+				"buff_state",
+				"death",
+				"facing_state",
+				"floating_text",
+				"hp_delta",
+				"move",
+				"procedural_vfx",
+				"projectile",
+				"shield_state"
+			],
+			"offensive_slots": -1,
+			"record_frames": 39,
+			"record_sha256": "8142ef9a0ad0e545d1279d67f46c1822c8cd0230de43959a2e4fde29cfe9ce8c",
+			"sha256": "1bd4ba6f419e262969b9379551416c37bc8bb7fa3af6e1cd87142fa9528d02a5",
+			"step_ms": 100.0,
+			"steps": 48
+		},
+		"900127": {
+			"actors": 6,
+			"cards": 113,
+			"fingerprint": 4212318930,
+			"kinds": [
+				"attack_vfx",
+				"buff_state",
+				"cone_debug_overlay",
+				"death",
+				"facing_state",
+				"floating_text",
+				"hp_delta",
+				"move",
+				"procedural_vfx",
+				"projectile",
+				"shield_state"
+			],
+			"offensive_slots": 1,
+			"record_frames": 74,
+			"record_sha256": "c252def83009d1bfb038e5a682700ae7de3145fab2d392fa77a65cccdd26d908",
+			"sha256": "fb12e2d27d619375fe7159ee62797ffc436c64efcc110fb334ac28c5d6c47260",
+			"step_ms": 100.0,
+			"steps": 83
+		},
+		"900191": {
+			"actors": 6,
+			"cards": 140,
+			"fingerprint": 2532673107,
+			"kinds": [
+				"attack_vfx",
+				"buff_state",
+				"bump",
+				"death",
+				"facing_state",
+				"floating_text",
+				"hp_delta",
+				"move",
+				"procedural_vfx",
+				"shield_state"
+			],
+			"offensive_slots": 1,
+			"record_frames": 132,
+			"record_sha256": "f11cf887acee90a34e10e74f2d863d0ae2392bc60b2bfd6137a94ce419c34132",
+			"sha256": "96f586531d0a8537b7ee39c4b3861f6e414b0d3d53706ffb7aa0d5ac51a1ba20",
+			"step_ms": 100.0,
+			"steps": 141
+		}
+	}
+}
