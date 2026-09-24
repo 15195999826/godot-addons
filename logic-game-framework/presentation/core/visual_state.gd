@@ -2,6 +2,8 @@
 ##
 ## 表演层的当前状态：每个进入过表演的逻辑 actor 一条 ActorVisualState、移动中的在飞插值、
 ## 一次性效果（飘字 / 攻击特效 / 投射物 / 项目私有种类）、程序化效果与震屏、账本时间。
+## 台面两种来源：录像回放 initialize_from_replay + 事件直改 spawn_actor；live 场景没有录像，
+## 走 seed_actor / despawn_actor / set_actor_position 直接操作账本。
 ##
 ## 职责分离：
 ## - ActionStepper 管"时序"（卡片走到什么进度）
@@ -336,32 +338,45 @@ func set_screen_shake(offset: Vector2) -> void:
 	_screen_shake.offset_y = offset.y
 
 
-# ========== 直接状态更新 ==========
+# ========== live 入口 ==========
 
-## 直接更新 Actor HP(无动画 / 无 lerp,visual_hp 与 target_hp 同步 snap)
-func set_actor_hp(actor_id: String, hp: float) -> void:
-	var actor: ActorVisualState = _actors.get(actor_id)
-	if actor != null:
-		actor.visual_hp = hp
-		actor.target_hp = hp
-		set_actor_alive(actor, hp > 0)
-		actor_state_changed.emit(actor_id, actor)
+## live 场景直接入账一个 actor（没有录像 ActorInitData）：hp 缺省等于 max_hp，max_hp 缺省 1（dormant 血条）；
+## 入账并广播 actor_spawned + actor_state_changed。空 id / 已在账上返回 null、不广播（与 spawn_actor 同口径：
+## 要改位置走 set_actor_position，要重建先 despawn_actor）
+func seed_actor(actor_id: String, display_name: String, position: Vector2, hp: float = NAN, max_hp: float = NAN) -> ActorVisualState:
+	if actor_id.is_empty() or _actors.has(actor_id):
+		return null
+	var actor := ActorVisualState.new()
+	actor.id = actor_id
+	actor.display_name = display_name
+	actor.position = position
+	actor.max_hp = max_hp if not is_nan(max_hp) else 1.0
+	actor.target_hp = hp if not is_nan(hp) else actor.max_hp
+	actor.visual_hp = actor.target_hp
+	actor.is_alive = true
+	_actors[actor_id] = actor
+	_interpolated_positions[actor_id] = position
+	actor_spawned.emit(actor_id, actor)
+	actor_state_changed.emit(actor_id, actor)
+	return actor
 
 
-## 直接更新 Actor 位置（无动画）
+## live 场景出账一个 actor：账本 / 在飞插值 / 脏标记一并抹掉，广播 actor_despawned；未知 id 忽略。
+## 它在步进器里的在飞卡片账本管不着，调用方先 ActionStepper.cancel_for_actor
+func despawn_actor(actor_id: String) -> void:
+	if not _actors.has(actor_id):
+		return
+	_actors.erase(actor_id)
+	_interpolated_positions.erase(actor_id)
+	_dirty_actors.erase(actor_id)
+	actor_despawned.emit(actor_id)
+
+
+## 直接定位（无动画）：账本位置与在飞插值一起写，当场广播；未知 actor 忽略。
+## live 场景的 snap = ActionStepper.cancel_for_actor + 这一步
 func set_actor_position(actor_id: String, position: Vector2) -> void:
 	var actor: ActorVisualState = _actors.get(actor_id)
 	if actor != null:
 		actor.position = position
 		_interpolated_positions[actor_id] = position
-		actor_state_changed.emit(actor_id, actor)
-
-
-## 标记 Actor 死亡(visual_hp / target_hp 同步 snap 到 0)
-func set_actor_dead(actor_id: String) -> void:
-	var actor: ActorVisualState = _actors.get(actor_id)
-	if actor != null:
-		set_actor_alive(actor, false)
-		actor.visual_hp = 0.0
-		actor.target_hp = 0.0
 		actor_state_changed.emit(actor_id, actor)

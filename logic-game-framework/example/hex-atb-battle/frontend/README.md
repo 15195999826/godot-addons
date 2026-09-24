@@ -140,7 +140,7 @@ ReplayData.BattleRecord.from_dict(replay_data)   <-- 解析为类型化结构体
   v
 _replay_scene.load_replay(record)                 <-- FrontendBattleReplayScene
   |
-  +--[1] _director.load_replay(record)            <-- FrontendBattleDirector
+  +--[1] _director.load_playback(record)          <-- ReplayDirector（框架件）
   |    +-- 构建 _frame_data_map: { frame_number -> FrameData }
   |    +-- _state.initialize_from_replay(record)  <-- VisualState
   |    |     +-- 遍历 initialActors -> 每个 actor 一条 ActorVisualState
@@ -148,7 +148,7 @@ _replay_scene.load_replay(record)                 <-- FrontendBattleReplayScene
   |    |     |       flash_progress, tint_color }
   |    |     +-- emit actor_state_changed() 给每个 actor（初始同步）
   |    +-- _analyze_event_coverage()              <-- 打印事件覆盖摘要
-  |    +-- 重置: _current_frame=0, _logic_accumulator=0
+  |    +-- 重置: _current_frame=0, _accumulator=0
   |
   +--[2] _setup_hex_grid_from_replay(record)      <-- 创建六边形网格
   |    +-- GridMapModel.initialize(grid_config)
@@ -172,19 +172,21 @@ _replay_scene.load_replay(record)                 <-- FrontendBattleReplayScene
 Godot Engine _process(delta)
   |
   v
-FrontendBattleDirector._process(delta)
-  +-- _tick(delta * 1000 * _speed)
+ReplayDirector._process(delta)                       <-- 框架件（帧时钟）
+  +-- _advance(delta * 1000 * _speed)
       |
-      |  STEP 1: 逻辑帧推进（累积器模式）
+      |  STEP 1: 帧时钟——攒 delta，每满一帧收下那帧的事件
       |  ================================================
-      |  _logic_accumulator += delta_ms
+      |  _accumulator += delta_ms
       |
-      |  while _logic_accumulator >= 100ms:
-      |      _logic_accumulator -= 100ms
+      |  while _accumulator >= tick_ms（录像 meta.tick_interval，缺省 100）:
+      |      _accumulator -= tick_ms
       |      _current_frame++
+      |      events += _frame_data_map[current_frame].events
+      |      emit frame_changed(current, total)
       |
-      |      if _frame_data_map.has(current_frame):
-      |          遍历该帧所有 events:
+      |  VisualDirector.pump(delta_ms, events)          <-- 共享 tick 体（live 项目自己攒事件调它）
+      |      遍历本趟 events:
       |
       |          updater.apply_event(_state, event)
       |            事件直改: actor_spawned / actor_destroyed / max_hp 先落账本
@@ -204,8 +206,6 @@ FrontendBattleDirector._process(delta)
       |          _stepper.enqueue(actions)
       |            -> 每个 action 包装为 ActiveAction
       |               { id, action, elapsed=0, progress=0 }
-      |
-      |      emit frame_changed(current, total)
       |
       |  STEP 2: 推进账本时间
       |  ================================================
@@ -300,7 +300,7 @@ FrontendBattleDirector._process(delta)
 VisualState (账本)
   | signals（actor 4 条 + effect 3 条）
   v
-BattleDirector (转发层，1:1 转发所有信号)
+VisualDirector / ReplayDirector (框架件转发层，1:1 转发所有信号)
   | signals
   v
 FrontendBattleAnimator (wire 到 view)
@@ -390,9 +390,6 @@ hex-atb-battle/frontend/
 ├── main.gd                   # 入口脚本
 ├── main.tscn                 # 入口场景
 │
-├── core/
-│   └── battle_director.gd    # hex 回放表演实例 (Node)：帧时钟 + 共享 tick 体
-│
 ├── actions/
 │   └── cone_debug_overlay_action.gd # hex 私有卡片 (自定义 kind + Payload + static apply)
 │
@@ -404,7 +401,7 @@ hex-atb-battle/frontend/
 │   ├── ...                   # displacement / push_blocked / regeneration / projectile / stage_cue / buff / shield_bar / actor_facing_changed
 │   └── default_registry.gd   # 默认注册表工厂 (FrontendDefaultRegistry)
 │
-│   （框架件在 addons/logic-game-framework/presentation/：core/ = ActionStepper / VisualState / VisualUpdater /
+│   （框架件在 addons/logic-game-framework/presentation/：core/ = VisualDirector / ReplayDirector / ActionStepper / VisualState / VisualUpdater /
 │     VisualStateQuery / ActorVisualState / Translator / TranslatorRegistry / AnimationConfig / VisualEffectPayload /
 │     BuffSummary / ShieldSummary；actions/ = VisualAction + 内置 11 种 Visual*Action）
 │
@@ -428,13 +425,13 @@ hex-atb-battle/frontend/
 
 ## 核心类说明
 
-### 1. BattleDirector (`core/battle_director.gd`，hex 项目件)
+### 1. VisualDirector / ReplayDirector (`presentation/core/visual_director.gd` / `replay_director.gd`，框架件)
 
-**职责**：整合框架件（TranslatorRegistry / ActionStepper / VisualState / VisualUpdater），驱动回放流程；只发信号不持 view
+**职责**：`VisualDirector` 持四件框架件（TranslatorRegistry / ActionStepper / VisualState / VisualUpdater），`pump(delta_ms, events)` 是共享 tick 体，只发信号不持 view；`ReplayDirector` 在其上加帧时钟（录像帧表 + 播放控制）。hex 没有自己的 Director：`FrontendBattleAnimator._ready` 里 `ReplayDirector.new(FrontendDefaultRegistry.create())` 持一个，翻译员注册表由构造函数注入，私有卡片的记账 handler 建好就能登记（组件在 `_init` 建，不等入树）
 
 ```gdscript
-class_name FrontendBattleDirector
-extends Node
+class_name ReplayDirector
+extends VisualDirector   # VisualDirector extends Node
 
 # 信号: 播放 3 条 + 转发自 VisualState 的 7 条
 signal playback_state_changed(is_playing: bool)
@@ -448,12 +445,20 @@ signal effect_spawned(kind: StringName, payload: VisualEffectPayload.Effect)
 signal effect_updated(kind: StringName, effect_id: String, progress: float, payload: VisualEffectPayload.Effect)
 signal effect_removed(kind: StringName, effect_id: String)
 
-# 核心方法
+# 播放控制（ReplayDirector）
 func load_playback(record: PlaybackData.BattleRecord) -> void
-func play() -> void
-func pause() -> void
-func reset() -> void
+func play() / pause() / toggle() / reset() -> void
+func step(delta_ms: float) -> void          # 不看播放态的精确推进
 func set_speed(speed: float) -> void
+func get_current_frame() / get_total_frames() -> int
+func is_playing() / is_ended() -> bool
+
+# 共享体与读账本（VisualDirector）
+func pump(delta_ms: float, events: Array[Dictionary]) -> void
+func get_actors_snapshot() -> Dictionary
+func get_actor_position(actor_id: String) -> Vector2   # 逻辑平面坐标，含在飞插值
+func get_action_count() -> int                         # 0 = 动画已排空
+var updater: VisualUpdater                              # register_handler 登记私有卡片
 ```
 
 ### 2. TranslatorRegistry (`presentation/core/translator_registry.gd`，框架件)

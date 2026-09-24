@@ -79,7 +79,7 @@ func run_scene_op(op_name: StringName, args: Dictionary) -> Dictionary:
 			var frames := int(args.get("frames", 0))
 			var dms := float(args.get("delta_ms", 0.0))
 			if frames > 0:
-				dms = float(frames) * 100.0  # LOGIC_TICK_MS
+				dms = float(frames) * 100.0  # 录像 tick_interval（ReplayDirector 帧间隔）
 			if dms <= 0.0:
 				dms = 100.0  # 默认 1 逻辑帧
 			return preview.dev_agent_step_playback(dms)

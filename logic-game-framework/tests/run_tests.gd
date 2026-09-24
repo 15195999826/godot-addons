@@ -55,6 +55,8 @@ const TEST_PATHS := [
 	"res://addons/logic-game-framework/tests/presentation/translator_registry_test.gd",
 	"res://addons/logic-game-framework/tests/presentation/visual_updater_test.gd",
 	"res://addons/logic-game-framework/tests/presentation/visual_state_events_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/visual_director_test.gd",
+	"res://addons/logic-game-framework/tests/presentation/replay_director_test.gd",
 	"res://addons/logic-game-framework/tests/presentation/hex_translator_coordinates_test.gd",
 	"res://addons/logic-game-framework/tests/presentation/presentation_lint_test.gd",
 ]

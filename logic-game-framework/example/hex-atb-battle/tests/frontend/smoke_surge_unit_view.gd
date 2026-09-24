@@ -22,7 +22,7 @@ extends Node
 const TIMEOUT_SEC := 5.0
 
 
-var _director: FrontendBattleDirector
+var _director: ReplayDirector
 var _unit_view: FrontendUnitView
 var _label_history: Array[String] = []
 var _last_label: String = "<init>"
@@ -54,7 +54,7 @@ func _ready() -> void:
 	actor_init.attributes = {"hp": 100.0, "max_hp": 100.0}
 	snap.actors = [actor_init]
 
-	# BattleDirector 从 _current_frame=0 推到 next_frame=1 才查事件,
+	# ReplayDirector 从 _current_frame=0 推到 next_frame=1 才查事件,
 	# 所以 frame 0 永远不被处理。事件从 frame 1 开始。
 	var f1 := PlaybackData.FrameData.new()
 	f1.frame = 1
@@ -80,8 +80,8 @@ func _ready() -> void:
 	record.timeline = [f1, f21, f41]
 
 	# 起 Director + UnitView,wire actor_state_changed → unit_view.update_state
-	_director = FrontendBattleDirector.new()
-	_director.name = "BattleDirector"
+	_director = ReplayDirector.new(FrontendDefaultRegistry.create())
+	_director.name = "ReplayDirector"
 	add_child(_director)
 	_director.load_playback(record)
 

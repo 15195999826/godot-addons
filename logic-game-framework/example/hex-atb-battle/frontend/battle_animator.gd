@@ -5,7 +5,8 @@
 ## 死亡动画。不拥有 unit view 生命周期 —— 战斗结束时 WorldGI 里 actor 已是
 ## 终态，animator 只负责让视觉追上该终态。
 ##
-## Director 只发信号（actor 4 条 + effect 3 条）；一次性效果按 kind 在这里分发到各 view。
+## 持一个框架件 ReplayDirector（翻译员注册表由 FrontendDefaultRegistry 装好注入）：它只发信号
+## （actor 4 条 + effect 3 条），一次性效果按 kind 在这里分发到各 view。
 ##
 ## 详见 addon 根 CLAUDE.md「World owns Battle」。
 class_name FrontendBattleAnimator
@@ -24,7 +25,7 @@ signal frame_changed(current_frame: int, total_frames: int)
 
 # ========== 内部组件 ==========
 
-var _director: FrontendBattleDirector
+var _director: ReplayDirector
 var _replay_units_root: Node3D
 var _effects_root: Node3D
 
@@ -53,11 +54,11 @@ func _ready() -> void:
 	_effects_root.name = "EffectsRoot"
 	add_child(_effects_root)
 
-	_director = FrontendBattleDirector.new()
-	_director.name = "BattleDirector"
-	add_child(_director)
-	# hex 私有卡片：cone debug overlay 的记账规则挂进更新器
+	_director = ReplayDirector.new(FrontendDefaultRegistry.create())
+	_director.name = "ReplayDirector"
+	# hex 私有卡片：cone debug overlay 的记账规则挂进更新器（组件在 _init 建好，不必等入树）
 	_director.updater.register_handler(FrontendConeDebugOverlayAction.KIND, FrontendConeDebugOverlayAction.apply)
+	add_child(_director)
 
 	_director.actor_state_changed.connect(_on_actor_state_changed)
 	_director.actor_spawned.connect(_on_actor_spawned)

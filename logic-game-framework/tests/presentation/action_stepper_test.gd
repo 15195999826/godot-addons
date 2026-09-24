@@ -9,6 +9,7 @@ extends Node
 ## - 完成那一 tick 进 completed_this_tick（progress 钉 1，哪怕 elapsed 超出），同 tick 不再出现在
 ##   active_actions，之后也不再出现；表空时 tick 无变化
 ## - cancel_all 清空且不补发完成；id 在整个 stepper 生命周期内不复用
+## - cancel_for_actor 只撤该 actor 的在飞卡片（含延迟中的）、不补发完成；has_actor_action 随入队 / 完成 / 撤销翻转
 
 
 func _init() -> void:
@@ -17,6 +18,8 @@ func _init() -> void:
 	TestFramework.register_test("ActionStepper duration 0 瞬时卡片 delay 一过当 tick 完成", _test_instant)
 	TestFramework.register_test("ActionStepper 空表 tick 无变化", _test_empty_tick)
 	TestFramework.register_test("ActionStepper cancel_all 清空不补发完成，id 不复用", _test_cancel_all)
+	TestFramework.register_test("ActionStepper cancel_for_actor 只撤该 actor 含延迟中的，不补发完成", _test_cancel_for_actor)
+	TestFramework.register_test("ActionStepper has_actor_action 随入队 / 完成翻转", _test_has_actor_action_flips)
 
 
 static func _card(duration: float, delay: float = 0.0) -> VisualAction:
@@ -140,3 +143,44 @@ func _test_cancel_all() -> void:
 	var again := stepper.tick(100.0)
 	TestFramework.assert_equal(1, again.active_actions.size())
 	TestFramework.assert_false(seen.has(again.active_actions[0].id), "cancel_all 之后 id 不复用")
+
+
+func _test_cancel_for_actor() -> void:
+	var stepper := ActionStepper.new()
+	var a := _card(500.0)
+	a.actor_id = "a"
+	var b := _card(500.0)
+	b.actor_id = "b"
+	var a_delayed := _card(500.0, 100.0)
+	a_delayed.actor_id = "a"
+	var cards: Array[VisualAction] = [a, b, a_delayed]
+	stepper.enqueue(cards)
+	TestFramework.assert_true(stepper.has_actor_action("a"))
+	TestFramework.assert_true(stepper.has_actor_action("b"))
+	TestFramework.assert_false(stepper.has_actor_action("ghost"))
+	stepper.tick(50.0)
+
+	stepper.cancel_for_actor("a")
+	TestFramework.assert_false(stepper.has_actor_action("a"), "该 actor 的全部在飞卡片（含延迟中的）一起撤")
+	TestFramework.assert_true(stepper.has_actor_action("b"))
+	TestFramework.assert_equal(1, stepper.get_action_count())
+	var after := stepper.tick(100.0)
+	TestFramework.assert_true(0 == after.completed_this_tick.size(), "撤销不补发完成")
+	TestFramework.assert_equal(1, after.active_actions.size())
+	TestFramework.assert_equal("b", after.active_actions[0].action.actor_id)
+
+	# 撤未知 actor 无事
+	stepper.cancel_for_actor("ghost")
+	TestFramework.assert_equal(1, stepper.get_action_count())
+
+
+func _test_has_actor_action_flips() -> void:
+	var stepper := ActionStepper.new()
+	TestFramework.assert_false(stepper.has_actor_action("probe"))
+	var cards: Array[VisualAction] = [_card(200.0)]
+	stepper.enqueue(cards)
+	TestFramework.assert_true(stepper.has_actor_action("probe"), "入队即在飞")
+	stepper.tick(100.0)
+	TestFramework.assert_true(stepper.has_actor_action("probe"))
+	stepper.tick(100.0)
+	TestFramework.assert_false(stepper.has_actor_action("probe"), "完成那一 tick 出表")

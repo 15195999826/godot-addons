@@ -12,6 +12,9 @@ extends Node
 ##   只标脏；别的属性不管；不判死
 ## - reset_to 回到录像台面：中途 spawn 的没了、hp / 位置 / 存活恢复、账本时间归零、一次性效果清空、死亡转换可再发
 ## - as_query 只读视图：hp / max_hp / 存活 / 队伍 / 名字 / 全部 id / 逻辑坐标；未知 actor 走默认值
+## - live 入口：seed_actor 入账（hp 缺省 = max_hp、max_hp 缺省 1）并广播 actor_spawned + actor_state_changed，
+##   空 id / 同 id 忽略；set_actor_position 账本与在飞插值一起写、当场广播；despawn_actor 出账（含脏标记）并广播
+##   actor_despawned，未知 id 忽略
 
 
 const PROBE_TYPE := "probe"
@@ -26,6 +29,7 @@ func _init() -> void:
 	TestFramework.register_test("VisualState attribute_changed(max_hp) 夹上限、回升不回血、不判死", _test_max_hp_change_clamps)
 	TestFramework.register_test("VisualState reset_to 回到录像台面", _test_reset_to_restores)
 	TestFramework.register_test("VisualState as_query 只读视图与未知 actor 默认值", _test_query_reads)
+	TestFramework.register_test("VisualState live 入口 seed_actor / set_actor_position / despawn_actor", _test_seed_and_despawn)
 
 
 static func _init_data(id: String, q: int, r: int, hp: float, max_hp: float, extra: Dictionary = {}) -> PlaybackData.ActorInitData:
@@ -309,5 +313,61 @@ func _test_query_reads() -> void:
 	TestFramework.assert_true(world.get_actor_position("ghost").is_equal_approx(Vector2.ZERO))
 
 	# 视图跟着账本走：直改后同一个 query 读到新值
-	world.set_actor_hp("u1", 7.0)
-	TestFramework.assert_near(query.get_actor_hp("u1"), 7.0)
+	world.set_actor_position("u1", Vector2(7.0, -7.0))
+	TestFramework.assert_true(query.get_actor_position("u1").is_equal_approx(Vector2(7.0, -7.0)))
+
+
+func _test_seed_and_despawn() -> void:
+	var world := VisualState.new()
+	var spawned: Array[String] = []
+	world.actor_spawned.connect(func(actor_id: String, _state: ActorVisualState) -> void: spawned.append(actor_id))
+	var despawned: Array[String] = []
+	world.actor_despawned.connect(func(actor_id: String) -> void: despawned.append(actor_id))
+	var changed := _record_changes(world)
+
+	var hero := world.seed_actor("hero", "勇者", Vector2(2.0, -1.0), 30.0, 50.0)
+	TestFramework.assert_true(hero != null)
+	TestFramework.assert_equal("hero", ",".join(spawned))
+	TestFramework.assert_equal("hero", ",".join(changed))
+	var seeded := _actor(world, "hero")
+	TestFramework.assert_equal("勇者", seeded.display_name)
+	TestFramework.assert_true(seeded.position.is_equal_approx(Vector2(2.0, -1.0)))
+	TestFramework.assert_true(world.get_actor_position("hero").is_equal_approx(Vector2(2.0, -1.0)))
+	TestFramework.assert_near(seeded.visual_hp, 30.0)
+	TestFramework.assert_near(seeded.target_hp, 30.0)
+	TestFramework.assert_near(seeded.max_hp, 50.0)
+	TestFramework.assert_true(seeded.is_alive)
+
+	# 缺省：max_hp 1、hp 满；空 id / 同 id 忽略、不广播、不覆盖
+	var npc := world.seed_actor("npc", "", Vector2.ZERO)
+	TestFramework.assert_near(npc.max_hp, 1.0)
+	TestFramework.assert_near(npc.visual_hp, 1.0)
+	TestFramework.assert_near(npc.target_hp, 1.0)
+	TestFramework.assert_true(world.seed_actor("", "x", Vector2.ZERO) == null)
+	TestFramework.assert_true(world.seed_actor("hero", "again", Vector2(9.0, 9.0)) == null)
+	TestFramework.assert_equal(2, spawned.size())
+	TestFramework.assert_equal(2, changed.size())
+	TestFramework.assert_equal("勇者", _actor(world, "hero").display_name)
+
+	# set_actor_position：账本与在飞插值一起写、当场广播；未知 actor 忽略
+	world.set_interpolated_position("hero", Vector2(2.5, -1.0))
+	changed.clear()
+	world.set_actor_position("hero", Vector2(3.0, -1.0))
+	TestFramework.assert_equal("hero", ",".join(changed))
+	TestFramework.assert_true(_actor(world, "hero").position.is_equal_approx(Vector2(3.0, -1.0)))
+	TestFramework.assert_true(world.get_actor_position("hero").is_equal_approx(Vector2(3.0, -1.0)))
+	world.set_actor_position("ghost", Vector2.ONE)
+	TestFramework.assert_equal(1, changed.size())
+
+	# despawn：出账（含在飞插值与脏标记）、广播一次；出账后 flush 不再广播它；未知 id 忽略
+	world.mark_dirty("hero")
+	world.despawn_actor("hero")
+	TestFramework.assert_equal("hero", ",".join(despawned))
+	TestFramework.assert_false(world.has_actor("hero"))
+	TestFramework.assert_true(world.get_actor_position("hero").is_equal_approx(Vector2.ZERO))
+	changed.clear()
+	world.flush_dirty_actors()
+	TestFramework.assert_equal(0, changed.size())
+	world.despawn_actor("ghost")
+	TestFramework.assert_equal(1, despawned.size())
+	TestFramework.assert_equal(1, world.get_actors_snapshot().size())

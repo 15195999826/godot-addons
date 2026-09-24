@@ -144,9 +144,9 @@ func _run_frame(
 		var actions := registry.translate(event, query)
 		print("  [%s] event %s → %d actions" % [tag, event["kind"], actions.size()])
 		scheduler.enqueue(actions)
-	# 模拟 BattleDirector._tick 后半段
+	# 模拟 VisualDirector.pump 后半段
 	rw.advance_time(100)
-	var result := scheduler.tick(100.0)  # 100ms = LOGIC_TICK_MS
+	var result := scheduler.tick(100.0)  # 100ms = 录像 tick_interval
 	updater.apply_actions(rw, result.active_actions)
 	updater.apply_actions(rw, result.completed_this_tick)
 	updater.tick_time(rw, 100.0)

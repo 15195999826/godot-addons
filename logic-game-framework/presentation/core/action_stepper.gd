@@ -7,6 +7,7 @@
 ## - 所有卡片并行执行，无阻塞
 ## - 支持 delay 延迟执行
 ## - 自动清理已完成的卡片
+## - live 场景按 actor 撤销在飞卡片（cancel_for_actor，不补发完成）/ 查在飞（has_actor_action）
 class_name ActionStepper
 extends RefCounted
 
@@ -134,6 +135,25 @@ func get_active_actions() -> Array[ActiveAction]:
 ## 用于重置播放器状态
 func cancel_all() -> void:
 	_active.clear()
+
+
+## 撤掉某个 actor 的全部在飞卡片（含延迟中的），不补发完成。
+## live 场景 latest-wins：新一步移动入队前先撤上一步
+func cancel_for_actor(actor_id: String) -> void:
+	var ids: Array[String] = []
+	for id: String in _active.keys():
+		if (_active[id] as ActiveAction).action.actor_id == actor_id:
+			ids.append(id)
+	for id in ids:
+		_active.erase(id)
+
+
+## 该 actor 是否有在飞卡片（live 场景「还在走格吗」）
+func has_actor_action(actor_id: String) -> bool:
+	for id: String in _active.keys():
+		if (_active[id] as ActiveAction).action.actor_id == actor_id:
+			return true
+	return false
 
 
 ## 获取当前卡片数量

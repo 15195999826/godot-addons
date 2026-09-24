@@ -1,4 +1,4 @@
-## Smoke: 表演 golden —— 固定 seed 的随机战斗录像，不经场景 / view，直接喂 FrontendBattleDirector 按逻辑帧
+## Smoke: 表演 golden —— 固定 seed 的随机战斗录像，不经场景 / view，直接喂 ReplayDirector 按逻辑帧
 ## step() 推到 playback_ended，把表演层可观察的一切定成指纹：
 ##   ① 每步翻译出的卡片序列 (frame, kind, actor_id, delay, duration)
 ##   ② 每步 flush 后每个 actor 的账本 (pos = 含在飞插值、取整到 hex 整数; at = 已落定的格子;
@@ -10,8 +10,8 @@
 ## 进程内多场连跑的 IdGenerator 计数不进指纹。
 ## 有意的行为变化须先解释再重烤：godot --headless --path . <本场景> -- rebake
 ##
-## KIND_NAMES 左边是卡片 kind（含 hex 私有的 cone overlay），右边的 golden 名不动，指纹不随改名漂；
-## Director / 注册表 / 账本 / 步进器四处私有钩子（_registry / _state / _stepper）搬家后改指向即可。
+## KIND_NAMES 左边是卡片 kind（含 hex 私有的 cone overlay），右边的 golden 名不动，指纹不随改名漂。
+## 翻译结果经构造时注入的记录包装注册表拿到；账本 / 步进器只走 Director 的公开读法，不碰私有字段。
 extends Node
 
 
@@ -78,7 +78,7 @@ class RecordingRegistry extends TranslatorRegistry:
 		return inner.get_translators_for(event_kind)
 
 
-var _director: FrontendBattleDirector
+var _director: ReplayDirector
 var _recorder: RecordingRegistry
 ## 本步一次性效果计数：kind -> [spawn, remove]
 var _fx: Dictionary = {}
@@ -150,13 +150,12 @@ func _run_seed(seed_value: int, offensive: int, rebake: bool) -> Dictionary:
 	var step_ms := float(record.meta.tick_interval)
 
 	_reset_observers()
-	_director = FrontendBattleDirector.new()
+	_recorder = RecordingRegistry.new(FrontendDefaultRegistry.create(), func() -> int: return _director.get_current_frame())
+	_director = ReplayDirector.new(_recorder)
 	_director.name = "Director_%d" % seed_value
-	add_child(_director)
 	# 与 FrontendBattleAnimator 同款：hex 私有卡片的记账 handler 挂进更新器
 	_director.updater.register_handler(FrontendConeDebugOverlayAction.KIND, FrontendConeDebugOverlayAction.apply)
-	_recorder = RecordingRegistry.new(_director._registry, _director.get_current_frame)
-	_director._registry = _recorder
+	add_child(_director)
 	_connect_observers()
 	_director.load_playback(record)
 
@@ -173,7 +172,7 @@ func _run_seed(seed_value: int, offensive: int, rebake: bool) -> Dictionary:
 	while not _ended:
 		if steps >= limit:
 			return {"error": "director never reached playback_ended after %d steps (frame %d/%d, %d active actions)" % [
-				steps, _director.get_current_frame(), _director.get_total_frames(), _director._stepper.get_action_count(),
+				steps, _director.get_current_frame(), _director.get_total_frames(), _director.get_action_count(),
 			]}
 		_fx.clear()
 		_died.clear()
@@ -341,11 +340,10 @@ func _format_card(card: Dictionary) -> String:
 ## pos 是含在飞插值的逻辑坐标取整到 hex 整数，at 是账本上已落定的格子。
 func _append_state(lines: PackedStringArray, prev: Dictionary) -> void:
 	var snapshot := _director.get_actors_snapshot()
-	var query: VisualStateQuery = _director._state.as_query()
 	for id_variant in snapshot.keys():
 		var actor_id := str(id_variant)
 		var state: ActorVisualState = snapshot[actor_id]
-		var pos := query.get_actor_position(actor_id)
+		var pos := _director.get_actor_position(actor_id)
 		var buff_ids: Array[String] = []
 		for buff: BuffSummary in state.buffs:
 			buff_ids.append(_canon_id(buff.id))
