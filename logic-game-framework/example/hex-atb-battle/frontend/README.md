@@ -38,22 +38,9 @@ UI 控件 `FrontendPlaybackControls` 提供 play/pause/reset/speed,信号转发�
 
 ## 项目背景
 
-本项目是 **inkmon** 战斗系统的 **Godot 3D 表演层**实现，用于将逻辑层产生的战斗事件可视化为 3D 动画。
+本目录是 **hex-atb-battle 示例的 3D 表演层**：把逻辑层跑出的战斗录像翻译成 3D 动画。表演框架件（Director / 翻译员基类 / 卡片 / 步进器 / 账本 / 更新器）自 adr/0013 起上提到 LGF `presentation/`，本目录是它的**第一个消费者**，只写 hex 事件方言的翻译员、私有卡片和 3D 视图（见下文「表演框架在哪」）。
 
-### 设计目标
-
-1. **逻辑表演分离**：逻辑层 (`hex-atb-battle`) 只负责计算，表演层只负责渲染
-2. **声明式动画**：通过 `VisualAction` 描述"做什么"，而非"怎么做"
-3. **可回放**：支持战斗录像的加载、播放、暂停、重置
-4. **跨平台一致**：与 Web 端 (`inkmon-web/lib/battle-replay`) 保持架构一致
-
-### 相关项目
-
-| 项目 | 路径 | 说明 |
-|------|------|------|
-| **逻辑层** | `addons/logic-game-framework/example/hex-atb-battle/logic/` | 战斗逻辑计算、事件生成 |
-| **Web 表演层** | `../inkmon-web/lib/battle-replay/` | TypeScript 实现的参考架构 |
-| **本项目** | `hex-atb-battle/frontend/` | Godot 3D 表演层 |
+设计上沿用框架的三条约束：逻辑与表演分离（逻辑层只算，不知道表演层存在）、声明式卡片（`VisualAction` 说「做什么」，view 决定「怎么做」）、录像可播放（加载 / 播放 / 暂停 / 重置）。
 
 ---
 
