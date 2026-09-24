@@ -1,20 +1,25 @@
 ## Phase F · Facing 前端回归 smoke
 ##
 ## 验证三条契约:
-##   1. Replay 初始化时 VisualState 从 actor_init.attributes 读 facing_direction (snapshot 链路)
-##   2. actor_facing_changed event 翻译为 VisualFacingStateAction → VisualUpdater 更新 facing
+##   1. ReplayDirector.load_playback 时 VisualState 从 actor_init.attributes 读 facing_direction (snapshot 链路)
+##   2. actor_facing_changed event 经 VisualDirector.pump 翻译为 VisualFacingStateAction → VisualUpdater 更新 facing
 ##   3. EnvironmentActor 的 FacingIndicatorView 在 set_environment_style 后隐藏
 ##
 ## 不验证视觉旋转角度 (单元 smoke 无相机 / 无渲染断言); 用 ActorVisualState.facing_direction
 ## 数值确认 frontend state 同步, UnitView 用 visible 标志确认 env actor 不显示.
+## 账本只走 Director 的公开读法 (get_actors_snapshot), 不碰私有字段。
 extends Node
+
+
+## 每趟 pump 推进的表演时间(毫秒)= 录像 tick_interval
+const STEP_MS := 100.0
 
 
 func _ready() -> void:
 	print("=== Smoke: Facing Indicator (init + event + env-hidden) ===")
 	Log.set_level(Log.LogLevel.WARNING)
 
-	# ===== Step 1: Replay init reads facing_direction from attributes =====
+	# ===== Step 1: load_playback reads facing_direction from attributes =====
 	var record := PlaybackData.BattleRecord.new()
 	record.meta = PlaybackData.BattleMeta.new()
 	var snap := PlaybackData.WorldSnapshot.new()
@@ -48,10 +53,11 @@ func _ready() -> void:
 
 	snap.actors = [hero_a, hero_b, wall]
 
-	var rw := VisualState.new()
-	rw.initialize_from_replay(record)
+	var director := ReplayDirector.new(FrontendDefaultRegistry.create())
+	add_child(director)
+	director.load_playback(record)
 
-	var snapshot: Dictionary = rw.get_actors_snapshot()
+	var snapshot: Dictionary = director.get_actors_snapshot()
 	var state_a: ActorVisualState = snapshot["hero_a"]
 	var state_b: ActorVisualState = snapshot["hero_b"]
 	var state_wall: ActorVisualState = snapshot["wall_1"]
@@ -66,15 +72,11 @@ func _ready() -> void:
 	if state_wall.facing_direction != 0:
 		_fail("init wall.facing_direction = %d (expected 0 default)" % state_wall.facing_direction)
 		return
-	print("  Step1 PASS: replay init seeded facing from attributes (A=%d B=%d wall=%d)" % [
+	print("  Step1 PASS: load_playback seeded facing from attributes (A=%d B=%d wall=%d)" % [
 		state_a.facing_direction, state_b.facing_direction, state_wall.facing_direction
 	])
 
 	# ===== Step 2: actor_facing_changed event updates state =====
-	var scheduler := ActionStepper.new()
-	var updater := VisualUpdater.new()
-	var registry := FrontendDefaultRegistry.create()
-
 	var facing_event: Dictionary = {
 		"kind": "actor_facing_changed",
 		"actor_id": "hero_a",
@@ -82,9 +84,9 @@ func _ready() -> void:
 		"new_direction": HexFacing.DIR_NORTHEAST,
 		"reason": "active_use",
 	}
-	_run_frame(scheduler, registry, rw, updater, [facing_event], "facing_change")
+	_run_frame(director, [facing_event], "facing_change")
 
-	snapshot = rw.get_actors_snapshot()
+	snapshot = director.get_actors_snapshot()
 	state_a = snapshot["hero_a"]
 	if state_a.facing_direction != HexFacing.DIR_NORTHEAST:
 		_fail("after event, hero_a.facing = %d (expected DIR_NORTHEAST=%d)" % [state_a.facing_direction, HexFacing.DIR_NORTHEAST])
@@ -127,25 +129,10 @@ func _ready() -> void:
 	get_tree().quit(0)
 
 
-func _run_frame(
-	scheduler: ActionStepper,
-	registry: TranslatorRegistry,
-	rw: VisualState,
-	updater: VisualUpdater,
-	events: Array[Dictionary],
-	tag: String,
-) -> void:
-	var query := rw.as_query()
-	for event in events:
-		var actions := registry.translate(event, query)
-		scheduler.enqueue(actions)
-	rw.advance_time(100)
-	var result := scheduler.tick(100.0)
-	updater.apply_actions(rw, result.active_actions)
-	updater.apply_actions(rw, result.completed_this_tick)
-	updater.tick_time(rw, 100.0)
-	rw.flush_dirty_actors()
-	print("  [frame %s] processed %d events" % [tag, events.size()])
+## 一趟 = 一个逻辑帧的事件 + STEP_MS 表演时间,与 ReplayDirector 帧时钟喂 pump 的口径相同
+func _run_frame(director: VisualDirector, events: Array[Dictionary], tag: String) -> void:
+	director.pump(STEP_MS, events)
+	print("  [frame %s] pumped %d events" % [tag, events.size()])
 
 
 func _fail(reason: String) -> void:

@@ -20,8 +20,6 @@ signal playback_ended()
 
 ## 录像没给 tick_interval 时的逻辑帧间隔（毫秒）
 const DEFAULT_TICK_MS: float = 100.0
-const FRAME_DELTA_WARN_MS: float = 50.0
-const TICK_COST_WARN_MS: float = 8.0
 
 
 # ========== 状态 ==========
@@ -60,26 +58,7 @@ func _process(delta: float) -> void:
 		return
 
 	# delta 是秒；表演层内部一律毫秒，乘播放速度后推进
-	var real_delta_ms := delta * 1000.0
-	var playback_delta_ms := real_delta_ms * _speed
-	if real_delta_ms >= FRAME_DELTA_WARN_MS:
-		print("[Presentation:ReplayDirector] long_process_delta frame=%d real_delta_ms=%.2f playback_delta_ms=%.2f speed=%.2f active_actions=%d" % [
-			_current_frame,
-			real_delta_ms,
-			playback_delta_ms,
-			_speed,
-			get_action_count(),
-		])
-	var start_usec := Time.get_ticks_usec()
-	_advance(playback_delta_ms)
-	var tick_cost_ms := float(Time.get_ticks_usec() - start_usec) / 1000.0
-	if tick_cost_ms >= TICK_COST_WARN_MS:
-		print("[Presentation:ReplayDirector] tick_cost frame=%d input_delta_ms=%.2f cost_ms=%.2f active_actions=%d" % [
-			_current_frame,
-			playback_delta_ms,
-			tick_cost_ms,
-			get_action_count(),
-		])
+	_advance(delta * 1000.0 * _speed)
 
 
 # ========== 公共方法 ==========
@@ -97,7 +76,6 @@ func load_playback(record: PlaybackData.BattleRecord) -> void:
 	_total_frames = record.meta.total_frames
 
 	_state.reset_to(record)
-	_analyze_event_coverage()
 
 	_current_frame = 0
 	_accumulator = 0.0
@@ -213,34 +191,3 @@ func _advance(delta_ms: float) -> void:
 
 func _is_ended() -> bool:
 	return _current_frame >= _total_frames and _stepper.get_action_count() == 0
-
-
-## 加载时打印一次：录像里每种事件各多少条、由哪些翻译员处理、谁没人管
-func _analyze_event_coverage() -> void:
-	var all_event_kinds: Dictionary = {}  # kind -> count
-	for frame_data: PlaybackData.FrameData in _record.timeline:
-		for event: Dictionary in frame_data.events:
-			var kind: String = event.get("kind", "unknown")
-			all_event_kinds[kind] = all_event_kinds.get(kind, 0) + 1
-
-	if all_event_kinds.is_empty():
-		print("[Presentation:ReplayDirector] 事件覆盖分析: 无事件")
-		return
-
-	var covered: Array[String] = []
-	var uncovered: Array[String] = []
-	for kind: String in all_event_kinds.keys():
-		var count: int = all_event_kinds[kind]
-		var translators := _registry.get_translators_for(kind)
-		if translators.size() > 0:
-			covered.append("%s (%d) -> %s" % [kind, count, ", ".join(translators)])
-		else:
-			uncovered.append("%s (%d)" % [kind, count])
-
-	print("[Presentation:ReplayDirector] 事件覆盖分析 (共 %d 种事件类型):" % all_event_kinds.size())
-	if covered.size() > 0:
-		print("  ✓ 已覆盖 (%d 种):" % covered.size())
-		for item: String in covered:
-			print("    - %s" % item)
-	if uncovered.size() > 0:
-		print("  ⚠ 未覆盖 (%d 种): %s" % [uncovered.size(), ", ".join(uncovered)])

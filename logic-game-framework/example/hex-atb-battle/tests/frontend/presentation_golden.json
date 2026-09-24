@@ -5,7 +5,7 @@
 		"651143": {
 			"actors": 7,
 			"cards": 50,
-			"fingerprint": 466926191,
+			"fingerprint": 2927815786,
 			"kinds": [
 				"attack_vfx",
 				"buff_state",
@@ -21,7 +21,7 @@
 			"offensive_slots": -1,
 			"record_frames": 39,
 			"record_sha256": "8142ef9a0ad0e545d1279d67f46c1822c8cd0230de43959a2e4fde29cfe9ce8c",
-			"sha256": "1bd4ba6f419e262969b9379551416c37bc8bb7fa3af6e1cd87142fa9528d02a5",
+			"sha256": "ae82ec6a4ab795c73a92c0d809f50df436decf3c9495296e7a2a8bb6ee5feaba",
 			"step_ms": 100.0,
 			"steps": 48
 		},

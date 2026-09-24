@@ -39,9 +39,6 @@ var _projectile_views: Dictionary = {}      # projectile_id -> FrontendProjectil
 ## 每次 load 随录像重建，录像无地图时为 null（投影退化成恒等）
 var _grid_layout: GridLayout = null
 
-const SPAWN_VIEW_COST_WARN_MS: float = 3.0
-const FLOATING_TEXT_COST_WARN_MS: float = 2.0
-
 
 # ========== 生命周期 ==========
 
@@ -191,26 +188,15 @@ func _on_actor_spawned(actor_id: String, state: ActorVisualState) -> void:
 		return
 	if _replay_units_root == null:
 		return
-	var start_usec := Time.get_ticks_usec()
 	var view := _get_or_create_replay_unit_view(actor_id, state)
 	if view == null:
 		return
 	view.revive()
 	view.visible = true
 	_initialize_replay_unit_view(view, actor_id, state)
-	var world_position := _project(_director.get_actor_position(actor_id))
-	view.snap_world_position(world_position)
+	view.snap_world_position(_project(_director.get_actor_position(actor_id)))
 	_owned_replay_unit_views[actor_id] = view
 	_unit_views[actor_id] = view
-	var cost_ms := float(Time.get_ticks_usec() - start_usec) / 1000.0
-	if cost_ms >= SPAWN_VIEW_COST_WARN_MS or state.config_id == "fire_tile":
-		print("[Frontend:FrameDiag] spawn_view actor=%s config=%s type=%s world_pos=%s cost_ms=%.2f" % [
-			actor_id,
-			state.config_id,
-			state.type,
-			world_position,
-			cost_ms,
-		])
 
 
 func _prebuild_replay_unit_views(record: PlaybackData.BattleRecord) -> void:
@@ -363,18 +349,9 @@ func _on_effect_removed(kind: StringName, effect_id: String) -> void:
 
 
 func _spawn_floating_text(data: VisualEffectPayload.FloatingText) -> void:
-	var start_usec := Time.get_ticks_usec()
 	var floating_text := FrontendFloatingTextView.new()
 	_effects_root.add_child(floating_text)
 	floating_text.initialize(data.text, data.color, _project(data.position), data.style, data.duration)
-	var cost_ms := float(Time.get_ticks_usec() - start_usec) / 1000.0
-	if cost_ms >= FLOATING_TEXT_COST_WARN_MS:
-		print("[Frontend:FrameDiag] floating_text text='%s' pos=%s duration=%.2f cost_ms=%.2f" % [
-			data.text,
-			data.position,
-			data.duration,
-			cost_ms,
-		])
 
 
 func _spawn_attack_vfx(data: VisualEffectPayload.AttackVfx) -> void:

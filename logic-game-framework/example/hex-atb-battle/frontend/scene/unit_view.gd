@@ -24,9 +24,6 @@ signal death_animation_finished(actor_id: String)
 ## 单位半径
 @export var unit_radius: float = 0.5
 
-const POSITION_GAP_WARN: float = 0.08
-const MAX_POSITION_GAP_LOGS: int = 5
-
 
 # ========== 节点引用 ==========
 
@@ -56,8 +53,6 @@ var _smoothed_position: Vector3 = Vector3.ZERO
 ## 账本给的是逻辑平面 axial 位移,update_state 时用棋盘几何投影成世界位移。
 var _bump_offset: Vector3 = Vector3.ZERO
 var _death_tween: Tween
-var _environment_kind: String = ""
-var _position_gap_log_count: int = 0
 ## 死亡动画 once 策略 flag。play_death() 是 transition event 入口,但同一战斗内
 ## 的非战斗事件(动画系统重入 / debug 重 wire)仍可能触发多次,view 自己挡 once。
 var _death_played: bool = false
@@ -94,18 +89,6 @@ func _process(delta: float) -> void:
 	# 否则会和这里的 lerp 互相覆盖。
 	if _death_played:
 		return
-	var gap_before := _smoothed_position.distance_to(_target_position)
-	if _should_log_position_gap(gap_before, delta):
-		_position_gap_log_count += 1
-		print("[Frontend:FrameDiag] unit_position_gap actor=%s kind=%s delta_ms=%.2f gap=%.3f smoothed=%s target=%s position=%s" % [
-			_actor_id,
-			_environment_kind,
-			delta * 1000.0,
-			gap_before,
-			_smoothed_position,
-			_target_position,
-			position,
-		])
 	# _smoothed_position 朝 _target_position 收敛(原 lerp 行为),
 	# 最终 position = 平滑值 + bump_offset(bump 不走 lerp,避免撞击手感被吃掉)。
 	_smoothed_position = _smoothed_position.lerp(_target_position, delta * 15.0)
@@ -159,7 +142,6 @@ func initialize(
 
 
 func set_environment_style(kind: String) -> void:
-	_environment_kind = kind
 	if _mesh_instance != null:
 		if kind == "fire_tile":
 			var fire_disk := CylinderMesh.new()
@@ -240,8 +222,6 @@ func snap_world_position(new_world_pos: Vector3) -> void:
 	_target_position = new_world_pos
 	_smoothed_position = new_world_pos
 	position = new_world_pos + _bump_offset
-	if _environment_kind == "fire_tile":
-		_position_gap_log_count = 0
 
 
 # ========== 内部方法 ==========
@@ -278,14 +258,6 @@ func _apply_bump_squish(squish: Vector2) -> void:
 	if _mesh_instance == null:
 		return
 	_mesh_instance.scale = Vector3(squish.x, squish.y, squish.x)
-
-
-func _should_log_position_gap(gap: float, delta: float) -> bool:
-	if _environment_kind != "fire_tile":
-		return false
-	if _position_gap_log_count >= MAX_POSITION_GAP_LOGS:
-		return false
-	return gap >= POSITION_GAP_WARN
 
 
 ## 播放死亡动画(once 策略)。已播过则忽略 — 用于 transition event 入口,调方

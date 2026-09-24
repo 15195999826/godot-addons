@@ -27,10 +27,10 @@ const HEAL_CUES := [
 # ========== 斩杀击杀醒目特效 cue_id ==========
 
 const EXECUTE_KILL_CUE := HexBattleCues.EXECUTE_KILL  # Execute 命中击杀:猩红冲击波(放大)
-## 比普通 attack_vfx 明显更长,确保"斩杀"收尾醒目、肉眼可辨(也便于回放定格验证)。
-const EXECUTE_KILL_VFX_DURATION := 0.8
-## 略延迟:让起手 melee_heavy 挥击先淡出,斩杀爆作为独立收尾炸出来,不糊在一起。
-const EXECUTE_KILL_VFX_DELAY := 0.15
+## 比普通 attack_vfx(AnimationConfig.attack_vfx_duration = 300 ms)明显更长,确保"斩杀"收尾醒目、肉眼可辨(也便于回放定格验证)。单位毫秒。
+const EXECUTE_KILL_VFX_DURATION := 800.0
+## 略延迟:让起手 melee_heavy 挥击先淡出,斩杀爆作为独立收尾炸出来,不糊在一起。单位毫秒。
+const EXECUTE_KILL_VFX_DELAY := 150.0
 
 # ========== 控制状态 cue_id (Stun / Silence / Break 等共用 floating-text pattern) ==========
 

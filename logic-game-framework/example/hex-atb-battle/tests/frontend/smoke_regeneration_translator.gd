@@ -1,7 +1,12 @@
 ## Regeneration frontend smoke
 ##
 ## 验证 regeneration event 独立于 heal event, 但 frontend 仍按 actual_amount 更新 HP state。
+## 事件经 VisualDirector.pump 走完整链路;账本只走 Director 的公开读法, 飘字经 Director 转发的 effect_spawned 观察。
 extends Node
+
+
+## 每趟 pump 推进的表演时间(毫秒)= 录像 tick_interval
+const STEP_MS := 100.0
 
 
 func _ready() -> void:
@@ -24,22 +29,21 @@ func _ready() -> void:
 	actor_init.attributes = {"hp": 50.0, "max_hp": 100.0}
 	snap.actors = [actor_init]
 
-	var rw := VisualState.new()
-	rw.initialize_from_replay(record)
 	var registry := FrontendDefaultRegistry.create()
 	if not registry.has_translator_for("regeneration"):
 		_fail("default registry missing regeneration translator")
 		return
 
-	var scheduler := ActionStepper.new()
-	var updater := VisualUpdater.new()
+	var director := ReplayDirector.new(registry)
+	add_child(director)
 	var floating_texts: Array[String] = []
-	rw.effect_spawned.connect(func(kind: StringName, payload: VisualEffectPayload.Effect) -> void:
+	director.effect_spawned.connect(func(kind: StringName, payload: VisualEffectPayload.Effect) -> void:
 		if kind == VisualAction.KIND_FLOATING_TEXT:
 			floating_texts.append((payload as VisualEffectPayload.FloatingText).text)
 	)
+	director.load_playback(record)
 
-	_run_frame(scheduler, registry, rw, updater, [{
+	_run_frame(director, [{
 		"kind": "regeneration",
 		"target_actor_id": "hero_1",
 		"resource": "hp",
@@ -48,7 +52,7 @@ func _ready() -> void:
 		"source": "general_passive",
 	}], "regen_7")
 
-	var state := _get_state(rw)
+	var state := _get_state(director)
 	if not is_equal_approx(state.target_hp, 57.0):
 		_fail("target_hp after regen should be 57, got %.2f" % state.target_hp)
 		return
@@ -56,7 +60,7 @@ func _ready() -> void:
 		_fail("expected one +7 floating text, got %s" % str(floating_texts))
 		return
 
-	_run_frame(scheduler, registry, rw, updater, [{
+	_run_frame(director, [{
 		"kind": "regeneration",
 		"target_actor_id": "hero_1",
 		"resource": "hp",
@@ -65,7 +69,7 @@ func _ready() -> void:
 		"source": "general_passive",
 	}], "regen_0")
 
-	state = _get_state(rw)
+	state = _get_state(director)
 	if not is_equal_approx(state.target_hp, 57.0):
 		_fail("zero actual regen should not change target_hp, got %.2f" % state.target_hp)
 		return
@@ -77,29 +81,14 @@ func _ready() -> void:
 	get_tree().quit(0)
 
 
-func _run_frame(
-	scheduler: ActionStepper,
-	registry: TranslatorRegistry,
-	rw: VisualState,
-	updater: VisualUpdater,
-	events: Array[Dictionary],
-	tag: String,
-) -> void:
-	var query := rw.as_query()
-	for event in events:
-		scheduler.enqueue(registry.translate(event, query))
-	rw.advance_time(100)
-	var result := scheduler.tick(100.0)
-	updater.apply_actions(rw, result.active_actions)
-	updater.apply_actions(rw, result.completed_this_tick)
-	updater.tick_time(rw, 100.0)
-	rw.flush_dirty_actors()
-	print("  [frame %s] processed %d events" % [tag, events.size()])
+## 一趟 = 一个逻辑帧的事件 + STEP_MS 表演时间,与 ReplayDirector 帧时钟喂 pump 的口径相同
+func _run_frame(director: VisualDirector, events: Array[Dictionary], tag: String) -> void:
+	director.pump(STEP_MS, events)
+	print("  [frame %s] pumped %d events" % [tag, events.size()])
 
 
-func _get_state(rw: VisualState) -> ActorVisualState:
-	var snapshot := rw.get_actors_snapshot()
-	return snapshot["hero_1"] as ActorVisualState
+func _get_state(director: VisualDirector) -> ActorVisualState:
+	return director.get_actors_snapshot()["hero_1"] as ActorVisualState
 
 
 func _fail(reason: String) -> void:

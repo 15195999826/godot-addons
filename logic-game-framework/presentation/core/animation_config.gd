@@ -75,31 +75,3 @@ var projectile_hit_vfx_duration: float = 200.0
 ## 创建默认配置
 static func create_default() -> AnimationConfig:
 	return AnimationConfig.new()
-
-
-## 从字典创建配置
-static func from_dict(data: Dictionary) -> AnimationConfig:
-	var config := AnimationConfig.new()
-
-	if data.has("move"):
-		var move_data: Dictionary = data["move"]
-		config.move_duration = move_data.get("duration", config.move_duration) as float
-
-	if data.has("damage"):
-		var damage_data: Dictionary = data["damage"]
-		config.damage_floating_text_duration = damage_data.get("floatingTextDuration", config.damage_floating_text_duration) as float
-		config.damage_hp_bar_delay = damage_data.get("hpBarDelay", config.damage_hp_bar_delay) as float
-		config.damage_hit_vfx_duration = damage_data.get("hitVfxDuration", config.damage_hit_vfx_duration) as float
-
-	if data.has("heal"):
-		var heal_data: Dictionary = data["heal"]
-		config.heal_floating_text_duration = heal_data.get("floatingTextDuration", config.heal_floating_text_duration) as float
-
-	if data.has("hp_lerp_rate"):
-		config.hp_lerp_rate = data.get("hp_lerp_rate", config.hp_lerp_rate) as float
-
-	if data.has("death"):
-		var death_data: Dictionary = data["death"]
-		config.death_duration = death_data.get("duration", config.death_duration) as float
-
-	return config
