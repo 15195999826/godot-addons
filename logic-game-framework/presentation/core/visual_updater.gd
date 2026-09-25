@@ -203,7 +203,7 @@ static func apply_hp_delta(state: VisualState, action: VisualAction, _progress: 
 	var hp_delta := action as VisualHpDeltaAction
 	var actor := state.get_actor(hp_delta.actor_id)
 	if actor == null:
-		print("[Presentation:VisualUpdater] ⚠️ hp_delta 找不到 actor: %s" % hp_delta.actor_id)
+		Log.warning("VisualUpdater", "hp_delta 找不到 actor: %s" % hp_delta.actor_id)
 		return
 	actor.target_hp = clampf(actor.target_hp + hp_delta.delta, 0.0, actor.max_hp)
 	# 死亡 sticky:只允许 alive→dead transition。dead→alive 复活语义未支持
@@ -219,10 +219,7 @@ static func apply_floating_text(state: VisualState, action: VisualAction, _progr
 	if state.has_effect(VisualAction.KIND_FLOATING_TEXT, action_id):
 		return
 	var text := action as VisualFloatingTextAction
-
-	print("[Presentation:VisualUpdater] 飘字: actor=%s text='%s' pos=%s" % [
-		text.actor_id, text.text, text.position
-	])
+	Log.debug("VisualUpdater", "飘字: actor=%s text='%s' pos=%s" % [text.actor_id, text.text, text.position])
 
 	var payload := VisualEffectPayload.FloatingText.new()
 	payload.id = action_id
@@ -273,7 +270,7 @@ static func apply_death(state: VisualState, action: VisualAction, progress: floa
 	var death := action as VisualDeathAction
 	var actor := state.get_actor(death.actor_id)
 	if actor == null:
-		print("[Presentation:VisualUpdater] ⚠️ death 找不到 actor: %s" % death.actor_id)
+		Log.warning("VisualUpdater", "death 找不到 actor: %s" % death.actor_id)
 		return
 
 	state.set_actor_alive(actor, false)
@@ -282,7 +279,7 @@ static func apply_death(state: VisualState, action: VisualAction, progress: floa
 	actor.death_progress = progress
 
 	if progress >= 1.0:
-		print("[Presentation:VisualUpdater] 死亡动画完成: actor=%s" % death.actor_id)
+		Log.debug("VisualUpdater", "死亡动画完成: actor=%s" % death.actor_id)
 
 	state.emit_actor_state_changed(death.actor_id)
 
