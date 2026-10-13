@@ -39,7 +39,7 @@ extends Node
 # After fix: candidate accepted; unit makes progress through tangent path
 # while push system handles the actual separation. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_014_overlap_escape_must_be_strict_binary.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_014_overlap_escape_must_be_strict_binary.tscn
 
 
 var _failures: Array[String] = []

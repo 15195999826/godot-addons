@@ -17,10 +17,10 @@
 本地源码参考路径：
 
 ```text
-addons/sim-nav-map/docs/references/0ad-source/
+addons/lomo-addons/sim-nav-map/docs/references/0ad-source/
 ```
 
-这个目录通过 `addons/sim-nav-map/.gitignore` 忽略，不进入仓库。它是 0 A.D. 源码
+这个目录通过 `addons/lomo-addons/sim-nav-map/.gitignore` 忽略，不进入仓库。它是 0 A.D. 源码
 的 sparse checkout，主要用于 AI / 开发者在本机对照阅读。
 
 拉取方式见 [`0ad-source-setup.md`](0ad-source-setup.md)。

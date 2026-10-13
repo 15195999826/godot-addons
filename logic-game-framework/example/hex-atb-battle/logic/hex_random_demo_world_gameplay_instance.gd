@@ -6,7 +6,7 @@ class_name HexRandomDemoWorldGameplayInstance
 extends HexDemoWorldGameplayInstance
 
 
-const RandomLoadoutStrategyScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/ai/random_loadout_strategy.gd")
+const RandomLoadoutStrategyScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/ai/random_loadout_strategy.gd")
 
 const FIXED_TEAM_SIZE := 3
 const DEFAULT_PASSIVES_PER_ACTOR := 1

@@ -35,7 +35,7 @@ extends Node
 # Before fix: short forward step from boundary position blocked. FAIL.
 # After fix: forward step accepted; unit progresses south. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_012_boundary_motion_step_not_stay.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_012_boundary_motion_step_not_stay.tscn
 
 
 var _failures: Array[String] = []

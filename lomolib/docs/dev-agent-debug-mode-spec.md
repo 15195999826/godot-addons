@@ -42,7 +42,7 @@ Long run time, manual interpretation, and exploratory branching are expected.
 
 ### 3.1 Debug layer, not game layer
 
-The bridge is development tooling. It should live in `addons/lomolib` as reusable
+The bridge is development tooling. It should live in `addons/lomo-addons/lomolib` as reusable
 debug infrastructure, while each game scene owns only a small adapter describing
 scene-specific operations.
 
@@ -118,14 +118,14 @@ Codex / developer
 Planned reusable modules:
 
 ```text
-addons/lomolib/dev_agent/
+addons/lomo-addons/lomolib/dev_agent/
   dev_agent_bridge.gd          # lifecycle, file protocol, command dispatch
   dev_agent_input_driver.gd    # Viewport.push_input wrappers
   dev_agent_screenshot.gd      # viewport capture to PNG
   dev_agent_inspector.gd       # node tree/control/state dumps
   dev_agent_scene_ops.gd       # base class or protocol for scene adapters
 
-addons/lomolib/dev_agent/example/
+addons/lomo-addons/lomolib/dev_agent/example/
   dev_agent_demo.tscn
   dev_agent_demo.gd
   demo_scene_agent_ops.gd
@@ -136,7 +136,7 @@ remain: generic bridge in `lomolib/dev_agent`, scene-specific adapters outside
 the generic layer or inside the example folder.
 
 The v1 baseline uses these exact names and includes a runnable example under
-`addons/lomolib/dev_agent/example/`.
+`addons/lomo-addons/lomolib/dev_agent/example/`.
 
 ## 5. Runtime Enablement
 
@@ -377,7 +377,7 @@ asks for them.
 
 ### Phase 1: Spec and minimal library skeleton
 
-- Done in v1: added this spec and `addons/lomolib/dev_agent/` generic classes.
+- Done in v1: added this spec and `addons/lomo-addons/lomolib/dev_agent/` generic classes.
 - Activation remains local/opt-in; no autoload or production wiring is added.
 
 ### Phase 2: LomoLib example

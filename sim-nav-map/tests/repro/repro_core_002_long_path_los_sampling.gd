@@ -31,7 +31,7 @@ extends Node
 # After fix (Amanatides-Woo cell traversal): visits cell (5, 5) directly
 #   and returns false. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_002_long_path_los_sampling.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_002_long_path_los_sampling.tscn
 
 
 var _failures: Array[String] = []

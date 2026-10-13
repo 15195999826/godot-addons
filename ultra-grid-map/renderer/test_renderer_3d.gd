@@ -63,7 +63,7 @@ func _ready() -> void:
 ## 设置相机和控制器
 func _setup_camera() -> void:
 	# 实例化 LomoCameraRig
-	var camera_scene: PackedScene = preload("res://addons/lomolib/camera/lomo_camera_rig.tscn")
+	var camera_scene: PackedScene = preload("res://addons/lomo-addons/lomolib/camera/lomo_camera_rig.tscn")
 	_camera_rig = camera_scene.instantiate() as LomoCameraRig
 	_camera_rig.name = "CameraRig"
 	add_child(_camera_rig)

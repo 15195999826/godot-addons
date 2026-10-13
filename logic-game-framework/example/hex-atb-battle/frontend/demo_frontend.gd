@@ -123,7 +123,7 @@ func _get_map_config() -> GridMapConfig:
 # ========== 响应式栈初始化 ==========
 
 func _setup_camera_and_env() -> void:
-	var camera_scene := preload("res://addons/lomolib/camera/lomo_camera_rig.tscn")
+	var camera_scene := preload("res://addons/lomo-addons/lomolib/camera/lomo_camera_rig.tscn")
 	_camera_rig = camera_scene.instantiate() as LomoCameraRig
 	_camera_rig.name = "CameraRig"
 	_camera_rig.default_arm_length = 20.0

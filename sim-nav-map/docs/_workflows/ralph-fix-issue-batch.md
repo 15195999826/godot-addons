@@ -3,7 +3,7 @@
 > **用法**
 >
 > ```
-> /ralph-loop:ralph-loop @addons/sim-nav-map/docs/_workflows/ralph-fix-issue-batch.md \
+> /ralph-loop:ralph-loop @addons/lomo-addons/sim-nav-map/docs/_workflows/ralph-fix-issue-batch.md \
 >   --completion-promise "BATCH_COMPLETE" \
 >   --max-iterations 60
 > ```
@@ -12,13 +12,13 @@
 
 ## 目标
 
-按你给的顺序串行修 `addons/sim-nav-map/docs/issues/` 里的多个 issue。每个 issue 走对应的状态机分支（A/B/C/D/E）跑到完成，自动写 Resolution / 更新 BASELINE / 注册 smoke / submodule commit + 主仓 bump pointer。所有 issue 走完发 `<promise>BATCH_COMPLETE</promise>`。
+按你给的顺序串行修 `addons/lomo-addons/sim-nav-map/docs/issues/` 里的多个 issue。每个 issue 走对应的状态机分支（A/B/C/D/E）跑到完成，自动写 Resolution / 更新 BASELINE / 注册 smoke / submodule commit + 主仓 bump pointer。所有 issue 走完发 `<promise>BATCH_COMPLETE</promise>`。
 
 ## 适用 / 不适用
 
 **适用**：
-- 已经在 `addons/sim-nav-map/docs/issues/` 里的 issue（`<id>.md` 文件已存在，模板五段齐：Symptoms / Root cause / Proposed fix / Repro / Verify）
-- 修复改动**全部在 `addons/sim-nav-map/` submodule 内**（不需要改 `scripts/` / `scenes/` / 主仓其他文件）
+- 已经在 `addons/lomo-addons/sim-nav-map/docs/issues/` 里的 issue（`<id>.md` 文件已存在，模板五段齐：Symptoms / Root cause / Proposed fix / Repro / Verify）
+- 修复改动**全部在 `addons/lomo-addons/sim-nav-map/` submodule 内**（不需要改 `scripts/` / `scenes/` / 主仓其他文件）
 
 **不适用**：
 - PROCESS-001 本身（无代码任务，由 D 分支顺带回填 worked examples）
@@ -27,7 +27,7 @@
 
 ## State 文件
 
-路径：`addons/sim-nav-map/docs/_workflows/.ralph-state-fix-issue-batch.md`
+路径：`addons/lomo-addons/sim-nav-map/docs/_workflows/.ralph-state-fix-issue-batch.md`
 
 **首次启动前**人类创建并填好 `queue`。**每轮 ralph 必读必写**。`.gitignore` 已忽略（**不**进 submodule 历史）。
 
@@ -90,7 +90,7 @@ last_smoke_result: PASS
 
 ### Step 2: 选 branch（仅当刚弹新 issue）
 
-读 issue 文件 `addons/sim-nav-map/docs/issues/<id>.md`，按下表选 branch 写回 state：
+读 issue 文件 `addons/lomo-addons/sim-nav-map/docs/issues/<id>.md`，按下表选 branch 写回 state：
 
 | 条件 | branch | 服务 |
 |---|---|---|
@@ -119,7 +119,7 @@ sub_steps：
 3. **跑 repro smoke**：`godot --headless --path . <repro tscn 路径> > /tmp/repro.txt 2>&1`
    - 未 PASS → 回 sub_step 2（同 sub_iteration，循环改）
 4. **跑 simnav/smoke + dota2lab/smoke 全绿**：`./tools/run_tests.ps1 simnav/smoke dota2lab/smoke`
-   - 有 FAIL → `git -C addons/sim-nav-map checkout .`（**回退本轮全部代码改动**），state.notes 记 "regression in <smoke>"，sub_iteration += 1，回 sub_step 2
+   - 有 FAIL → `git -C addons/lomo-addons/sim-nav-map checkout .`（**回退本轮全部代码改动**），state.notes 记 "regression in <smoke>"，sub_iteration += 1，回 sub_step 2
 5. **更新 issue 文件**：
    - Status: `open` → `resolved`
    - 加 Resolution 段（commit hash 先写 `<TBD>`，最后回填）：
@@ -130,23 +130,23 @@ sub_steps：
      - 0 A.D. files checked: <从 issue 0 A.D. reference 段抄>
      - baseline impact: <相关 BASELINE 行/数字 / "none">
      ```
-6. **注册 smoke 到 `addons/sim-nav-map/tests/test_groups.json`**：repro tscn 加进 `simnav/smoke` 组
-7. **更新 `addons/sim-nav-map/docs/issues/BASELINE.md`**：
+6. **注册 smoke 到 `addons/lomo-addons/sim-nav-map/tests/test_groups.json`**：repro tscn 加进 `simnav/smoke` 组
+7. **更新 `addons/lomo-addons/sim-nav-map/docs/issues/BASELINE.md`**：
    - "Known correctness limits" 段：删该 issue 行（如有）
    - "Lab metrics" 表：core issue 通常不动 lab 数字，跳过
-8. **更新 `addons/sim-nav-map/docs/issues/README.md` index**：该行 `Status: open` → `resolved`，Repro 列 `smoke (FAIL)` → `smoke (PASS)`
-9. **更新 `addons/sim-nav-map/docs/public-api.md`**（仅当 issue 加新 public API：CORE-004 / CORE-006）：加 method 签名 + 行为说明
+8. **更新 `addons/lomo-addons/sim-nav-map/docs/issues/README.md` index**：该行 `Status: open` → `resolved`，Repro 列 `smoke (FAIL)` → `smoke (PASS)`
+9. **更新 `addons/lomo-addons/sim-nav-map/docs/public-api.md`**（仅当 issue 加新 public API：CORE-004 / CORE-006）：加 method 签名 + 行为说明
 10. **submodule commit**：
     ```bash
-    git -C addons/sim-nav-map status                       # 检查文件清单
-    git -C addons/sim-nav-map add <精确文件列表>           # 不用 add . / -A
-    git -C addons/sim-nav-map commit -m "fix(sim-nav-map): resolve <ID> — <一行摘要>"
-    git -C addons/sim-nav-map rev-parse HEAD               # 拿 hash
+    git -C addons/lomo-addons/sim-nav-map status                       # 检查文件清单
+    git -C addons/lomo-addons/sim-nav-map add <精确文件列表>           # 不用 add . / -A
+    git -C addons/lomo-addons/sim-nav-map commit -m "fix(sim-nav-map): resolve <ID> — <一行摘要>"
+    git -C addons/lomo-addons/sim-nav-map rev-parse HEAD               # 拿 hash
     ```
-11. **回填 commit hash**：用 Edit 把 issue 文件 Resolution 段 `<TBD>` 替换成实际 hash；`git -C addons/sim-nav-map add <issue文件>` + `git -C addons/sim-nav-map commit --amend --no-edit`
+11. **回填 commit hash**：用 Edit 把 issue 文件 Resolution 段 `<TBD>` 替换成实际 hash；`git -C addons/lomo-addons/sim-nav-map add <issue文件>` + `git -C addons/lomo-addons/sim-nav-map commit --amend --no-edit`
 12. **主仓 bump pointer**：
     ```bash
-    git add addons/sim-nav-map
+    git add addons/lomo-addons/sim-nav-map
     git commit -m "chore: bump sim-nav-map (resolve <ID>)"
     git rev-parse HEAD                                     # 拿 hash
     ```
@@ -196,7 +196,7 @@ sub_steps：
 
 1. **读 issue + PROCESS-001**
 2. **提取 lab 失败场景最小 setup**（从 issue Repro 段抠 setup_default + tick + 触发条件，如 "step 20 后 drop static obstacle on blue_0"）
-3. **写 core-only 等价 smoke** `addons/sim-nav-map/tests/repro/repro_<lab-id>_core_only.gd`：跑同样的 path query / passability / timing 但**不经过 lab movement / separation 层**
+3. **写 core-only 等价 smoke** `addons/lomo-addons/sim-nav-map/tests/repro/repro_<lab-id>_core_only.gd`：跑同样的 path query / passability / timing 但**不经过 lab movement / separation 层**
 4. **跑 core-only smoke**：
    - **core 也复现 / 也慢** → bug 在 core；issue 文件加 `## Triaged: core` 段（含 core-only smoke 路径 + 决策原因）→ 后续按 A 分支步骤改 core
    - **core OK** → bug 在 lab；issue 文件加 `## Triaged: lab` 段 → 改 `examples/dota2-rts-pathfinding-lab/` 内文件
@@ -248,8 +248,8 @@ Aborted:
 
 - 一轮只摸 1 个 issue 的代码（+ 该 issue 的 cross-ref 文件：BASELINE / test_groups.json / public-api.md / README index）
 - 每修完一个 issue 立即 **2 个独立 commit**（submodule + 主仓 bump）
-- `git -C addons/sim-nav-map status` 在 commit 前看清楚文件清单
-- 用 `git -C addons/sim-nav-map add <精确文件>`，**不用** `git add .` / `git add -A`
+- `git -C addons/lomo-addons/sim-nav-map status` 在 commit 前看清楚文件清单
+- 用 `git -C addons/lomo-addons/sim-nav-map add <精确文件>`，**不用** `git add .` / `git add -A`
 - 跑 `simnav/smoke` + `rtslab/smoke` 全绿才算 issue done
 - 改完每个 issue 也更新对应行 README index
 
@@ -267,11 +267,11 @@ Aborted:
 
 人类（你）做一次：
 
-1. **创建 state 文件** `addons/sim-nav-map/docs/_workflows/.ralph-state-fix-issue-batch.md`，把 queue 按依赖顺序填好（见下文 [推荐 queue 顺序](#推荐-queue-顺序)）
-2. **加 .gitignore**：在 `addons/sim-nav-map/.gitignore` 末尾加 `docs/_workflows/.ralph-state-*.md`（state 文件不进 submodule 历史）
+1. **创建 state 文件** `addons/lomo-addons/sim-nav-map/docs/_workflows/.ralph-state-fix-issue-batch.md`，把 queue 按依赖顺序填好（见下文 [推荐 queue 顺序](#推荐-queue-顺序)）
+2. **加 .gitignore**：在 `addons/lomo-addons/sim-nav-map/.gitignore` 末尾加 `docs/_workflows/.ralph-state-*.md`（state 文件不进 submodule 历史）
 3. **启动 ralph**：
    ```
-   /ralph-loop:ralph-loop @addons/sim-nav-map/docs/_workflows/ralph-fix-issue-batch.md \
+   /ralph-loop:ralph-loop @addons/lomo-addons/sim-nav-map/docs/_workflows/ralph-fix-issue-batch.md \
      --completion-promise "BATCH_COMPLETE" \
      --max-iterations 60
    ```
@@ -325,7 +325,7 @@ PROCESS-001 在 LAB-* 的 D 分支 sub_step 8 自动回填 worked examples，**�
 | | 路径 | 谁在管 | 内容 |
 |---|---|---|---|
 | **ralph 内部 state** | `.claude/.ralph-loop.local.md` | ralph-loop 插件自己 | iteration count、loop 是否活跃 |
-| **workflow 业务 state** | `addons/sim-nav-map/docs/_workflows/.ralph-state-fix-issue-batch.md` | 本 workflow（ralph 每轮读写） | queue / current / done / aborted |
+| **workflow 业务 state** | `addons/lomo-addons/sim-nav-map/docs/_workflows/.ralph-state-fix-issue-batch.md` | 本 workflow（ralph 每轮读写） | queue / current / done / aborted |
 
 ### 取消正在跑的 ralph
 
@@ -343,7 +343,7 @@ ralph 启动时用 `@<file>` 引用通常会**展开为快照**——启动后�
 
 state 文件还在 → 第一轮读 state → 从 `current` 续：
 
-- **commit 之前中断**：`git -C addons/sim-nav-map status` 显示未提交工作树改动 → 续做
+- **commit 之前中断**：`git -C addons/lomo-addons/sim-nav-map status` 显示未提交工作树改动 → 续做
 - **submodule commit 之后、主仓 bump 之前中断**：第一轮检测到 submodule HEAD ≠ 主仓 pointer → 立刻补主仓 bump commit，再继续 queue
 - **写 issue 文件之间中断**：以 issue 文件实际状态为准（Status / Resolution 段）
 

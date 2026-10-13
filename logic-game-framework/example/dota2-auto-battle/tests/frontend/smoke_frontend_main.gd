@@ -9,7 +9,7 @@
 extends Node
 
 
-const SCENE_PATH := "res://addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle.tscn"
+const SCENE_PATH := "res://addons/lomo-addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle.tscn"
 const RUN_SECONDS := 3.0
 const EXPECTED_SPAWN := 8
 

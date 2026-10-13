@@ -14,11 +14,11 @@ extends EditorScript
 ## 入口：
 ##   - 编辑器菜单 Tools > LGFramework > 生成属性集（plugin.gd 调 _run()）
 ##   - Headless：godot --headless --path . \
-##       addons/logic-game-framework/scripts/generate_attribute_sets.tscn
+##       addons/lomo-addons/logic-game-framework/scripts/generate_attribute_sets.tscn
 
 const PROJECT_CONFIG_PATH := "res://logic-game-framework-config/attributes/attributes_config.gd"
-const SHARED_EXAMPLE_CONFIG_PATH := "res://addons/logic-game-framework/example/attributes/attributes_config.gd"
-const EXAMPLE_ROOT := "res://addons/logic-game-framework/example"
+const SHARED_EXAMPLE_CONFIG_PATH := "res://addons/lomo-addons/logic-game-framework/example/attributes/attributes_config.gd"
+const EXAMPLE_ROOT := "res://addons/lomo-addons/logic-game-framework/example"
 const EXAMPLE_LOCAL_CONFIG_RELPATH := "logic/attributes/attributes_config.gd"
 const GENERATED_DIR_NAME := "generated"
 const _SHADOWED_GLOBAL_IDENTIFIERS := ["range", "min", "max", "clamp"]

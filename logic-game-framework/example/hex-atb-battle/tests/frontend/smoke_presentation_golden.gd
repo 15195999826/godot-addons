@@ -15,7 +15,7 @@
 extends Node
 
 
-const GOLDEN_PATH := "res://addons/logic-game-framework/example/hex-atb-battle/tests/frontend/presentation_golden.json"
+const GOLDEN_PATH := "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/tests/frontend/presentation_golden.json"
 const DUMP_DIR := "res://.claude/tmp/presentation-golden"
 const PASSIVES_PER_ACTOR := 1
 ## 录像帧数之外再允许这么多步排空动画；超过判 Director 永不 playback_ended。

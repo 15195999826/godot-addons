@@ -13,7 +13,7 @@ extends Node
 ## 7. 非 scale_by_stacks 模式: stacks 变化时 component on_stacks_changed no-op
 ## 8. instance 已销毁后仍 revoke: 两个 modifier 组件的 on_remove 各响亮恰一条断言、仍清内部记录、退场照常走完
 
-const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+const LogCounter := preload("res://addons/lomo-addons/logic-game-framework/tests/log_counter.gd")
 ## 两个 modifier 组件在 owner 反查不到属性集时打的断言文本（模块名 / 钩子名之外的公共部分）。
 const ORPHAN_ASSERT_TEXT := "owner 已不在 instance / instance 已销毁，modifier 无法清理"
 

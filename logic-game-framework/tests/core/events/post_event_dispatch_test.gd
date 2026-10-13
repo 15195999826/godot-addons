@@ -13,7 +13,7 @@ extends Node
 ## 只在定向通道触发、同 kind 广播 trigger 只在广播通道触发；不问死活门（filter 自己拒）；收件人不在了静默丢弃；
 ## 投递内 expire 当场 revoke；嵌套投递受深度上限。
 
-const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+const LogCounter := preload("res://addons/lomo-addons/logic-game-framework/tests/log_counter.gd")
 
 const KIND := "post_dispatch_probe"
 const DEATH_KIND := "post_dispatch_death"

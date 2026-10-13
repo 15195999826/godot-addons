@@ -1,6 +1,6 @@
 ## GridMap 完整单元测试
 ##
-## 运行方式: godot --headless --script addons/ultra-grid-map/tests/test_grid_map.gd
+## 运行方式: godot --headless --script addons/lomo-addons/ultra-grid-map/tests/test_grid_map.gd
 extends SceneTree
 
 # 禁用类型推断警告（测试代码中使用动态类型）
@@ -9,13 +9,13 @@ extends SceneTree
 
 # 在 --script 模式下，使用 load() 而不是 preload()
 # 这样可以正确实例化类
-var GridMapConfig = load("res://addons/ultra-grid-map/core/grid_types.gd")
-var CoordConverter = load("res://addons/ultra-grid-map/core/coord_converter.gd")
-var HexCoord = load("res://addons/ultra-grid-map/core/hex_coord.gd")
-var GridMath = load("res://addons/ultra-grid-map/core/grid_math.gd")
-var GridLayout = load("res://addons/ultra-grid-map/core/grid_layout.gd")
-var GridMapModel = load("res://addons/ultra-grid-map/model/grid_map_model.gd")
-var GridPathfinding = load("res://addons/ultra-grid-map/pathfinding/grid_pathfinding.gd")
+var GridMapConfig = load("res://addons/lomo-addons/ultra-grid-map/core/grid_types.gd")
+var CoordConverter = load("res://addons/lomo-addons/ultra-grid-map/core/coord_converter.gd")
+var HexCoord = load("res://addons/lomo-addons/ultra-grid-map/core/hex_coord.gd")
+var GridMath = load("res://addons/lomo-addons/ultra-grid-map/core/grid_math.gd")
+var GridLayout = load("res://addons/lomo-addons/ultra-grid-map/core/grid_layout.gd")
+var GridMapModel = load("res://addons/lomo-addons/ultra-grid-map/model/grid_map_model.gd")
+var GridPathfinding = load("res://addons/lomo-addons/ultra-grid-map/pathfinding/grid_pathfinding.gd")
 
 
 func _init() -> void:

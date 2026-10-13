@@ -1,6 +1,6 @@
 ## SkillScenario - 单技能逻辑断言场景基类
 ##
-## 子类放在 `addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/*.gd`，
+## 子类放在 `addons/lomo-addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/*.gd`，
 ## 自动被 runner 扫描执行。
 ##
 ## 一个 scenario 负责:

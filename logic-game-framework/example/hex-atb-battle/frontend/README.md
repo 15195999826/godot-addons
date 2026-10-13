@@ -1,6 +1,6 @@
 # Hex ATB Battle Frontend (表演层)
 
-> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `demo_frontend.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。详见 `addons/logic-game-framework/CLAUDE.md`（World owns Battle 节）。
+> ⚠ **2026-04-26 — A 层老路径下线**:`FrontendBattleReplayScene.load_replay(record)` destructive 路径已删除。当前权威 wire 示例见 `demo_frontend.gd::_on_start_battle_button_pressed`(响应式 `WorldView + BattleAnimator`)与 `example/hex-atb-battle/skill-preview/skill_preview.gd::_init_world_stack`。详见 `addons/lomo-addons/logic-game-framework/CLAUDE.md`（World owns Battle 节）。
 
 ## 现状响应式 wire(2026-04-26 起)
 
@@ -46,7 +46,7 @@ UI 控件 `FrontendPlaybackControls` 提供 play/pause/reset/speed,信号转发�
 
 ## 表演框架在哪（2026-09-24 起，adr/0013）
 
-框架件住 LGF `addons/logic-game-framework/presentation/`（`core/` = `VisualDirector` / `ReplayDirector` / `Translator` / `TranslatorRegistry` / `ActionStepper` / `VisualState` / `ActorVisualState` / `VisualStateQuery` / `VisualUpdater` / `AnimationConfig` / `VisualEffectPayload` / `BuffSummary` / `ShieldSummary`；`actions/` = `VisualAction` + 内置 11 种 `Visual*Action`）。词表、`pump` 的 8 步顺序、7 条信号、消费方接入清单全在 [`addons/logic-game-framework/CLAUDE.md`](../../../CLAUDE.md)「Presentation layer」节，本文不复述。
+框架件住 LGF `addons/lomo-addons/logic-game-framework/presentation/`（`core/` = `VisualDirector` / `ReplayDirector` / `Translator` / `TranslatorRegistry` / `ActionStepper` / `VisualState` / `ActorVisualState` / `VisualStateQuery` / `VisualUpdater` / `AnimationConfig` / `VisualEffectPayload` / `BuffSummary` / `ShieldSummary`；`actions/` = `VisualAction` + 内置 11 种 `Visual*Action`）。词表、`pump` 的 8 步顺序、7 条信号、消费方接入清单全在 [`addons/lomo-addons/logic-game-framework/CLAUDE.md`](../../../CLAUDE.md)「Presentation layer」节，本文不复述。
 
 hex 是第一个消费者，本目录只剩项目件（`Frontend*` 前缀）：
 
@@ -131,7 +131,7 @@ hex-atb-battle/frontend/
 └── ui/
     └── playback_controls.gd           # FrontendPlaybackControls 播放控制面板
 
-框架件不在本目录：addons/logic-game-framework/presentation/{core,actions}/
+框架件不在本目录：addons/lomo-addons/logic-game-framework/presentation/{core,actions}/
 ```
 
 ---

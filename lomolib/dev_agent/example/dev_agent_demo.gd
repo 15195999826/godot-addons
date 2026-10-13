@@ -1,8 +1,8 @@
 class_name DevAgentDemo
 extends Control
 
-const DemoSceneAgentOpsScript := preload("res://addons/lomolib/dev_agent/example/demo_scene_agent_ops.gd")
-const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
+const DemoSceneAgentOpsScript := preload("res://addons/lomo-addons/lomolib/dev_agent/example/demo_scene_agent_ops.gd")
+const DevAgentBridgeScript := preload("res://addons/lomo-addons/lomolib/dev_agent/dev_agent_bridge.gd")
 
 var _status_label: Label
 var _event_label: Label

@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://bnq3jvr0yjnc5"]
 
-[ext_resource type="Script" path="res://addons/lomolib/wait_group_demo.gd" id="1_a0yvy"]
+[ext_resource type="Script" path="res://addons/lomo-addons/lomolib/wait_group_demo.gd" id="1_a0yvy"]
 
 [node name="WaitGroupDemo" type="Control"]
 layout_mode = 3

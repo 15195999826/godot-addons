@@ -32,7 +32,7 @@ extends Node
 # `length < 130 px` bound below.
 # After fix: short path length ≈ 103.77 px (threads the gap midpoint). PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_018_visibility_graph_gap_threading.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_018_visibility_graph_gap_threading.tscn
 
 
 var _failures: Array[String] = []

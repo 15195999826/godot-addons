@@ -23,7 +23,7 @@
 ##
 ## Raw real-input (走 DevAgentBridge 通用 op): click_at / drag_at / tap_key /
 ##   capture / inspect_controls / inspect_tree / dump_node 都在 DevAgentBridge 处理。
-extends "res://addons/lomolib/dev_agent/dev_agent_scene_ops.gd"
+extends "res://addons/lomo-addons/lomolib/dev_agent/dev_agent_scene_ops.gd"
 
 
 const _REQUIRED_PARENT_METHODS: Array[String] = [

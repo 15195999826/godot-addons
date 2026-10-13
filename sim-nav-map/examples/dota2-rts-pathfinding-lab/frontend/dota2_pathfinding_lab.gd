@@ -44,9 +44,9 @@ const PANEL_VIOLET_COLOR := Color(0.66, 0.45, 0.98, 0.72)
 const PANEL_TEXT_COLOR := Color(0.91, 0.94, 0.91)
 const PANEL_MUTED_TEXT_COLOR := Color(0.58, 0.68, 0.68)
 const AUTO_DEMO_RESET_DELAY_TICKS: int = 120
-const Dota2LabSceneAgentOpsScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_lab_scene_agent_ops.gd")
-const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
-const AiCommandSourceScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_ai_command_source.gd")
+const Dota2LabSceneAgentOpsScript := preload("res://addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_lab_scene_agent_ops.gd")
+const DevAgentBridgeScript := preload("res://addons/lomo-addons/lomolib/dev_agent/dev_agent_bridge.gd")
+const AiCommandSourceScript := preload("res://addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_ai_command_source.gd")
 
 # Mobile units are colored by speed tier so body-block interactions between
 # tiers read at a glance.
@@ -1279,8 +1279,8 @@ func _build_export_snapshot() -> Dictionary:
 
 func _scene_label() -> String:
 	if auto_command_demo:
-		return "addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_ai_command_demo.tscn"
-	return "addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn"
+		return "addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_ai_command_demo.tscn"
+	return "addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn"
 
 
 func _auto_demo_snapshot() -> Dictionary:

@@ -3,9 +3,9 @@ extends Node
 
 ## JSONL command bridge for development-time Godot scene debugging.
 
-const DevAgentInputDriverScript := preload("res://addons/lomolib/dev_agent/dev_agent_input_driver.gd")
-const DevAgentInspectorScript := preload("res://addons/lomolib/dev_agent/dev_agent_inspector.gd")
-const DevAgentScreenshotScript := preload("res://addons/lomolib/dev_agent/dev_agent_screenshot.gd")
+const DevAgentInputDriverScript := preload("res://addons/lomo-addons/lomolib/dev_agent/dev_agent_input_driver.gd")
+const DevAgentInspectorScript := preload("res://addons/lomo-addons/lomolib/dev_agent/dev_agent_inspector.gd")
+const DevAgentScreenshotScript := preload("res://addons/lomo-addons/lomolib/dev_agent/dev_agent_screenshot.gd")
 
 @export var enabled := false
 @export var session_id := ""

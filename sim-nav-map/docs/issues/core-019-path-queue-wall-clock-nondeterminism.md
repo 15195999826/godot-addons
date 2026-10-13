@@ -56,7 +56,7 @@ be budgeted." Time is not part of the cap.
 
 ## Fix
 
-`addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_pathfinder.gd`
+`addons/lomo-addons/sim-nav-map/examples/0ad-rts-pathfinding-lab/logic/zero_ad_rts_lab_pathfinder.gd`
 const default changed from `3500` to `0`. The queue interprets `max_usec = 0`
 as "no time cap"; only `max_requests` gates processing.
 

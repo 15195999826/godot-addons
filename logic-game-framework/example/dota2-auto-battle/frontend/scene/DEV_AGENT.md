@@ -20,7 +20,7 @@ SESS_NAME="<task-slug>"
 SESS_DIR="$APPDATA/Godot/app_userdata/Inkmon/dev-agent/sessions/$SESS_NAME"
 rm -rf "$SESS_DIR" && mkdir -p "$SESS_DIR"
 godot --path C:/GodotPorjects/inkmon-godot \
-  res://addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle.tscn \
+  res://addons/lomo-addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle.tscn \
   -- --dev-agent --dev-agent-session=$SESS_NAME \
   > "$SESS_DIR/godot.log" 2>&1
 ```

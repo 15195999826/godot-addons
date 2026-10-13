@@ -1,4 +1,4 @@
-extends "res://addons/lomolib/dev_agent/dev_agent_scene_ops.gd"
+extends "res://addons/lomo-addons/lomolib/dev_agent/dev_agent_scene_ops.gd"
 
 ## DevAgent scene-ops adapter for dota2_lane_battle.tscn — development-only.
 ##

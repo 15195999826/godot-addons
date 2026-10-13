@@ -11,7 +11,7 @@ extends Node
 ##  - 多 ActiveUse 组件：首个失败门返回
 
 const QUERY_TIMELINE_ID := "t-active-use-query"
-const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+const LogCounter := preload("res://addons/lomo-addons/logic-game-framework/tests/log_counter.gd")
 
 
 ## 夹具 timeline：单实例，两个建夹具的函数共用。

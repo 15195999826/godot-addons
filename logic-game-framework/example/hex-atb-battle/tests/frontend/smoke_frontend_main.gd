@@ -13,13 +13,13 @@
 ## 不覆盖：像素渲染正确性、粒子视觉、相机跟随、音效
 ##
 ## 运行方式:
-##   godot --headless --path . res://addons/logic-game-framework/example/hex-atb-battle/tests/frontend/smoke_frontend_main.tscn
+##   godot --headless --path . res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/tests/frontend/smoke_frontend_main.tscn
 ##
 ## 退出码: 0 PASS / 1 FAIL, 输出标记: "SMOKE_TEST_RESULT: PASS|FAIL - <reason>"
 extends Node
 
 
-const MAIN_SCENE := "res://addons/logic-game-framework/example/hex-atb-battle/frontend/demo_frontend.tscn"
+const MAIN_SCENE := "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/frontend/demo_frontend.tscn"
 ## 超时时间（秒）。100x 加速下，典型一场 200 帧 battle 约 0.3s 真实时间。
 const TIMEOUT_SEC := 30.0
 ## 播放加速倍率，压缩真实耗时。过高会让单帧推进的逻辑时间 > 动画持续时间导致视觉异常，

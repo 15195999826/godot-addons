@@ -1,6 +1,6 @@
 ## SkillScenario Runner - 扫描并执行所有 scenario，汇总 PASS/FAIL
 ##
-## 扫 `addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/`
+## 扫 `addons/lomo-addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/`
 ## 下除基础设施文件外的所有 *.gd:
 ##   - 加载脚本
 ##   - 若类继承 SkillScenario → new() 实例 → 跑一次
@@ -15,7 +15,7 @@
 extends Node
 
 
-const SCENARIOS_DIR := "res://addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/"
+const SCENARIOS_DIR := "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/tests/battle/skill_scenarios/"
 ## 基础设施脚本不是 scenario，跳过
 const INFRASTRUCTURE_FILES: Array[String] = [
 	"skill_scenario.gd",

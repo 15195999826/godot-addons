@@ -2,7 +2,7 @@
 ##
 ## 与 demo_frontend.gd 共用同一套 WorldView + BattleAnimator wire, 但创建
 ## HexRandomDemoWorldGameplayInstance, 每次 Start 随机组装职业、主技能和额外 passive。
-extends "res://addons/logic-game-framework/example/hex-atb-battle/frontend/demo_frontend.gd"
+extends "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/frontend/demo_frontend.gd"
 
 
 var _seed_input: SpinBox

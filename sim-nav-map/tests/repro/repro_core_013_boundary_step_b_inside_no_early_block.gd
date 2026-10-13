@@ -38,7 +38,7 @@ extends Node
 # blocked because target_dist 21.84 < collision_threshold 22. FAIL.
 # After fix: step accepted; unit makes progress west toward SW corner. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_013_boundary_step_b_inside_no_early_block.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_013_boundary_step_b_inside_no_early_block.tscn
 
 
 var _failures: Array[String] = []

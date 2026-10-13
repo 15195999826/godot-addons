@@ -1,11 +1,11 @@
 # 0 A.D. 源码本地参考副本 — 拉取与使用
 
-> **不进仓**(被 `addons/sim-nav-map/.gitignore` 屏蔽 + 0 A.D. 是 GPL-2.0,我们当前许可证未对齐)。
+> **不进仓**(被 `addons/lomo-addons/sim-nav-map/.gitignore` 屏蔽 + 0 A.D. 是 GPL-2.0,我们当前许可证未对齐)。
 > 每个开发者本地自己拉一份,仅供 `sim-nav-map` 开发期间对照参考用。
 
 ## 位置
 
-`addons/sim-nav-map/docs/references/0ad-source/`。
+`addons/lomo-addons/sim-nav-map/docs/references/0ad-source/`。
 
 ## 拉取方法(Sparse + Partial Clone)
 
@@ -16,10 +16,10 @@ git config --global core.longpaths true
 # 2. Partial clone(只拉 commit/tree 元数据,blob 按需)
 git clone --depth=1 --filter=blob:none --sparse --no-checkout \
   https://gitea.wildfiregames.com/0ad/0ad.git \
-  addons/sim-nav-map/docs/references/0ad-source
+  addons/lomo-addons/sim-nav-map/docs/references/0ad-source
 
 # 3. 配 sparse-checkout 只取 source/simulation2/ 子树
-cd addons/sim-nav-map/docs/references/0ad-source
+cd addons/lomo-addons/sim-nav-map/docs/references/0ad-source
 git sparse-checkout set --cone source/simulation2
 git checkout
 ```
@@ -48,7 +48,7 @@ git checkout
 ## 升级 / 重新拉取
 
 ```bash
-cd addons/sim-nav-map/docs/references/0ad-source
+cd addons/lomo-addons/sim-nav-map/docs/references/0ad-source
 git fetch --depth=1
 git reset --hard origin/main
 ```
@@ -62,5 +62,5 @@ git reset --hard origin/main
 ## 删除(不再需要时)
 
 ```bash
-rm -rf addons/sim-nav-map/docs/references/0ad-source
+rm -rf addons/lomo-addons/sim-nav-map/docs/references/0ad-source
 ```

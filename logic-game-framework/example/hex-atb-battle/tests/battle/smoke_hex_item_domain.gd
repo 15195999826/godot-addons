@@ -13,10 +13,10 @@
 extends Node
 
 
-const HexItemDomainScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_domain.gd")
-const HexItemCatalogScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_catalog.gd")
-const HexPlayerInventoryScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
-const HexActorEquipmentContainerScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_actor_equipment_container.gd")
+const HexItemDomainScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_domain.gd")
+const HexItemCatalogScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_catalog.gd")
+const HexPlayerInventoryScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
+const HexActorEquipmentContainerScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_actor_equipment_container.gd")
 
 const ACTOR_A := "actor-A"
 const ACTOR_B := "actor-B"

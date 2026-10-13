@@ -34,7 +34,7 @@ extends Node
 # After fix: short path returns partial path to best reachable vertex; motion
 # advances toward goal, replans next tick. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_011_short_path_best_vertex_fallback.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_011_short_path_best_vertex_fallback.tscn
 
 
 var _failures: Array[String] = []

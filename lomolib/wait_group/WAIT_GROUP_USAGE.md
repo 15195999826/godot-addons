@@ -260,4 +260,4 @@ func process_once() -> void:
 
 ## 完整示例
 
-参考 `addons/lomolib/examples/wait_group_demo.gd`（待创建）
+参考 `addons/lomo-addons/lomolib/examples/wait_group_demo.gd`（待创建）

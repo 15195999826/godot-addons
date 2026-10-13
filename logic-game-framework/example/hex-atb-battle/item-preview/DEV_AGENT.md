@@ -17,7 +17,7 @@ SESS_NAME="<short-task-slug>"   # e.g. item-equip-flow, occupied-reject
 SESS_DIR="$APPDATA/Godot/app_userdata/Inkmon/dev-agent/sessions/$SESS_NAME"
 rm -rf "$SESS_DIR" && mkdir -p "$SESS_DIR"
 godot --path C:/GodotPorjects/inkmon-godot \
-  res://addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview.tscn \
+  res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview.tscn \
   -- --dev-agent --dev-agent-session=$SESS_NAME \
   > "$SESS_DIR/godot.log" 2>&1
 ```
@@ -117,7 +117,7 @@ drag steps 建议 ≥ 8 (Godot drag threshold ≈ 几像素 + 累计 motion ≥ 
 
 ## Acceptance Flow (简版 — 完整 13 步见 plan)
 
-详见 `addons/logic-game-framework/docs/skills/skill-preview-item-system-plan.md` §"DevAgent Acceptance Flow"。
+详见 `addons/lomo-addons/logic-game-framework/docs/skills/skill-preview-item-system-plan.md` §"DevAgent Acceptance Flow"。
 下面 9 个 step 是简化合并版,逐项对照 plan 内 13 个 functional step (plan §"DevAgent Acceptance Flow" 第 14 项 "stop Godot process" 是 admin 步骤,不计入功能验收):
 1. `state` → 拿 `supported_ops`
 2. `seed_items` (= reset) + `inventory_state` → bag.size()==5

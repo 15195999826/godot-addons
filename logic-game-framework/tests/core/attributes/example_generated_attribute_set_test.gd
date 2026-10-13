@@ -1,6 +1,6 @@
 extends Node
 
-const GENERATED_PATH := "res://addons/logic-game-framework/example/attributes/generated/example_hero_attribute_set.gd"
+const GENERATED_PATH := "res://addons/lomo-addons/logic-game-framework/example/attributes/generated/example_hero_attribute_set.gd"
 
 func _init() -> void:
 	TestFramework.register_test("Generated example attribute set works", _test_generated_example)

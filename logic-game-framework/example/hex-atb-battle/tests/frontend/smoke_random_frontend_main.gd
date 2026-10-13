@@ -5,7 +5,7 @@
 extends Node
 
 
-const MAIN_SCENE := "res://addons/logic-game-framework/example/hex-atb-battle/frontend/demo_random_frontend.tscn"
+const MAIN_SCENE := "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/frontend/demo_random_frontend.tscn"
 const TIMEOUT_SEC := 45.0
 const PLAYBACK_SPEED := 200.0
 const FIXED_SEED := 651143

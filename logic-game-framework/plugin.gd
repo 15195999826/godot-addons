@@ -3,20 +3,24 @@ extends EditorPlugin
 
 # ========== 依赖检查 ==========
 
-## 依赖的插件列表
-const DEPENDENCIES: Array[String] = ["ultra-grid-map", "lomolib"]
+## 依赖的插件列表（plugin.cfg 全路径：短名会被 Godot 拼成 res://addons/<名>/，找不到挂在 lomo-addons 下的插件）
+const DEPENDENCIES: Array[String] = [
+	"res://addons/lomo-addons/ultra-grid-map/plugin.cfg",
+	"res://addons/lomo-addons/lomolib/plugin.cfg",
+]
+const SELF_PLUGIN_CFG := "res://addons/lomo-addons/logic-game-framework/plugin.cfg"
 
 # ========== 常量 ==========
 
 const MENU_NAME := "LGFramework"
 const MENU_ITEM_GENERATE := 1
 const MENU_ITEM_RUN_TEST := 2
-const GENERATOR_SCRIPT := "res://addons/logic-game-framework/scripts/attribute_set_generator_script.gd"
-const TEST_SCENE := "res://addons/logic-game-framework/example/hex-atb-battle/logic/demo_headless.tscn"
+const GENERATOR_SCRIPT := "res://addons/lomo-addons/logic-game-framework/scripts/attribute_set_generator_script.gd"
+const TEST_SCENE := "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/demo_headless.tscn"
 
 # Log 和 IdGenerator 已移至 lomolib 插件
 const AUTOLOAD_GAME_WORLD := "GameWorld"
-const AUTOLOAD_GAME_WORLD_PATH := "res://addons/logic-game-framework/core/world/game_world.gd"
+const AUTOLOAD_GAME_WORLD_PATH := "res://addons/lomo-addons/logic-game-framework/core/world/game_world.gd"
 
 var _menu: PopupMenu
 
@@ -112,4 +116,4 @@ func _check_dependencies() -> bool:
 
 ## 禁用自己
 func _disable_self() -> void:
-	EditorInterface.set_plugin_enabled("logic-game-framework", false)
+	EditorInterface.set_plugin_enabled(SELF_PLUGIN_CFG, false)

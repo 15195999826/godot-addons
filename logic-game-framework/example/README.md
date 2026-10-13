@@ -27,4 +27,4 @@ LGF（Logic Game Framework）目前提供两个示例项目，作为框架能力
 （example_hero/tower/derived_demo），不是任何 example 的属性落点，不再往里加 set。
 
 重新生成入口：编辑器菜单 `Tools > LGFramework > 生成属性集`，或 headless
-`godot --headless --path . addons/logic-game-framework/scripts/generate_attribute_sets.tscn`。
+`godot --headless --path . addons/lomo-addons/logic-game-framework/scripts/generate_attribute_sets.tscn`。

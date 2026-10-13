@@ -32,7 +32,7 @@ extends Node
 # Before fix: short path returns piercing path. FAIL.
 # After fix: short path either rejects piercing edges or routes around. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_009_directional_must_not_pierce_other_unit.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_009_directional_must_not_pierce_other_unit.tscn
 
 
 var _failures: Array[String] = []

@@ -6,60 +6,60 @@ extends Node
 ## @example
 ## ```bash
 ## # ✅ 正确：通过场景运行
-## godot --headless addons/logic-game-framework/tests/run_tests.tscn
+## godot --headless addons/lomo-addons/logic-game-framework/tests/run_tests.tscn
 ##
 ## # ❌ 错误：直接运行脚本会报错 "doesn't inherit from SceneTree or MainLoop"
-## godot --headless --script addons/logic-game-framework/tests/run_tests.gd
+## godot --headless --script addons/lomo-addons/logic-game-framework/tests/run_tests.gd
 ## ```
 
 # 测试文件路径
 const TEST_PATHS := [
-	"res://addons/logic-game-framework/tests/core/attributes/attribute_set_test.gd",
-	"res://addons/logic-game-framework/tests/core/attributes/define_attributes_test.gd",
-	"res://addons/logic-game-framework/tests/core/attributes/example_generated_attribute_set_test.gd",
-	"res://addons/logic-game-framework/tests/core/attributes/hex_battle_attribute_inheritance_test.gd",
-	"res://addons/logic-game-framework/tests/core/attributes/attribute_set_generator_test.gd",
-	"res://addons/logic-game-framework/tests/core/events/event_collector_test.gd",
-	"res://addons/logic-game-framework/tests/core/events/event_processor_test.gd",
-	"res://addons/logic-game-framework/tests/core/events/mutable_event_test.gd",
-	"res://addons/logic-game-framework/tests/core/events/pre_event_component_test.gd",
-	"res://addons/logic-game-framework/tests/core/events/post_event_dispatch_test.gd",
-	"res://addons/logic-game-framework/tests/core/events/event_key_casing_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/ability_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/ability_set_revoke_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/ability_set_subscription_policy_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/ability_tick_fast_path_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/ability_execution_instance_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/activate_instance_component_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/active_use_query_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/instance_context_test.gd",
-	"res://addons/logic-game-framework/tests/core/actions/loose_tag_action_test.gd",
-	"res://addons/logic-game-framework/tests/core/actions/flow_action_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/tag_component_config_test.gd",
-	"res://addons/logic-game-framework/tests/core/abilities/no_instance_component_test.gd",
-	"res://addons/logic-game-framework/tests/core/tags/tag_container_test.gd",
-	"res://addons/logic-game-framework/tests/stdlib/components/stat_modifier_component_test.gd",
-	"res://addons/logic-game-framework/tests/stdlib/grid/grid_world_gameplay_instance_test.gd",
-	"res://addons/logic-game-framework/tests/stdlib/grid/grid_map_model_index_test.gd",
-	"res://addons/logic-game-framework/tests/stdlib/projectile/projectile_system_test.gd",
-	"res://addons/logic-game-framework/tests/core/resolvers/resolvers_test.gd",
-	"res://addons/logic-game-framework/tests/core/timeline/timeline_test.gd",
-	"res://addons/logic-game-framework/tests/core/timeline/timeline_loop_test.gd",
-	"res://addons/logic-game-framework/tests/core/entity/battle_actor_test.gd",
-	"res://addons/logic-game-framework/tests/core/entity/battle_procedure_test.gd",
-	"res://addons/logic-game-framework/tests/core/world/world_test.gd",
-	"res://addons/logic-game-framework/tests/core/world/refcount_release_test.gd",
-	"res://addons/logic-game-framework/tests/core/ai_decision/decision_pipeline_test.gd",
-	"res://addons/logic-game-framework/tests/skill_preview_validation_test.gd",
-	"res://addons/logic-game-framework/tests/inventory_kit_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/action_stepper_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/translator_registry_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/visual_updater_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/visual_state_events_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/visual_director_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/replay_director_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/hex_translator_coordinates_test.gd",
-	"res://addons/logic-game-framework/tests/presentation/presentation_lint_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/attributes/attribute_set_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/attributes/define_attributes_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/attributes/example_generated_attribute_set_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/attributes/hex_battle_attribute_inheritance_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/attributes/attribute_set_generator_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/events/event_collector_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/events/event_processor_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/events/mutable_event_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/events/pre_event_component_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/events/post_event_dispatch_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/events/event_key_casing_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/ability_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/ability_set_revoke_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/ability_set_subscription_policy_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/ability_tick_fast_path_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/ability_execution_instance_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/activate_instance_component_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/active_use_query_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/instance_context_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/actions/loose_tag_action_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/actions/flow_action_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/tag_component_config_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/abilities/no_instance_component_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/tags/tag_container_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/stdlib/components/stat_modifier_component_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/stdlib/grid/grid_world_gameplay_instance_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/stdlib/grid/grid_map_model_index_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/stdlib/projectile/projectile_system_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/resolvers/resolvers_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/timeline/timeline_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/timeline/timeline_loop_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/entity/battle_actor_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/entity/battle_procedure_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/world/world_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/world/refcount_release_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/core/ai_decision/decision_pipeline_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/skill_preview_validation_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/inventory_kit_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/action_stepper_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/translator_registry_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/visual_updater_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/visual_state_events_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/visual_director_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/replay_director_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/hex_translator_coordinates_test.gd",
+	"res://addons/lomo-addons/logic-game-framework/tests/presentation/presentation_lint_test.gd",
 ]
 
 # 测试框架实例
@@ -67,7 +67,7 @@ var _test_framework: TestFramework
 
 func _ready() -> void:
 	# 初始化测试框架并添加到场景树（触发 _enter_tree 设置 meta）
-	_test_framework = load("res://addons/logic-game-framework/tests/test_framework.gd").new()
+	_test_framework = load("res://addons/lomo-addons/logic-game-framework/tests/test_framework.gd").new()
 	add_child(_test_framework)
 
 	# 加载所有测试脚本；load 失败必须计入退出码——
@@ -111,12 +111,12 @@ func _load_test_scripts() -> int:
 
 func discover_tests() -> Array[String]:
 	var test_paths: Array[String] = []
-	var dir: DirAccess = DirAccess.open("res://addons/logic-game-framework/tests/")
+	var dir: DirAccess = DirAccess.open("res://addons/lomo-addons/logic-game-framework/tests/")
 	if not dir:
 		push_error("Failed to open tests directory")
 		return test_paths
 
-	_collect_test_files_recursive(dir, "res://addons/logic-game-framework/tests/", test_paths)
+	_collect_test_files_recursive(dir, "res://addons/lomo-addons/logic-game-framework/tests/", test_paths)
 	return test_paths
 
 func _collect_test_files_recursive(dir: DirAccess, base_path: String, paths: Array[String]) -> void:

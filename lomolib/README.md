@@ -82,7 +82,7 @@ ItemSystem.move_item(sword_id, equipment_id, 0)  # move_item 仍可用，只是 
 **快速示例：**
 ```gdscript
 # 1. 实例化相机
-var camera_scene := preload("res://addons/lomolib/camera/lomo_camera_rig.tscn")
+var camera_scene := preload("res://addons/lomo-addons/lomolib/camera/lomo_camera_rig.tscn")
 var camera_rig := camera_scene.instantiate() as LomoCameraRig
 add_child(camera_rig)
 camera_rig.make_current()
@@ -125,7 +125,7 @@ func _remap_hit_location(location: Vector3) -> Vector3:
 - `player/lomo_player_controller.gd` - 玩家控制器基类
 - `camera/demo/camera_demo.tscn` - 演示场景
 
-**示例场景：** `res://addons/lomolib/camera/demo/camera_demo.tscn`
+**示例场景：** `res://addons/lomo-addons/lomolib/camera/demo/camera_demo.tscn`
 
 ### 3. WaitGroup - 多任务同步工具
 
@@ -164,7 +164,7 @@ func load_texture(wg: LomoWaitGroup) -> void:
 
 **详细文档：** [WAIT_GROUP_USAGE.md](wait_group/WAIT_GROUP_USAGE.md)
 
-**示例场景：** `res://addons/lomolib/wait_group/wait_group_demo.tscn`
+**示例场景：** `res://addons/lomo-addons/lomolib/wait_group/wait_group_demo.tscn`
 
 ### 4. DevAgent Debug Mode - 开发期场景调试桥
 
@@ -198,18 +198,18 @@ user://dev-agent/sessions/<session-id>/
 
 **详细规范：** [docs/dev-agent-debug-mode-spec.md](docs/dev-agent-debug-mode-spec.md)
 
-**示例场景：** `res://addons/lomolib/dev_agent/example/dev_agent_demo.tscn`
+**示例场景：** `res://addons/lomo-addons/lomolib/dev_agent/example/dev_agent_demo.tscn`
 
 ## 安装
 
-1. 将 `addons/lomolib` 文件夹复制到项目中
+1. 将 `addons/lomo-addons/lomolib` 文件夹复制到项目中
 2. 打开 **项目 → 项目设置 → 插件**
 3. 启用 **LomoLib** 插件
 
 ## 文件结构
 
 ```
-addons/lomolib/
+addons/lomo-addons/lomolib/
 ├── plugin.cfg                      # 插件配置
 ├── lomolib.gd                      # 插件主脚本
 ├── inventoryKit/                   # InventoryKit 模块目录

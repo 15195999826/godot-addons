@@ -19,13 +19,13 @@
 extends Control
 
 
-const HexItemDomainScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_domain.gd")
-const HexItemCatalogScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_catalog.gd")
-const HexPlayerInventoryScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
-const BagCellScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/bag_cell.gd")
-const EquipmentSlotScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/equipment_slot.gd")
-const ItemPreviewAgentOpsScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview_agent_ops.gd")
-const DevAgentBridgeScript := preload("res://addons/lomolib/dev_agent/dev_agent_bridge.gd")
+const HexItemDomainScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_domain.gd")
+const HexItemCatalogScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_catalog.gd")
+const HexPlayerInventoryScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
+const BagCellScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/item-preview/bag_cell.gd")
+const EquipmentSlotScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/item-preview/equipment_slot.gd")
+const ItemPreviewAgentOpsScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview_agent_ops.gd")
+const DevAgentBridgeScript := preload("res://addons/lomo-addons/lomolib/dev_agent/dev_agent_bridge.gd")
 
 const BAG_COLS := 10
 const BAG_ROWS := 8

@@ -38,7 +38,7 @@ extends Node
 ## 已释放（不等 destroy_instance）。本测试走到的其余构造点（grant 时交给 apply_effects 的 lifecycle context、
 ## PreEvent 重建的 context）没有 weakref 探针，由两类 context 的存活计数兜底：每个用例结束后计数必须回到用例开始前。
 
-const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+const LogCounter := preload("res://addons/lomo-addons/logic-game-framework/tests/log_counter.gd")
 
 const PRE_KIND := "release_probe_pre"
 const POST_KIND := "release_probe_post"

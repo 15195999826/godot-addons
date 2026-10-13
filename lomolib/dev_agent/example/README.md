@@ -1,6 +1,6 @@
 # DevAgent Debug Mode Example
 
-This demo proves the development-only JSONL workflow for `addons/lomolib/dev_agent`.
+This demo proves the development-only JSONL workflow for `addons/lomo-addons/lomolib/dev_agent`.
 It is not a regression test and should not be wired into CI.
 
 ## Run
@@ -8,7 +8,7 @@ It is not a regression test and should not be wired into CI.
 Open and run this scene in the Godot editor:
 
 ```text
-res://addons/lomolib/dev_agent/example/dev_agent_demo.tscn
+res://addons/lomo-addons/lomolib/dev_agent/example/dev_agent_demo.tscn
 ```
 
 The output panel prints the session paths:
@@ -50,4 +50,4 @@ user://dev-agent/sessions/<session-id>/
 
 `demo_scene_agent_ops.gd` is intentionally scene-specific. Keep reusable file
 protocol, input injection, screenshots, and generic inspectors in
-`addons/lomolib/dev_agent/`; keep game or scene strategy in each scene adapter.
+`addons/lomo-addons/lomolib/dev_agent/`; keep game or scene strategy in each scene adapter.

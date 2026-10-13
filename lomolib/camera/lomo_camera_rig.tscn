@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://css21hv7mws4y"]
 
-[ext_resource type="Script" path="res://addons/lomolib/camera/lomo_camera_rig.gd" id="1_script"]
+[ext_resource type="Script" path="res://addons/lomo-addons/lomolib/camera/lomo_camera_rig.gd" id="1_script"]
 
 [node name="LomoCameraRig" type="Node3D"]
 script = ExtResource("1_script")

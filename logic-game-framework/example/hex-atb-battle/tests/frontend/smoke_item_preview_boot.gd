@@ -16,7 +16,7 @@ func _ready() -> void:
 	Log.set_level(Log.LogLevel.WARNING)
 	print("=== Smoke: item_preview.tscn boot ===")
 
-	var scene := load("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview.tscn") as PackedScene
+	var scene := load("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/item-preview/item_preview.tscn") as PackedScene
 	if scene == null:
 		_finish_fail("PackedScene 加载失败")
 		return

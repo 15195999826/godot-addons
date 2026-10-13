@@ -297,7 +297,7 @@ func _create_small_object(pos: Vector3, color: Color, type: String) -> MeshInsta
 
 func _setup_camera() -> void:
 	# 从场景模板实例化相机
-	var camera_scene := preload("res://addons/lomolib/camera/lomo_camera_rig.tscn")
+	var camera_scene := preload("res://addons/lomo-addons/lomolib/camera/lomo_camera_rig.tscn")
 	_camera_rig = camera_scene.instantiate() as LomoCameraRig
 	_camera_rig.name = "CameraRig"
 	_camera_rig.position = Vector3(0, 0, 0)

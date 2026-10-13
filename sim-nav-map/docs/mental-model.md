@@ -186,7 +186,7 @@ if path.is_empty():
 
 ## 当前真实样例
 
-`addons/sim-nav-map/examples/dota2-rts-pathfinding-lab` 是一个 playable usage sample，不是 reusable addon API 的一部分。
+`addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab` 是一个 playable usage sample，不是 reusable addon API 的一部分。
 
 它添加了：
 

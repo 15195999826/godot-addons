@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://addons/ultra-grid-map/renderer/test_renderer_3d.gd" id="1_script"]
-[ext_resource type="Script" path="res://addons/ultra-grid-map/renderer/grid_map_renderer_3d.gd" id="2_renderer"]
+[ext_resource type="Script" path="res://addons/lomo-addons/ultra-grid-map/renderer/test_renderer_3d.gd" id="1_script"]
+[ext_resource type="Script" path="res://addons/lomo-addons/ultra-grid-map/renderer/grid_map_renderer_3d.gd" id="2_renderer"]
 
 [node name="TestRenderer3D" type="Node3D"]
 script = ExtResource("1_script")

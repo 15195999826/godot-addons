@@ -10,7 +10,7 @@ extends Node
 ## - 每个 .gd 都有 class_name 且无前缀（词表 D3），并带同名 .gd.uid
 
 
-const PRESENTATION_DIR := "res://addons/logic-game-framework/presentation"
+const PRESENTATION_DIR := "res://addons/lomo-addons/logic-game-framework/presentation"
 
 ## 内容里一律不许出现的词
 const FORBIDDEN_TOKENS: Array[String] = [

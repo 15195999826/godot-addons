@@ -1,6 +1,6 @@
 extends Node
 
-const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+const LogCounter := preload("res://addons/lomo-addons/logic-game-framework/tests/log_counter.gd")
 
 const MID_TICK_KIND := "world_test_mid_tick"
 

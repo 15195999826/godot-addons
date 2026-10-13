@@ -1,8 +1,8 @@
 extends Node
 
 
-const LAB_SCENE_PATH: String = "res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn"
-const AUTO_DEMO_SCENE_PATH: String = "res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_ai_command_demo.tscn"
+const LAB_SCENE_PATH: String = "res://addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_pathfinding_lab.tscn"
+const AUTO_DEMO_SCENE_PATH: String = "res://addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/frontend/dota2_ai_command_demo.tscn"
 
 var _failures: Array[String] = []
 

@@ -3,7 +3,7 @@ extends Node
 # Layer 2 command source drives only public Dota2LabWorld commands; the
 # scripted sequence terminates every unit (arrive or cancel) in bounded time.
 
-const AiCommandSourceScript := preload("res://addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_ai_command_source.gd")
+const AiCommandSourceScript := preload("res://addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/logic/dota2_lab_ai_command_source.gd")
 
 const TICK_DELTA := 1.0 / 60.0
 const SCRIPT_TICKS := 80

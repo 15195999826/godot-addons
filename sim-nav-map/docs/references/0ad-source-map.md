@@ -7,7 +7,7 @@ development.
 The local 0 A.D. source checkout is a reference-only directory:
 
 ```text
-addons/sim-nav-map/docs/references/0ad-source/
+addons/lomo-addons/sim-nav-map/docs/references/0ad-source/
 ```
 
 Do not commit `docs/references/0ad-source/` and do not copy GPL source

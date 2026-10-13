@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://dota2_lane_battle_scene"]
 
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle.gd" id="1_scene"]
+[ext_resource type="Script" path="res://addons/lomo-addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle.gd" id="1_scene"]
 
 [node name="Dota2LaneBattle" type="Node2D"]
 script = ExtResource("1_scene")

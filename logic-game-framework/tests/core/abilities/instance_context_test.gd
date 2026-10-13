@@ -12,7 +12,7 @@ extends Node
 ## 合法路径（AbilitySet.grant_ability 断言 owner 已登记），不钉。叠层 / Break 钩子与 on_remove 共用 for_ability，
 ## PreEvent filter / handler 与 post 派发共用 rebuild_for_handler，不另钉。
 
-const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+const LogCounter := preload("res://addons/lomo-addons/logic-game-framework/tests/log_counter.gd")
 
 const PROBE_KIND := "instance_context_probe"
 const PRE_KIND := "instance_context_pre"

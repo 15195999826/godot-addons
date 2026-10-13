@@ -1,5 +1,5 @@
 class_name SkillPreviewDevAgentOps
-extends "res://addons/lomolib/dev_agent/dev_agent_scene_ops.gd"
+extends "res://addons/lomo-addons/lomolib/dev_agent/dev_agent_scene_ops.gd"
 
 ## Scene adapter exposing skill_preview operations to DevAgent JSONL workflow.
 ##

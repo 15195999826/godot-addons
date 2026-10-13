@@ -9,7 +9,7 @@
 extends Node
 
 
-const GOLDEN_PATH := "res://addons/logic-game-framework/example/hex-atb-battle/tests/battle/random_battle_golden.json"
+const GOLDEN_PATH := "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/tests/battle/random_battle_golden.json"
 const PASSIVES_PER_ACTOR := 1
 ## seed 集合是在 50 个 seed 的差分 dump 上按覆盖率贪心选出的 set cover。offensive_slots -1 = demo 原规则
 ## （3v3 全员进攻位），1 = 一位进攻、两位从全池抽——治疗 / 护盾 / 结界 / 涌动 / 姿态 / 图腾 / 净化 / 换位只在后者进场。

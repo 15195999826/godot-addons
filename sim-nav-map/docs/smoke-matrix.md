@@ -25,8 +25,8 @@ Run both groups before merging any issue fix:
 
 | Group | Manifest | Responsibility |
 |---|---|---|
-| `simnav/smoke` | `addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: public API defaults, map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, line validation, cache, request queue, and diagnostics exports. |
-| `dota2lab/smoke` | `addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: Dota2/LoL-style contact-resolved movement — move basics, separation-solve invariants, crowd blockers, stall watchdog, target fanout, flying layer, AI command source, and UI ops. |
+| `simnav/smoke` | `addons/lomo-addons/sim-nav-map/tests/test_groups.json` | Core addon contracts: public API defaults, map state, passability, terrain, obstruction, dirty lifecycle, reachability, long/short pathfinding, line validation, cache, request queue, and diagnostics exports. |
+| `dota2lab/smoke` | `addons/lomo-addons/sim-nav-map/examples/dota2-rts-pathfinding-lab/tests/test_groups.json` | Plugin-local playable adapter sample: Dota2/LoL-style contact-resolved movement — move basics, separation-solve invariants, crowd blockers, stall watchdog, target fanout, flying layer, AI command source, and UI ops. |
 
 Baseline gate:
 
@@ -43,7 +43,7 @@ until the matching issue is fixed.
 
 | Kind | Location | Rule |
 |---|---|---|
-| Core repro | `addons/sim-nav-map/tests/repro/` | Add a focused scene for one core issue. Register it into `simnav/smoke` only after the fix turns it green. |
+| Core repro | `addons/lomo-addons/sim-nav-map/tests/repro/` | Add a focused scene for one core issue. Register it into `simnav/smoke` only after the fix turns it green. |
 
 `dota2-rts-pathfinding-lab` has no separate `tests/repro/` tier — its `smoke/` scenes assert
 regression invariants directly (e.g. residual-overlap == 0 after separation solve). Add a new
@@ -100,12 +100,12 @@ is added later, follow the same rule the old 0ad lab used: hard safety invariant
 `tools/run_tests.ps1` discovers sim-nav-map manifests from:
 
 ```text
-addons/sim-nav-map/tests/test_groups.json
-addons/sim-nav-map/examples/*/tests/test_groups.json
+addons/lomo-addons/sim-nav-map/tests/test_groups.json
+addons/lomo-addons/sim-nav-map/examples/*/tests/test_groups.json
 ```
 
 Paths inside each manifest are relative to that manifest directory. New core
-addon smoke scenes belong under `addons/sim-nav-map/tests/` and should be added
+addon smoke scenes belong under `addons/lomo-addons/sim-nav-map/tests/` and should be added
 to `simnav/smoke` after they are expected to pass. New lab behavior smoke scenes
 belong under `examples/dota2-rts-pathfinding-lab/tests/smoke/` and should be added
 to `dota2lab/smoke` after they are expected to pass.
@@ -119,4 +119,4 @@ to `dota2lab/smoke` after they are expected to pass.
 - Red repros stay in `tests/repro/` (core only — `dota2-rts-pathfinding-lab` has no lab-level repro tier), not in the stable manifest.
 - Stress/fuzz lives in `tests/stress/`, never in the smoke manifest, and only ever asserts hard safety invariants.
 - Old RTS private pathfinder wording points to archived compatibility, not a future implementation path.
-- `addons/sim-nav-map/docs/references/0ad-source/` remains ignored/untracked.
+- `addons/lomo-addons/sim-nav-map/docs/references/0ad-source/` remains ignored/untracked.

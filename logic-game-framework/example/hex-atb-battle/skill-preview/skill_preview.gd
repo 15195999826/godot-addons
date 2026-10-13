@@ -39,7 +39,7 @@ extends Node
 
 
 const PRESET_DIR := "user://skill_preview_presets"
-const BUILTIN_PRESET_DIR := "res://addons/logic-game-framework/example/hex-atb-battle/skill-preview/presets"
+const BUILTIN_PRESET_DIR := "res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/skill-preview/presets"
 const ENV_STONE_WALL := "stone_wall"
 const PREVIEW_ACTOR_CLASS := HexBattleClassConfig.CharacterClass.WARRIOR
 const PREVIEW_DEFAULT_HP := 100.0
@@ -405,7 +405,7 @@ func _update_hex_selection_cursor() -> void:
 ## 相机 / 光 / 环境 —— 原先委托 FrontendBattleReplayScene 做, 切到 WorldView 后
 ## 自己承担。参数沿袭 replay_scene._setup_camera/_setup_lighting 保证视觉一致。
 func _setup_camera_and_env() -> void:
-	var camera_scene := preload("res://addons/lomolib/camera/lomo_camera_rig.tscn")
+	var camera_scene := preload("res://addons/lomo-addons/lomolib/camera/lomo_camera_rig.tscn")
 	_camera_rig = camera_scene.instantiate() as LomoCameraRig
 	_camera_rig.name = "CameraRig"
 	_camera_rig.default_arm_length = 24.0

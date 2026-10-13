@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b8krxpupr5r2d"]
 
-[ext_resource type="Script" path="res://addons/logic-game-framework/example/hex-atb-battle/frontend/demo_random_frontend.gd" id="1_main"]
+[ext_resource type="Script" path="res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/frontend/demo_random_frontend.gd" id="1_main"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_origin"]
 albedo_color = Color(1, 0, 0, 1)

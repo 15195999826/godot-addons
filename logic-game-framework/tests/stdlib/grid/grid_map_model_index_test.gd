@@ -8,7 +8,7 @@ extends Node
 ## 3. 一个占用者同时只站一格：已在棋盘上的再 place 拒绝并报错
 ## 4. set_tile 整块替换作废旧占用与预订、新数据自带的 occupant 进索引；initialize 归零三表
 
-const LogCounter := preload("res://addons/logic-game-framework/tests/log_counter.gd")
+const LogCounter := preload("res://addons/lomo-addons/logic-game-framework/tests/log_counter.gd")
 
 
 func _init() -> void:

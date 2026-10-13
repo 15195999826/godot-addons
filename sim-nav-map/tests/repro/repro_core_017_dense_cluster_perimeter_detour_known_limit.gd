@@ -41,7 +41,7 @@ extends Node
 # this behavior or document why it's safe to allow the previously-illegal
 # vertex.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_017_dense_cluster_perimeter_detour_known_limit.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_017_dense_cluster_perimeter_detour_known_limit.tscn
 
 
 var _failures: Array[String] = []

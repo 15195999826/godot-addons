@@ -5,11 +5,11 @@ extends EditorPlugin
 func _enable_plugin() -> void:
 	# Add autoloads here.
 	# 基础工具（其他模块依赖）
-	add_autoload_singleton("Log", "res://addons/lomolib/utils/logger.gd")
-	add_autoload_singleton("IdGenerator", "res://addons/lomolib/utils/id_generator.gd")
+	add_autoload_singleton("Log", "res://addons/lomo-addons/lomolib/utils/logger.gd")
+	add_autoload_singleton("IdGenerator", "res://addons/lomo-addons/lomolib/utils/id_generator.gd")
 	# 功能模块
-	add_autoload_singleton("WaitGroupManager", "res://addons/lomolib/wait_group/wait_group_manager.gd")
-	add_autoload_singleton("ItemSystem", "res://addons/lomolib/inventoryKit/item_system.gd")
+	add_autoload_singleton("WaitGroupManager", "res://addons/lomo-addons/lomolib/wait_group/wait_group_manager.gd")
+	add_autoload_singleton("ItemSystem", "res://addons/lomo-addons/lomolib/inventoryKit/item_system.gd")
 
 
 func _disable_plugin() -> void:

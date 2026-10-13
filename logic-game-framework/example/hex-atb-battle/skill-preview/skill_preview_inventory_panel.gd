@@ -24,11 +24,11 @@ extends RefCounted
 ## owner 的 `handle_drop`, owner 类型已放宽为 Object 以接受 RefCounted panel。
 
 
-const HexItemDomainScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_domain.gd")
-const HexItemCatalogScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_catalog.gd")
-const HexPlayerInventoryScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
-const BagCellScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/bag_cell.gd")
-const EquipmentSlotScript := preload("res://addons/logic-game-framework/example/hex-atb-battle/item-preview/equipment_slot.gd")
+const HexItemDomainScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_domain.gd")
+const HexItemCatalogScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_item_catalog.gd")
+const HexPlayerInventoryScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/item/hex_player_inventory.gd")
+const BagCellScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/item-preview/bag_cell.gd")
+const EquipmentSlotScript := preload("res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/item-preview/equipment_slot.gd")
 
 const INVENTORY_BAG_COLS := HexPlayerInventory.DEFAULT_BAG_WIDTH
 const INVENTORY_BAG_ROWS := HexPlayerInventory.DEFAULT_BAG_HEIGHT

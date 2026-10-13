@@ -18,7 +18,7 @@ extends Node
 #     filtered out of the vertex graph, A* reaches an uncovered corner
 #     closer to the goal, first wp is no longer regressive.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_008_covered_vertex_first_waypoint_regression.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_008_covered_vertex_first_waypoint_regression.tscn
 
 
 var _failures: Array[String] = []

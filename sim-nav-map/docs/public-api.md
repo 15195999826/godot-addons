@@ -1,6 +1,6 @@
 # Sim Nav Map Public API
 
-This file defines the current public boundary for `addons/sim-nav-map`.
+This file defines the current public boundary for `addons/lomo-addons/sim-nav-map`.
 
 `sim-nav-map` owns navigation data structures and path queries. It does not own
 game entities, movement integration, steering, pushing, formation, combat, UI, or
@@ -11,7 +11,7 @@ editor workflow.
 This document is audited against the current `class_name` set in:
 
 ```text
-addons/sim-nav-map/{core,model,obstruction,pathfinding}/
+addons/lomo-addons/sim-nav-map/{core,model,obstruction,pathfinding}/
 ```
 
 Public API smoke coverage is registered in `simnav/smoke`, including
@@ -408,7 +408,7 @@ trajectories — see `../tests/native/` and `gdextension-port-plan.md`).
 
 ## Compatibility Note
 
-`addons/logic-game-framework/example/rts-auto-battle` keeps an RTS-shaped
+`addons/lomo-addons/logic-game-framework/example/rts-auto-battle` keeps an RTS-shaped
 `RtsPathfinderFacade` adapter for production call sites. Its old private
 pathfinder classes are archived fixture implementations. New navigation work
 should target `sim-nav-map` directly or through a project adapter.

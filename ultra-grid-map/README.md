@@ -132,7 +132,7 @@ renderer.fill_tiles([HexCoord.new(2, 2)], Color.BLUE)
 运行单元测试：
 
 ```bash
-godot --headless --script addons/ultra-grid-map/tests/test_grid_map.gd
+godot --headless --script addons/lomo-addons/ultra-grid-map/tests/test_grid_map.gd
 ```
 
 预期输出：

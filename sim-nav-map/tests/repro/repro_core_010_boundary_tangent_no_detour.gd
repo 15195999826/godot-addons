@@ -33,7 +33,7 @@ extends Node
 # After fix: short path goes directly to blue_0.NE / goal area without the
 # southward detour. PASS.
 #
-# Run: godot --headless --path . addons/sim-nav-map/tests/repro/repro_core_010_boundary_tangent_no_detour.tscn
+# Run: godot --headless --path . addons/lomo-addons/sim-nav-map/tests/repro/repro_core_010_boundary_tangent_no_detour.tscn
 
 
 var _failures: Array[String] = []

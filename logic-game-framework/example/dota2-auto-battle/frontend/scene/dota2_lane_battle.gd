@@ -274,10 +274,10 @@ func _has_dev_agent_flag() -> bool:
 func _install_dev_agent() -> void:
 	if not _has_dev_agent_flag():
 		return
-	var ops := (load("res://addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle_agent_ops.gd") as GDScript).new() as Node
+	var ops := (load("res://addons/lomo-addons/logic-game-framework/example/dota2-auto-battle/frontend/scene/dota2_lane_battle_agent_ops.gd") as GDScript).new() as Node
 	ops.name = "Dota2LaneBattleAgentOps"
 	add_child(ops)
-	var bridge := (load("res://addons/lomolib/dev_agent/dev_agent_bridge.gd") as GDScript).new() as Node
+	var bridge := (load("res://addons/lomo-addons/lomolib/dev_agent/dev_agent_bridge.gd") as GDScript).new() as Node
 	bridge.name = "DevAgentBridge"
 	bridge.scene_ops_path = NodePath("../Dota2LaneBattleAgentOps")
 	add_child(bridge)

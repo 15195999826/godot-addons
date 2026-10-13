@@ -30,10 +30,10 @@ DevAgentBridge 默认 `enabled = false`, 用以下任一方式启用:
 
 ```powershell
 # 推荐: 命令行 flag (双 -- 把后续参数交给 user_args)
-godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview.tscn -- --dev-agent
+godot --path . res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview.tscn -- --dev-agent
 
 # 或者指定 session id 便于复用 inbox 文件
-godot --path . res://addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview.tscn -- --dev-agent --dev-agent-session=skill-dev-001
+godot --path . res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/skill-preview/skill_preview.tscn -- --dev-agent --dev-agent-session=skill-dev-001
 
 # 或者: 通过项目设置 debug/dev_agent/enabled = true (谨慎, 全局生效)
 ```
@@ -218,4 +218,4 @@ Inventory tab 使用与 `item-preview` 相同的 Hex item model 和 bag/equipmen
 - **直调 vs 真输入**: 业务场景一律直调 (`start_battle` 等), 真输入 (`click_control` 等) 留给未来 UI-loop validation 场景。判定标准见 `.claude/skills/dev-agent-scene-debug-mode/SKILL.md` Step 0/1。
 - **不要把这层接口塞进 production**: 整个 DevAgent 系是 dev-time 工具, bridge 默认 disabled, 出包/正常 F6 都看不见它。
 
-详细 spec 见 `addons/lomolib/docs/dev-agent-debug-mode-spec.md`。
+详细 spec 见 `addons/lomo-addons/lomolib/docs/dev-agent-debug-mode-spec.md`。

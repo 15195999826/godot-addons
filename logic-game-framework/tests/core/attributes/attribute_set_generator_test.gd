@@ -24,8 +24,8 @@ func _test_discovery() -> void:
 	var expected: Array[String] = [
 		AttributeSetGeneratorScript.PROJECT_CONFIG_PATH,
 		AttributeSetGeneratorScript.SHARED_EXAMPLE_CONFIG_PATH,
-		"res://addons/logic-game-framework/example/dota2-auto-battle/logic/attributes/attributes_config.gd",
-		"res://addons/logic-game-framework/example/hex-atb-battle/logic/attributes/attributes_config.gd",
+		"res://addons/lomo-addons/logic-game-framework/example/dota2-auto-battle/logic/attributes/attributes_config.gd",
+		"res://addons/lomo-addons/logic-game-framework/example/hex-atb-battle/logic/attributes/attributes_config.gd",
 	]
 	for expected_path in expected:
 		TestFramework.assert_true(paths.has(expected_path), "discovery includes %s" % expected_path)
